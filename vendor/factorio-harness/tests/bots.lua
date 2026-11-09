@@ -606,6 +606,10 @@ local ab=storage.agent_harness.bots.by_name.astra
 local ab_body=ab.character
 force.platforms={{valid=true,name='alpha',index=1,surface={valid=true,name='platform-1'},hub=nil}}
 ab.character=nil; ab.travel={state='aboard',platform='alpha',platform_index=1,since=tick}
+for _,action in ipairs({'transfer','pickup'}) do
+  fails(function() bot(action,{position={x=0,y=0},item='iron-plate'}) end,
+    'deliver {platform, position, items} requests ingredients of the machine\'s current recipe from its hub')
+end
 advance(3600-tick%3600)
 eq(storage.agent_harness.runtime_fault,nil); eq(ab.travel.state,'aboard')
 ab.travel=nil; ab.character=ab_body; force.platforms=nil

@@ -8,6 +8,10 @@
   reactor's fuel cells go in and out as any burner's; a roboport's robots come out with `{position, direction:
   "to_player", item: "logistic-robot", count}`, as its GUI does. A transfer from a belt is refused naming `pickup
   {belt: true}`.
+  - `transfer` and `pickup` are hand moves, with no platform/surface argument. On a platform,
+    `deliver {platform, position, items}` requests ingredients of a machine's current recipe from its hub.
+    An actual `configure` recipe/quality change returns held input/output items to the hub when its empty slots
+    cover them; the same recipe and quality leave them in place. Each asteroid chunk takes one hub slot.
   - `to_player: "haiku"` hands items to a teammate within your reach: dropped at its feet as loot its character picks
     up (`players` gives teammates' positions).
   - Other names taken: `entity_position`, `target_position`, `pos` are `position`; `mode: "take"` or `"give"` is the
@@ -152,7 +156,15 @@
     naming it. `construct` mines tiles marked for deconstruction too.
   Example: `./fh call mine --args '{"tiles":true,"position":{"x":194,"y":58}}' --wait`
 - `rotate {position, direction?, reverse?}`: one 90-degree turn clockwise (`reverse: true` counter-clockwise;
-  `direction` a facing to turn to); replies `before` and `after`. `platform: NAME` (or `surface: NAME`) turns a ghost
+  `direction` a facing to turn to: north, northeast, east, ... northwest, or 0..15, as the entity is built in); replies
+  `before` and `after`. A placed turret does not turn with R. In person, holding the same turret (name and quality),
+  `rotate` with direction turns it as a player does: built over it, a fast replace. It keeps its ammo, priority list,
+  ignore setting, wires and circuit settings; one item is spent and the old one comes back. By remote view only a
+  rebuild turns it: `blueprint_place` mode superforced, or `deconstruct` then `place_ghosts` with direction. On a
+  platform that costs 1-2 s down and its priority list, ignore setting, wires and control settings (`configure` sets
+  them again). Side by side in a row a railgun turret facing a diagonal needs 4 tiles to one facing north or the
+  same diagonal and 5 to one facing the other diagonal (two facing north fit at 3); the game refuses a turn that
+  does not fit. `platform: NAME` (or `surface: NAME`) turns a ghost
   or built belt or inserter there by remote view. On your surface past the 32 tiles a call walks (without `walk: true`), it
   turns it by remote view in a chunk our force sees now (`by: "remote view"`).
   Example: `./fh call rotate --args '{"position":{"x":22.5,"y":86.5},"direction":"east"}'`

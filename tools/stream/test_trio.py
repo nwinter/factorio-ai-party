@@ -154,7 +154,7 @@ def hint_bars():
     import json
     css = open(os.path.join(HERE, "static", "overlay.css")).read()
     js = open(os.path.join(HERE, "static", "overlay.js")).read()
-    assert 'for (const id of ["cam-main", "cam-cam2", "cam-cam3", "cam-inset"])' in js and '"cam-bar"' in js
+    assert 'for (const c of document.querySelectorAll(".cam"))' in js and '!c.querySelector(".cam-bar")' in js
     trio = json.load(open(os.path.join(HERE, "static", "layout-3cam.json")))["cams"]
     inset = json.load(open(os.path.join(HERE, "static", "layout.json")))["cams"]["inset"]
     share = 44 / 1032

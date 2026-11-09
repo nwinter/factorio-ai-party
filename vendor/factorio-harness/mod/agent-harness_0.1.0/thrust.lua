@@ -40,7 +40,9 @@ return function(api)
   end
 
   -- Upstream of fluid box (box, index): through pipes, underground pipes and
-  -- tanks; through a pump only when it pushes toward us (then on from its input
+  -- tanks and the connected box of another thruster (its two same-fluid ports
+  -- pass the pipe segment through; never cross to its other fluid box);
+  -- through a pump only when it pushes toward us (then on from its input
   -- side). Returns pumps, makers (machines whose box there is an output) and
   -- tanks met, in the order reached.
   function M.upstream(box, index)
@@ -56,7 +58,7 @@ return function(api)
         local j = pc.target_fluidbox_index or 1
         if e and (not cur.only_input or pc.flow_direction == 'input') and not seen[key(e, j)] then
           seen[key(e, j)] = true
-          if PASS[e.type] then
+          if PASS[e.type] or e.type == 'thruster' then
             if e.type == 'storage-tank' then out.tanks[#out.tanks+1] = e end
             queue[#queue+1] = {box=target, i=j}
           elseif e.type == 'pump' then

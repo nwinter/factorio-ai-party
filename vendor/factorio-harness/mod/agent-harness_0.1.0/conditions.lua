@@ -1,3 +1,7 @@
+local budgetrates = require('budgetrates')
+local budgetwindows = require('budgetwindows')
+local turnaround = require('turnaround')
+local member_record = require('conditionrecord')
 -- World predicates for plan waits and guards. Each reads only what the player
 -- could see: enemy structures on the chart, units in visible chunks, our own
 -- turrets, ghosts, buildings and burners, the character's health and inventory.
@@ -259,12 +263,107 @@ return function(api)
   local function ring_row(ring,size,s) local x=ring[(s-1)%size+1]; if x and x.s==s then return x end end
   local function tenth(v) return math.floor(v*10+0.5)/10 end
   local function location_name(pl) return pl.space_location and pl.space_location.name end
-  -- (batch329 PR) budget_below's last reading per condition (in memory: read again after a load)
-  local budget_kept=setmetatable({},{__mode='k'})
+  -- These readings decide when a guard changes the world. Keep both the reading and its clock in storage:
+  -- a joining peer has fresh module locals, but must not read earlier than the server (d29 batch367).
+  -- Condition tables are serialized keys, with their shared references restored on load; no userdata keys.
+  -- Keep the cache outside the condition arguments returned by queue_status. Expiry releases abandoned keys
+  -- deterministically, rather than depending on a weak table's peer-local garbage collection.
+  local standalone={}  -- module fixtures without a state provider; runtime always supplies storage's state
+  local function readings(kind,every)
+    local s=api.state and api.state() or standalone
+    s.condition_reads=s.condition_reads or {}
+    local r=s.condition_reads[kind]
+    if not r then r={by={}}; s.condition_reads[kind]=r end
+    if not r.trim or game.tick-r.trim>=every then
+      for c,v in pairs(r.by) do if game.tick-v.tick>=every then r.by[c]=nil end end
+      r.trim=game.tick
+    end
+    return r.by
+  end
   M.BUDGET_EVERY=600
+  -- Keep the read's arguments by value: reserve, items and return_allowance can be edited in place.
+  local function budget_copy(v)
+    if type(v)~='table' then return v end
+    local out={}; for k,x in pairs(v) do out[k]=budget_copy(x) end; return out
+  end
+  local function budget_same(a,b)
+    if type(a)~='table' or type(b)~='table' then return a==b end
+    for k,v in pairs(a) do if not budget_same(v,b[k]) then return false end end
+    for k in pairs(b) do if a[k]==nil then return false end end
+    return true
+  end
   -- (batch346 LC) launches_at_least's last count per condition, read at most every LAUNCH_EVERY ticks
-  local launch_kept=setmetatable({},{__mode='k'})
   M.LAUNCH_EVERY=60
+  local function circuit_wire(v)
+    local w=v==nil and 'both' or type(v)=='string' and v:lower():gsub('%s','')
+    if w=='red+green' or w=='green+red' then w='both' end
+    assert(w=='red' or w=='green' or w=='both','circuit_signal wire is red, green or both (red+green is both)')
+    return w
+  end
+  -- CP (Sol #2777): a position selects the native entity network, independent of the hub.
+  -- No cached entities or networks: replacement, disconnection and network splits are visible at the next check.
+  local function circuit_read(p,c)
+    local pl=M.platform_named(p,c.platform)
+    local wire=circuit_wire(c.wire)
+    local e,on=pl.hub,c.platform.."'s hub"
+    if c.position~=nil then
+      local pos=api.position(c.position)
+      local where=string.format('(%g,%g) on %s',pos.x,pos.y,c.platform)
+      assert(pl.surface,'circuit_signal unreadable: platform '..c.platform..' has no surface')
+      local candidates,there={},{}
+      for _,found in pairs(pl.surface.find_entities_filtered{position=pos,force=p.force}) do
+        if found.valid then
+          there[#there+1]=found.name
+          local ok,d=pcall(function() return found.prototype.get_max_circuit_wire_distance(found.quality) end)
+          if found.type~='entity-ghost' and ok and d and d>0 then candidates[#candidates+1]=found end
+        end
+      end
+      table.sort(there)
+      if #candidates~=1 then error('circuit_signal unreadable at '..where..': '..(#candidates>1 and 'more than one entity with a circuit connector' or 'no entity with a circuit connector')..'; found '..(#there>0 and table.concat(there,', ') or 'no entity'),0) end
+      e=candidates[1]
+      on=string.format('%s (%g,%g) on %s',e.name,e.position.x,e.position.y,c.platform)
+    end
+    assert(e and e.valid,'circuit_signal unreadable: '..on..' is missing')
+    local sig=M.signal_of(c.signal)
+    local n,nets,parts=0,{},{}
+    local strict=c.position~=nil or c.wire~=nil
+    for _,w in ipairs({'red','green'}) do
+      if wire=='both' or wire==w then
+        local ok,net=pcall(function() return e.get_circuit_network(defines.wire_connector_id['circuit_'..w]) end)
+        if not ok or (strict and not net) then error('circuit_signal unreadable: '..on..' has no readable '..w..' network'..(ok and '' or ': '..tostring(net))..'; read tick '..game.tick,0) end
+        if net then
+          local okv,v=pcall(function() return net.get_signal(sig) end)
+          if not okv or type(v)~='number' then error('circuit_signal unreadable: '..on..' '..w..' network signal read failed: '..tostring(v)..'; read tick '..game.tick,0) end
+          local id=net.network_id
+          nets[#nets+1]={wire=w,id=id,count=v}
+          parts[#parts+1]=string.format('%s network #%s: %d',w,tostring(id or '?'),v)
+          n=n+v
+        end
+      end
+    end
+    return n,on,nets,parts,{circuit_signal=true,platform=c.platform,entity={name=e.name or 'space-platform-hub',position=e.position and {x=e.position.x,y=e.position.y},unit_number=e.unit_number},signal=c.signal,wire=wire,networks=nets,count=n,tick=game.tick}
+  end
+  -- The same target lookup is used by live reads and plan validation; only the main inventory counts.
+  local function free_slots_target(p,c)
+    local entity,inv,where
+    if c.platform then
+      entity=M.platform_named(p,c.platform).hub
+      assert(entity and entity.valid,'platform '..c.platform..' has no hub')
+      inv=entity.get_inventory(defines.inventory.hub_main)
+      where=c.platform..' hub'
+    else
+      local s,pos=surface_of(p,c),api.position(c.position)
+      if not charted(p,s,pos) then uncharted(s,pos,'container or cargo landing pad') end
+      local found=s.find_entities_filtered{area={{pos.x-0.01,pos.y-0.01},{pos.x+0.01,pos.y+0.01}},
+        type={'container','logistic-container','linked-container','cargo-landing-pad'},force=p.force,limit=2}
+      assert(#found==1 and found[1].valid,string.format('expected one container or cargo landing pad of ours at (%g,%g) on %s; found %d',pos.x,pos.y,s.name,#found))
+      entity=found[1]
+      inv=entity.get_inventory(entity.type=='cargo-landing-pad' and defines.inventory.cargo_landing_pad_main or defines.inventory.chest)
+      where=string.format('%s (%g,%g) on %s',entity.name,entity.position.x,entity.position.y,s.name)
+    end
+    assert(inv and inv.valid,where..' has no inventory')
+    return inv,where
+  end
   local checks={
     no_enemy_structures=function(p,c)
       local n=enemies(p,c,ENEMY_STRUCTURES); return n==0,n..' enemy structures'
@@ -344,6 +443,24 @@ return function(api)
     health_above=function(p,c)
       local ch=p.character; local r=ch.health/ch.max_health
       return r>c.fraction,string.format('health %d%%',math.floor(r*100))
+    end,
+    inventory_free_slots=function(p,c)
+      local holder=c
+      holder.evidence=nil -- A failed read must not keep an earlier capacity reading.
+      local inv,where=free_slots_target(p,c)
+      -- Native counter: every quality and partial stack occupies one slot. #inv includes cargo-bay capacity.
+      -- The bar excludes blocked slots; filtered empty slots count (usable for their matching item).
+      local capacity=#inv
+      local total=inv.supports_bar() and math.min(capacity,inv.get_bar()-1) or capacity
+      local free=inv.count_empty_stacks(true,false)
+      local occupied=total-free
+      local row={occupied=occupied,free=free,total=total,capacity=capacity,barred=capacity-total,read_tick=game.tick,
+        inbound_reserved_slots='unavailable',inbound_reserved_slots_reason='not exposed by Factorio 2.0.77',
+        filtered_empty_slots_included=true,platform=c.platform}
+      holder.evidence={inventory_free_slots=row}
+      local met=(c.below==nil or free<c.below) and (c.at_least==nil or free>=c.at_least)
+      return met,string.format('%s: occupied %d, free %d, total %d usable slots; capacity %d, barred %d; inbound reserved slots unavailable (API); excludes cargo in flight; filtered empty slots included; read_tick %d',
+        where,occupied,free,total,capacity,capacity-total,game.tick)
     end,
     -- In a named platform hub's main inventory, the character's main inventory, or summed over our entities on the
     -- given tiles (chests, machines: every inventory they have; a rocket
@@ -488,23 +605,15 @@ return function(api)
     -- was met at once and the platform left, rocket > -1 too; on a wired hub with no rocket signal, rocket < 4850 met,
     -- rocket > 4850 not): below N (over 0) is met, at_least N (over 0) is never met while it has none.
     circuit_signal=function(p,c,estimate)
-      local pl=M.platform_named(p,c.platform)
-      local hub=pl.hub
-      assert(hub and hub.valid,'platform '..c.platform..' has no hub')
-      local sig=M.signal_of(c.signal)
-      local n,wires=0,{}
-      for _,w in ipairs({{'red',defines.wire_connector_id.circuit_red},{'green',defines.wire_connector_id.circuit_green}}) do
-        local ok,net=pcall(function() return hub.get_circuit_network(w[2]) end)
-        if ok and net then
-          wires[#wires+1]=w[1]
-          local okv,v=pcall(function() return net.get_signal(sig) end)
-          if okv and v then n=n+v end
-        end
-      end
+      local holder=c
+      holder.evidence=nil
+      local ok,n,on,nets,parts,evidence=pcall(circuit_read,p,c)
+      if not ok then return false,tostring(n)..'; unreadable at tick '..game.tick end
+      holder.evidence=evidence
       local met=(c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
-      return met,#wires>0 and string.format('%s %d on %s\'s hub (%s)',c.signal,n,c.platform,table.concat(wires,' and '))
-        or string.format('%s\'s hub has no red or green wire: %s reads 0 there, as the game\'s own circuit conditions read an unwired hub (%s)',
-          c.platform,c.signal,met and 'met' or 'never met while it has none'),estimate and {value=n,scope='circuit:'..c.platform..':'..c.signal} or nil
+      local saw=#nets>0 and string.format('%s %d on %s (%s)',c.signal,n,on,table.concat(parts,'; '))
+        or string.format('%s\'s hub has no red or green wire: %s reads 0 there, as the game\'s own circuit conditions read an unwired hub (%s)',c.platform,c.signal,met and 'met' or 'never met while it has none')
+      return met,saw..'; read tick '..game.tick,estimate and {value=n,scope='circuit:'..on..':'..c.signal..':'..evidence.wire} or nil
     end,
     -- What machines made since the wait began (Grok 07:50: item_count on a provider that robots empty never rises, so a
     -- machine that makes things looks stopped): the products-finished counter each machine's GUI shows, on the given
@@ -806,6 +915,34 @@ return function(api)
         names and ' of those names' or '',holder.hit_since,not met and #goal>0 and ' (met at '..table.concat(goal,' or ')..')' or '',
         #parts>0 and table.concat(parts,', ') or 'none kept',n>#parts and string.format(', +%d more',n-#parts) or '',older,unread)
     end,
+    -- Native speed is km/tick; every check reads it anew. Duration state survives save/load.
+    platform_speed_above=function(p,c,estimate,record)
+      local h=record or c
+      local function unreadable(reason)
+        h.speed_since=nil; h.speed_tick=nil; h.evidence=nil
+        error('platform_speed_above: '..reason..' for '..c.platform..' at tick '..game.tick,0)
+      end
+      local found,pl=pcall(M.platform_named,p,c.platform)
+      if not found or not pl then unreadable('platform unavailable: '..tostring(pl)) end
+      local ok,native=pcall(function() return pl.speed end)
+      if not ok then unreadable('unreadable LuaSpacePlatform.speed: '..tostring(native)) end
+      if native==nil then unreadable('missing LuaSpacePlatform.speed field') end
+      if type(native)~='number' then unreadable('unreadable LuaSpacePlatform.speed: expected number, got '..type(native)) end
+      local speed=native*60
+      if speed~=speed or speed==math.huge or speed==-math.huge then unreadable('unreadable LuaSpacePlatform.speed: non-finite km/s value') end
+      -- Starved 2.0.77 platforms can report finite negative speed in flight. Keep that reading;
+      -- only negative zero/float noise (within 1e-9 km/s of zero) is normalized to positive zero.
+      if speed<=0 and speed>=-1e-9 then speed=0 end
+      local gap=not h.speed_tick or game.tick-h.speed_tick>(c.max_age or 1)*60 or game.tick<h.speed_tick
+      if speed<=c.above then h.speed_since=nil
+      elseif gap or not h.speed_since then h.speed_since=game.tick end
+      h.speed_tick=game.tick
+      local elapsed=h.speed_since and (game.tick-h.speed_since)/60 or 0
+      h.evidence={platform=c.platform,speed_kms=speed,tick=game.tick,source='LuaSpacePlatform.speed',above=c.above,for_s=c.for_s or 0,
+        since_tick=h.speed_since,elapsed_s=elapsed,max_age=c.max_age or 1}
+      return speed>c.above and elapsed>=(c.for_s or 0),string.format('%s speed %.6g km/s > %g km/s: %s; sustained %.3g/%g s; read tick %d (age 0 s; source LuaSpacePlatform.speed)',
+        c.platform,speed,c.above,speed>c.above and 'yes' or 'no',elapsed,c.for_s or 0,game.tick)
+    end,
     -- (d22 batch92 BB3, Astra #1887: a probe flight turned back at a share of its outer leg, whatever its speed) the
     -- share of its leg a platform has flown, as the platforms read gives it (freight.lua leg: from and to in the
     -- direction it flies), met at at_least; on the leg asked only (from, to), so a return leg, another leg or a stop
@@ -834,29 +971,79 @@ return function(api)
     end,
     -- (d29 batch329 PR, Astra #2727) a flight's return budget (platform_endurance turnaround): met once the item that
     -- binds first can go out less than km farther before the way back needs the rest. The read (about 7 ms on world n)
-    -- is made at most every BUDGET_EVERY ticks; between, the last reading stands (its tick said).
-    -- (d29 batch346, Astra #2755: in platform lane guards, inside all) a platform at a stop is not met, said, with no
-    -- read (the budget reads a ship in flight); a read that fails is kept as the reading is, so a guard re-reads it at
-    -- most every BUDGET_EVERY ticks too (each check raises it: the guard's read error).
-    budget_below=function(p,c)
+    -- is made at most every BUDGET_EVERY ticks on the same leg with the same arguments.
+    -- (d29 batch360 BC, Astra #2772) a stop, connection/direction change or changed arguments drops the old reading,
+    -- including a failed read. A new leg reads immediately; without a successful read it is not met, said in saw.
+    budget_below=function(p,c,estimate,record)
+      (record or c).evidence=nil
+      local turnaround,window_config=budgetwindows.arguments(c)
+      local budget_kept=readings('budget',M.BUDGET_EVERY)
       local now=game.tick
       local pl
       for _,each in pairs(p.force and p.force.platforms or {}) do if each.valid and each.name==c.platform then pl=each; break end end
+      if not pl then budget_kept[c]=nil; error('no platform of ours named '..tostring(c.platform),0) end
       local at=pl and pl.space_location
-      if at then return false,string.format('platform %s: stopped at %s: the return budget reads a ship in flight (not met)',c.platform,at.name) end
+      if at then
+        budget_kept[c]=nil
+        if window_config then budgetwindows.stopped(pl,now,api.state and api.state()) end
+        return false,string.format('platform %s: stopped at %s: the return budget reads a ship in flight (not met); cached budget cleared',c.platform,at.name)
+      end
+      local l=api.leg and api.leg(pl)
+      if not l then
+        budget_kept[c]=nil
+        if window_config then budgetwindows.stopped(pl,now,api.state and api.state()) end
+        return false,string.format('platform %s: no flight leg: no fresh return budget (not met); cached budget cleared',c.platform)
+      end
+      local connection=pl.space_connection and pl.space_connection.name
+      local segment_start
+      if window_config and api.segments then
+        local segments=api.segments(pl)
+        segment_start=budgetwindows.segment_start(l,segments[#segments])
+      end
       local kept=budget_kept[c]
-      if not kept or now-kept.tick>=M.BUDGET_EVERY then
-        local ok,b=pcall(api.return_budget,p,c.platform,c.turnaround)
-        kept={tick=now,b=ok and b or nil,err=not ok and tostring(b) or nil}
+      if kept and (kept.platform~=pl or kept.name~=c.platform or kept.connection~=connection or kept.from~=l.from
+        or kept.to~=l.to or kept.back~=l.back or (window_config and (not kept.baseline_checked or kept.segment_start~=segment_start))
+        or not budget_same(kept.args,turnaround)) then
+        budget_kept[c]=nil; kept=nil
+      end
+      local ready=kept and kept.b and kept.b.window_budgets and kept.b.window_budgets.next_ready_tick
+      if not kept or now-kept.tick>=M.BUDGET_EVERY or (window_config and ready and now>=ready) then
+        local ok,b=pcall(api.return_budget,p,c.platform,turnaround)
+        kept={tick=now,b=ok and b or nil,err=not ok and tostring(b) or nil,platform=pl,name=c.platform,
+          connection=connection,from=l.from,to=l.to,back=l.back,segment_start=segment_start,
+          baseline_checked=window_config and true or nil,args=budget_copy(turnaround)}
         budget_kept[c]=kept
       end
-      if kept.err then error(kept.err..' (read at tick '..kept.tick..')',0) end
+      local source=string.format('; cached leg %s->%s (connection %s, direction %s), read at tick %d',
+        kept.from,kept.to,kept.connection or 'unknown',kept.back and 'back' or 'forward',kept.tick)
       local b=kept.b
+      if b and b.mode then source=source..'; recovery mode '..b.mode end
+      if b and b.warning then source=source..'; '..b.warning end
+      if kept.err or not b then
+        -- Raise the cached failure so scheduler read-error tracking sees it without another budget read.
+        error(string.format('platform %s: no fresh return budget for this leg (not met): %s%s',
+          c.platform,kept.err or 'read returned no budget',source),0)
+      end
+      if window_config then
+        local check=budgetwindows.evaluate(b.window_budgets,window_config,c.km)
+        check.scope='budget_below km'
+        (record or c).evidence=check.met and {tick=kept.tick,platform=c.platform,
+          cached_leg={from=kept.from,to=kept.to,connection=kept.connection,back=kept.back},
+          return_budget=budgetrates.copy(b),window_check=check} or nil
+        return check.met,'platform '..c.platform..': '..check.line..source
+      end
       if not (b and b.binds and b.binds.out_km_max) then
-        return false,string.format('platform %s: no item used faster than it is made (read at tick %d)',c.platform,kept.tick)
+        return false,string.format('platform %s: no item used faster than it is made (read at tick %d)',c.platform,kept.tick)..source
       end
       local x=b.binds.out_km_max
-      return x<c.km,string.format('platform %s: %s binds first, at most %d km farther out (met under %d km; read at tick %d)',c.platform,b.binds.name,x,c.km,kept.tick)
+      local holder=record or c
+      local met=x<c.km
+      holder.evidence=met and {tick=kept.tick,platform=c.platform,cached_leg={from=kept.from,to=kept.to,connection=kept.connection,back=kept.back},return_budget=budgetrates.copy(b)} or nil
+      local line
+      for _,r in ipairs(b.items or {}) do if r.name==b.binds.name then line=r.multiwindow_line or budgetrates.line(r); break end end
+      local distance=b.mode=='direct' and b.direct_remaining_km~=nil and '%d km advance budget after reserving direct recovery' or 'at most %d km farther out'
+      return met,string.format('platform %s: %s binds first, '..distance..' (met under %d km; read at tick %d)',c.platform,b.binds.name,x,c.km,kept.tick)
+        ..source..(line and '; '..line or '')
     end,
     -- (d29 batch346 LC, Astra #2754: 23 pods went up before an audit; a correction raced rockets already loaded and in
     -- flight) the rockets to a platform in a window (seconds back from now) or since a tick, from origin or any planet:
@@ -865,6 +1052,7 @@ return function(api)
     -- ticks (launchcount.lua); between, the last count stands (its tick said). When met, the counts are its evidence.
     launches_at_least=function(p,c,estimate,record)
       local now=game.tick
+      local launch_kept=readings('launch',M.LAUNCH_EVERY)
       local kept=launch_kept[c]
       if not kept or now-kept.tick>=M.LAUNCH_EVERY then
         kept={tick=now,r=api.launch_count(p.force,c.platform,{window=c.window,since_tick=c.since_tick,origin=c.origin})}
@@ -931,7 +1119,11 @@ return function(api)
         ents and string.format(', %d entity ghost%s',ents,ents==1 and '' or 's') or '')
     end,
     -- Our buildings under a health fraction (default: any damage), the nearest named.
-    damaged=function(p,c)
+    damaged=function(p,c,estimate,record)
+      if c.platform then
+        (record or c).evidence=nil
+        return api.platform_health(M.platform_named(p,c.platform),c,record)
+      end
       local centre,radius=area(p,c)
       local below=c.fraction or 1
       local n,near,best=0,nil,nil
@@ -951,13 +1143,38 @@ return function(api)
     -- arrival): at `location` when given (a planet), else at any stop. As the platform list shows it: a platform is
     -- at a location while it is stopped there and on a route between two while it flies (2.0.77: space_location
     -- clears within 4 ticks of leaving).
-    platform_arrived=function(p,c,estimate)
+    platform_arrived=function(p,c,estimate,record)
       local pl
       for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each end end
       if not pl then error('no platform of ours named '..tostring(c.platform),0) end
       -- freight.lua's rule, the platforms row's too (Luna, shift12 12:47: a wait met while the row showed the platform
       -- in flight): stopped at a location and not on its path; a leg in the way it is flown.
       local w=api.platform_where and api.platform_where(pl)
+      -- Each member has its own latch, even when all/any or sleep shares a wait record.
+      -- Records and guard conditions live in storage, so the baseline and event survive reloads.
+      local holder
+      if record then
+        record.platform_arrivals=record.platform_arrivals or {}
+        -- queue_status copies the record into JSON: keys must be strings, not condition tables.
+        local key=c.platform..'\0'..(c.location or '')..'\0'..tostring(c.since_tick or '')
+        holder=record.platform_arrivals[key]
+        if not holder then holder={}; record.platform_arrivals[key]=holder end
+      else
+        c.platform_arrival=c.platform_arrival or {}; holder=c.platform_arrival
+      end
+      holder.since=holder.since or c.since_tick or (record and (record.start_tick or record.wait_started or record.started_tick)) or game.tick
+      if not holder.arrival and api.arrived_since then
+        holder.arrival=api.arrived_since(pl.name,p.force.name,c.location,holder.since)
+      end
+      local e=holder.arrival
+      if e then
+        if not holder.departure and api.left_since then holder.departure=api.left_since(pl.name,p.force.name,e.at,e.tick) end
+        local d=holder.departure
+        local now=w and w.text or (pl.space_location and 'at '..pl.space_location.name or 'not at a stop')
+        return true,string.format('%s arrived at %s at tick %d (since tick %d)%s; now %s',c.platform,e.at,e.tick,holder.since,
+          d and string.format('; left %s at tick %d%s',d.at,d.tick,d.to and ' for '..d.to or '') or '',now),
+          estimate and {leg=w and w.leg,paused=pl.paused,platform=pl,arrival_tick=e.tick,departure_tick=d and d.tick} or nil
+      end
       if w then return w.stopped==true and (c.location==nil or w.at==c.location),c.platform..' '..w.text,
         estimate and {leg=w.leg,paused=pl.paused,platform=pl} or nil end
       local loc=pl.space_location and pl.space_location.name
@@ -1116,7 +1333,20 @@ return function(api)
     if prototypes.virtual_signal and prototypes.virtual_signal[name] then return {type='virtual',name=name} end
     error('unknown signal '..tostring(name)..' (an item, a fluid, or a virtual signal such as signal-A)',0)
   end
-  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_foundation_loss|platform_energy_below|platform_progress|platform_ammo_below|budget_below|launches_at_least|tick_at_least|all|any'
+  checks.entity_quality=function(p,c)
+    local pos=api.position(c.position)
+    local s
+    if c.platform then s=M.platform_named(p,c.platform).surface else s=surface_of(p,c) end
+    assert(s,'platform '..tostring(c.platform)..' has no surface yet')
+    api.entity_quality_sight(p,c,pos)
+    for _,e in ipairs(s.find_entities_filtered{position=pos,radius=0.3,force=p.force,name=c.name}) do
+      if e.valid and e.type~='entity-ghost' and e.type~='tile-ghost' and e.quality.name==c.quality then
+        return true,string.format('%s (%g,%g): %s quality',e.name,pos.x,pos.y,c.quality)
+      end
+    end
+    return false,string.format('no built %s at (%g,%g) with %s quality',c.name or 'entity',pos.x,pos.y,c.quality)
+  end
+  local NAMES='entity_quality|no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|inventory_free_slots|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_foundation_loss|platform_energy_below|platform_speed_above|platform_progress|platform_ammo_below|budget_below|launches_at_least|tick_at_least|all|any'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
   M.ALIASES={silo_parts='rocket_parts',platform_damage='platform_hit'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
@@ -1145,7 +1375,7 @@ return function(api)
   end
   -- (d22 batch117 BZ1, Astra #1970: a full-edge abort that keeps the return leg's ammunition) a platform's whole stock
   -- of one ammunition item: hub, turret slots, belts, inserter hands, machine outputs and chests, from the background
-  -- reading (ammoreserve.lua) with its age; a reading older than max_age (or none by then) meets it.
+  -- reading (ammoreserve.lua) with its age; on_stale selects met (default) or wait past max_age.
   checks.platform_ammo_below=function(p,c)
     local pl=M.platform_named(p,c.platform)
     if not pl.surface then error('platform '..c.platform..' has no surface yet',0) end
@@ -1158,7 +1388,11 @@ return function(api)
   local function read_members(p,c,record)
     local out,errs={},nil
     for i,m in ipairs(c.conditions) do
-      local ok,met,saw=pcall(checks[m['until']],p,m,nil,record)
+      local child=member_record(record,i)
+      -- Evidence remains a shared diagnostic, as before; only baseline state is private.
+      if child then child.evidence=record.evidence end
+      local ok,met,saw=pcall(checks[m['until']],p,m,nil,child)
+      if child then record.evidence=child.evidence end
       if ok then out[i]={met=met,saw=saw}
       else
         out[i]={err=tostring(met)}
@@ -1203,19 +1437,20 @@ return function(api)
     return true,saws[first.index]..(#rest>0 and ' (others: '..table.concat(rest,'; ')..')' or '')
   end
   -- Argument checks run when a plan is submitted, not when it first fires.
-  local SURFACE_LIST='item_count, rocket_ready, rocket_parts, spoil_within, produced, ammo_below, fuel_below and fluid_count'
-  local PLATFORM_LIST='ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_foundation_loss, platform_energy_below, platform_progress, platform_ammo_below, budget_below, launches_at_least, platform_built, platform_ready, platform_arrived and platform_left'
+  local SURFACE_LIST='entity_quality, inventory_free_slots, item_count, rocket_ready, rocket_parts, spoil_within, produced, ammo_below, fuel_below and fluid_count'
+  local PLATFORM_LIST='damaged, entity_quality, inventory_free_slots, ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_foundation_loss, platform_energy_below, platform_speed_above, platform_progress, platform_ammo_below, budget_below, launches_at_least, platform_built, platform_ready, platform_arrived and platform_left'
   local SURFACE_KINDS,PLATFORM_KINDS={},{}
   for k in SURFACE_LIST:gsub(' and ',', '):gmatch('[%w_]+') do SURFACE_KINDS[k]=true end
   for k in PLATFORM_LIST:gsub(' and ',', '):gmatch('[%w_]+') do PLATFORM_KINDS[k]=true end
   M.TICK_AHEAD=1296000
-  function M.validate(c)
+  function M.validate(c,p)
     if type(c)=='table' and M.ALIASES[c['until']] then c['until']=M.ALIASES[c['until']] end
     -- queue_done (A1, Sonnet 22:50) is a sleep's: fh sleep/fh wait --until queue_done; in a queue the next step is that.
     if type(c)=='table' and c['until']=='queue_done' then
       error('until queue_done is a sleep\'s (fh sleep SECONDS --until queue_done, fh wait --until queue_done, sleep {seconds, condition: {until: "queue_done"}}): it wakes when your queue finishes or stalls; in a queue the next step runs when this one ends',0)
     end
     assert(type(c)=='table' and checks[c['until']],'until must be one of '..NAMES..'; a sleep also takes queue_done')
+    assert(c.on_stale==nil or c['until']=='platform_ammo_below','on_stale applies to platform_ammo_below only')
     -- (d20 batch62 X2, Sol #1529: a surface a read took and did not use) surface and platform only where the condition reads them
     if c.surface~=nil then
       assert(SURFACE_KINDS[c['until']],'surface applies to '..SURFACE_LIST..'; '..tostring(c['until'])..' reads no other surface')
@@ -1239,7 +1474,7 @@ return function(api)
       for i,m in ipairs(c.conditions) do
         assert(type(m)=='table' and m['until']~='all' and m['until']~='any','until='..kind..' takes plain conditions')
         -- (CJ1) a member's refusal names it
-        local ok,err=pcall(M.validate,m)
+        local ok,err=pcall(M.validate,m,p)
         if not ok then error(kind..' conditions['..i..'] ('..tostring(m['until'])..'): '..tostring(err):gsub('^[^:]*:%d+: ',''),0) end
       end
       return c
@@ -1252,6 +1487,10 @@ return function(api)
       -- (C5: an area or a list of them on the platform, checked below)
     elseif c.area~=nil and kind=='ghosts_waiting' and c.platform~=nil then
       M.areas_of(c.area)
+    elseif c.area~=nil and kind=='damaged' and c.platform~=nil then
+      assert(type(c.area)=='table','damaged area: one {left_top, right_bottom} or [[x,y],[x,y]]')
+      local l,r=api.position(c.area.left_top or c.area[1]),api.position(c.area.right_bottom or c.area[2])
+      assert(r.x>l.x and r.y>l.y and r.x-l.x<=1024 and r.y-l.y<=1024,'damaged area must be nonempty and at most 1024x1024')
     elseif c.area~=nil and kind=='platform_ammo_below' then
       -- (d24 batch173 QP1) one area aboard, in platform coordinates
       assert(type(c.area)=='table' and (c.area.left_top or type(c.area[1])=='table'),'platform_ammo_below area: one {left_top, right_bottom} (or [[x,y],[x,y]]) aboard')
@@ -1279,9 +1518,34 @@ return function(api)
     -- (batch33 A2) quality: item_count and (d22 batch117 BZ1) platform_ammo_below read it, and (d25 batch205 QR1)
     -- pod_landed with item; one given elsewhere is refused
     if c.quality~=nil then
-      assert(kind=='item_count' or kind=='platform_ammo_below' or kind=='pod_landed','quality applies to item_count, platform_ammo_below and pod_landed only (no other condition counts by quality)')
+      assert(kind=='entity_quality' or kind=='item_count' or kind=='platform_ammo_below' or kind=='pod_landed','quality applies to entity_quality, item_count, platform_ammo_below and pod_landed only (no other condition counts by quality)')
       assert(c.quality=='any' or (type(c.quality)=='string' and prototypes.quality and prototypes.quality[c.quality]),
         kind..' quality is a quality name (normal, uncommon, rare, epic, legendary) or "any" (every quality summed)')
+    end
+    if kind=='entity_quality' then
+      assert(c.position~=nil,'entity_quality requires position')
+      assert(type(c.quality)=='string' and prototypes.quality and prototypes.quality[c.quality],'entity_quality requires an exact quality name')
+      assert(c.name==nil or (type(c.name)=='string' and prototypes.entity[c.name]),'entity_quality name must be an entity name')
+      if c.platform~=nil then assert(type(c.platform)=='string' and c.platform~='','entity_quality platform must be a platform name') end
+    end
+    if kind=='inventory_free_slots' then
+      assert(c.positions==nil and c.network==nil and c.radius==nil and c.item==nil,
+        'inventory_free_slots takes one platform hub or one container position, no positions, network, radius or item')
+      if c.platform~=nil then
+        assert(type(c.platform)=='string' and #c.platform>0,'inventory_free_slots platform requires a platform name')
+        assert(c.position==nil and c.surface==nil,'inventory_free_slots platform counts the hub; no position or surface')
+      else
+        assert(c.position~=nil,'inventory_free_slots requires platform or container position (surface optional)')
+      end
+      assert(c.at_least~=nil or c.below~=nil,'inventory_free_slots requires at_least or below')
+      for _,key in ipairs({'at_least','below'}) do
+        if c[key]~=nil then
+          number(c[key],0,1e9,key)
+          assert(c[key]==math.floor(c[key]),'inventory_free_slots '..key..' must be an integer')
+        end
+      end
+      assert(c.below==nil or c.at_least==nil or c.at_least<c.below,'inventory_free_slots range is empty')
+      if p then free_slots_target(p,c) end
     end
     if kind=='item_count' then
       assert(type(c.item)=='string' and prototypes.item[c.item],'item_count requires a known item')
@@ -1317,7 +1581,11 @@ return function(api)
       assert(type(c.platform)=='string' and #c.platform>0 or (kind=='fluid_count' and c.surface~=nil),kind..' requires platform (a platform name)'..(kind=='fluid_count' and ', or surface (a planet) with positions or area' or ''))
       assert(kind~='fluid_count' or c.platform==nil or (c.positions==nil and c.area==nil),'fluid_count on a platform reads all of it: no positions or area (those go with surface)')
       if kind=='fluid_count' then assert(type(c.fluid)=='string' and prototypes.fluid[c.fluid],'fluid_count requires fluid (a fluid name: thruster-fuel, thruster-oxidizer, water, ...)')
-      else assert(type(c.signal)=='string','circuit_signal requires signal (an item, fluid or virtual signal name)'); M.signal_of(c.signal) end
+      else
+        assert(type(c.signal)=='string','circuit_signal requires signal (an item, fluid or virtual signal name)'); M.signal_of(c.signal)
+        circuit_wire(c.wire)
+        if p and (c.position~=nil or c.wire~=nil) then circuit_read(p,c) end
+      end
       assert(c.at_least~=nil or c.below~=nil,kind..' requires at_least or below')
       if c.at_least~=nil then number(c.at_least,-2147483648,2147483647,'at_least') end
       if c.below~=nil then number(c.below,-2147483648,2147483647,'below') end
@@ -1385,6 +1653,14 @@ return function(api)
       assert(c.since_tick==nil or (type(c.since_tick)=='number' and c.since_tick>=0 and c.since_tick<=game.tick),'platform_hit since_tick is a game tick up to now')
       if c.damage~=nil then number(c.damage,0.1,1e9,'damage') end
     end
+    assert(c.above==nil or kind=='platform_speed_above','above applies to platform_speed_above only')
+    assert(c.for_s==nil or kind=='platform_speed_above','for_s applies to platform_speed_above only')
+    if kind=='platform_speed_above' then
+      assert(type(c.platform)=='string' and #c.platform>0,'platform_speed_above requires platform (a platform of ours by name)')
+      number(c.above,0,1e9,'above (km/s)')
+      if c.for_s~=nil then number(c.for_s,0,86400,'for_s') end
+      if c.max_age~=nil then number(c.max_age,1/60,900,'max_age (seconds between samples)') end
+    end
     if kind=='platform_progress' then
       assert(type(c.platform)=='string' and #c.platform>0,'platform_progress requires platform (a platform of ours by name)')
       assert(type(c.at_least)=='number' and c.at_least>0 and c.at_least<=1,'platform_progress at_least: the share of the leg flown, over 0 and up to 1 (0.2: 20%)')
@@ -1394,7 +1670,9 @@ return function(api)
     end
     if kind=='budget_below' then
       assert(type(c.platform)=='string' and #c.platform>0,'budget_below requires platform (a platform of ours in flight, by name)')
-      assert(type(c.turnaround)=='table','budget_below turnaround: as platform_endurance\'s ({km | fraction, back_to?, speed_floor?, margin?, reserve?})')
+      assert(type(c.turnaround)=='table',"budget_below turnaround: as platform_endurance's ({km | fraction, back_to?, speed_floor?, margin?, reserve?})")
+      turnaround.check(c.turnaround)
+      budgetwindows.arguments(c)
       assert(type(c.km)=='number' and c.km>=0 and c.km<=1e8,'budget_below km: met once the binding item can go out less than this many km farther (0..100000000)')
     end
     if kind=='launches_at_least' then
@@ -1415,7 +1693,8 @@ return function(api)
       assert(type(c.item)=='string' and prototypes.item[c.item] and prototypes.item[c.item].type=='ammo','platform_ammo_below item: an ammunition item (firearm-magazine, rocket, railgun-ammo, ...)')
       assert(type(c.count)=='number' and c.count>=1 and c.count<=1e6 and c.count==math.floor(c.count),'platform_ammo_below count: 1..1000000, met below it')
       assert(c.quality==nil or c.quality=='any' or (type(c.quality)=='string' and prototypes.quality and prototypes.quality[c.quality]),'platform_ammo_below quality: a quality name or "any" (default normal)')
-      assert(c.max_age==nil or (type(c.max_age)=='number' and c.max_age>=30 and c.max_age<=900),'platform_ammo_below max_age: 30..900 seconds (default 120): a reading older than this meets it')
+      assert(c.max_age==nil or (type(c.max_age)=='number' and c.max_age>=30 and c.max_age<=900),'platform_ammo_below max_age: 30..900 seconds (default 120)')
+      assert(c.on_stale==nil or c.on_stale=='met' or c.on_stale=='wait','platform_ammo_below on_stale: "met" (default) or "wait"')
       -- (d24 batch173 QP1, Astra #2241) loop: the belts joined to the belt at that position, their inserters and turrets
       assert(c.area==nil or c.loop==nil,'platform_ammo_below: area or loop, not both')
       assert(c.position==nil and c.radius==nil,'platform_ammo_below: area or loop (a belt\'s position aboard) scopes it; no position or radius')
@@ -1426,7 +1705,21 @@ return function(api)
         string.format('tick_at_least tick is a whole game tick 0..%d (now %d, at most %d ticks, 6 game hours, ahead); one passed already is met at the first check',game.tick+M.TICK_AHEAD,game.tick,M.TICK_AHEAD))
       assert(c.position==nil and c.positions==nil and c.area==nil,'tick_at_least reads the game tick only: no position, positions or area')
     end
-    if kind=='damaged' and c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
+    if kind=='damaged' then
+      if c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
+      if c.platform~=nil then
+        assert(type(c.platform)=='string' and #c.platform>0,'damaged platform requires a platform name')
+        assert(c.position==nil and c.radius==nil,'damaged platform scope: whole hull, positions or area; no position or radius')
+        assert(c.positions==nil or c.area==nil,'damaged platform scope: positions or area, not both')
+        if c.hp~=nil then number(c.hp,0.01,1e9,'damaged hp') end
+        if c.positions~=nil then
+          assert(type(c.positions)=='table' and #c.positions>=1 and #c.positions<=64,'damaged positions takes 1..64 {x,y} in platform coordinates')
+          for _,pos in ipairs(c.positions) do api.position(pos) end
+        end
+      else
+        assert(c.positions==nil and c.hp==nil,'damaged positions and hp require platform')
+      end
+    end
     if kind=='fuel_below' then number(c.count,1,1000,'count') end
     if kind=='pod_landed' then
       assert(type(c.platform)=='string' and #c.platform>0,'pod_landed requires platform (the platform the pods come down from)')
@@ -1454,8 +1747,8 @@ return function(api)
     if kind=='platform_arrived' or kind=='platform_left' then
       assert(type(c.platform)=='string' and #c.platform>0,kind..' requires platform (a platform name)')
       assert(c.location==nil or (type(c.location)=='string' and prototypes.space_location[c.location]),'location must be a space location (a planet name)')
-      assert(c.since_tick==nil or (kind=='platform_left' and type(c.since_tick)=='number' and c.since_tick>=0 and c.since_tick<=game.tick),
-        kind=='platform_left' and 'platform_left since_tick is a game tick up to now' or 'platform_arrived takes no since_tick')
+      assert(c.since_tick==nil or (type(c.since_tick)=='number' and c.since_tick>=0 and c.since_tick<=game.tick
+        and (kind=='platform_left' or c.since_tick==math.floor(c.since_tick))),kind..' since_tick is a game tick up to now')
     end
     return c
   end
@@ -1481,6 +1774,10 @@ return function(api)
         whys[#whys+1]=why
       end
       return #whys>0 and 'any: no member can be met: '..table.concat(whys,'; ') or nil
+    end
+    if kind=='circuit_signal' and (c.position~=nil or c.wire~=nil) then
+      local ok,why=pcall(circuit_read,p,c)
+      return not ok and tostring(why) or nil
     end
     if kind~='circuit_signal' or c.at_least==nil or c.at_least<=0 then return nil end
     local ok,hub=pcall(function() return M.platform_named(p,c.platform).hub end)

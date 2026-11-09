@@ -363,7 +363,7 @@ return function(api)
     local _,items=api.scheduler.validate({steps=a.steps})
     local when=a.when
     if when~=nil then
-      api.validate_condition(when)
+      api.validate_condition(when,p)
       assert(when.timeout==nil,'when takes no timeout')
       assert((when.radius or 32)<=MAX_RADIUS,'when radius is at most '..MAX_RADIUS..' for a standing order')
       assert(when.positions==nil or #when.positions<=MAX_POSITIONS,'when positions: at most '..MAX_POSITIONS..' for a standing order')

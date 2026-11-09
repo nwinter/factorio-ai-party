@@ -91,7 +91,9 @@ class Svc:
         left = self.busy_until - self.clock()
         playing = [{"id": "op1", "channel": "operator", "ends_in": round(left, 2)}] if left > 0 else []
         playing += [{"id": c, "channel": "narrator", "started": self.clock()} for c in [f"c{len(self.clips)}"] if self.clips]
-        return {"playing": playing, "queued": []}
+        return {"playing": playing, "queued": [], "receipts": [
+            {"id": f"c{i + 1}", "completed": True, "audible": True}
+            for i, c in enumerate(self.clips) if self.clock() >= c["at"] + c["duration"]]}
 
 
 def tour_segment():

@@ -4,6 +4,93 @@ Branch `eng/audio`. Two AI casters (Rook, play-by-play; Vale, colour) talk over 
 are spoken in per-agent voices, and the main director client's game sound sits underneath, ducked whenever anyone
 talks. Everything is mixed by OBS through the overlay's browser source.
 
+## One-shift OpenAI speech trial (batch432)
+
+Before starting the target shift, the operator writes `/Users/owner/code/pog-operator/tts-trial.json`:
+
+```json
+{"run": "shift149", "openai_tts_model": "gpt-4o-mini-tts-2025-03-20"}
+```
+
+`start-team.sh` applies this only to that exact run, before launching any audio producer. The generated
+`stream.json` records `audio.openai_tts_model` and `tts_trial`: the original audio configuration and each speech
+path's prior setting, prior effective model, and trial effective model. With today's fresh configuration, the prior
+field is absent and every OpenAI path uses `gpt-4o-mini-tts`. Every other run, including shift150, gets the same
+fresh configuration as before (no audio/trial field); the file can remain in place. Missing or invalid trial files
+leave normal startup intact; invalid matching requests emit a warning. `POG_TTS_TRIAL_FILE` overrides the path for tests.
+
+Hosts, agent speech and caster fallback read the run at startup. The recap service uses the playback run's setting,
+including when rendering the previous shift's evidence; incompatible prepared recap assets cannot play and are
+rebuilt with that setting. The following shift therefore selects the restored model before preparing its audio.
+Recap transitions during the trial still use the trial model. Providers, voice choices and delivery instructions
+are unchanged.
+
+For manually prepared audio, pass the **playback run**: `tour.py prepare SCRIPT --run-dir runs/shift149` and
+`tour.py run SCRIPT --run-dir runs/shift149`; `voices.py TEXT --run-dir runs/shift149`. The hourly service passes its
+run automatically. Tour OpenAI clips include the model in their cache identity, and `tour.py run --run-dir` refuses
+an incompatible prepared model. The recap CLI normally uses `--run-dir`; when evidence comes from an earlier
+shift, add `--audio-run-dir runs/shift149`. Standalone auditions without a run keep their existing default;
+`delivery_bench.py` retains its explicit model selector.
+
+Offline verification: `python3 tools/stream/test_tts_trial.py` executes the actual startup config block and captures
+mocked requests for all eight paths in shift149 and shift150. `test_delivery.py` and `test_shift_recap.py` cover
+speech/recap cache isolation, regeneration, and rejection of incompatible manifests. No paid synthesis is needed.
+
+## Delivery stays with the line (batch389, 2026-10-30)
+
+The operator can persist the OpenAI speech model in the run's `stream.json` (merge this field into the existing
+configuration):
+
+```json
+{"audio": {"openai_tts_model": "gpt-4o-mini-tts-2025-03-20"}}
+```
+
+Use `gpt-4o-mini-tts` or remove the field to keep the current default. Hosts read this once at process startup;
+the recap service reads the same setting at its startup, and the recap CLI reads the run's configuration. No live
+configuration is changed by this patch. The setting selects the model for OpenAI voices; it does not move Rook off
+his normal ElevenLabs voice. Host records include the actual model. TTS and recap asset cache keys include the
+actual model ID. A recap model switch rebuilds audio for already checked prose, blocks incompatible old manifests
+from playback until replacement, and preserves completed-line IDs. Existing old manifests without a model marker
+are regenerated once. Changing the setting takes effect at the operator's next normal process restart.
+
+Playback groups assign a stable `id` to each host line and store `directions[id]`. Resume and retries look up that
+ID, never the position in the unfinished subset. Old `event.directions` lists migrate against the full exchange on
+load. Queue and caster records include `line_id` for tracing across attempts.
+
+| Backend/model | Writer delivery control | Voice identity |
+| --- | --- | --- |
+| OpenAI `gpt-4o-mini-tts` | `instructions`, after the existing host role | Same `voice` |
+| Eleven v4, v3, v4 Turbo (Rook's normal route) | A bracketed delivery tag prepended to synthesis text | Same endpoint voice ID; natural stability |
+| Eleven Flash v2.5 fallback | Recognized pace maps to `voice_settings.speed`; unsupported words/tags dropped | Same endpoint voice ID |
+| Inworld TTS-2 | Bracketed inline instruction in `text`; no undocumented `instruction` field | Same `voiceId` |
+| Cartesia Sonic 3.6 | Conservative pace/emotion subset in `generation_config`; unknown/negated/changing arcs dropped | Same `voice.id`; no accent parameter |
+| Aura-2, Aura-1, MeloTTS, macOS say, tone | No writer delivery instruction | Existing route unchanged |
+
+OpenAI `tts-1`/`tts-1-hd` and Inworld models other than TTS-2 do not receive delivery instructions. The same backend
+mapping applies to host and agent voices. Agent chat still uses its existing event context; no new delivery writer
+is called for agents. Spoken/caption text stays separate from all direction metadata.
+
+On a synthesis timeout there is one retry with plain text and natural delivery, retaining the resolved provider and
+voice. A second failure terminates the attempt, without moving to a different voice. Normal non-timeout provider
+availability fallback and the existing Workers AI 8008 behavior remain. The retry is logged as `timeout_plain` and
+is not cached as directed audio. This adds at most one existing provider timeout to that attempt.
+
+The recap writer can return an optional `direction` on each line. Only the direction of a line surviving both
+existing evidence checks is retained. Record extracts and transition templates have no added directions. Recap
+cache keys include delivery and resolved voice; plain timeout renditions are not cached as directed clips.
+
+Offline regression/payload capture: `python3 tools/stream/test_delivery.py --capture /absolute/path/requests.json`.
+Small paid audition (no stream push): `python3 tools/stream/delivery_bench.py --out /absolute/path/audition
+--recap-writer`. `--resume` reuses successful host/agent renders. The audition includes an injected timeout followed
+by a real plain rendition, and labels the synthetic examples. Request captures include bodies/keys, never headers.
+
+Provider documentation checked for this change:
+
+- https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create
+- https://elevenlabs.io/docs/help-center/product/core-capabilities/text-to-speech/how-do-audio-tags-work-with-eleven-v3-and-v4
+- https://docs.inworld.ai/tts/capabilities/steering
+- https://docs.cartesia.ai/build-with-cartesia/capability-guides/volume-speed-emotion
+
 ## The agents first, the hosts second (branch eng/talk-hosts, 2026-10-12 afternoon)
 
 Nick, during shift01: "the agents aren't talking to the stream as much, so it's almost all announcers." In the first

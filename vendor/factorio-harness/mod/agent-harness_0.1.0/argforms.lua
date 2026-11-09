@@ -5,6 +5,8 @@
 -- runs the call that way (corrected); where nothing takes it, the refusal names the argument or the action that
 -- does. tells: after is since; unread, seq and from are refused naming since.
 local M = {}
+-- Platform ingredient requests and recipe returns are remote operations, unlike hand moves (batch375).
+M.PLATFORM_ITEMS = 'On a platform, deliver {platform, position, items} requests ingredients of the machine\'s current recipe from its hub. An actual configure recipe change returns held input/output items to the hub when it has enough empty slots; each asteroid chunk takes one hub slot.'
 
 -- "name@quality" -> name, quality; anything else -> itself, nil.
 function M.split(v)

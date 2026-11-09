@@ -381,4 +381,55 @@ do
   has(r.ingredients[1].text,'is full of sulfur')
   plant.valid=false; arm.valid=false; pick.valid=false; for _,b in ipairs(back) do b.valid=false end
 end
+-- Native line positions run down toward the exit: the smallest position is the front.
+eq(trace.h.front_item(belt(300.5,300.5,{{'coal','iron-plate'}}),1),'coal')
+-- batch381 cp2: facts pages bound native detail reads without shortening the original routes/audit.
+do
+  world={}
+  local chain, detailed = {}, 0
+  for x=1,300 do
+    local b=belt(x+0.5,0.5,{{'iron-plate'}}); chain[x]=b
+    for _,l in ipairs(b.lines) do local read=l.get_detailed_contents; l.get_detailed_contents=function() detailed=detailed+1; return read() end end
+    if x>1 then link(chain[x-1],b); feeds(chain[x-1],b) end
+  end
+  local function read(extra)
+    local args={position=chain[1].position,forward=true,audit=true}
+    for k,v in pairs(extra or {}) do args[k]=v end
+    detailed=0
+    return trace.trace(p,args)
+  end
+  local off=read{lane_facts=false}; local old_reads=detailed
+  eq(off.lane_facts,nil); eq(off.lane_facts_coverage,nil); has(off.cost,'300 belt tiles')
+  local on=read(); local f=on.lane_facts
+  eq(detailed-old_reads,64,'only 32 belts have both native lines read')
+  eq(on.cost,off.cost); eq(on.routes[1].path,off.routes[1].path); eq(on.routes[1].stop,off.routes[1].stop)
+  eq(table.concat(on.audit,'|'),table.concat(off.audit,'|'))
+  eq(f.limit,32); eq(f.lane_tiles_total,300); eq(f.lane_tiles_included,32); eq(f.lane_tiles_omitted,268); eq(f.truncated,true)
+  eq(f.more.lane_facts_limit,256); eq(f.next.lane_facts_offset,32)
+  has(on.lane_facts_coverage,'32 of 300 walked lane tiles included, 268 omitted'); has(on.lane_facts_coverage,'lane_facts_limit=256')
+  f=read{lane_facts_limit=256}.lane_facts
+  eq(#f.belts,256); eq(f.lane_tiles_included,256); eq(f.lane_tiles_omitted,44); eq(f.next.lane_facts_offset,256)
+  f=read(f.next).lane_facts
+  eq(#f.belts,44); eq(f.belts[1].position.x,257.5); eq(f.next,nil); eq(f.lane_tiles_omitted,256)
+  f=read{lane_facts_offset=2999}.lane_facts
+  eq(#f.belts,0); eq(f.lane_tiles_omitted,300); eq(f.more.lane_facts_offset,0)
+  f=read{max_tiles=4}.lane_facts
+  eq(f.lane_tiles_total,4); eq(f.lane_tiles_included,4); eq(f.truncated,false); eq(f.more,nil)
+  -- No facts-specific inserter position indexing on the old path.
+  local point_reads=0
+  local arm=ent{name='inserter',type='inserter',position={x=1.5,y=1.5}}
+  setmetatable(arm,{__index=function(_,k) if k=='pickup_position' or k=='drop_position' then point_reads=point_reads+1; return chain[1].position end end})
+  read{lane_facts=false}; eq(point_reads,0)
+  read(); assert(point_reads>0)
+  for _,limit in ipairs({0,257,1.5,'32'}) do fails(function() read{lane_facts_limit=limit} end,'lane_facts_limit: 1..256') end
+  for _,offset in ipairs({-1,3000,1.5,'0'}) do fails(function() read{lane_facts_offset=offset} end,'lane_facts_offset: 0..2999') end
+  fails(function() read{lane_facts=false,lane_facts_limit=32} end,'lane_facts enabled')
+  fails(function() read{audit=false,lane_facts=true} end,'lane_facts: true or false')
+  -- Machine-forward traces use the same cap.
+  world={chain[1]}; chain[1].belt_neighbours.outputs={}; chain[1].lines[1].output_lines={}
+  local maker=crafter(-1.5,0.5,'assembling-machine-2',{ingredients={},products={}},{},{['iron-plate']=1},'working')
+  inserter(0,0.5,'inserter',maker,chain[1])
+  f=trace.trace(p,{position=maker.position,forward=true,audit=true,lane_facts_limit=1}).lane_facts
+  eq(f.limit,1); eq(f.lane_tiles_included,1)
+end
 print('trace: ok')

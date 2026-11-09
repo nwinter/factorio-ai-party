@@ -154,18 +154,15 @@ return function(api)
     spoiled='spoilage it does not request takes slots, 4 or fewer free', waiting='deliveries on the way 5+ min', not_sent='free in the network, nothing on the way',
     shortage='short in the network'}
 
-  -- storage (d17 batch32 B7, Gemini: robots with no storage, the game's no_storage alert): the network's storage chests
-  -- (free slots, filters), its robots holding cargo with no order to put it anywhere (what the alert names), the items
-  -- they hold, and for each whether a storage chest of the network can take it now (a free slot, and no filter or a
-  -- filter of that item). Read only; at most ROBOTS robots read.
-  -- (world n, 11:15: building a network's robot list costs about 3 ms, then about 3 us a robot here: 2048 read 8.9 ms)
-  local ROBOTS = 2048
+  -- Storage room and cargo observations are separate from a failed drop-point lookup.
+  -- Reuse the two deployed-robot lists for coverage; inspect at most ROBOTS entries.
+  -- Room lookups are cached by item/quality, capped separately, and never scan chests in Lua.
+  local ROBOTS, ROOM_CHECKS = 2048, 32
   -- (d24 batch157, Astra #2205: a chest with bar 10 counted its 47 empty slots) free slots are those under each
   -- chest's bar (LuaInventory.count_empty_stacks(true, false): robots and inserters put nothing past it);
   -- physical_free_slots counts every empty slot, the bar's red slots too.
   function M.storage(p, a, surface, ln)
     local chests, free, filtered, full, physical, barred = 0, 0, {}, 0, 0, 0
-    local takers = {any=0, by={}}
     for _, c in ipairs(try(function() return ln.storages end) or {}) do
       if c.valid and c.type == 'logistic-container' then
         chests = chests + 1
@@ -180,41 +177,84 @@ return function(api)
         local fname = f and name_of(f.name or f)
         if fname then
           filtered[fname] = (filtered[fname] or 0) + 1
-          if empty > 0 then takers.by[fname] = (takers.by[fname] or 0) + 1 end
-        elseif empty > 0 then takers.any = takers.any + 1 end
-      end
-    end
-    local stuck, items, read = 0, {}, 0
-    for _, list in ipairs({'logistic_robots', 'construction_robots'}) do
-      for _, r in ipairs(try(function() return ln[list] end) or {}) do
-        if read >= ROBOTS then break end
-        read = read + 1
-        local inv = try(function() return r.get_inventory(defines.inventory.robot_cargo) end)
-        if inv and not try(function() return inv.is_empty() end) and #(try(function() return r.robot_order_queue end) or {}) == 0 then
-          stuck = stuck + 1
-          for _, st in ipairs(try(function() return inv.get_contents() end) or {}) do local nm = name_of(st.name); items[nm] = (items[nm] or 0) + st.count end
         end
       end
     end
-    local item_lines = {}
-    for name, n in pairs(items) do
-      local can = takers.any + (takers.by[name] or 0)
-      item_lines[#item_lines+1] = string.format('%s %d: %s', name, n, can > 0 and string.format('%d storage chest%s can take it', can, can == 1 and '' or 's')
-        or (filtered[name] and 'its filtered storage chests are full and no unfiltered one has room' or 'no storage chest has room for it (a free slot, unfiltered or filtered to it)'))
+    local lists = {try(function() return ln.logistic_robots end) or {},
+      try(function() return ln.construction_robots end) or {}}
+    local total = #lists[1] + #lists[2]
+    local read, no_order, with_order, unknown_order, no_storage, unchecked = 0, 0, 0, 0, 0, 0
+    local items, ordered_items, failed_items, room, checks = {}, {}, {}, {}, 0
+    local function add(t, k, count) t[k] = (t[k] or 0) + count end
+    for _, list in ipairs(lists) do
+      for i = 1, math.min(#list, ROBOTS - read) do
+        local r = list[i]
+        read = read + 1
+        local cargo = try(function()
+          local inv = r.get_inventory(defines.inventory.robot_cargo)
+          return inv and inv.get_contents()
+        end) or {}
+        if #cargo > 0 then
+          local orders = try(function() return r.robot_order_queue end)
+          if not orders then unknown_order = unknown_order + 1
+          elseif #orders > 0 then
+            with_order = with_order + 1
+            for _, st in ipairs(cargo) do
+              add(ordered_items, key_of(name_of(st.name), name_of(st.quality) or 'normal'), st.count)
+            end
+          else
+            no_order = no_order + 1
+            local failed, not_checked = false, false
+            for _, st in ipairs(cargo) do
+              local name, quality = name_of(st.name), name_of(st.quality) or 'normal'
+              local k = key_of(name, quality)
+              add(items, k, st.count)
+              if room[k] == nil then
+                room[k] = 'unchecked'
+                if checks < ROOM_CHECKS then
+                  checks = checks + 1
+                  -- A failed API read is unknown, never confirmation of no room. One item suffices to
+                  -- distinguish no room from a partial stack; a destination does not imply a new order.
+                  local ok, point = pcall(function() return ln.select_drop_point{stack={name=name, quality=quality, count=1}} end)
+                  if ok then room[k] = point and 'found' or 'none' end
+                end
+              end
+              if room[k] == 'none' then failed = true; add(failed_items, k, st.count)
+              elseif room[k] == 'unchecked' then not_checked = true end
+            end
+            if failed then no_storage = no_storage + 1 end
+            if not_checked then unchecked = unchecked + 1 end
+          end
+        end
+      end
     end
-    table.sort(item_lines)
+    local function item_lines(t)
+      local out = {}
+      for name, count in pairs(t) do out[#out+1] = name .. ' ' .. count end
+      table.sort(out)
+      return #out > 0 and out or nil
+    end
+    local no_order_items, with_order_items, no_storage_items = item_lines(items), item_lines(ordered_items), item_lines(failed_items)
+    local function held(t) return t and ': ' .. table.concat(t, ', ') or '' end
     local fl = {}
     for name, n in pairs(filtered) do fl[#fl+1] = name .. ' ' .. n end
     table.sort(fl)
-    local line = string.format('logistic network #%d on %s: %d storage chest%s, %d free slots%s%s%s; %d robot%s hold cargo with nowhere to put it%s',
+    local cap_hit = read == ROBOTS
+    local line = string.format('logistic network #%d on %s: %d storage chest%s, %d free slots%s%s%s; robots scanned %d of %d deployed (logistic and construction; scan cap %d %s); among scanned: %d hold cargo with no order (no destination)%s; %d hold cargo with orders%s; %d confirmed no-storage failures (no storage room found by drop-point lookup)%s%s%s',
       ln.network_id, surface.name, chests, chests == 1 and '' or 's', free,
       physical > free and string.format(' under their bars (%d empty slots in all: %d past the bars of %d chest%s, which robots do not fill)', physical, physical - free, barred, barred == 1 and '' or 's') or '',
       full > 0 and string.format(' (%d full)', full) or '',
-      #fl > 0 and ', filtered: ' .. table.concat(fl, ', ') or '', stuck, stuck == 1 and '' or 's',
-      #item_lines > 0 and ': ' .. table.concat(item_lines, '; ') or '')
+      #fl > 0 and ', filtered: ' .. table.concat(fl, ', ') or '', read, total, ROBOTS, cap_hit and 'hit' or 'not hit',
+      no_order, held(no_order_items), with_order, held(with_order_items), no_storage, held(no_storage_items),
+      unchecked > 0 and string.format('; storage room unconfirmed for %d cargo robots (lookup failed or %d-item/quality check cap)', unchecked, ROOM_CHECKS) or '',
+      unknown_order > 0 and string.format('; %d cargo robots with unreadable orders', unknown_order) or '')
     return {network=ln.network_id, surface=surface.name, storage_chests=chests, free_slots=free, usable_free_slots=free, physical_free_slots=physical,
       chests_with_bar=barred > 0 and barred or nil, full_chests=full, filtered=#fl > 0 and fl or nil,
-      robots_stuck=stuck, stuck_items=#item_lines > 0 and item_lines or nil, robots_read=read, line=line}
+      cargo_no_order=no_order, cargo_no_order_items=no_order_items, cargo_with_orders=with_order, cargo_with_orders_items=with_order_items,
+      cargo_unknown_order=unknown_order, no_storage=no_storage, no_storage_items=no_storage_items,
+      robots_stuck=no_storage, stuck_items=no_storage_items, storage_room_checks=checks, storage_room_check_cap=ROOM_CHECKS,
+      storage_room_unconfirmed=unchecked, robots_read=read, robots_total=total, robots_unscanned=total-read,
+      robot_scan_cap=ROBOTS, robot_scan_cap_hit=cap_hit, coverage={scanned=read, total=total}, line=line}
   end
   -- backlog (d18 batch36 A1, Luna and Grok, all of shift35: Gleba's science requester at (15.5,28.5) lacked 10
   -- nutrients for about 36 minutes with about 98 in a provider 9 tiles off; not_sent, and "all 250 logistic bots
@@ -490,7 +530,7 @@ return function(api)
     return {far=#far > 0 and far or nil, network=ln.network_id, surface=surface.name, looked=looked, blocked=#rows, coming=coming, filled=ok, counts=counts, requesters=out,
       shown=#out, lines=lines, summary=summary, next_from=more}
   end
-  M.schema = {logistics_audit = {charging='optional true: the network\'s roboports with the most robots waiting to charge, then charging (each roboport\'s own queue, as its GUI shows it; limit 1..20, default 5): rows [{position, name, unit_number, waiting, charging, slots (its charging slots), energy (%), line}], roboports, charging, waiting (the network\'s totals), roboports_with_queue, line. Read only',backlog='optional true: why requests wait (the backlog): the oldest unfilled requests first (chest, item, short, how long the networks watch has seen it short, the provider the game picks with what robots reserve there, and held_by: the first that holds it now: on the way, no room, none in the network, no provider, all reserved, no idle robot (with what the busy ones do: orders by type, cargo with no order and what, queued to charge), robots queued with every charging slot taken, or not sent yet); robots {total, idle, on_orders, carrying, cargo_no_order, cargo_no_order_items, charging, queued_to_charge, charging_slots, free_charging_slots}; requests, lines, robots_line, line',storage='optional true: the network\'s storage room instead (the no_storage alert): storage chests, free slots, full ones, filters; robots holding cargo with no order to put it anywhere (logistic and construction, 2048 read) and their items, each with whether a storage chest can take it now: network, storage_chests, free_slots, full_chests, filtered, robots_stuck, stuck_items, line',network='optional logistic network id (networks lists them)', position='optional {x, y}: the network covering it (default: where you stand)',
+  M.schema = {logistics_audit = {charging='optional true: the network\'s roboports with the most robots waiting to charge, then charging (each roboport\'s own queue, as its GUI shows it; limit 1..20, default 5): rows [{position, name, unit_number, waiting, charging, slots (its charging slots), energy (%), line}], roboports, charging, waiting (the network\'s totals), roboports_with_queue, line. Read only',backlog='optional true: why requests wait (the backlog): the oldest unfilled requests first (chest, item, short, how long the networks watch has seen it short, the provider the game picks with what robots reserve there, and held_by: the first that holds it now: on the way, no room, none in the network, no provider, all reserved, no idle robot (with what the busy ones do: orders by type, cargo with no order and what, queued to charge), robots queued with every charging slot taken, or not sent yet); robots {total, idle, on_orders, carrying, cargo_no_order, cargo_no_order_items, charging, queued_to_charge, charging_slots, free_charging_slots}; requests, lines, robots_line, line',storage='optional true: storage chests, free slots under bars, full ones, filters; cargo_no_order (no destination) and cargo_with_orders with their *_items; no_storage/no_storage_items separately confirm no drop point for no-order cargo (robots_stuck/stuck_items aliases). All cargo counts cover only scanned robots: robots_read of robots_total deployed logistic + construction robots, coverage {scanned,total}, robots_unscanned, robot_scan_cap (2048), robot_scan_cap_hit. storage_room_checks: at most storage_room_check_cap (32) item/quality lookups for one item; storage_room_unconfirmed counts cargo robots with failed/skipped lookups; cargo_unknown_order counts unreadable queues. line. Read only',network='optional logistic network id (networks lists them)', position='optional {x, y}: the network covering it (default: where you stand)',
     surface='optional surface name (default yours)', limit='optional rows, default 12, up to 48', from='optional: start at this requester (next_from of the last call)',far='optional tiles (default 200): far lists each ask short or with a delivery on the way whose pickup the network would pick now lies farther off (the first 128 asks read, 16 lines)',
     returns='every requester of the network (256 a call; next_from for more) by what keeps it short, worst first: full_unrequested (every slot taken while a short item has no room, by items it does not request; spoilage named), full (the same, by its own items), spoiled (spoilage it does not request takes slots, 4 or fewer free; with more room the summary names them), waiting (a delivery on the way 5+ min while under its count), not_sent (short, the item free in providers or storage, nothing on the way), shortage (short, none free in the network); the rest under their count have deliveries on the way under 5 min (coming). requesters [{name, position, distance, block, asks [{item, want, have, on_way, short, free, waited_s, short_s, no_room, from {name, position, distance, count}: the provider robots would take it from}], slots, empty_slots, spoilage, unrequested, holds}], counts, blocked, coming, filled, lines, summary, far (requesters served from over far tiles away: the ask, on the way, short, the chest robots would take it from and how far). Characters left out. Read only'}}
   return M

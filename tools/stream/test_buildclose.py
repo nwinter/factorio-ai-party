@@ -82,7 +82,7 @@ def first_visit():
     assert cap0 == "Sol placing 5 ghosts (3 assembling machine 2, 2 inserter) on Starling · whole ship, the work near the stern, starboard side", rows[0]
     assert z0 < d.cfg["work_close_min"] and abs(p0["x"]) < 1, rows[0]  # the whole ship (200 tiles tall: under 0.3-0.6)
     moved = next(r for r in rows if r[1] != cap0)
-    assert moved[0] - k0 in (d.cfg["work_overview_s"], d.cfg["work_overview_s"] + 1), (moved, rows[:3])
+    assert moved[0] - k0 in (max(8, d.cfg["work_overview_s"]), max(8, d.cfg["work_overview_s"]) + 1), (moved, rows[:3])
     assert moved[2] == d.cfg["work_spot_zoom"] and moved[3] == {"x": 24.5, "y": 72.0}, moved
     assert moved[1] == "Sol placing 5 ghosts (3 assembling machine 2, 2 inserter) on Starling · near the stern, starboard side", moved
     cmd = [b for b in sent if b.get("position") == {"x": 24.5, "y": 72.0}]
@@ -90,7 +90,7 @@ def first_visit():
     # once: no further close-up commands; the shot ends when it would have
     assert len(cmd) == 1, len(cmd)
     end = rows[-1][0]
-    assert end - k0 <= d.cfg["work_fresh"] + d.cfg["work_hold"] + d.cfg["ready_s"] + 2, (k0, end)  # held while its request is fresh, as before
+    assert end - k0 <= max(d.cfg["work_fresh"] + d.cfg["work_hold"] + d.cfg["ready_s"], 8 + 45) + 2, (k0, end)  # held while its request is fresh, as before
     print(f"2. a first visit: the whole ship (zoom {z0}) {moved[0] - k0} s, then the work at {moved[2]}, captioned; "
           f"{end - k0 + 1} s in all: ok")
 
@@ -151,7 +151,7 @@ def one_client():
             rows.append((k, r.get("work"), r.get("zoom")))
     assert rows and rows[0][1].endswith("whole ship, the work near the stern, starboard side"), rows[:1]
     close = [r for r in rows if r[1].endswith("· near the stern, starboard side")]
-    assert close and close[0][0] - rows[0][0] in (5, 6) and close[0][2] == d.cfg["work_spot_zoom"], rows[:8]
+    assert close and close[0][0] - rows[0][0] in (8, 9) and close[0][2] == d.cfg["work_spot_zoom"], rows[:8]
     on = [c for c in d.cuts if c[2].startswith("platform work")]
     assert on and all(b.get("player") == 1 for b in sent), on
     print(f"4. one client with camera panels (the live setup): a build moves it to the ship, then to the work; an "

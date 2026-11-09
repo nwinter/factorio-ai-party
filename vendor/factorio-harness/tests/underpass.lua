@@ -70,7 +70,7 @@ surface.create_entity=function(a)
   end
   if a.name=='entity-ghost' then
     local g={valid=true,name='entity-ghost',type='entity-ghost',ghost_name=a.inner_name,ghost_type=prototypes.entity[a.inner_name].type,
-      position=a.position,direction=a.direction or 0,surface=surface,force=force,to_be_deconstructed=function() return false end}
+      position=a.position,direction=a.direction or 0,belt_to_ground_type=a.type or 'input',surface=surface,force=force,to_be_deconstructed=function() return false end}
     entities[#entities+1]=g
     return g
   end
@@ -140,7 +140,7 @@ entities={}
 r=sol('place_ghosts',{entities={{name='underground-belt',position={x=40.5,y=0.5},direction=4,type='input'}}})
 eq(r.placed,1); eq(entities[#entities].direction,4)
 r=sol('place_ghosts',{dry_run=true,entities={{name='underground-belt',position={x=40.5,y=4.5},direction=8,type='input'}}})
-eq(r.dry_run,true); eq(r.summary,'1 placeable (of 1)')
+eq(r.dry_run,true); eq(r.summary,'1 placeable (of 1); underground ends: 1 unpaired, 0 paired outside request, 0 with differing requested flow')
 for _,bad in ipairs({16,-4,2.5,'up'}) do
   r=sol('place_ghosts',{entities={{name='underground-belt',position={x=40.5,y=8.5},direction=bad}}})
   eq(r.placed,0); eq(r.failed[1].error,'direction must be a compass name (north, east, south, west) or 0..15')

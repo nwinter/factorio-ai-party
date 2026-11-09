@@ -101,6 +101,7 @@ export class Harness {
   async requestRetrying(action: string, args: Record<string, unknown> = {}, id: string = randomUUID()): Promise<Reply> {
     const started = Date.now();
     let first: unknown;
+    let uncertain: RconOutcomeUnknown | undefined;
     for (let attempt = 0; ; attempt++) {
       try {
         // (d29 batch336 FL6) the wall clock goes in the envelope, once per ID: a resend must match the first send
@@ -108,11 +109,16 @@ export class Harness {
         if (attempt > 0) reply.retried = {attempts:attempt + 1, waited_s:Math.round((Date.now() - started) / 100) / 10, first_error:String(first instanceof Error ? first.message : first)};
         return reply;
       } catch (error) {
-        if (!retryable(error)) throw error;
+        // A failed reconnect only proves that attempt was not sent. It cannot undo an earlier send whose
+        // answer was lost; only the verified reply above resolves that request's outcome.
+        if (error instanceof RconOutcomeUnknown) uncertain ??= error;
         first ??= error;
         const waited = Date.now() - started;
         const budget = retryBudgetMs();
-        if (waited >= budget) throw error;
+        if (!retryable(error) || waited >= budget) {
+          if (uncertain) throw new RconOutcomeUnknown(`Request ${id} outcome unknown: ${uncertain.message}`, {cause:error});
+          throw error;
+        }
         await new Promise(done => setTimeout(done, Math.min(RETRY_STEPS[Math.min(attempt, RETRY_STEPS.length - 1)] ?? 10000, budget - waited)));
       }
     }

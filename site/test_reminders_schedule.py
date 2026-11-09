@@ -110,7 +110,7 @@ process.stdout.write(JSON.stringify(out));
     row = row_of(o["alone"], 151)
     assert '<span class="fx-muted rem-schedule">Schedule: every 20m00s, next in 18 min</span>' in row, row
     assert '<span class="fx-muted small rem-run">Last run 2 min ago:</span> <span class="fx-chip fx-chip--green">Sol done</span>' in row, row
-    assert "last result 2 min ago:" in row and ", done<" not in row, row
+    assert "Result age: 2 min (game time)" in row and "last result:" in row and ", done<" not in row, row
     # a one-time job that ran: done in its schedule, its states as the last run's; a job never run says so
     row = row_of(o["alone"], 0)
     assert "Schedule: once at tick 58000000, done</span>" in row and "Last run 1 min ago:" in row, row

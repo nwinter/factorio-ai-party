@@ -12,5 +12,5 @@ Keep, in this order and as short lists:
 5. Tool lessons not yet in notes.md.
 Drop raw observe/scan/map/status dumps, long JSON, wait and poll output, superseded plans, and chat already handled.
 Do not restate what notes.md already says unless it changed.
-End with this line: "After this summary: read notes.md and deadline.txt, update notes.md with anything from items
-2-5 that is missing there, then check ./fh call status and ./fh call chat before acting."
+End: "Recovery: use the supplied brief, or read notes.md if none arrived. Read deadline.txt, preserve new facts
+from this summary in notes.md, then check ./fh call status and ./fh call chat before acting."

@@ -156,9 +156,30 @@ def grok():
     print("grok (a quota rest of days): ok")
 
 
+def firm():
+    """(d29 21:25) the operator's pacing rest is firm: the agent's own request does not end it; its time does."""
+    with tempfile.TemporaryDirectory() as run:
+        g = os.path.join(run, "luna")
+        os.makedirs(g)
+        now = time.time()
+        row = {"since": now - 60, "until": now + 3600, "reason": "pace", "firm": True}
+        with open(os.path.join(g, pacing.REST), "w") as f:
+            json.dump(row, f)
+        with open(os.path.join(g, "journal.jsonl"), "w") as j:
+            j.write(req(now - 30, "status", {"brief": True}))
+        assert pacing.resting(g, now) is not None
+        assert pacing.resting(g, now + 3601) is None
+        row["firm"] = False
+        with open(os.path.join(g, pacing.REST), "w") as f:
+            json.dump(row, f)
+        assert pacing.resting(g, now) is None
+    print("firm (an operator pacing rest): ok")
+
+
 if __name__ == "__main__":
     reads()
     stream()
     nudge()
     grok()
+    firm()
     print("test_pacing: ok")

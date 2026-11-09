@@ -48,7 +48,7 @@ def on(d, t):
 
 
 def recorded_leg():
-    d, sent = world(map_every=0, platform_every=0)
+    d, sent = world(auto_feature=False, map_every=0, platform_every=0)
     a, t = team(), 1000
     d.step(snap(a), t)
     cuts = []
@@ -91,7 +91,7 @@ def recorded_leg():
 def danger_and_busy():
     a, t = team(), 1000
     # a danger shot on the same ship takes the edge shot over
-    d, _ = world(map_every=0, platform_every=0)
+    d, _ = world(auto_feature=False, map_every=0, platform_every=0)
     d.step(snap(a), t)
     for s in range(1, 5):
         d.step(snap(a, [row(45)]), t + s)
@@ -101,7 +101,7 @@ def danger_and_busy():
         d.step(snap(a, [hot]), t + s)
     assert on(d, t + 8).get("why") == "danger", on(d, t + 8)
     # an edge shot never takes the camera from a danger shot already on air
-    d, _ = world(map_every=0, platform_every=0)
+    d, _ = world(auto_feature=False, map_every=0, platform_every=0)
     d.step(snap(a), t)
     for s in range(1, 6):
         d.step(snap(a, [dict(row(30), danger={"kind": "fire", "reason": f"{NAME} under fire", "last": t + s, "level": 10})]), t + s)

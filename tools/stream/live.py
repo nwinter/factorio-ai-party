@@ -21,6 +21,7 @@ from harness import Harness
 from model import SCIENCE, SPARK_ITEMS, notes_job
 from work import WorkFeed
 from waitcard import WaitFeed
+from platformmetrics import Metrics
 
 FLOW_PARTS = 3  # (d24 batch184 QAA2) the flows read in three parts of the surfaces, one a poll
 
@@ -214,6 +215,7 @@ class LiveSource:
         self.next_vehicles = 0
         self.platform_detail = {}
         self.platform_views = {}
+        self.platform_metrics = Metrics()
         # work away from the body (remote platform builds, far ghosts): the agents' fh journals beside stream.json
         self.work = WorkFeed(journals, list(self.agents_cfg)) if journals else None
         self.waits = self.work.waits if self.work else WaitFeed()
@@ -489,6 +491,7 @@ class LiveSource:
             # where each agent is paying attention (attention.py): its latest request with a position, area or list
             obs["attention"] = self.work.take_attention()
             now = time.time()
+            obs["trains"] = self.work.trains.current(now)
             units = self.work.vehicles.units(now)
             if units:  # (d26 batch232 VC) where the agents' remote vehicles are now (harness VEHICLES_LUA, 5.4 us each)
                 try:
@@ -631,6 +634,13 @@ class LiveSource:
         return out
 
     # ---- Space Age platforms ------------------------------------------------------------------------------------
+    def observe_platform_metrics(self, snapshot, now):
+        try:
+            return self.platform_metrics.step(snapshot, self.h.operator_read, now,
+                                              supported=getattr(self, "has_platform_metrics", False))
+        finally:
+            snapshot["mission_metrics"] = self.platform_metrics.mission_sample(snapshot, now)
+
     # route and speed; and for the Space widget (model.platform_card) the defence, repair packs, damaged entities and
     # hub cargo (eng/platformalerts); ammo made/used and when it runs out in flight (onecam's danger shot; viewer
     # joonazan, d15 10:45)
@@ -662,8 +672,8 @@ class LiveSource:
                     self.platform_views = self.h.platform_views()
                 except Exception as e:
                     errors["platform_views"] = str(e)
-                self.add_hulls(self.platform_views, errors)
         views = getattr(self, "platform_views", {})
+        self.add_hulls(views, errors)
 
         def placed(name):
             """(d22 batch75 AK2, viewer Foobator: "the ship overview only has a progress bar for the first 2 that are
@@ -676,7 +686,9 @@ class LiveSource:
         rows = []
         for row in space["platforms"]:
             read = {**placed(row["name"]), **self.platform_detail.get(row["name"], {})}
-            rows.append({**row, **read, **({"view": views[row["name"]]} if row["name"] in views else {}), **self.fresh_at(row, read)})
+            view = views.get(row["name"])
+            ready = view and view.get("bounds_source") != "pending"
+            rows.append({**row, **read, **({"view": view} if ready else {}), **self.fresh_at(row, read)})
         space["platforms"] = rows
 
     LONG_LEGS = ("solar-system-edge", "shattered-planet")
@@ -690,10 +702,9 @@ class LiveSource:
         return any(e in cls.LONG_LEGS for e in ends)
 
     def add_hulls(self, views, errors):
-        """(d24 batch170 QM1, viewer Caleb: the front of Asterion in flight) A platform flying a long leg gets its hull's
-        box and bow from its foundation tiles (Harness.platform_hulls, each read again after HULL_EVERY) in its view:
-        `hull` and `bow` {left, top, right, bottom}, for onecam's bow shot."""
-        names = [n for n, v in (views or {}).items() if self.long_leg(v)]
+        """Foundation extents for every ship, including docked refits. One ship per poll, cached between reads.
+        Capped entity centres cannot describe a hull: Asterion's first 4000 omitted its entire starboard side."""
+        names = list(views or {})
         if not names or not hasattr(self.h, "platform_hulls"):
             return
         try:
@@ -703,7 +714,18 @@ class LiveSource:
             return
         for n, h in hulls.items():
             if n in views and h.get("surface") == views[n].get("surface"):
-                views[n]["hull"], views[n]["bow"] = h.get("hull"), h.get("bow")
+                views[n]["hull"] = h.get("hull")
+                # Only long-leg ships used the foundation bow shot before. Giving it to every ship would
+                # replace the existing short-leg turret close-up merely because its overview got a hull read.
+                views[n]["bow"] = h.get("bow") if self.long_leg(views[n]) else None
+                if h.get("hull"):
+                    views[n]["bounds"] = h["hull"]
+                    views[n]["bounds_source"] = "foundation"
+                else:
+                    hub = views[n].get("hub") or {"x": 0, "y": 0}
+                    views[n]["bounds"] = dict(left=hub["x"] - 6, top=hub["y"] - 6,
+                                              right=hub["x"] + 6, bottom=hub["y"] + 6)
+                    views[n]["bounds_source"] = "hub"
 
     @staticmethod
     def fresh_at(row, detail):
@@ -740,6 +762,7 @@ class LiveSource:
             self.has_library_areas = "library_areas" in (res.get("operator_reads") or [])
             self.has_net_map = "net_map" in (res.get("operator_reads") or [])
             self.has_chart = "chart" in (res.get("operator_reads") or [])
+            self.has_platform_metrics = "platform_metrics" in (res.get("operator_reads") or [])
             self.has_chronicle = "chronicle" in (res.get("operator_reads") or [])
             # artillery shells in flight: serve.py reads them on their own pace (artillery_poller)
             self.has_artillery = "artillery_live" in (res.get("operator_reads") or [])
@@ -1068,6 +1091,7 @@ class LiveSource:
                 progress = self.read_progress(errors)  # (d22 batch75 AK11) the progress checks' facts per owned item
                 obs["board"] = {"items": list(items.values()), "open_unowned": res.get("open_unowned"), "focus": focus, "progress": progress,
                                 "plan": res.get("plan"),  # the team plan (board_plan; absent on older runtimes)
+                                "claim_ids": [it.get("id") for it in claims.get("items") or []],
                                 "active_ids": [it.get("id") for it in active.get("items") or []] if isinstance(active, dict) else None,
                                 "finished_ids": [it.get("id") for it in finished.get("items") or []] if isinstance(finished, dict) else None}
                 if self.journals and "plan" in res:  # the plan a shift leaves, for its page on the site (planlog.py)

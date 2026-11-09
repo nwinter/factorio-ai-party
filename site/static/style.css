@@ -481,6 +481,10 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .live-head-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
 .live-head-row h1 { margin-bottom: .4rem; }
 .live-head-meta { margin: 0; display: flex; gap: 10px; align-items: center; }
+.live-target { margin: 8px 0 16px; padding: 10px 14px; border-left: 3px solid var(--fx-cyan, #8cd3df); background: rgba(128, 128, 128, .08); }
+.live-target[hidden] { display: none; }
+.live-target .target-clock { display: block; font-variant-numeric: tabular-nums; }
+.live-target .target-goal { display: block; overflow-wrap: anywhere; }
 .live-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); gap: 14px; align-items: stretch; }
 @media (max-width: 960px) { .live-top { grid-template-columns: 1fr; } }
 .player-wrap { aspect-ratio: 16 / 9; background: #0d0c0d; border: 2px solid #111; border-radius: var(--fx-r-1); overflow: hidden; position: relative;

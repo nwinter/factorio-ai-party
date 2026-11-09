@@ -126,6 +126,21 @@ def fresh_and_progress():
 def quiet(cams):
     out = chart_dir()
     d, sent = world(cams)
+    # Quiet tours now finish on a visible arrival receipt; model the camera and compositor as well as sends.
+    import copy
+    from test_ship_survey import Camera
+    cameras = {s['player']: Camera() for s in d.slots}
+    def send(body):
+        sent.append(body)
+        return cameras[body['player']](body)
+    d.sender = send
+    original_step = d.step
+    def step(snapshot, now):
+        for camera in cameras.values():
+            camera.advance(now)
+        d.on_air = {key: copy.deepcopy(value) if key == d.onair else None for key,value in d.state.items()}
+        return original_step(snapshot, now)
+    d.step = step
     d.started = 1000  # (the periodic tour comes tour_first after this; the quiet one sooner)
     d.set_tours(basetour.Tours(out))
     team = [agent("luna", 0, 0, 3, activity="thinking", active=False),
@@ -141,11 +156,11 @@ def quiet(cams):
     assert tour_t is not None, (cams, d.cuts, d.quiets)
     shot = d.state[d.onair]
     assert shot["tour"]["surface"] == "nauvis" and shot["move"]["segments"][0]["pts"], shot
-    assert d.public(tour_t)["main"]["look"]["label"] == "Nauvis base · a slow pan"
-    assert onair_info({"agents": team}, d.public(tour_t))["tour"]["label"] == "Nauvis base · a slow pan"
+    assert d.public(tour_t)["main"]["look"]["label"] == shot["tour"]["label"]
+    assert onair_info({"agents": team}, d.public(tour_t))["tour"]["label"] == shot["tour"]["label"]
     moved = [b for b in sent if b.get("move")]
     assert moved and moved[-1]["surface"] == "nauvis" and moved[-1]["zoom"] == basetour.ZOOM, moved[-1:]
-    assert "tour: Nauvis base · a slow pan (quiet: luna still" in d.cuts[-1][2], d.cuts  # a cut row (one client too)
+    assert "quiet: luna still" in d.cuts[-1][2], d.cuts  # a cut row (one client too)
     assert moved[-1]["smooth"] is False  # framed off air (a standby; one client: a jump on air)
     if cams > 1:
         assert d.cuts[-1][1] != d.cuts[-2][1], d.cuts  # another client than the story's

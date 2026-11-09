@@ -45,7 +45,7 @@ return function(h)
           out[#out+1] = string.format('a curve made a side-load at %s: %s turns into it, but the empty %s behind it keeps it straight, so both lanes of %s (left %s, right %s) go onto its %s lane only%s',
             place(e), place(b), place(straight), place(b), h.lane_text(l.left), h.lane_text(l.right), side(k), full)
         elseif next(l.left) and next(l.right) then
-          out[#out+1] = string.format('%s side-loads both its lanes (left %s, right %s) onto %s %s lane only: at most half of what it carries gets on%s',
+          out[#out+1] = string.format('%s side-loads both its lanes (left %s, right %s) onto %s %s lane only%s',
             place(b), h.lane_text(l.left), h.lane_text(l.right), place(e), side(k), full)
         end
       end

@@ -62,46 +62,50 @@ return function(api)
       if not g then g = {key=key, n=0, working=0, states={}, held={}, burn={}, empty=0, reactors={}}; groups[key] = g; order[#order+1] = g end
       return g
     end
+    local function member(key, e)
+      local g, on = group(key), working(e)
+      g.n = g.n + 1
+      if on then g.working = g.working + 1 end
+      local st = status_name(e)
+      g.states[st] = (g.states[st] or 0) + 1
+      return g, on
+    end
     for _, e in ipairs(list or {}) do
       if read >= MAX then break end
       if e.valid then
         read = read + 1
         local burner = try(function() return e.burner end)
-        local recipe = not burner and recipe_of(e) or nil
-        local key = burner and (e.type == 'reactor' and e.name ~= 'nuclear-reactor' and 'heating towers' or GROUP[e.type] or e.type)
-          or (recipe and 'recipe ' .. recipe.name) or nil
-        if key then
-          local g = group(key)
-          g.n = g.n + 1
-          local on = working(e)
-          if on then g.working = g.working + 1 end
-          local st = status_name(e)
-          g.states[st] = (g.states[st] or 0) + 1
-          if burner and e.type == 'reactor' then g.reactors[#g.reactors+1] = e end
-          if burner then
-            local held = inv_counts(try(function() return e.get_fuel_inventory() end), true)
-            local any, top, topn = false, nil, 0
-            for item, n in pairs(held) do
-              g.held[item] = (g.held[item] or 0) + n; any = true
-              if n > topn then top, topn = item, n end
-            end
-            if not top then
-              local cb = try(function() return burner.currently_burning end)
-              top = cb and (type(cb.name) == 'string' and cb.name or try(function() return cb.name.name end) or try(function() return cb.name end))
-              if type(top) ~= 'string' then top = nil end
-            end
-            if not any then g.empty = g.empty + 1 end
-            if on and top then g.burn[top] = (g.burn[top] or 0) + burn_per_min(e, top) end
-          else
-            local speed = try(function() return e.crafting_speed end) or 1
-            local energy = try(function() return recipe.energy end) or 1
-            local input = try(function() return e.get_inventory((defines.inventory.crafter_input or defines.inventory.assembling_machine_input)) end)
-            local held = inv_counts(input, true)
-            for _, ing in ipairs(try(function() return recipe.ingredients end) or {}) do
-              if (ing.type == nil or ing.type == 'item') and fuel_value(ing.name) > 0 then
-                g.held[ing.name] = (g.held[ing.name] or 0) + (held[ing.name] or 0)
-                if on then g.burn[ing.name] = (g.burn[ing.name] or 0) + speed / math.max(energy, 0.01) * (ing.amount or 1) * 60 end
-              end
+        if burner then
+          local key = e.type == 'reactor' and e.name ~= 'nuclear-reactor' and 'heating towers' or GROUP[e.type] or e.type
+          local g, on = member(key, e)
+          if e.type == 'reactor' then g.reactors[#g.reactors+1] = e end
+          local held = inv_counts(try(function() return e.get_fuel_inventory() end), true)
+          local any, top, topn = false, nil, 0
+          for item, n in pairs(held) do
+            g.held[item] = (g.held[item] or 0) + n; any = true
+            if n > topn then top, topn = item, n end
+          end
+          if not top then
+            local cb = try(function() return burner.currently_burning end)
+            top = cb and (type(cb.name) == 'string' and cb.name or try(function() return cb.name.name end) or try(function() return cb.name end))
+            if type(top) ~= 'string' then top = nil end
+          end
+          if not any then g.empty = g.empty + 1 end
+          if on and top then g.burn[top] = (g.burn[top] or 0) + burn_per_min(e, top) end
+        end
+        -- A biochamber burns nutrients and can take them as recipe ingredients too. Count each inventory once.
+        local recipe = recipe_of(e)
+        if recipe then
+          local g, on
+          local speed = try(function() return e.crafting_speed end) or 1
+          local energy = try(function() return recipe.energy end) or 1
+          local input = try(function() return e.get_inventory((defines.inventory.crafter_input or defines.inventory.assembling_machine_input)) end)
+          local held = inv_counts(input, true)
+          for _, ing in ipairs(try(function() return recipe.ingredients end) or {}) do
+            if (ing.type == nil or ing.type == 'item') and fuel_value(ing.name) > 0 then
+              if not g then g, on = member('recipe ' .. recipe.name, e) end
+              g.held[ing.name] = (g.held[ing.name] or 0) + (held[ing.name] or 0)
+              if on then g.burn[ing.name] = (g.burn[ing.name] or 0) + speed / math.max(energy, 0.01) * (ing.amount or 1) * 60 end
             end
           end
         end

@@ -91,6 +91,17 @@ eq(reads.conds,c0,'conditions read once per prototype'); eq(reads.prop,p0,'a pro
 game.tick=100+3600
 runtime.surface_block(plat,chest)
 eq(reads.prop,p0+1,'read again after a minute')
+-- Dry runs use a fresh property table per call, independent of the live diagnostic's minute cache.
+local properties={}
+local multi=proto('multi-condition',{{property='gravity',min=0,max=10},{property='pressure',min=1,max=BIG}})
+eq(runtime.surface_block(plat,multi,properties),'multi-condition cannot be placed on Resolute: needs pressure >= 1, this surface has 0')
+local c1,p1=reads.conds,reads.prop
+for _=1,256 do runtime.surface_block(plat,multi,properties) end
+eq(reads.conds,c1); eq(reads.prop,p1,'each property read once per dry run')
+local get=plat.get_property
+plat.get_property=function(n) return n=='pressure' and 1 or 0 end
+eq(runtime.surface_block(plat,multi,{}),nil,'next dry run reads changed properties at the same tick; bounds inclusive')
+plat.get_property=get
 
 -- placement: named first, before any footprint search ("nothing found in the footprint" before)
 local text=runtime.placement_error({surface=plat,force=force},chest,{x=-19.5,y=-56.5},0,false)

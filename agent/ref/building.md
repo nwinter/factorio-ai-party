@@ -23,9 +23,9 @@
   pickup target unset until the inserter runs (2.0.77); replies then name both (`pickup target unset by the engine
   (transport-belt (-7.5,320.5) on its pickup tile)`), and `the ground` only when nothing stands there. `inspect`
   always gives an inserter's hand size: `effective_hand_size`, `hand_size_override` (0 none), `hand_size_max` (1 + the
-  force's research bonus, `capacity_bonus`), apart from `held_count`; on 2.0.77 every inserter waited at a belt for a
-  full hand. One that drops onto a belt says `belt_mismatch` when what it puts (a drill's ore, a machine's products, a
-  chest's contents) is neither on that belt nor taken by the inserters downstream (120 tiles).
+  force's research bonus, `capacity_bonus`), apart from `held_count`. Hand size is the maximum pickup size;
+  `wait_for_full_hand` is the fixed prototype requirement (stack true; fast, long-handed and bulk false).
+  One that drops onto a belt says `belt_mismatch` when what it puts (a drill's ore, a machine's products, a chest's contents) is neither on that belt nor taken by the inserters downstream (120 tiles).
 - `build`, entry settings: Entry settings (a single `build`, `builds` entries, `place_ghosts` entries): `configure`,
   `requests`, `circuit` (the arguments of `configure`, `requests`, `circuit_set`, without `position`) and `wires:
   [{to, color, from_side, to_side}]`. A hand build sets each entry's as it is placed, ghosts after every entry is
@@ -50,6 +50,9 @@
 - `build`, check inserters: `"check_inserters": true` checks every planned inserter's pickup, drop, power and filters
   first and places nothing if one would not work; each row's `line` (and the refusal) names both sides: `picks from
   iron-chest (3.5,5.5), drops into stone-furnace (3,2.5)`.
+  `build` and `place_ghosts` dry runs check each prototype's surface conditions against the target surface;
+  `surface_conditions` names failed entries, required bounds and actual values. `check_inserters` refuses the whole
+  batch on any surface-condition failure. A blocked planned pickup or drop target is reported with its entry and reason.
 - `build`, fast replace: Fast replace over a chest of the same group keeps its contents in the new chest; what it
   cannot hold comes to you (`replaced.contents`), and with no room for that nothing moves; any fast replace keeps
   filters, wires, circuit settings, a chest's limit and requests (`replaced.kept`, `not_kept`). Fast replace of one
@@ -227,6 +230,8 @@
   `belt` (inspect, observe rows, build replies; `last_belt` for a batch): `moves items south to (-22.5,-28.5); fed
   from (-22.5,-30.5)`; at a line's end it names what stands on the tile it stops at: `(no belt takes them there:
   they stop at its end; medium-electric-pole (353.5,95.5) stands there)`.
+  `details: true` returns `entities` accepted unchanged by `place_ghosts` (within its entry limit), including
+  `type: input|output` on every underground belt. Dry-run placement diagnostics are in `entity_checks`.
   `feeders` (dry runs, replies; build_path's too): our inserters whose drop point is on a planned belt or underground
   end (what each holds, what it takes from and what is there) and belts, underground exits and splitters running into
   the line; with `item`, feeders of other items are conflicts (the line is still placed; `refuse_mixed: true` refuses it).
@@ -328,6 +333,12 @@
   `status_note`). Nothing sets it by itself: not age, not `blueprint_retire`. The site's blueprint page shows it as a
   mark and a filter; an entry with none reads "not marked".
   Example: `./fh call blueprint_status --args '{"name":"smelter-row-v2","status":"current"}'`
+- `place_ghosts` and `belt_route` dry runs return `undergrounds`: counts of checked ends, paired ends,
+  unpaired ends, partners outside the request, and differing requested flow. `rows` names each problem's endpoints;
+  `details: true` also lists ordinary pairs. These are connections after the placeable ghosts are built;
+  built ends and existing ghosts outside the request are labelled separately. Placement success alone does not
+  assert paired flow. Opposing requested flow can make the engine reverse an earlier endpoint when pairing.
+  Pipe-to-ground ends use direction, with no input/output type.
 - Dry runs (`"dry_run": true` on `build`, `place_ghosts`, `paste`) place nothing and report the plan: per entity
   whether it fits or what blocks it and where, blocked entities first and all of them in `blocked` (up to 200) apart
   from those needing tiles; the tiles an entry needs (landfill, foundation, shallow oil, water, and on a platform the
@@ -375,3 +386,5 @@
   pick up from the tile behind and drop on the tile in front; check the edge tiles of 3x3 machines. An inserter's
   `direction` is the side it picks up from (`direction: east` takes from the east, drops west; a belt's is where items
   go); `build` replies say it in words. `build` accepts a batch of up to 64 placements.
+
+- `upgrade` in remote/platform queues requires explicit `platform` or `surface`; `wait_until {until: "entity_quality", position, quality, platform, timeout}` waits for the built replacement (ref/waits-queues.md).

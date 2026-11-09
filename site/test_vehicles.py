@@ -56,8 +56,13 @@ out.nauvis = look('nauvis', M.DEFAULT_ON, { cx: -150, cy: -500, span: 200 });
 out.gleba = look('gleba', M.DEFAULT_ON, { cx: 70, cy: 20, span: 60 });
 out.off = look('nauvis', Object.assign({}, M.DEFAULT_ON, { vehicles: false }), { cx: -150, cy: -500, span: 200 });
 out.far = look('nauvis', M.DEFAULT_ON, { cx: 0, cy: 0, span: 40 });
-out.none = M.absentWhy({}, M.prepare({ surface: 'nauvis', base, vehicles: { rows: [] } }), 'vehicles');
+out.none = M.absentWhy({}, M.prepare({ surface: 'nauvis', base, vehicles: { rows: [], total: 0 } }), 'vehicles');
 out.unread = M.absentWhy({}, M.prepare({ surface: 'nauvis', base }), 'vehicles');
+out.incomplete = [
+  { rows: [] },
+  { rows: Array.from({ length: 64 }, (_, i) => ({ unit_number: i, surface: 'gleba', position: { x: 0, y: 0 } })), total: 137 },
+  { rows: [{ unit_number: 1, surface: 'nauvis', unseen: true }], total: 1 }
+].map(v => M.absentWhy({}, M.prepare({ surface: 'nauvis', base, vehicles: v }), 'vehicles'));
 out.layer = M.LAYERS.some((l) => l[0] === 'vehicles') && M.DEFAULT_ON.vehicles === true;
 out.group = M.GROUPS.filter((g) => g[2].indexOf('vehicles') >= 0).map((g) => g[0]);
 const sc = M.scene(M.prepare({ surface: 'nauvis', base, agents, vehicles }), { cx: -150, cy: -500, span: 200 }, 400, 400, M.DEFAULT_ON);
@@ -93,6 +98,24 @@ def main():
     check("harness.census_vehicles: an empty list written as {} reads as no rows",
           FakeHarness(dict(READ, vehicles={}, vehicles_total=0)).census_vehicles()["rows"] == [])
     check("harness.census_vehicles: none from a runtime without the part (the read prints {})", FakeHarness({}).census_vehicles() is None)
+
+    # A bounded census reply's rows cannot substitute for its whole-census total, at any summary layer.
+    page = [dict(READ["vehicles"][0], unit_number=i) for i in range(64)]
+    for total in (137, 0, None):
+        read = dict(READ, vehicles=page)
+        if total is None:
+            del read["vehicles_total"]
+        else:
+            read["vehicles_total"] = total
+        counted = FakeHarness(read).census_vehicles()
+        check("census page preserves total or unknown", counted["total"] == total, counted)
+        model = Model({"agents": {}})
+        model.ingest({"vehicles": dict(counted, t=1000.0)}, now=1000.0)
+        snapshot = model.vehicles_snapshot(1000.0)
+        check("vehicle summaries preserve total or unknown through publication",
+              snapshot["total"] == total and push_live.public_vehicles(snapshot)["total"] == total, snapshot)
+    check("public vehicle truncation does not invent a total",
+          push_live.public_vehicles({"rows": page + page})["total"] is None)
 
     m = Model({"agents": {"opus": {"display_name": "Opus"}}})
     check("model: no vehicles before a read", m.vehicles_snapshot(1000.0) is None)
@@ -150,6 +173,8 @@ def main():
     check("far away: pinned to the edge, no line, its distance from the base", all(mk["tx"] is None for mk in o["far"]["marks"])
           and any("tiles from the base" in t for t in o["far"]["hits"] if t.startswith("Spidertron")), o["far"])
     check("its toggle says none or not read", o["none"].startswith("none: no vehicle of ours on Nauvis") and o["unread"].startswith("not read"), o)
+    check("a partial page, missing total or unknown position never says no vehicles",
+          all(x.startswith("none shown:") and "unknown" in x for x in o["incomplete"]), o["incomplete"])
     check("painted: a square each spidertron", o["painted"] >= 4, o["painted"])
     print("vehicles: ok")
 

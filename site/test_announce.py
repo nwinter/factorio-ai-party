@@ -165,14 +165,14 @@ def tool():
         assert rc == 2 and "refused: a test run (POG_TEST=1) posts only to POG_ANNOUNCE_API" in out, out
         assert not Stub.posts
         rc, out = run("--dry-run", "change-begin", "shift12", "shift13")
-        assert rc == 0 and out.endswith("would post: Shift 3 is over; shift 4 starts in about 8 minutes."), out   # the chain's count
+        assert rc == 0 and out.endswith("would post: Shift 3 handover began; shift 4 is starting (usually about 8 minutes). Save and startup are not confirmed yet."), out   # the chain's count
         assert not Stub.posts
         for _ in range(2):
             rc, out = run("change-begin", "shift12", "shift13", POG_ANNOUNCE_API=api)
             assert rc == 0 and "announce: posted (seq " in out, out
         a, b = Stub.posts
         assert a["path"] == "/v1/announce" and a["auth"] == "Bearer " + "t" * 20, a
-        assert a["body"]["text"] == "Shift 3 is over; shift 4 starts in about 8 minutes." and a["body"] == b["body"], (a, b)
+        assert a["body"]["text"] == "Shift 3 handover began; shift 4 is starting (usually about 8 minutes). Save and startup are not confirmed yet." and a["body"] == b["body"], (a, b)
         assert len(a["body"]["cid"]) == 24, a   # the same event, the same cid: the Worker keeps one line
         os.makedirs(os.path.join(runs, "shift13"))   # start-team made NEXT, resumed from PREV
         open(os.path.join(runs, "shift13", "resumed-from"), "w").write("shift12\n")

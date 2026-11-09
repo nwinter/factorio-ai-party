@@ -51,6 +51,12 @@ handoff's lead), facts only: since when, the line, the tries and their times, no
 resumes, the cover hears it is back, once. A purchase or credit screen (PURCHASE) on the pane: nothing pressed or
 typed, in either rule (d23: Buy more credits is never chosen).
 
+(d30 batch388 CA, viewer Aurora) No eligible cover or a failed tell keeps the alert pending: retry after 5, 10, 20,
+then every 30 min. Only a delivered tell (or a dry-run tell) completes the alert. Provider-stop episodes, retry times
+and deliveries survive restart in runs/RUN/pane-resume-state.json, atomically replaced before logging. Dry runs do
+not write that file. Recipient eligibility uses pacing.resting, including firm rests. A tell records notification,
+not cover acceptance.
+
 Under POG_TEST=1 (tools/testsafe.py) HerdrPanes refuses: tests drive Resumer with fake panes.
 """
 import importlib.util
@@ -59,6 +65,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -116,6 +123,7 @@ STOP_TAIL = 40     # the screen's last lines searched for a stop (a dialog on to
 MAX_TRIES = 4
 BACKOFF_S = (300, 600, 1200)
 ALERT_S = 1200
+ALERT_BACKOFF_S = (300, 600, 1200, 1800)  # failed/no-recipient alerts: 5, 10, 20, then every 30 min
 # A purchase or credit screen (d23 rule: Buy more credits is never chosen): nothing pressed or typed while it shows
 PURCHASE = re.compile(r"Buy more credits|Buy credits|Add credits|Purchase|Add funds|Upgrade (?:your )?plan|[Pp]ayment method")
 ALERT_TAG = "Operator (automatic, facts only):"
@@ -303,6 +311,41 @@ class Resumer:
         self.end_rest = end_rest or aq.end_rest
         self.pause = pause
         self.state = {}   # agent -> its episode: {until, reason, kind, pane, phase, tries, t, logged}
+        self.stop_path = os.path.join(run_dir, "pane-resume-state.json")
+        try:
+            with open(self.stop_path) as f:
+                saved = json.load(f)
+        except FileNotFoundError:
+            saved = {"version": 1, "stops": {}}
+        if saved.get("version") != 1:
+            raise ValueError(f"unsupported pane-resume state: {self.stop_path}")
+        self.stops = saved["stops"]
+        for ep in self.stops.values():
+            ep["logged"] = {tuple(x) if isinstance(x, list) else x for x in ep["logged"]}
+            if "bg" in ep:
+                ep["bg"] = set(ep["bg"])
+        self.saved_stops = self.encode_stops()
+
+    def encode_stops(self):
+        return json.dumps({"version": 1, "stops": self.stops}, sort_keys=True,
+                          default=lambda x: sorted(x, key=repr)) + "\n"
+
+    def save_stops(self):
+        """Atomically preserve provider episodes, including pending retries and delivered alerts. Dry runs read only."""
+        saved = self.encode_stops()
+        if self.dry or saved == self.saved_stops:
+            return
+        fd, path = tempfile.mkstemp(prefix=".pane-resume-", dir=self.run_dir)
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(saved)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(path, self.stop_path)
+            self.saved_stops = saved
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
 
     def step(self, now, write):
         """One poll for every team member; the rows written."""
@@ -320,6 +363,7 @@ class Resumer:
             if not st or st["phase"] == "over":
                 if not row and kind != "agy" and not (self.deadline and now >= self.deadline):
                     entries = self.stopped(name, pane, kind, now) or []
+                    self.save_stops()  # before log callbacks: a log failure must not lose delivery or episode removal
                     for entry in entries if isinstance(entries, list) else [entries]:
                         entry.update({"agent": name, "kind": kind, "resume": True, "provider_stop": True,
                                       "t": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now))})
@@ -494,8 +538,11 @@ class Resumer:
                              f"after try {ep['tries']}, {round((at - ep['seen']) / 60)} min after the stop was seen"}
             if ep.get("cover"):
                 text = back_text(name, ep, at, action, now)
-                entry["cover_back"] = {"to": ep["cover"], "text": text, "sent": self.tell(ep["cover"], text)}
-                entry["line"] += f"; told {ep['cover']} it is back"
+                sent = self.tell(ep["cover"], text)
+                entry["cover_back"] = {"to": ep["cover"], "text": text, "sent": sent}
+                entry["line"] += (f"; told {ep['cover']} it is back" if sent else
+                                  f"; dry run: would tell {ep['cover']} it is back" if self.dry else
+                                  f"; tell to {ep['cover']} that it is back failed")
             return [entry]
         if now - ep["t"] < CHECK_S:
             return None
@@ -530,16 +577,14 @@ class Resumer:
         if self.dry or not self.send:
             return False
         try:
-            self.send(to, text)
-            return True
+            return self.send(to, text) is not False
         except Exception:   # noqa: BLE001 (logged in the row as not sent)
             return False
 
     def alert(self, name, d, ep, now, running):
-        """Once per episode, ALERT_S after the stop was first seen: the facts to its cover."""
-        if "alert" in ep["logged"] or now - ep["seen"] < ALERT_S:
+        """One delivered alert per episode, with bounded retries while no tell has succeeded."""
+        if "alert" in ep["logged"] or now - ep["seen"] < ALERT_S or now < ep.get("alert_next", 0):
             return None
-        ep["logged"].add("alert")
         if "bg" not in ep:
             ep["bg"] = {a for _, a in pacing.requests_since(d, ep["seen"])}
         older = [at for at, a in pacing.requests_since(d, ep["seen"] - 3 * 3600) if at <= ep["seen"] and a not in ep["bg"]]
@@ -550,13 +595,21 @@ class Resumer:
         if not to:
             entry.update(sent=False, line=f"resume {name}: stopped {round((now - ep['seen']) / 60)} min; no active cover "
                                           "to tell (a claim's coverer, --lead, or a member with a request of its own in 10 min)")
-            return entry
-        entry["sent"] = self.tell(to, text)
-        if entry["sent"] or self.dry:
+        else:
+            entry["sent"] = self.tell(to, text)
+            entry["line"] = (f"resume {name}: stopped {round((now - ep['seen']) / 60)} min; "
+                             + (f"told {to} (cover alert)" if entry["sent"] else f"dry run: would tell {to}" if self.dry
+                                else f"tell to {to} failed"))
+        if entry["sent"] or (to and self.dry):
+            ep["logged"].add("alert")
             ep["cover"] = to
-        entry["line"] = (f"resume {name}: stopped {round((now - ep['seen']) / 60)} min; "
-                         + (f"told {to} (cover)" if entry["sent"] else f"dry run: would tell {to}" if self.dry
-                            else f"tell to {to} failed"))
+            ep.pop("alert_next", None)
+        else:
+            attempts = ep["alert_attempts"] = ep.get("alert_attempts", 0) + 1
+            delay = ALERT_BACKOFF_S[min(attempts, len(ALERT_BACKOFF_S)) - 1]
+            entry["retry_at"] = ep["alert_next"] = now + delay
+            entry["line"] += f"; alert pending, next try in {delay // 60} min"
+        self.save_stops()
         return entry
 
     def try_stop(self, name, d, pane, ep, now, screen):

@@ -9,11 +9,11 @@ return function(api)
   local WAITS={platform_arrived=true,platform_left=true,researched=true,platform_built=true,platform_ready=true,tick_at_least=true}
   -- place_ghosts and deconstruct on a platform (Astra, d15 06:23: ship conversions held the body queue): marks and
   -- ghosts the hub's robots build, no body needed; platform_built waits for the foundation.
-  local PLATFORM_WRITES={configure=true,circuit_set=true,circuit=true,wire=true,requests=true,flush=true,place_ghosts=true,deconstruct=true,platform_rearm=true}
+  local PLATFORM_WRITES={upgrade=true,configure=true,circuit_set=true,circuit=true,wire=true,requests=true,flush=true,place_ghosts=true,deconstruct=true,platform_rearm=true}
   local BODY_READS={inventory=true,craftable=true,sleep_check=true,dry_run=true,screenshot=true}
   -- (d20 batch62 X3, Astra #1540: circuit_set took surface as a direct call and was refused in the remote lane) the
   -- writes whose direct call acts on a planet by remote view with surface (bots.lua SURFACE_ACTIONS) take it here too.
-  local SURFACE_WRITES={configure=true,circuit_set=true,circuit=true,wire=true,requests=true,place_ghosts=true,deconstruct=true}
+  local SURFACE_WRITES={upgrade=true,configure=true,circuit_set=true,circuit=true,wire=true,requests=true,place_ghosts=true,deconstruct=true}
   -- (X3) waits on our machines, turrets, burners and tanks on a planet by remote view
   local SURFACE_WAITS={produced=true,ammo_below=true,fuel_below=true,fluid_count=true}
   local function check(action,a)
@@ -29,19 +29,19 @@ return function(api)
           for _,m in ipairs(c.conditions) do if not remote_ok(m) then return false end end
           return true
         end
-        return WAITS[c['until']] or (c['until']=='item_count' and (type(c.platform)=='string' and c.platform~='' or type(c.surface)=='string' and c.surface~=''))
+        return WAITS[c['until']] or ((c['until']=='entity_quality' or c['until']=='item_count' or c['until']=='inventory_free_slots') and (type(c.platform)=='string' and c.platform~='' or type(c.surface)=='string' and c.surface~=''))
           or ((c['until']=='produced' or c['until']=='fluid_count' or c['until']=='circuit_signal' or c['until']=='pod_landed') and type(c.platform)=='string' and c.platform~='')
           -- (d20 batch52 K1) the guns of a platform; (K2) a silo on a named planet
-          or (c['until']=='ammo_below' and type(c.platform)=='string' and c.platform~='')
+          or ((c['until']=='ammo_below' or c['until']=='damaged') and type(c.platform)=='string' and c.platform~='')
           -- (d20 batch55 P5, Sol #1400) a platform's losses since the wait began; its ghosts
           or ((c['until']=='platform_loss' or c['until']=='ghosts_waiting') and type(c.platform)=='string' and c.platform~='')
           -- (d22 batch92 BB1, BB2: Sol #1884, Astra #1886) a platform's hits or damage since the wait began; its
           -- accumulators' charge; (d29 batch346, Astra #2754, #2755) a launch count and a return budget (read every 10 s)
-          or ((c['until']=='platform_hit' or c['until']=='platform_damage' or c['until']=='platform_foundation_loss' or c['until']=='platform_energy_below' or c['until']=='platform_progress' or c['until']=='platform_ammo_below' or c['until']=='launches_at_least' or c['until']=='budget_below') and type(c.platform)=='string' and c.platform~='')
+          or ((c['until']=='platform_hit' or c['until']=='platform_damage' or c['until']=='platform_foundation_loss' or c['until']=='platform_energy_below' or c['until']=='platform_progress' or c['until']=='platform_speed_above' or c['until']=='platform_ammo_below' or c['until']=='launches_at_least' or c['until']=='budget_below') and type(c.platform)=='string' and c.platform~='')
           or ((c['until']=='rocket_ready' or c['until']=='rocket_parts' or SURFACE_WAITS[c['until']]) and type(c.surface)=='string' and c.surface~='')
       end
       assert(remote_ok(a),
-        'remote lane wait_until supports platform_arrived, platform_left, platform_built, platform_ready, researched, tick_at_least, item_count with platform or surface, produced, fluid_count, circuit_signal or pod_landed with platform, ammo_below with platform, platform_loss, platform_foundation_loss, platform_hit (platform_damage), platform_energy_below, platform_progress, platform_ammo_below, launches_at_least, budget_below or ghosts_waiting with platform, rocket_ready, rocket_parts, produced, ammo_below, fuel_below or fluid_count with surface, and all or any of those')
+        'remote lane wait_until supports platform_arrived, platform_left, platform_built, platform_ready, researched, tick_at_least, entity_quality, item_count or inventory_free_slots with platform or surface, produced, fluid_count, circuit_signal or pod_landed with platform, ammo_below with platform, damaged with platform, platform_loss, platform_foundation_loss, platform_speed_above, platform_hit (platform_damage), platform_energy_below, platform_progress, platform_ammo_below, launches_at_least, budget_below or ghosts_waiting with platform, rocket_ready, rocket_parts, produced, ammo_below, fuel_below or fluid_count with surface, and all or any of those')
       return
     end
     -- min_payload names its platforms (platforms, default all): no body (d17 batch20 A4, Sol).
@@ -89,27 +89,29 @@ return function(api)
   -- names are kept in storage (platform_lanes) and each is ticked as the remote lane is.
   local engines={}
   local function M_key(name) return 'lane_queues|'..name end
-  local function platform_engine(name)
+  local function platform_engine(name,read_only)
     local e=engines[name]
     if e then return e end
     local papi={}
     for k,v in pairs(remote_api) do papi[k]=v end
     papi.queue_key=M_key(name)
+    papi.platform_lane=true  -- only these lanes allow the long arrival/progress timeout
     -- (BY1) a flight_watch start without platform or id watches the lane's platform; (d25 batch205 QR2) read: true reads it
     papi.check_step=function(action,a)
       if action=='flight_watch' and type(a)=='table' and a.platform==nil and a.id==nil then a.platform=name end
       return check(action,a)
     end
     e=api.factory(papi)
-    engines[name]=e
-    local s=api.base.state(); s.platform_lanes=s.platform_lanes or {}; s.platform_lanes[name]=true
+    local s=api.base.state()
+    if not read_only then s.platform_lanes=s.platform_lanes or {}; s.platform_lanes[name]=true end
+    if (s.platform_lanes or {})[name] then engines[name]=e end
     return e
   end
-  local function lane(a)
+  local function lane(a,read_only)
     local name=a and a.lane or 'body'
     if type(name)=='string' then
       local pl=name:match('^platform:(.+)$')
-      if pl then return name,platform_engine(pl) end
+      if pl then return name,platform_engine(pl,read_only) end
     end
     assert(name=='body' or name=='remote','lane must be body, remote or platform:NAME (a remote lane of its own for that platform)')
     return name,name=='remote' and remote or base
@@ -125,17 +127,18 @@ return function(api)
     if not (r and q.current and q.current.plan==r.id) then return nil end
     return {kind=r.kind,name=r.name,tick=r.tick,steps=r.steps}
   end
-  local function brief(q)
+  local function brief(q,engine)
     if not q then return {paused=true,pending=0,active=false} end
     local step=q.current
     local waiting=not q.paused and step and (step.action=='wait_until' or step.action=='wait_ticks') and
       {kind=step.action,condition=step.action=='wait_until' and step.args or nil,until_tick=step.until_tick} or nil
     if waiting and api.base.wait_info then api.base.wait_info(waiting,step) end
+    if waiting and engine then waiting.deadline=engine.wait_deadline(step) end
     -- what paused it (d17 batch16 A4): "paused by you (queue_pause) ..." holds; any other pause says its cause
     local why=q.paused and q.paused_why and q.paused_why.line or nil
     return {revision=q.revision,paused=q.paused,paused_by=why,held=q.held and true or nil,pending=#q.pending,repeating=q.loop~=nil,waiting=waiting,
       active=q.current and {id=q.current.id,action=q.current.action,label=q.current.label,started_tick=q.current.started_tick,run=run_of(q)} or false,
-      after_direct=q.after_direct}
+      after_direct=q.after_direct,guard_read_errors=base.guard_read_errors(q),guard_control=base.guard_control(q),guard_suppressed=q.guard_suppressed}
   end
   local M={handlers={},schema=base.schema}
   for k,v in pairs(base) do if M[k]==nil then M[k]=v end end
@@ -144,7 +147,7 @@ return function(api)
     local out={body=brief((s.queues or {})[index]),remote=brief((s.remote_queues or {})[index])}
     for name in pairs(s.platform_lanes or {}) do
       local q=(s[M_key(name)] or {})[index]
-      if q then out.platforms=out.platforms or {}; out.platforms[name]=brief(q) end
+      if q then out.platforms=out.platforms or {}; out.platforms[name]=brief(q,platform_engine(name,true)) end
     end
     return out
   end
@@ -159,7 +162,17 @@ return function(api)
   for name in pairs(base.handlers) do
     M.schema[name].lane='body (default, existing queue) | remote (independent of body work) | platform:NAME (a remote lane of its own for that platform: its waits and platform steps apart from the remote lane and the other platforms\' lanes); revisions belong to the selected lane'
     M.handlers[name]=function(p,a)
-      local selected,engine=lane(a)
+      a=a or {}
+      if a.agent~=nil then
+        assert(name=='queue_status','agent is read-only on queue_status; queue writes affect only the caller')
+        assert(type(a.agent)=='string' and a.agent~='','agent must be a nonempty agent name')
+        assert(api.agent_player,'agent lookup unavailable')
+        local target=api.agent_player(a.agent)
+        assert(target and target.valid,'unknown agent '..a.agent)
+        assert(target.force==p.force,'agent is not on your force')
+        p=target
+      end
+      local selected,engine=lane(a,name=='queue_status')
       if selected=='remote' and name=='queue_repeat' then
         assert(a.orders==nil or a.orders==false or a.orders=='none','standing orders run only in the body lane')
         local copy={}; for k,v in pairs(a) do copy[k]=v end
@@ -167,12 +180,18 @@ return function(api)
       end
       local out=engine.handlers[name](p,a or {})
       out.lane=selected
-      if name=='queue_status' then out.lanes=M.lanes(p.index) end
+      if name=='queue_status' then
+        out.lanes=M.lanes(p.index)
+        out.owner=api.who and api.who(p) or p.name
+        out.access='read-only; queue edits, cancels, pauses, resumes and submissions remain owner-scoped'
+      end
       return out
     end
   end
-  M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|platform_built|researched|tick_at_least or item_count with platform, ammo_below, platform_loss, platform_foundation_loss, platform_hit (platform_damage), platform_energy_below, platform_progress, platform_ammo_below, launches_at_least, budget_below or ghosts_waiting with platform, rocket_ready, rocket_parts, item_count, produced, ammo_below, fuel_below or fluid_count with surface, all or any of those (guards\' when too); drop, platform_schedule, flush and platform_rearm with explicit platform; configure, circuit_set, circuit, wire, requests, place_ghosts and deconstruct with platform or surface (a planet, by remote view as the direct call); rotate with platform or surface; min_payload; flight_watch (in a platform lane a start or a read: true without platform or id watches or reads the lane\'s platform); body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
-  M.schema.queue_status.returns=M.schema.queue_status.returns..'; lane and lanes {body, remote, platforms {NAME: ...}}: each lane\'s paused, pending, active, revision and repeating state'
+  M.schema.queue_status.agent='optional agent name: read their queue in the selected lane, with the same history/pending caps; queue writes remain owner-scoped'
+  M.schema.queue_status.returns=M.schema.queue_status.returns..'; owner, state (empty, paused, paused/held, running or completed), access (read-only; writes owner-scoped); guards include baseline and since_tick'
+  M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|platform_built|researched|tick_at_least or item_count with platform, ammo_below, damaged with platform, platform_loss, platform_foundation_loss, platform_speed_above, platform_hit (platform_damage), platform_energy_below, platform_progress, platform_ammo_below, launches_at_least, budget_below or ghosts_waiting with platform, rocket_ready, rocket_parts, item_count, produced, ammo_below, fuel_below or fluid_count with surface, all or any of those (guards\' when too); drop, platform_schedule, flush and platform_rearm with explicit platform; upgrade, configure, circuit_set, circuit, wire, requests, place_ghosts and deconstruct with platform or surface (a planet, by remote view as the direct call); rotate with platform or surface; min_payload; flight_watch (in a platform lane a start or a read: true without platform or id watches or reads the lane\'s platform); body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. entity_quality {platform or surface, position, name?, quality} waits for a built entity at exactly that quality (no ghost or upgrade mark). Upgrade planner checks run at submission and execution. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
+  M.schema.queue_status.returns=M.schema.queue_status.returns..'; wait_deadlines (platform arrival/progress waits): tick, game_seconds, ticks_left, wall_unix_ms and wall_seconds_left projected at 60 ticks/s; state waiting for an active wait, if_started_now for a pending step (its start depends on earlier work/resume). Also on submission and dry-run replies; lane and lanes {body, remote, platforms {NAME: ...}}: each lane\'s paused, pending, active, revision and repeating state'
   function M.validate(a) local _,engine=lane(a); return engine.validate(a) end
   -- (d24 batch153, harness review bug 6: Sol's status listed 7 platform lanes for platforms gone) a lane queue whose
   -- platform is no platform of ours, with no step running, for CLOSE_TICKS in a row (a lane staged before its platform

@@ -13,7 +13,9 @@
 -- The factory is pure so the same module can be bundled into a hot reload.
 return function(api)
   local M = {}
+  local rotatedbox = require('rotatedbox')
   local TC = require('tilecheck')()
+  local undergroundplan = require('undergroundplan')(api)
   M.ACTIONS = {place_ghosts=true, paste=true, blueprint_place=true, build=true, rail_route=true, belt_route=true}
   local MAX_ROWS, MAX_LISTED, HOLE_LIMIT, FLOOD_BUDGET, MAX_SPOTS = 30, 200, 1024, 20000, 8
   local MAX_INSERTERS = 64
@@ -215,6 +217,8 @@ return function(api)
   function M.footprint(proto, pos, dir)
     local shape = RAILS[proto.type] and api.rail_box and api.rail_box(proto.name, pos, dir or 0)
     if shape then return {left_top=shape.left_top, right_bottom=shape.right_bottom}, shape end
+    local rotated = rotatedbox.shape(proto, pos, dir)
+    if rotated then return {left_top=rotated.left_top, right_bottom=rotated.right_bottom}, nil, rotated end
     local b = proto.collision_box or {left_top={x=-0.4, y=-0.4}, right_bottom={x=0.4, y=0.4}}
     return api.placewhy.box_at(b, pos, dir or 0)
   end
@@ -430,7 +434,8 @@ return function(api)
     local mask = layers(try(function() return proto.collision_mask end))
     if not next(mask) then return nil end
     remedy_cache, remedy2_cache = {}, {}
-    local x0, y0, x1, y1 = span(M.footprint(proto, pos, dir))
+    local box, _, rotated = M.footprint(proto, pos, dir)
+    local x0, y0, x1, y1 = span(box)
     -- (d20 batch61 W1) the game takes a rail support on deep oil ocean once Rail support foundations is researched
     local deep_ok = try(function() return proto.type end) == 'rail-support' and try(function() return force.rail_support_on_deep_oil_ocean end) == true
     local out
@@ -439,7 +444,8 @@ return function(api)
         local t = try(function() return surface.get_tile(x, y) end)
         local name = t and try(function() return t.name end)
         local tl = name and try(function() return t.prototype.collision_mask.layers end) or {out_of_map=true}
-        if collide(mask, tl) and not (deep_ok and name == 'oil-ocean-deep') then
+        if collide(mask, tl) and not (deep_ok and name == 'oil-ocean-deep')
+          and (not rotated or rotatedbox.overlaps(rotated, x, y, x+1, y+1)) then
           local laid = false
           for _, g in pairs(surface.find_entities_filtered{position={x+0.5, y+0.5}, radius=0.1, type='tile-ghost'}) do
             local gl = try(function() return prototypes.tile[g.ghost_name].collision_mask.layers end)
@@ -946,6 +952,8 @@ return function(api)
   function M.check(p, plan)
     remedy_cache = {}
     local s, force = p.surface, p.force
+    -- Conditions are cached per prototype by the runtime; property values belong to this check's target surface.
+    local surface_properties = {}
     local on_platform = api.own_platform(p)
     local kind, mode = plan.kind, plan.mode or 'normal'
     local manual = kind == 'build'
@@ -1173,7 +1181,7 @@ return function(api)
         local ramp = proto.type == 'rail-ramp'
         if ramp then rec.dir = math.floor(rec.dir / 4) * 4 end
         if math.abs(rec.pos.x-e.position.x) > 0.01 or math.abs(rec.pos.y-e.position.y) > 0.01 then rec.asked = e.position end
-        rec.box, rec.shape = M.footprint(proto, rec.pos, rec.dir)
+        rec.box, rec.shape, rec.rotated = M.footprint(proto, rec.pos, rec.dir)
         local mask = rec.mask
         local rail = RAILS[proto.type]
         local chunk = {x=math.floor(rec.pos.x/32), y=math.floor(rec.pos.y/32)}
@@ -1311,7 +1319,8 @@ return function(api)
                     tile_bad[#tile_bad+1] = string.format('%s oil-ocean-deep (the game takes rail supports there once Rail support foundations is researched%s)',
                       tile_text(x, y), fix and '; or on '..fix..' laid there' or '')
                   end
-                elseif collide(mask, t.layers) and (not shape or api.rail_overlaps(shape, x, y, x+1, y+1)) then
+                elseif collide(mask, t.layers) and (not shape or api.rail_overlaps(shape, x, y, x+1, y+1))
+                  and (not rec.rotated or rotatedbox.overlaps(rec.rotated, x, y, x+1, y+1)) then
                   if t.layers.out_of_map then tile_bad[#tile_bad+1] = tile_text(x, y)..' is outside the map'
                   else
                     local fix = remedy(force, t.name, t.layers, mask)
@@ -1572,10 +1581,13 @@ return function(api)
       -- (d28 batch330, Astra 22:10 on batch328: "occupied(-16.5,-56.5) still only says blocked by turbo belt, not surface
       -- first") the surface's conditions first, whatever else stands in the way
       if rec.proto and rec.status ~= 'exists' and api.surface_block then
-        local sc = try(function() return api.surface_block(s, rec.proto) end)
-        if sc and not table.concat(reasons, '; '):find('cannot be placed on', 1, true) then
-          table.insert(reasons, 1, sc)
+        local sc = api.surface_block(s, rec.proto, surface_properties)
+        if sc then
+          if not table.concat(reasons, '; '):find(sc, 1, true) then table.insert(reasons, 1, sc) end
           rec.status = 'blocked'
+          out.surface_conditions = out.surface_conditions or {}
+          out.surface_conditions[#out.surface_conditions+1] = string.format('#%s %s: %s',
+            tostring(rec.copy and (rec.copy..'.'..rec.index) or rec.index), rec.pos and at(rec.pos) or '', sc)
         end
       end
       rec.why = #reasons > 0 and table.concat(reasons, '; ') or nil
@@ -2445,6 +2457,9 @@ return function(api)
       end
     end
     out.entities = #rows > 0 and rows or nil
+    if plan.check_undergrounds then
+      out.undergrounds = undergroundplan.check(p,recs,plan.details)
+    end
     if nproblems > #rows and not plan.details then out.more_problems = nproblems-#rows end
     -- A paste over an entity with requests (a hub, requester chests, landing
     -- pads): its requests stay, and the blueprint's own are not applied (keep.lua).
@@ -2466,7 +2481,9 @@ return function(api)
         for _, o in ipairs(occupied[key(math.floor(pos.x), math.floor(pos.y))] or {}) do
           local b = o.box
           if pos.x >= b.left_top.x and pos.x <= b.right_bottom.x and pos.y >= b.left_top.y and pos.y <= b.right_bottom.y then
-            return {name=o.name, position=o.pos, type=o.proto.type}
+            return {name=o.name, position=o.pos, type=o.proto.type,
+              blocked=o.status == 'blocked' and string.format('planned #%s %s %s is blocked: %s',
+                tostring(o.copy and (o.copy..'.'..o.index) or o.index), o.name, at(o.pos), o.why or 'placement refused') or nil}
           end
         end
       end
@@ -2825,8 +2842,8 @@ return function(api)
           local ug = st and ug_at({x=math.floor(r.pos.x)+st[1]+0.5, y=math.floor(r.pos.y)+st[2]+0.5})
           local line = ug and api.sidefeed.belt(r.name, r.pos, r.dir, ug)
           if line then add('#'..idx(r)..' '..line) end
-        elseif t == 'underground-belt' and kind_of(r) == 'input' then
-          local ug = {name=r.name, position=r.pos, direction=r.dir, kind='input'}
+        elseif t == 'underground-belt' then
+          local ug = {name=r.name, position=r.pos, direction=r.dir, kind=kind_of(r)}
           local x, y = r.pos.x, r.pos.y
           for _, i in ipairs(try(function() return s.find_entities_filtered{area={{x-3.5, y-3.5}, {x+3.5, y+3.5}}, type='inserter', force=force} end) or {}) do
             local drop = try(function() return i.drop_position end)
@@ -2885,6 +2902,10 @@ return function(api)
     end)
     out.checked = n
     out.summary = n > 0 and (table.concat(parts, ', ')..' (of '..n..')'..(over_cliffs > 0 and string.format('; %d over cliffs', over_cliffs) or '')) or nil
+    local u = out.undergrounds
+    if out.summary and u and (u.unpaired>0 or u.external>0 or u.requested_flow_mismatch>0) then
+      out.summary = out.summary..string.format('; underground ends: %d unpaired, %d paired outside request, %d with differing requested flow',u.unpaired,u.external,u.requested_flow_mismatch)
+    end
     -- (d23 batch120 CC3, Astra #2019) a floor the hub would not finish, or one not checked yet, is in the summary
     local ft = out.tiles
     if out.summary and ft and ft.unbuilt_count then

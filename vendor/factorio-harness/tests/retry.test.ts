@@ -13,7 +13,7 @@ import { tempDir } from './tmp.js';
 const exec = promisify(execFile);
 
 // An RCON engine that drops the connection (no reply) on the first `drops` dispatches, then answers.
-async function engine(drops: number, reply: (request: any) => any, run: (port: number, seen: string[]) => Promise<void>) {
+async function engine(drops: number, reply: (request: any) => any, run: (port: number, seen: string[]) => Promise<void>, reconnect?: 'drop' | 'reject') {
   const sockets = new Set<Socket>();
   const seen: string[] = [];
   let left = drops;
@@ -27,6 +27,7 @@ async function engine(drops: number, reply: (request: any) => any, run: (port: n
         buffered = buffered.subarray(size + 4);
         const id = frame.readInt32LE(0), kind = frame.readInt32LE(4), text = frame.subarray(8, -2).toString();
         let body = '';
+        if (kind === 3 && seen.length && reconnect === 'drop') { socket.destroy(); return; }
         if (kind === 2) {
           const match = text.match(/\n(\{.*\})\]\]/);
           assert(match, `bad dispatch: ${text}`);
@@ -36,7 +37,7 @@ async function engine(drops: number, reply: (request: any) => any, run: (port: n
           body = JSON.stringify({id:request.id, tick:1, ...reply(request)});
         }
         const out = Buffer.alloc(Buffer.byteLength(body) + 14);
-        out.writeInt32LE(out.length - 4, 0); out.writeInt32LE(id, 4); out.writeInt32LE(kind === 3 ? 2 : 0, 8); out.write(body, 12);
+        out.writeInt32LE(out.length - 4, 0); out.writeInt32LE(kind === 3 && seen.length && reconnect === 'reject' ? -1 : id, 4); out.writeInt32LE(kind === 3 ? 2 : 0, 8); out.write(body, 12);
         socket.write(out);
       }
     });
@@ -59,6 +60,41 @@ test('a call across a short drop is sent again with the same ID and answered onc
     assert.equal(out.ok, true, JSON.stringify(out));
     assert.equal(seen.length, 3); assert.equal(new Set(seen).size, 1, 'the same ID each time');
     assert.match(out.result.retried, /^the game did not answer at first \(.*\); sent again with the same ID 2 times over [\d.]+ s: this is the game's one answer to it/);
+  });
+});
+
+for (const reconnect of ['drop', 'reject'] as const) {
+  test(`an unknown action stays unknown after reconnect ${reconnect}`, async () => {
+    await engine(1, () => ({ok:true, result:{started:1}}), async (port, seen) => {
+      const out = JSON.parse((await cli(port, ['call', 'craft', '--args', '{"recipe":"lab","count":1}'],
+        {FH_RETRY_MS:'1100'})).stdout);
+      assert.equal(out.ok, false);
+      assert.equal(typeof out.id, 'string');
+      assert.equal(out.id, seen[0]);
+      assert.equal(out.error.code, 'outcome_unknown', JSON.stringify(out));
+      assert.doesNotMatch(out.error.message, /not sent|nothing was done/);
+      assert.equal(seen.length, 1);
+    }, reconnect);
+  });
+}
+
+test('a later --id invocation stays unknown across failed reconnects until a verified reply', async () => {
+  const args = ['--id', 'unknown-craft', 'call', 'craft', '--args', '{"recipe":"lab","count":1}'];
+  await engine(1, () => ({ok:true, result:{started:1}}), async (port, seen) => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const out = JSON.parse((await cli(port, args, {FH_RETRY_MS:'0'})).stdout);
+      assert.equal(out.id, 'unknown-craft');
+      assert.equal(out.error.code, 'outcome_unknown', JSON.stringify(out));
+      assert.doesNotMatch(out.error.message, /not sent|nothing was done/);
+    }
+    assert.deepEqual(seen, ['unknown-craft']);
+  }, 'drop');
+  await engine(0, () => ({ok:true, result:{started:1}}), async port => {
+    const out = JSON.parse((await cli(port, args, {FH_RETRY_MS:'0'})).stdout);
+    assert.equal(out.id, 'unknown-craft');
+    assert.equal(out.ok, true);
+    assert.deepEqual(out.result, {started:1});
+    assert.equal(out.error, undefined);
   });
 });
 

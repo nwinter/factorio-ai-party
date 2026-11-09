@@ -21,12 +21,12 @@ local D=require('platdigest'){platform=function(_,name) eq(name,'Kestrel II'); r
     solar='18 solar panels: 1080 kW at full sun; 24 machines on low power, 0 on no power now',low_power=24,no_power=0} end,
   platform_defense=function()
     if fail_defense then error('platdefense.lua:60: platform Kestrel II has no surface yet') end
-    return {collectors={{position={x=-20.5,y=-38.5},covered_by=8},{position={x=19.5,y=-38.5},covered_by=0}},
+    return {turret_counts={status='complete',read=3,total=3,empty=1},collectors={{position={x=-20.5,y=-38.5},covered_by=8},{position={x=19.5,y=-38.5},covered_by=0}},
       sides={{side='north',uncovered=0},{side='east',uncovered=12}},
       turrets={{name='gun-turret',ammo='firearm-magazine*10'},{name='gun-turret',ammo='no ammo'},{name='rocket-turret',ammo='rocket*10'}},
       feed={reaches=2162,stranded=30,stranded_groups={'15 on 13 belts in (8.5,18.5)-(8.5,45.5)'}}} end}}
 local r=D.read({},{platform='Kestrel II'})
-eq(r.lines[1],'stopped or blocked (4): crusher (3,4) metallic-asteroid-crushing: full_output; in metallic-asteroid-chunk*1, out iron-ore*50 | gun-turret (-16,-32) empty: fast-inserter (-15.5,-30.5) from fast-transport-belt (-15.5,-29.5) | collector (19.5,-38.5): no turret reaches its front | east side: 12 edge tiles no turret reaches')
+eq(r.lines[1],'stopped or blocked (5): crusher (3,4) metallic-asteroid-crushing: full_output; in metallic-asteroid-chunk*1, out iron-ore*50 | gun-turret (-16,-32) empty: fast-inserter (-15.5,-30.5) from fast-transport-belt (-15.5,-29.5) | collector (19.5,-38.5): no turret reaches its front | east side: 12 edge tiles no turret reaches | 1 empty ammo turrets')
 eq(r.route,'state on_the_path; leg fulgora->aquilo, 12000 km left, arrives in about 6.5 min; next stop aquilo; speed 33.3 km/s')
 eq(r.hub,'hub slots 101 of 139 free; asteroid chunks take 9 of 139 slots (metallic 5, carbonic 4)')
 eq(r.chunks[1],'made (collectors\' catch and crushers\' returns): carbonic-asteroid-chunk 6.2/min, metallic-asteroid-chunk 6.5/min'); eq(#r.chunks,2)
@@ -42,5 +42,6 @@ eq(table.concat(order,','),'stopped,route:,hub,chunks:,chunks:,2,crusher,crusher
 -- a read that fails is named; the rest stand
 fail_defense=true
 r=D.read({},{platform='Kestrel II'})
-eq(r.errors[1],'platform_defense: platform Kestrel II has no surface yet'); eq(r.turrets,nil); has(r.lines[1],'stopped or blocked (2)')
+eq(r.errors[1],'platform_defense: platform Kestrel II has no surface yet'); has(r.turrets,'whole-ship turret counts unknown'); has(r.lines[1],'stopped or blocked (2)')
+eq(r.check.status,'unknown'); has(r.lines[1],'incomplete check')
 print('platdigest: ok')

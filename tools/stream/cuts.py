@@ -6,7 +6,7 @@ All three captures ("stream cam1..3", factorio-cam1..3.exe, OBS order = the dire
 the on-air hole (layout.json `main`, the whole left column), cropped to its shape. A cut brings the client on air to
 the front of the other two; the inset, while there is one, is moved to layout.json `inset` (uncropped) and put on top.
 Only z-order and the inset's transform change: every capture keeps running, so a cut is instant. Nothing else in the
-scene moves (background below, the overlay above). The vertical scene ("stream vertical" in Aitum Vertical's canvas,
+scene moves except the overlay, which is pinned above every item even if its previous slot was wrong. The vertical scene ("stream vertical" in Aitum Vertical's canvas,
 tools/vertical.py) shares the captures and is restacked the same way in layout-portrait.json's holes.
 
 Trio (onecam.py, program "layout": "trio"): the three captures move to layout-3cam.json's holes, the client on air in
@@ -15,9 +15,10 @@ the switch is live (no scene rebuild). The vertical scene stays one camera: the 
 (d28 batch324 SF2) A panel trio (one client, two camera panels) brings its own holes in the program ("holes": main as
 layout.json's, the panels over it): the main capture keeps its crop, so no GUI strip shows in it.
 """
-import json, os, re, threading, time, traceback
+import copy, json, os, re, threading, time, traceback
 
 from obsws import OBSError
+from scene_order import overlay_ids, overlays_last, raise_overlays
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LAYOUT = os.path.join(HERE, "static", "layout.json")
@@ -27,6 +28,10 @@ SOURCES = ("stream cam1", "stream cam2", "stream cam3")
 # program says host, in the on-air hole over the cameras (cropped as they are); off and behind them otherwise.
 HOST = "stream host"
 SLOTS = ("main", "cam2", "cam3")
+VERIFY_EVERY = 5.0
+VERIFY_TTL = 10.0
+# These sources have no pixels. Unknown enabled sources above the main capture fail closed.
+AUDIO_KINDS = {"wasapi_process_output_capture", "wasapi_output_capture", "wasapi_input_capture"}
 
 
 def crop_for(src_w, src_h, rect_w, rect_h):
@@ -52,15 +57,26 @@ def view_frac(layout, client=(1920, 1080)):
     return round(min(1.0, (w / h) / (client[0] / client[1])), 3)
 
 
-def order(items, cams, top_first):
+def platform_view_frac(layouts, client):
+    """Width shared by the actual capture's integer centre crops in both program layouts.
+    Platform fits must survive the narrower portrait pane too; no OBS query is needed."""
+    widths = []
+    for layout in layouts:
+        _, _, w, h = layout["cams"]["main"]
+        crop = crop_for(*client, w, h)
+        widths.append((client[0] - crop["cropLeft"] - crop["cropRight"]) / client[0])
+    return min(widths)
+
+
+def order(items, cams, top_first, overlays=()):
     """items: [(item id, index)] of the whole scene; cams: the camera item ids; top_first: cams from the front back.
-    -> the scene's ids bottom to top with the cameras restacked in the slots they already occupy."""
+    -> bottom to top, cameras restacked in their slots, then overlays above every other item."""
     ids = [i for i, _ in sorted(items, key=lambda x: x[1])]
     slots = sorted(ids.index(c) for c in cams)
     out = list(ids)
     for pos, cid in zip(slots, reversed(top_first)):
         out[pos] = cid
-    return out
+    return overlays_last(out, overlays)
 
 
 VERTICAL = {"canvas": "Aitum Vertical", "scene": "stream vertical",  # tools/vertical.py
@@ -83,26 +99,78 @@ class Cuts:
         self.log = log
         self.want = None
         self.applied = None
+        self.acknowledged = None
+        self.retry_at = 0
+        self.attempts = 0
+        self.incomplete = False
+        self.confirmed = False
+        self.verified_at = 0
+        self.verify_at = 0
         self.status = {"connected": False, "error": None, "onair": None, "inset": None, "t": None, "vertical": None}
         self.lock = threading.Lock()
         if start:
             threading.Thread(target=self.run, daemon=True).start()
 
+    @staticmethod
+    def program_key(program):
+        if not program:
+            return None
+        # Labels, ship progress and other snapshot facts can change each second without a new camera command.
+        # They must neither reset a pending capture's backoff nor trigger another OBS scene update.
+        key = {k: v for k, v in program.items() if k not in ("frames", "layout_info", "cameras")}
+        key["cameras"] = {s: (r.get("pending"), Cuts.camera_key(r.get("shot")))
+                          for s, r in (program.get("cameras") or {}).items()}
+        key["surfaces"] = {s: (r.get("client"), (r.get("frame") or {}).get("surface"))
+                           for s, r in (program.get("frames") or {}).items()
+                           if r.get("client") or (r.get("frame") or {}).get("surface")}
+        return key
+
+    @staticmethod
+    def camera_key(shot):
+        return tuple((shot or {}).get(k) for k in ("sent", "surface", "follow", "map"))
+
+    @staticmethod
+    def frames_match(program):
+        roles = dict(program.get("tiles") or {}, main=program.get("onair"), inset=program.get("inset"))
+        for role, row in (program.get("frames") or {}).items():
+            slot = row.get("client")
+            if slot != roles.get(role):
+                return False
+            if row.get("ship") or row.get("platform"):
+                camera = (program.get("cameras") or {}).get(slot) or {}
+                shot = camera.get("shot") or {}
+                surface = (row.get("frame") or {}).get("surface")
+                if (camera.get("pending") or not surface or
+                        surface != (shot.get("surface") or (shot.get("position") or {}).get("surface"))):
+                    return False
+        return True
+
+    def invalidate(self, reason, reset=True):
+        # Invalidate BEFORE the first OBS write: a rejected later write cannot preserve old identity.
+        with self.lock:
+            self.confirmed = False
+            self.incomplete = True
+            self.status["error"] = reason
+        if reset:
+            for target in self.targets:
+                target["placed"] = {}
+
     def set(self, program):
         with self.lock:
-            self.want = dict(program)
+            if self.program_key(program) != self.program_key(self.want):
+                self.retry_at, self.attempts = 0, 0
+            self.want = copy.deepcopy(program)
 
     def run(self):
         while True:
             try:
                 self.work()
             except (OSError, OBSError) as e:
+                self.invalidate(str(e)[:200])
                 self.status.update(connected=False, error=str(e)[:200])
-                for t in self.targets:
-                    t["placed"] = {}
-                self.applied = None
                 time.sleep(5)
             except Exception as e:
+                self.invalidate(f"{type(e).__name__}: {e}"[:200])
                 self.status["error"] = f"{type(e).__name__}: {e}"[:200]
                 traceback.print_exc()
                 time.sleep(2)
@@ -124,27 +192,143 @@ class Cuts:
             return
         if uuid:
             self.targets.append({"name": v["scene"], "ref": {"sceneUuid": uuid}, "layout": json.load(open(v["layout"])),
-                                 "placed": {}})
+                                 "canvas": {"canvasUuid": cv["canvasUuid"]}, "placed": {}})
         self.status["vertical"] = "on" if uuid else "no scene " + v["scene"]
 
-    def work(self):
+    def work(self, now=None):
+        now = time.time() if now is None else now
         with self.lock:
             want = self.want
-        if not want or want == self.applied:
+        if not want:
             return
+        if self.program_key(want) == self.program_key(self.applied) and not self.incomplete:
+            if now >= self.verify_at:
+                # GetSceneItemList already includes enables, indices, sizes and transforms.
+                # Unchanged scenes must still detect manual edits, capture loss and scene switches.
+                if not self.verify(want, now):
+                    self.retry_at = 0
+                    return
+            with self.lock:
+                self.applied = copy.deepcopy(want)  # fresh labels for the same confirmed frames
+                self.confirmed = True
+            return
+        if now < self.retry_at:
+            return
+        self.attempts += 1
+        self.retry_at = now + min(8.0, 0.5 * 2 ** min(self.attempts - 1, 5))
         if self.vertical and not self.vertical_checked:
             self.find_vertical()
+        visible = {want.get("onair"), want.get("inset")} - {None}
+        if want.get("layout") == "trio":
+            visible.update((want.get("tiles") or {}).values())
+        cameras = want.get("cameras") or {}
+        if any(s in cameras and (cameras[s].get("pending") or not cameras[s].get("shot")) for s in visible):
+            self.status["error"] = "camera send pending"
+            return
+        self.acknowledged = copy.deepcopy(want)
+        # Preflight every destination before touching transforms, enables or z-order. In particular a 0x0
+        # inset/host/trio source cannot displace the last valid program while it hooks its capture.
+        for t in self.targets:
+            if not self.ready_sources(t, want, visible):
+                return
+        self.invalidate("composition changing", reset=False)
         for t in self.targets:
             self.apply(t, want)
-        self.applied = want
+        self.incomplete = any(t.get("incomplete") for t in self.targets)
+        if self.verify(want, now):
+            with self.lock:
+                self.applied = copy.deepcopy(want)
+                self.confirmed = True
+            self.retry_at, self.attempts = 0, 0
+        else:
+            return
         self.status.update(connected=True, error=None, onair=want.get("onair"), inset=want.get("inset"), t=time.time(),
                            layout=want.get("layout") or "onecam")
         onair, inset = self.by_slot.get(want.get("onair")), self.by_slot.get(want.get("inset") or "")
         self.log(f"[cuts] on air {onair}" + (f", inset {inset}" if inset else "") +
                  (" (trio)" if want.get("layout") == "trio" else "") + (" under the host view" if want.get("host") else ""))
 
+    def verify(self, want, now):
+        self.verify_at = now + VERIFY_EVERY
+        # An unchanged composition retains its unexpired receipt while these reads are in flight.
+        # Mutations already invalidated it; public() expires a stalled worker's receipt.
+        try:
+            program = self.obs.call("GetCurrentProgramScene")
+            if (program.get("currentProgramSceneName") or program.get("sceneName")) != self.targets[0]["name"]:
+                raise OBSError("program scene changed")
+            for target in self.targets:
+                if target.get("canvas"):
+                    # Aitum's GetSceneList returns null currentProgramScene*, even when it is streaming.
+                    # Use its existing read-only current_scene request (also used by vertical.py check).
+                    w, h = target["layout"]["canvas"]
+                    result = self.obs.call("CallVendorRequest", {"vendorName": "aitum-vertical-canvas",
+                        "requestType": "current_scene", "requestData": {"width": w, "height": h}})
+                    vertical = result.get("responseData", result)
+                    if not vertical.get("success") or vertical.get("scene") != target["name"]:
+                        raise OBSError("vertical program scene changed")
+                items = self.obs.call("GetSceneItemList", target["ref"])["sceneItems"]
+                self.verify_target(target, want, items)
+        except Exception as e:
+            self.invalidate(str(e)[:200])
+            return False
+        self.verified_at = time.time()
+        self.status["error"] = None
+        return True
+
+    def verify_target(self, target, want, items):
+        rows = sorted(items, key=lambda r: r["sceneItemIndex"])
+        enabled = [r for r in rows if r.get("sceneItemEnabled", True)]
+        by_name = {r["sourceName"]: r for r in enabled}
+        onair = HOST if want.get("host") else self.by_slot.get(want.get("onair"))
+        required = {self.by_slot.get(s) for s in (want.get("onair"), want.get("inset")) if s}
+        if want.get("layout") == "trio":
+            required.update(self.by_slot.get(s) for s in (want.get("tiles") or {}).values())
+        if want.get("host"):
+            required.add(HOST)
+        for src in required:
+            row = by_name.get(src)
+            tr = (row or {}).get("sceneItemTransform") or {}
+            expected = target.get("expected", {}).get((row or {}).get("sceneItemId"))
+            if (not row or not expected or not tr.get("sourceWidth") or not tr.get("sourceHeight") or
+                    any(tr.get(k) != v for k, v in expected.items())):
+                raise OBSError(f"unconfirmed capture: {target['name']}/{src}")
+        # Check the actual order against the order just requested, including inset/trio and host.
+        stack = target.get("stack") or []
+        if [r["sourceName"] for r in rows if r["sourceName"] in stack] != stack:
+            raise OBSError(f"capture order changed: {target['name']}")
+        main_index = by_name[onair]["sceneItemIndex"]
+        allowed = required | {"stream overlay", "vertical overlay"}
+        for row in enabled:
+            if (row["sceneItemIndex"] > main_index and row["sourceName"] not in allowed and
+                    row.get("inputKind") not in AUDIO_KINDS):
+                raise OBSError(f"capture covered: {target['name']}/{row['sourceName']}")
+        overlay = "stream overlay" if target is self.targets[0] else "vertical overlay"
+        if not enabled or enabled[-1]["sourceName"] != overlay:
+            raise OBSError(f"overlay not on top: {target['name']}")
+
+    def ready_sources(self, target, want, visible):
+        items = self.obs.call("GetSceneItemList", target["ref"])["sceneItems"]
+        ids = {it["sourceName"]: it["sceneItemId"] for it in items}
+        required = {self.by_slot.get(s) for s in visible}
+        if want.get("host"):
+            required.add(HOST)
+        for src in required:
+            if src not in ids:
+                self.status["error"] = f"source missing: {src}"
+                return False
+            tr = self.obs.call("GetSceneItemTransform", dict(target["ref"], sceneItemId=ids[src]))["sceneItemTransform"]
+            size = (tr.get("sourceWidth", 0), tr.get("sourceHeight", 0))
+            if not all(v > 0 for v in size):
+                self.status["error"] = f"source pending: {src} {size[0]}x{size[1]}"
+                self.log(f"[cuts] pending {src} {size[0]}x{size[1]}; keeping previous program")
+                return False
+            if target.setdefault("sizes", {}).get(ids[src]) != size:
+                target["placed"].pop(src, None)
+        return True
+
     def apply(self, target, want):
         o, ref = self.obs, target["ref"]
+        target["incomplete"] = False
         items = o.call("GetSceneItemList", ref)["sceneItems"]
         ids = {it["sourceName"]: it["sceneItemId"] for it in items}
         cams = {src: ids[src] for src in self.by_slot.values() if src in ids}
@@ -180,6 +364,7 @@ class Cuts:
                     target["placed"][src] = key
                 else:
                     target["placed"].pop(src, None)
+                    target["incomplete"] = True
         tiles = [s for s in hole if s in cams and s != onair]  # (batch324) a trio's small tiles over the big one
         front = tiles + [s for s in (inset, onair) if s in cams and s not in tiles] + \
             [s for s in self.by_slot.values() if s in cams and s not in (inset, onair) and s not in tiles]
@@ -187,14 +372,18 @@ class Cuts:
         if HOST in ids:  # in front of every camera while on, behind them while off
             stack[HOST] = ids[HOST]
             front = [HOST] + front if host_on else front + [HOST]
+        target["stack"] = list(reversed(front))
         final = order([(it["sceneItemId"], it["sceneItemIndex"]) for it in items], list(stack.values()),
-                      [stack[s] for s in front])
+                      [stack[s] for s in front], overlays=overlay_ids(items))
         cur = [i for i, _ in sorted(((it["sceneItemId"], it["sceneItemIndex"]) for it in items), key=lambda x: x[1])]
         for idx, iid in enumerate(final):  # bottom up: each move leaves the positions below it as they are
             if cur[idx] != iid:
                 o.call("SetSceneItemIndex", dict(ref, sceneItemId=iid, sceneItemIndex=idx))
                 cur.remove(iid)
                 cur.insert(idx, iid)
+        # A concurrent panel rebuild can append an item after the initial snapshot. Re-read before the final pin.
+        raise_overlays(o.call("GetSceneItemList", ref)["sceneItems"], lambda iid, idx: o.call(
+            "SetSceneItemIndex", dict(ref, sceneItemId=iid, sceneItemIndex=idx)))
 
     def place(self, target, iid, role, holes=None):
         """The capture into its role's hole, cropped to the hole's shape; True when its source size was known.
@@ -205,12 +394,34 @@ class Cuts:
         x, y, w, h = (holes or target["trio"])[role[5:]] if role.startswith("trio:") else target["layout"]["cams"][role]
         t = o.call("GetSceneItemTransform", dict(ref, sceneItemId=iid))["sceneItemTransform"]
         known = bool(t.get("sourceWidth") and t.get("sourceHeight"))
+        if known:
+            target.setdefault("sizes", {})[iid] = (t["sourceWidth"], t["sourceHeight"])
         tr = dict(positionX=float(x), positionY=float(y), boundsType="OBS_BOUNDS_SCALE_INNER", boundsWidth=float(w),
-                  boundsHeight=float(h), boundsAlignment=0, alignment=5)
+                  boundsHeight=float(h), boundsAlignment=0, alignment=5, rotation=0.0, scaleX=1.0, scaleY=1.0)
         if known:
             tr.update(crop_for(t["sourceWidth"], t["sourceHeight"], w, h))
         o.call("SetSceneItemTransform", dict(ref, sceneItemId=iid, sceneItemTransform=tr))
+        target.setdefault("expected", {})[iid] = dict(tr, sourceWidth=t.get("sourceWidth"),
+                                                     sourceHeight=t.get("sourceHeight"))
         return known
 
     def public(self):
-        return dict(self.status)
+        with self.lock:
+            aired = self.applied if self.confirmed and time.time() - self.verified_at <= VERIFY_TTL else None
+            if aired and not self.frames_match(aired):
+                aired = None
+            if aired:
+                # The source can move to a new surface before OBS needs any restacking. Never pair its
+                # previous labels with the new camera, including a pending/unknown send outcome.
+                for row in (aired.get("frames") or {}).values():
+                    slot = row.get("client")
+                    old = (aired.get("cameras") or {}).get(slot) or {}
+                    cur = ((self.want or {}).get("cameras") or {}).get(slot) or {}
+                    latest = next((r for r in ((self.want or {}).get("frames") or {}).values()
+                                   if r.get("client") == slot), None)
+                    if (cur.get("pending") or self.camera_key(old.get("shot")) != self.camera_key(cur.get("shot")) or
+                            latest and (latest.get("frame") or {}).get("surface") != (row.get("frame") or {}).get("surface")):
+                        aired = None
+                        break
+            return copy.deepcopy(dict(self.status, confirmed=bool(aired), verified_at=self.verified_at,
+                                      requested=self.want, acknowledged=self.acknowledged, on_air=aired))

@@ -463,6 +463,10 @@ return function(api)
       return BODYLESS_WAITS[c['until']] or c.surface ~= nil or c.platform ~= nil or (c['until'] == 'item_count' and (c.positions ~= nil or c.position ~= nil))
     end
     if action == 'wait_until' and bodyless(args) then return end
+    if action == 'transfer' or action == 'pickup' then
+      error(string.format('bot %s is aboard platform %s with no body (remote view only): %s is a hand move. %s',
+        b.name,b.travel.platform,action,require('argforms').PLATFORM_ITEMS),0)
+    end
     error(no_body(b), 0)
   end
   -- A bot's corpse (Opus, shift12 15:20: a corpse recovery call). The game leaves a character-corpse where the

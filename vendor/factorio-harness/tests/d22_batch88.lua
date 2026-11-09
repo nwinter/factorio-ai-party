@@ -71,6 +71,7 @@ do
   local rows={{name='rocket',stock=500},{name='firearm-magazine',stock=1000}}
   local lines,drows=R.forecast(pl,{{from='gleba',to='aquilo',km=30000,minutes=36}},rows,{})
   local text=table.concat(lines,'\n')
+  has(text,'area/splash and multi-target effects not modelled; each ammunition estimated independently')
   has(text,'rocket (rocket-turret): shots per asteroid medium-metallic-asteroid 1 + 3 for its fragments')
   has(text,'big-metallic-asteroid 2 + 12 for its fragments')  -- 3 medium x 1, 9 small x 1
   has(text,'firearm-magazine (gun-turret): shots per asteroid medium-metallic-asteroid 9 + 6 for its fragments')

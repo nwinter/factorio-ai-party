@@ -9,6 +9,9 @@
 -- 3. shipment {launches}.
 -- 4. (Astra #2755) budget_below and launches_at_least in the remote and platform lanes, inside all/any.
 -- 5. a window reaching past the pod log's oldest kept journey.
+local function unreadable(C,p,c)
+  local ok,e=pcall(C.check,p,c); assert(not ok,'expected a budget read error'); return false,e
+end
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function has(s,x) assert(tostring(s):find(x,1,true),tostring(s)..' lacks '..x) end
@@ -155,10 +158,10 @@ do
   end
 end
 -- budget_below at a stop: not met, said, no read; a read that fails is kept 600 ticks like a reading (a guard's read
--- error raised at each check, the read made once)
+-- failure said at each check, the read made once)
 do
   local reads,fail=0,true
-  local C=require('conditions'){return_budget=function() reads=reads+1; if fail then error('turnaround: Resolute flies no connection now',0) end
+  local C=require('conditions'){leg=function() return {from='solar-system-edge',to='shattered-planet',back=false} end,return_budget=function() reads=reads+1; if fail then error('turnaround: Resolute flies no connection now',0) end
     return {binds={name='rocket',out_km_max=100}} end}
   local res={name='Resolute',valid=true,space_location={name='solar-system-edge'}}
   local p={force={platforms={res}}}
@@ -167,9 +170,9 @@ do
   local met,saw=C.check(p,c)
   eq(met,false); eq(reads,0); has(saw,'platform Resolute: stopped at solar-system-edge: the return budget reads a ship in flight (not met)')
   res.space_location=nil
-  fails(function() C.check(p,c) end,'flies no connection now (read at tick '..t0..')')
+  met,saw=unreadable(C,p,c); eq(met,false); has(saw,'no fresh return budget'); has(saw,'flies no connection now'); has(saw,'read at tick '..t0)
   game.tick=t0+590
-  fails(function() C.check(p,c) end,'(read at tick '..t0..')')
+  met,saw=unreadable(C,p,c); eq(met,false); has(saw,'read at tick '..t0)
   eq(reads,1,'a failed read kept for BUDGET_EVERY')
   fail=false; game.tick=t0+600
   met=C.check(p,c); eq(met,true); eq(reads,2)

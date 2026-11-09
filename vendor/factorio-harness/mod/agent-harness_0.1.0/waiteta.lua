@@ -1,10 +1,11 @@
+local arrival_eta=require('arrivaleta')
 -- Wait estimates from the predicate's own observation and existing rate/queue reads. No entity searches here.
 return function(api)
   local M={}
   local function try(fn) local ok,v=pcall(fn); if ok then return v end end
   local function label(c)
     local text=c['until']..(c.technology and ' '..c.technology or c.item and ' '..c.item or c.platform and ' '..c.platform or '')
-    if c['until']=='platform_ammo_below' then text=text..(c.area and ' in an area of ' or c.loop and ' in a belt loop of ' or ' aboard ')..tostring(c.platform)  -- (d22 batch117 BZ1) every place aboard; (d24 batch173) or a scope
+    if c['until']=='platform_ammo_below' then text=text..(c.area and ' in an area of ' or c.loop and ' in a belt loop of ' or ' aboard ')..tostring(c.platform)..'; on_stale '..(c.on_stale or 'met')
     elseif c['until']=='pod_landed' then text='pod_landed '..(c.item or 'pods')..' landed from '..tostring(c.platform)..(c.location and ' on '..c.location or '')..(c.since_tick and ' since tick '..c.since_tick or '')  -- (d25 batch205 QR1) pods sent down, not the hub
     elseif c.item and c.platform then text=text..' in '..c.platform..' hub'
     elseif c.positions or c.position then
@@ -93,7 +94,12 @@ return function(api)
       end
     elseif c['until']=='platform_arrived' and o then
       local leg=o.leg
-      if not leg then
+      -- An explicit long platform wait still checks arrival every 10 ticks. Its ETA uses only the current leg:
+      -- the full schedule projection (departure watches and later stops) exceeded 10 ms on the private copy.
+      -- Ordinary waits retain that projection; the long wait's deadline is reported separately by the scheduler.
+      if type(c.timeout)=='number' and c.timeout>54000 and (not leg or c.location and leg.to~=c.location) then
+        unknown='long wait: no arrival ETA before departure or beyond the current flight leg'
+      elseif not leg then
         -- Before it leaves (Sonnet, every shift): its schedule, the stop's waits, the legs at its last speed.
         local est,why
         if api.before_departure and o.platform then est,why=api.before_departure(o.platform,c.location) end
@@ -108,8 +114,14 @@ return function(api)
         elseif est then unknown=est.line
         else unknown='current flight leg ends at '..leg.to..', not '..c.location..(why and '; '..why or '') end
       elseif o.paused then unknown='platform is paused; arrival rate is unavailable'
-      elseif not leg.eta_ticks or leg.eta_ticks<=0 then unknown='current platform speed is zero or unavailable'
-      else seconds=leg.eta_ticks/60; basis='distance left on current connection / current speed; unchanged speed, excludes later legs' end
+      else
+        local now, why=arrival_eta(leg)
+        if now then
+          seconds,basis=now.seconds,now.basis
+          row.leg_left_km,row.speed_kms,row.heading_to=now.leg_left_km,now.speed_kms,now.heading_to
+          row.eta_uncertain,row.speed_trend=now.uncertain,now.speed_trend
+        else unknown=why end
+      end
     elseif c['until']=='tick_at_least' and type(c.tick)=='number' then seconds,basis=(c.tick-game.tick)/60,'the game tick it names'
     else unknown='no measured rate for this condition' end
     if type(seconds)=='number' and seconds==seconds and seconds>=0 and seconds<math.huge then
@@ -147,6 +159,7 @@ return function(api)
     return to
   end
   function M.info(out,record)
+    if record.evidence and record.evidence.platform_health then out.evidence=record.evidence end
     out.idle_s=math.floor((record.idle_ticks or 0)/60)
     out.wait_estimates=record.wait_estimates
     out.matched=record.matched  -- (d23 batch127 CJ1) until=any: the member that held

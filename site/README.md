@@ -4,6 +4,14 @@ A static site for player-of-games: what the project is, the experiments log, one
 live page for the stream. `build.py` (Python 3 stdlib, no dependencies) reads the repo's run data and writes plain
 HTML, CSS and a little JS to `site/dist/`. Charts are inline SVG generated at build time.
 
+Handover labels (batch436) share `tools/stream/static/shift-phase.js` with the recap overlay. Scheduled end/next
+times stay labelled planned. Passing the end means pending/overdue; authenticated Operator chat confirms a
+change beginning, failing or going live. The stream adds file-only startup/save facts from `start.log` and
+`stopped.json`; the build also puts those facts in `/live/status.json`, rechecked each minute. A final shift
+(`stream.json` shift.next is null, from `POG_NEXT_SHIFT=none`) becomes "Run ended" only after a successful stop
+record. Run `tools/site-refresh.sh --last-run RUN` after the final stop to publish that receipt; an absent or
+failed receipt stays pending/failed. No Worker deployment or new game polling is needed.
+
 ## Build and preview
 
 ```sh

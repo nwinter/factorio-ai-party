@@ -1,3 +1,22 @@
+- `queue_status {agent:"sol", lane:"platform:Asterion", pending:"all", history:"all"}` reads that agent's lane.
+  Omit `agent` for your own. Agent names and display names are case-insensitive. The reply names `owner` and
+  `state`, with the same active step, pending steps, plan/history, guard baselines, last cached evidence (`saw`,
+  `when.evidence`), read errors and pause/failure reasons the owner sees. `lanes` summarizes their other lanes.
+  History defaults to 16 entries (3 with `orders:true`), capped at 64; pending defaults to 1, capped at 128;
+  `"all"` uses those caps. `args:true` includes history arguments. Unknown agents fail; an absent queue is `empty`.
+  Reads do not run guards or create queues. Edits, cancels, pauses, resumes and submissions remain owner-scoped;
+  queue writes reject `agent`. Snapshot options keep their existing force-wide scope. Request telemetry and
+  delivered messages remain the caller's; wall-clock projections use the time of each read.
+
+- In `lane: "platform:NAME"`, `wait_until` with `until: "platform_arrived"` or `"platform_progress"` takes
+  `timeout: 1..17280000` ticks (80 game hours). Default 3600, other conditions/lanes and `wait_ticks` stay unchanged.
+  Dry and live `queue_submit` enforce the same bound, including guard steps. Guards still interrupt every 10 ticks
+  (a deadline guard at its tick); one wait occupies one step, with no extra queue entries or host polling.
+  Submission and `queue_status` give `wait_deadlines`: game `tick`/`game_seconds`, `ticks_left`, `wall_unix_ms` and
+  `wall_seconds_left` projected at 60 ticks/s (pauses/slower UPS delay wall time). `state: "if_started_now"` means
+  pending: its actual start depends on earlier steps or resume. `state: "waiting"` gives its running deadline.
+  With a timeout over 54000, arrival ETA covers the current flight leg only; before departure or beyond that leg,
+  `no_estimate` says so. Arrival itself is still checked every 10 ticks.
 - `wait_until {until, ..., timeout?}`: waits inside the game until a condition holds, with no call per check: a direct
   timed action (`--wait`), a queue step, a queue guard's `when` or a standing order's `when`. Conditions: `researched`
   (`technology`; without it the research running now; a technology with levels, an infinite one too, is met once the
@@ -36,9 +55,30 @@
   between reads, and when it was rebuilt; a fired guard keeps them in its queue history; remote and platform lanes,
   e.g. `{"until":"platform_foundation_loss","platform":"Asterion"}`); `platform_energy_below` (`platform`,
   `fraction`: its accumulators together hold under that share of their capacity; remote and platform lanes);
-  `budget_below` (`platform`, `turnaround` as platform_endurance's, `km`: met once the item that binds first can go out
+  `budget_below` (`platform`, `turnaround` as platform_endurance's, `km`: its cache is per leg and read arguments;
+  `turnaround.direct:true` opts into direct endpoint recovery: to the destination, remaining km minus the planned advance;
+  to the origin, the existing reversal. Default destination recovery still reverses via origin and warns with the direct distance.
+  Direct destination `out_km_max = usable / net * speed - direct_remaining_km`; `spare_km = out_km_max - turnaround.km`
+  is the whole plan's distance surplus/deficit. The guard still compares `out_km_max < km`, including window budgets.
+  Evidence keeps mode, from/to, direction, flown/remaining/out/reverse/via-origin/direct-remaining/total km and warning.
+  a stop clears it, a new leg reads fresh, an unavailable read is not met; `saw` names the read's leg and tick;
+  met once the item that binds first can go out
   less than km farther before the way back needs the rest; read every 10 s; a fact, nothing is changed; remote and
-  platform lanes, inside all/any too);
+  platform lanes, inside all/any too; optional `windows:[60,180,300,600,"leg"]` (any distinct subset) and
+  `require:"all"` (default with windows) or a count: **one same item** must bind under `km` in that many windows.
+  Different binding items across windows do not combine. Every fixed window needs its full duration on the current
+  leg, keyed by platform, connection, endpoints and direction; no cross-leg history or shorter fallback. The native
+  oldest bucket must also lie on this leg (up to one bucket after the nominal duration). Whole-leg counters need a
+  complete recorded baseline for this leg. `missing:"binding"` is the default: no data counts as binding, NET unknown.
+  `missing:"pending"` neither binds nor clears: with `require:"all"`, an item with any pending window cannot meet it.
+  `saw` says each item's NET/state per window and the eligibility tick; missing baselines say ready tick unknown.
+  Before the current leg's recorded baseline arrives, every requested window is unavailable under `missing`;
+  an earlier departure on the same route supplies no rates. Baseline arrival, replacement or loss refreshes the
+  cache at the next check; otherwise it refreshes at the eligibility tick or after 10 s. A failed read says not met.
+  `saw` and `evidence.window_check` name the corroborated item; `return_budget.window_budgets` keeps every item and
+  rate basis. Stock, reserve, margin, speed and caller allowance retain the existing formula; no gate state makes
+  NET zero. Omitting the options keeps the default calculation. Set `windows`/`require`/`missing` here or inside
+  `turnaround`, not both; changing them reads fresh);
   `launches_at_least` (`platform`, `n`, `window` seconds back or `since_tick`, `origin?` planet: the rockets sent up to
   that platform then, launched (landed, in flight) plus loaded in silos with a rocket ready aimed at it, met at n; saw
   and a fired guard's evidence give each count; counted every 1 s; read only: the harness stops nothing, so a cap is
@@ -52,8 +92,10 @@
   `platform_ammo_below` (`platform`, `item` (ammunition), `count`, `quality?` (default normal, or "any"), `max_age?`
   30..900 s, default 120): that item aboard in all (hub, turret slots, belts, inserter hands, machine outputs, chests)
   under count, from a background reading begun every 30 s while a check asks (a pass about 2 s on 6743 belts); saw
-  gives the total by place and its age; met too when the reading is older than max_age, or none by max_age after the
-  first check; `area` (one area aboard) or `loop` (a belt's `{x,y}`: the belts joined to it end to end, through
+  gives total by place, reading tick, age, max_age and refresh_pending. `on_stale:"met"` (default) meets on a reading
+  older than max_age, or none past max_age after the first check; `on_stale:"wait"` stays unmet until a reading within
+  max_age is below count. Both ask for the existing background pass; the wait's timeout is unchanged. Guards take
+  either policy. `area` (one area aboard) or `loop` (a belt's `{x,y}`: the belts joined to it end to end, through
   splitters and undergrounds, the inserters taking from them and the turrets those fill) counts that part alone, and
   saw adds the change since the reading before, a minute; remote and platform lanes);
   `ghosts_waiting` with `platform` (every ghost aboard, or `area`;
@@ -66,9 +108,9 @@
   no ghost left, entity or tile; `entities: false` tiles only; remote and platform lanes too; with `positions`, `area`
   or `tiles`: that part's ghosts only, and the other takes the same subset; saw counts the ghosts left); `fluid_count` (`platform`, `fluid`, `at_least` or `below`: every tank,
   pipe, thruster and machine of ours there holding it (fusion reactors and generators too), saw saying how much in each kind; or `surface` (a planet) with
-  `positions` or `area`: our tanks, pipes and machines there) and `circuit_signal` (`platform`, `signal`, `at_least` or `below`: the hub's red and green wires; a hub with no wire reads every signal as 0, as the game's own circuit conditions do, so `below` is met and a guard `at_least` over 0 is refused there), queue
+  `positions` or `area`: our tanks, pipes and machines there) and `circuit_signal` (`platform`, `signal`, `at_least` or `below`: the hub's red and green wires by default; optional `position:[x,y]` and `wire:red|green|both` select an entity's native networks (`red+green` also means both, combinators read inputs). Explicit selectors require every selected network: missing entities/wires refuse submission and dry runs; a lost network stays unreadable in `saw`, with the condition unmet. Connected zero is readable. `saw` and guard evidence name the entity, network IDs, counts and read tick; a hub with no wire reads every signal as 0, as the game's own circuit conditions do, so `below` is met and a guard `at_least` over 0 is refused there), queue
   steps and the remote lane too, e.g. `{"until":"fluid_count","platform":"Swift","fluid":"thruster-fuel","at_least":12000}`;
-  `platform_arrived`, `platform_left` (`./fh help space-age`); `all` (`conditions`: 1..8 plain conditions, met when
+  `platform_arrived` (latched arrival since wait start or `since_tick`), `platform_left` (`./fh help space-age`); `all` (`conditions`: 1..8 plain conditions, met when
   every one holds; in the remote lane when each is one the lane takes), e.g. `{"until":"all","conditions":[{"until":
   "fluid_count","platform":"Swift","fluid":"thruster-fuel","at_least":12000},{"until":"fluid_count","platform":"Swift",
   "fluid":"thruster-oxidizer","at_least":12000}]}`; `any` (`conditions`: 1..8 plain conditions, met when one holds;
@@ -89,7 +131,10 @@
   with `timed_out`; a queue step with `on_timeout: "hold"` stays first in pending instead and the queue pauses with
   it (`paused_why` names the condition still unmet and what it saw; `queue_resume` waits for it again with a fresh
   timeout). Status and `last` show `saw`, `wait_estimates` (each condition's ETA with its rate basis, or no
-  estimate) and `idle_s` (idle seconds in this wait). A direct call takes the wake options below and `pause_queue` (as
+  estimate) and `idle_s` (idle seconds in this wait). Arrival waits use distance left toward the current destination
+  divided by speed now, including turnbacks. `leg_left_km`, `speed_kms`, `heading_to`, `speed_trend` and
+  `eta_uncertain` name the inputs; the basis states the unchanged-speed assumption and any measured acceleration
+  or deceleration. No fresh speed comparison is explicitly uncertain. A direct call takes the wake options below and `pause_queue` (as
   `wait_ticks`). Example: `./fh call wait_until --args '{"until":"researched","technology":"automation"}' --wait`
 - `./fh sleep SECONDS --until COND` and `./fh wait --until COND`: COND in words, several joined by `|` (or a JSON
   list) waking on whichever holds first and naming it: `item_count iron-plate>=200 at -18.5,-34.5 -16.5,-34.5` (those
@@ -131,8 +176,10 @@
   step's numeric arguments are checked against the ranges its action takes when it runs (`seconds 3600 is outside
   10..1800 (a whole number), what platform_defense takes when it runs`), in `dry_run` too, and its text and list
   arguments against the lengths it takes when it runs (`reason: up to 200 characters (214 given), what uptime takes
-  when it runs`; `positions has 65 entries, outside 1..64, what scan takes when it runs`; `items has 9 entries,
-  outside 1..8, what uptime takes when it runs`). A
+  when it runs`; `positions has 65 entries, outside 1..64, what scan takes when it runs`). `uptime.items` takes
+  1..8 item prototype names or `{name, quality}` entries; fluids, unknown names and unknown qualities are refused
+  before submission. Dry and live submission name the failing step and argument, for example
+  `steps[17] (uptime): args: items[2]: water is not an item (fluid prototype)`. A
   plan that pauses on a step failing in its first 10 s is a line in your team block at once. `start: false` stages
   the steps: the lane is paused and held in the same call (an active step stopped and requeued), whatever its state
   was, until `queue_resume`; `state` in every reply says running, paused or held.
@@ -325,7 +372,9 @@
   end tick and progress (`team: harness_updated`: `... (your collect carried over)`), the remote lane's waits too; a
   move_to or drive restarts (`resumed`).
 - A dropped game connection is ridden out: fh sends the call again with the same ID for up to 90 s (`retried`); the
-  game answers an ID it already ran from its record. `game_unreachable` means nothing was sent. When the game runs
+  game answers an ID it already ran from its record. An unknown outcome keeps its request ID and stays
+  `outcome_unknown` through failed reconnects until a verified reply arrives, including later `--id` retries.
+  `game_unreachable` means all attempts failed before sending a fresh request. When the game runs
   slow, sleeps and `--wait` keep waiting while it advances (`slow_game: 18 ticks/s, 30% of normal`, also on the clock
   line) and end `paused` when it stops. After a server restart from a save, one reply says `rolled_back` and lists in
   `redo` what you changed since, which is gone.
@@ -359,3 +408,65 @@
   `wait_ticks` or `wait_until` while your queue runs runs as a sleep and the queue keeps going (`as_sleep`;
   `"pause_queue":true` pauses it). Reads, `sleep`, `say`, `tell`, the board, `craft` and `research` leave the queue
   running.
+
+- `inventory_free_slots`: `{"until":"inventory_free_slots","platform":"Asterion","below":16}`
+  is met when the hub has fewer than 16 empty usable slots; `at_least:16` is met at 16 or more.
+  Thresholds are integers 0..1000000000; both specify an inclusive lower/exclusive upper range.
+  Alternatively, `surface:"nauvis", position:[x,y]` reads one container, logistic container, linked container or cargo landing pad
+  of our force in a charted chunk (surface defaults to the character's). Platform excludes surface/position.
+  Direct `wait_until`, sleep conditions, queue waits and guards accept it, including `all`/`any`;
+  remote/platform lanes require platform or surface. Checks occur every 10 ticks for waits and queue guards.
+  `saw` gives occupied/free/total usable slots, physical capacity/barred slots and `read_tick`. The live
+  inventory size includes cargo-bay and quality capacity. Each partial or full stack occupies one slot,
+  across all items and qualities. Empty filtered slots count for their matching item; partial-stack room
+  is not a free slot. Barred slots are excluded from all three usable counts. Hub/pad trash and cargo in flight
+  are excluded. Inbound pods' reserved inventory slots are unavailable in the 2.0.77 API; cargo-hatch
+  reservations are not inventory-slot reservations. These counts do not subtract future deliveries.
+  Fired guards keep the reading in `evidence.inventory_free_slots`. No cached reading or `on_stale` option:
+  Submit and dry-run validation check the target now, including inside `all`/`any`, without testing the threshold
+  or reserving slots. A missing/unsupported target is refused before queue execution. If it disappears later,
+  a missing/unreadable target raises the condition error (direct wait refused/failed, queued wait
+  follows `on_fail`, guard stays armed with `read_error`; `any` can still meet on another readable member).
+- `platform_speed_above {platform, above, for_s?, max_age?}` is a `wait_until` condition and queue guard in body,
+  remote and platform lanes, including `all`/`any`. `above` is a strict km/s threshold; native `LuaSpacePlatform.speed`
+  is km/tick, multiplied by 60. Each check reads live speed. `for_s` defaults to 0 (0..86400 game seconds);
+  a sample at/below the threshold, unreadable speed, or a gap over `max_age` resets the sustained duration.
+  `max_age` is the allowed gap in seconds (default 1; 1/60..900), not a speed cache. Guard `saw` and `evidence`
+  show `speed_kms`, `tick` and source `LuaSpacePlatform.speed`. Zero and finite negative speed clear duration;
+  negative noise within 1e-9 km/s of zero reads as 0, larger negatives stay signed. Missing platforms and
+  missing/unreadable speed fields have distinct errors. A guard fires once; recovery replaces running/pending steps.
+  Platform entity configuration and `circuit_set` leave schedule records and an active `flight_watch` intact;
+  recovery can set the thrust circuit and then wait for arrival. Guards are checked every 10 ticks while unpaused.
+- `queue_submit` (including `dry_run`) parses every `platform_schedule` stop wait and guard recovery step before
+  accepting the plan. Invalid waits name the step, label and `stops[i].wait[j]` (or `wait[j]` for `stop`).
+  Count/circuit waits take `condition: "iron-plate >= 100"` or `{signal, comparator, value}`; `comparator` beside
+  `type` is invalid. Dry runs do not write saved wait lists or schedules.
+
+- Remote/platform queue `upgrade` steps require explicit `platform` or `surface`. The direct planner checks run at submission and execution; submission makes no upgrade marks. Execution uses the direct call: ghosts change in place with wires/settings kept, built entities are marked for replacement.
+- `wait_until {until: "entity_quality", platform: "Asterion", position: {x: 1, y: 2}, name: "inserter", quality: "epic", timeout: 54000}`: true when an owned built entity at that position has exactly that quality. `name` is optional; `surface` replaces `platform` for a planet. Ghosts, missing entities and pending upgrade marks are false. Current sight is required, as for upgrade. The condition works in remote/platform lanes, including guards and all/any.
+
+### Current platform health
+
+`wait_until {until:"damaged",platform:"Asterion",fraction:0.5}` reads current damage on the whole hull. Optional `positions:[{x,y},...]` (1..64, any tile of each entity's footprint) or `area:[[x0,y0],[x1,y1]]` (centres inside, upper bounds excluded, at most 1024x1024) restricts it. Position/radius and combined positions/area are refused. Missing positions are read errors, not loss detection.
+
+`fraction` (0.01..1, default 1 when hp is absent) and/or `hp` (absolute HP) match a currently damaged entity strictly below either supplied threshold. Repair above the thresholds clears the match; fully repaired entities do not match. Exact health, max_health, name, unit_number, position and fraction for the worst 10 matches appear in `evidence.platform_health`, with count and read_tick; `saw` also names the values and tick. Lowest fraction first, or lowest HP with hp alone. Reads use damage events and re-read live HP each check (guards: every 10 ticks); the first hull read seeds the set, bounded at 32768 entities and refusing larger hulls without partial qualification. Positions use bounded direct reads.
+
+Available to waits and guards on body, remote and platform lanes, including all/any. Example guard condition: `{until:"damaged",platform:"Asterion",positions:[{x:0,y:0}],fraction:0.5}`. A not-met health guard says nothing about losses, empty guns, feed failures or clean-flight qualification; their existing separate guards remain unchanged. `platform_hit` continues to count cumulative damage, including repaired hits.
+
+## Guard priority
+
+`queue_submit` and `queue_edit` guards accept optional numeric `priority` (higher wins) and
+`exclusive_group` (1..64 bytes). A fired guard with priority protects its active/pending recovery steps
+from a met guard with lower explicit priority. Both groups set and different: no comparison; otherwise
+they share control scope within this lane. Equal priorities, or either priority omitted: existing replacement
+behavior. Suppressed guards are consumed once. Pausing/requeueing retains protection; finishing/removing
+the reaction steps ends it. Direct queue calls remain explicit overrides.
+
+Guard replacement retains omitted `priority` and `exclusive_group` fields; supplied values replace them.
+Remove and add a guard to clear its policy. Timeout hold/resume and harness updates retain recovery protection
+in body, remote and platform lanes.
+
+`queue_status.guard_control` names the controlling guard, priority, group, firing tick and trigger reason.
+`guard_suppressed` keeps the newest eight suppressions, each with the suppressor and its firing tick/reason;
+history also records `guard_suppressed`. Submission/dry-run `guard_warnings` report differing reactions
+when neither guard has priority; these are potential conflicts, without predicting which conditions fire.

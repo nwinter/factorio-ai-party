@@ -47,9 +47,11 @@ do
   r=space.platform_schedule(p,{platform='Petrel',stops={{station='nauvis'},{station='gleba'}},current=1})
   has(r.still_paused,'Petrel was paused before this call and still is')
   recs=rawget(pl,'schedule').records; rawset(pl,'schedule',nil)   -- (the mock reads the records set)
-  -- paused: true asked: no still_paused line (the call paused it)
+  -- current's go-to switches to automatic even with paused: true (2.0.77 copy, batch433).
+  sch.go_to_station=function(i) cur=i; pl.paused=false; pl.state=4 end
   r=space.platform_schedule(p,{platform='Petrel',current=2,paused=true})
   eq(r.still_paused,nil,'paused: true given')
+  eq(r.paused,false); eq(r.paused_before,true)
   cur=1
   pl.paused=false
   r=space.platform_schedule(p,{platform='Petrel',stop=2,wait={{type='time',ticks=1200}}})

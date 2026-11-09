@@ -148,6 +148,7 @@ do
   for k in src:gmatch('[^%w_%.]c%.([%a_]+)') do seen[k]=true end
   for k in src:gmatch("c%['([%a_]+)'%]") do seen[k]=true end
   seen.name=nil  -- (a cargo stack's c.name in the rocket line)
+  seen.platform_arrival=nil  -- persisted guard memory, written internally rather than accepted as an argument
   for k in pairs(seen) do if not runtime.takes('wait_until',k) then missing[#missing+1]=k end end
   table.sort(missing)
   eq(table.concat(missing,', '),'','fields conditions.lua reads that wait_until refuses')

@@ -220,6 +220,80 @@ return function(api)
     return v
   end
 
+  -- first's automatic sources must cover the whole added manifest before auto requests are paused.
+  -- Repeating select_pickup_point without taking anything returns the same chest each time (#2937).
+  function M.first_sources(p, silo, want, order)
+    local net = try(function() return silo.surface.find_logistic_network_by_position(silo.position, silo.force) end)
+    local candidates, seen, preferred = {}, {}, {}
+    local function chest_key(c) return c.unit_number or (c.position.x .. ',' .. c.position.y) end
+    local function add(c)
+      if not (c and c.valid) or seen[chest_key(c)] then return end
+      seen[chest_key(c)] = true; candidates[#candidates+1] = c
+    end
+    for _, item in ipairs(order) do
+      local pt = net and try(function() return net.select_pickup_point{name={name=item, quality='normal'}, position=silo.position} end)
+      local c = pt and try(function() return pt.owner end)
+      if c and c.valid then preferred[chest_key(c)] = true; add(c) end
+    end
+    for _, group in ipairs({'storages', 'providers', 'requesters'}) do
+      for _, c in pairs(net and try(function() return net[group] end) or {}) do add(c) end
+    end
+    table.sort(candidates, function(a, b)
+      if not not preferred[chest_key(a)] ~= not not preferred[chest_key(b)] then return preferred[chest_key(a)] == true end
+      local da = (a.position.x-silo.position.x)^2 + (a.position.y-silo.position.y)^2
+      local db = (b.position.x-silo.position.x)^2 + (b.position.y-silo.position.y)^2
+      if da ~= db then return da < db end
+      if a.position.x ~= b.position.x then return a.position.x < b.position.x end
+      return a.position.y < b.position.y
+    end)
+    local held, from, lines, excluded = {}, {}, {}, {}
+    local inv = p.get_main_inventory()
+    for _, item in ipairs(order) do held[item] = aboard(inv, {name=item}) end
+    for _, c in ipairs(candidates) do
+      local covered = true
+      for _, item in ipairs(order) do if held[item] < want[item] then covered = false; break end end
+      if covered then break end
+      local counts, relevant, stock = {}, false, {}
+      local ci = chest_inventory(c)
+      for _, item in ipairs(order) do
+        local n = aboard(ci, {name=item}); counts[item] = n
+        if n > 0 then stock[#stock+1] = n .. ' ' .. item; if held[item] < want[item] then relevant = true end end
+      end
+      if relevant then
+        local mode = try(function() return c.prototype.logistic_mode end)
+        local why
+        if c.force ~= p.force then why = 'not our force'
+        elseif c.surface ~= silo.surface then why = 'not on the silo surface'
+        elseif mode == 'buffer' then why = 'automatic first pickup excludes buffers (explicit from permits them)'
+        elseif mode ~= 'storage' and mode ~= 'passive-provider' and mode ~= 'active-provider' then why = 'not a storage or provider chest'
+        else
+          local ok, found = pcall(api.sight_entity, p, c.position)
+          if not ok then why = tostring(found)
+          elseif not found or chest_key(found) ~= chest_key(c) then why = 'the position does not resolve to this chest' end
+        end
+        local text = c.name .. ' ' .. at(c.position) .. ' holding ' .. table.concat(stock, ', ')
+        if not why and #from >= MAX_FROM then why = 'from limit ' .. MAX_FROM .. ' chests' end
+        if why then excluded[#excluded+1] = text .. ': ' .. why
+        else
+          from[#from+1] = {x=c.position.x, y=c.position.y}; lines[#lines+1] = text
+          for _, item in ipairs(order) do held[item] = held[item] + counts[item] end
+        end
+      end
+    end
+    local short = {}
+    for _, item in ipairs(order) do
+      if held[item] < want[item] then short[#short+1] = string.format('%s %d of %d (%d short)', item, held[item], want[item], want[item]-held[item]) end
+    end
+    local refusal
+    if #short > 0 then
+      refusal = 'first refused before starting: ' .. table.concat(short, ', ') .. '; selected sources: '
+        .. (#lines > 0 and table.concat(lines, '; ') or 'none') .. '; excluded sources: '
+        .. (#excluded > 0 and table.concat(excluded, '; ') or (net and 'none; eligible chests have insufficient normal-quality stock' or 'no logistic network at the silo'))
+        .. '; nothing walked or loaded; automatic requests unchanged'
+    end
+    return #from > 0 and from or nil, lines, refusal
+  end
+
   -- load_silo ----------------------------------------------------------------------
   -- fresh_first (Luna, shift14 22:50: each agricultural source chest inspected apart, stale packs going up while fresh
   -- ones sat nearby): for an item that spoils, every matching stack of every source (you, then the chests) least spoiled
@@ -1805,7 +1879,7 @@ return function(api)
   end
 
   M.schema = {
-    load_silo = {position='the rocket silo {x,y} (any tile of it), within reach', first='optional, with platform (B7): 1..8 item names, each at what the platform\'s hub lacks of its requests, or {item: count}: those items alone, from what you hold and the chests of the silo\'s logistic network robots would take from first (up to 4 an item; or the chests in from), walked as walk: true does, launched to the platform with the silo\'s automatic requests paused (auto_requests "pause": off now, back on after the launch); sets items, walk, launch and auto_requests itself. The reply\'s first says the items, the counts and the chests; first_skipped names items the hub lacks none of. The game has no priority among a silo\'s automatic requests', dry_run='optional true: load and queue nothing (a read): each item\'s weight, slots and sources (you, the chests in from or in reach; short), the rocket\'s lift, slots and what is aboard, whether it fits one rocket, the split it would take (rocket 1: ..., rocket 2: ...), the platform hub\'s free slots (with platform); line', launch_split='optional, with launch: a list over one rocket\'s lift or slots goes as several rockets of at most a full rocket each, one load_silo step each appended to your queue (rockets, rocket_cargo: rocket 1: ..., rocket 2: ...); the default (d18 batch38 C2), except with all_or_nothing or wait_platform (one rocket each: true splits them too); false: such a list is refused, naming the split', up_to_stock_at_start='optional true: load at most what you and the chests in from hold when it begins (a walking tour does not tour on for items trickling in), then launch with launch; without walking, as up_to', wait_platform='optional true, with launch and platform: one timed call: nothing goes into the rocket until the platform is stopped in orbit here, then the load goes in and launches in that tick as one rocket; with walk: true the walk gathers from the chests in from first, then waits at the silo the same way (a rocket holding what a platform above asks for is launched by the game, one item type a rocket); it ends launched, or failed when the platform goes elsewhere',
+    load_silo = {position='the rocket silo {x,y} (any tile of it), within reach', first='optional, with platform (B7): 1..8 item names, each at what the platform\'s hub lacks of its requests, or {item: count}: those items alone, from what you hold and the chests of the silo\'s logistic network robots would take from first, then other eligible storage and active/passive provider chests until the manifest is covered (up to 16 total; buffers remain explicit from only; or the chests in from), walked as walk: true does, launched to the platform with the silo\'s automatic requests paused (auto_requests "pause": off now, back on after the launch); sets items, walk, launch and auto_requests itself. Automatic selection refuses insufficient normal-quality stock before walking, loading or pausing, naming excluded sources and reasons. Explicit from keeps its existing semantics. The reply\'s native_auto_before gives visible rocket state, switches, target and payload matches without claiming a native idle cause; first_warning keeps the partial/auto-OFF warning visible. The reply\'s first says the items, the counts and the chests; first_skipped names items the hub lacks none of. The game has no priority among a silo\'s automatic requests', dry_run='optional true: load and queue nothing (a read): each item\'s weight, slots and sources (you, the chests in from or in reach; short), the rocket\'s lift, slots and what is aboard, whether it fits one rocket, the split it would take (rocket 1: ..., rocket 2: ...), the platform hub\'s free slots (with platform); line', launch_split='optional, with launch: a list over one rocket\'s lift or slots goes as several rockets of at most a full rocket each, one load_silo step each appended to your queue (rockets, rocket_cargo: rocket 1: ..., rocket 2: ...); the default (d18 batch38 C2), except with all_or_nothing or wait_platform (one rocket each: true splits them too); false: such a list is refused, naming the split', up_to_stock_at_start='optional true: load at most what you and the chests in from hold when it begins (a walking tour does not tour on for items trickling in), then launch with launch; without walking, as up_to', wait_platform='optional true, with launch and platform: one timed call: nothing goes into the rocket until the platform is stopped in orbit here, then the load goes in and launches in that tick as one rocket; with walk: true the walk gathers from the chests in from first, then waits at the silo the same way (a rocket holding what a platform above asks for is launched by the game, one item type a rocket); it ends launched, or failed when the platform goes elsewhere',
       items='the cargo to load: {"item-name": count} or [{"item", "count", "quality"}], 1..20 items',
       to_total='true: each count is what the rocket should hold in all (only the rest is loaded); default: each count is loaded on top of what it holds',
       from='optional chest {x,y} or 1..16 of them, within reach: take from these (after your inventory); default: your inventory, then our chests within reach, nearest first (at most 16): every chest kind (chests, logistic chests, linked and infinity chests) and a cargo landing pad. With walk: anywhere on the silo\'s surface, in sight or on the map',

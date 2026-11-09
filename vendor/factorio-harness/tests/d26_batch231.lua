@@ -111,8 +111,8 @@ eq(c.refused,nil); has(c.depends,'if it then waits at stop 1 (fulgora)')
 local a={platform='Kestrel II',stop=9,wait={}}
 eq(space.schedule_check(p,a).refused,refusal(a))
 a={platform='Kestrel II',current=1}
-eq(space.schedule_check(p,a).refused,refusal(a))
-has(space.schedule_check(p,a).depends,'refused if stop 1 (fulgora) is then the current stop')
+eq(space.schedule_check(p,a).refused,nil)
+has(space.schedule_check(p,a).depends,'succeeds unchanged if already current')
 a={platform='Nowhere',stop=1,wait={}}
 eq(space.schedule_check(p,a).refused,refusal(a))
 -- keep_leg while it waits: flies no leg

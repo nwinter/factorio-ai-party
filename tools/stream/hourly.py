@@ -547,6 +547,17 @@ def gather(run_dir, t0, t1, logs_dir=LOG_DIR, agents=None):
     analyst_part(m, logs_dir)
     aloud_part(m, run_dir)
     plan_part(m, run_dir)
+    # Capture-completed mission observations, dated explicitly; no new narrator cadence or model calls.
+    from missions import Missions
+    heard = {(r['platform'], r['milestone']): r for r in Missions(run_dir).heard if t0 <= r["t"] < t1}
+    targets = set()
+    for r in sorted(heard.values(), key=lambda r: r['t']):
+        m.add("M", "mission", 9, f"At {hhmm(r['sample_t'])}, the then-current mission observation was: {r['text']}",
+              rel(os.path.join(run_dir, "host-missions.json")), "mission:" + r['platform'] + ':' + r['milestone'])
+        if r['platform'] not in targets:
+            m.target({"platform": r['platform']}, f"{r['platform']}, subject of the dated mission report",
+                     rel(os.path.join(run_dir, "host-missions.json")))
+            targets.add(r['platform'])
     for p in m.fleet:
         where = f"at {p.get('at')}" if p.get("at") != "in transit" else f"in transit to {p.get('to')}"
         m.target({"platform": p["name"]}, f"ship {p['name']} ({where} at {hhmm(m.ticks[3])})",
@@ -890,6 +901,9 @@ def blocked(s, now):
     """Why a piece cannot go on air now, or None: a fresh attack, loss or death, a battle or an enemy group on air,
     the camera held by someone (a look, a follow, a platform hold, the host view), a tour or a replay on air."""
     s = s or {}
+    recap = s.get("shift_recap") or {}
+    if s.get("speech_owner") or (recap.get("active") and not recap.get("holding")):
+        return "shift recap owns speech"
     for a in s.get("alerts") or []:
         if isinstance(a, dict) and a.get("kind") in URGENT_KINDS and now - float(a.get("t") or 0) < URGENT_S:
             return f"a fresh {a['kind']} ({str(a.get('text') or '')[:80]})"
@@ -927,11 +941,11 @@ def script_for(p):
                       for s in p["stops"]], "facts": p["facts"], "piece": p["id"]}
 
 
-def render(script_path, out, feed=FEED):
+def render(script_path, out, feed=FEED, run_dir=None):
     """tour.py prepare: every stop's clip in the tour's narrator voice (the first of tour.VOICES no host or agent
     speaks in that renders them all). -> the manifest, or None."""
     import tour
-    a = argparse.Namespace(script=script_path, out=out, voice=",".join(tour.VOICES), feed=feed)
+    a = argparse.Namespace(script=script_path, out=out, voice=",".join(tour.VOICES), feed=feed, run_dir=run_dir)
     return tour.read_manifest(out) if tour.prepare(a) == 0 else None
 
 
@@ -949,10 +963,10 @@ class Airing:
     """One piece on the narrator channel (tour.Tour), rendered when it can air, dropped when it is too old."""
 
     def __init__(self, svc, out=OUT_DIR, cams=None, clock=time.time, sleep=time.sleep, renderer=None, hush_file=None,
-                 stop_file=None, run_file=None, log_dir=LOG_DIR):
+                 stop_file=None, run_file=None, log_dir=LOG_DIR, run_dir=None):
         import tour
         self.svc, self.out, self.cams, self.now, self.sleep = svc, out, cams, clock, sleep
-        self.renderer = renderer or (lambda script, d: render(script, d, getattr(svc, "base", FEED)))
+        self.renderer = renderer or (lambda script, d: render(script, d, getattr(svc, "base", FEED), run_dir))
         self.hush_file, self.stop_file = hush_file or tour.HUSH_FILE, stop_file or tour.STOP_FILE
         self.run_file, self.log_dir = run_file or tour.RUN_FILE, log_dir
         self.started, self.ours, self.last_look = None, set(), -1e9
@@ -975,6 +989,9 @@ class Airing:
         except Exception:
             return None
         lk = st.get("look") or {}
+        recap = st.get("shift_recap") or {}
+        if st.get("speech_owner") or (recap.get("active") and not recap.get("holding")):
+            return "shift recap owns speech"
         if lk and lk.get("id") not in self.ours:
             return f"a look by {lk.get('by') or 'someone'} took the camera"
         if st.get("hostview"):
@@ -1025,7 +1042,8 @@ class Airing:
                 continue
             break
         rows = tour.checked(script_for(p)["stops"])
-        if any(s and s["narration"] and not tour.clip_for(manifest, d, s) for _, s, _ in rows):
+        if any(s and s["narration"] and not tour.clip_for(manifest, d, s)
+               and not tour.audio_skipped(manifest, s) for _, s, _ in rows):
             return {"event": "dropped", "id": p["id"], "why": "a clip is missing after prepare"}
         t, aired, skipped, log_path = self.run_tour(p, rows, manifest, d, script, "")
         out = {"event": "aired", "id": p["id"], "aired": aired, "skipped": skipped, "waited_s": round(waited),
@@ -1092,7 +1110,7 @@ def run(a):
         log("[hourly] no OpenRouter key (OPENROUTER_API_KEY or the keychain's openrouter): not starting")
         return 1
     writer, svc = make_writer(a.model), tour.Service(a.feed)
-    airing = Airing(svc, a.out, a.cams or int(os.environ.get("POG_EXPECT_CAMS") or 0) or None)
+    airing = Airing(svc, a.out, a.cams or int(os.environ.get("POG_EXPECT_CAMS") or 0) or None, run_dir=a.run_dir)
     os.makedirs(a.out, exist_ok=True)
     path = os.path.join(LOG_DIR, time.strftime("hourly-%Y%m%d-%H%M%S.jsonl"))
     run_name = os.path.basename(os.path.abspath(a.run_dir))

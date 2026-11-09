@@ -1276,6 +1276,54 @@ On Sunday Nick plays his own Factorio on the box, so the stream runs on one came
 
 ![one camera, scratch scene](stream-onecam-scratch.png)
 
+## Resolute asteroid rendering, d30 (batch374)
+
+`tools/win/start-client.ps1` writes `show-particles=false` and `show-smoke=false` under `[graphics]` for
+`pog-cam*` / `pog-director*`, unless `-Human` is set. It rewrites these on every launch, so they survive shift
+changes and camera restarts. These settings affect client visuals, including the number of smoke effects;
+they do not remove real asteroids or change game speed or flight controls. Ordinary clients keep their previous
+graphics settings. Apply through the normal camera launch at a shift change; batch374 did not restart the live client.
+
+The iMac's own 2.0.77 client loaded a private copy of world n at tick 85494286, with a fixed Resolute bow view,
+zoom 0.3, no GUI camera panels, medium sprites, low VRAM and texture streaming. Native graphics benchmarks ran
+1800 frames each; the table excludes the first 60. Drawable resolution was 2880x1620, matching pogwin. VSync was
+off for measurement (the engine still sleeps toward 60 fps). Frame work is `cpu-frame - sleep`, including simulation;
+it is not a GPU timer. The Mac's GPU timing columns were unavailable. These are copy measurements, not pogwin FPS.
+
+| Change from baseline | Client fps | Median frame work, ms | p95, ms |
+|---|---:|---:|---:|
+| Baseline | 59.79 | 12.47 | 18.44 |
+| Baseline repeated | 59.83 | 12.39 | 18.29 |
+| Particles off | 59.83 | 11.95 | 17.81 |
+| Smoke off | 59.87 | 12.20 | 17.95 |
+| Particles + smoke off (launcher setting) | 59.87 | 11.80 | 17.57 |
+| Space dust off | 59.86 | 12.61 | 18.54 |
+| All three effects off | 59.90 | 11.83 | 17.59 |
+| Drawable 1920x1080, same zoom (also narrows world view) | 59.80 | 11.54 | 17.13 |
+| Tighter bow framing, zoom 0.5 | 59.83 | 11.59 | 17.34 |
+| Same surface also in one 492x277 GUI panel, zoom 0.05 | 58.95 | 15.23 | 20.86 |
+
+Particles + smoke off reduced median frame work by 5.4% and median sprite count by about 32% in this scene.
+Dust showed no frame-work saving, so its default stays on. No separate starfield display toggle was found in the
+2.0.77 native options; no prototype or simulation change was used to suppress it. Resolution stays 2880x1620:
+changing it also requires changing the director's pixel rectangles and OBS crops. Tighter framing saves work but
+shows less of the ship; use it for a bow detail rather than replacing every platform overview.
+
+The live director log did put Resolute in both views (02:43:44 inset, 02:43:45 main). Cam2 and cam3 are GUI panels
+in cam1's client. The director can retain a panel after its OBS inset disappears. Avoiding the extra drawing requires
+resolving followed agents to surfaces, suppressing a same-platform inset, and sending `camera {panel=N,release=true}`
+when a panel is unused. That must account for pending trio preparations, swaps and failed command receipts. A mere
+OBS visibility change does not release the GUI element. This checkpoint changes launch settings; it does not change
+that scheduling policy.
+
+Read-only OBS samples on the live stream had zero render/output skips, including naturally occurring Resolute shots.
+A saved busy-encounter replay nevertheless repeats the world image for about seven or eight 30-fps video frames.
+That is evidence of slow source-image delivery, not an exact client FPS or UPS measurement. The existing client's log
+has no FPS/UPS telemetry, and it was launched without `--output-perf-stats`. OBS's 30-fps counter is not Factorio FPS.
+The modest copy gains do not establish the cause of this much larger live slowdown. At the operator's next shift
+launch, verify another busy encounter and compare source-image cadence alongside OBS render/output skips; native
+client performance counters are needed to separate client rendering from capture delivery.
+
 ## Camera client memory, d16 (eng/d16-stream7)
 
 The box (pogwin, 32 GB) at 15:06 on 2026-10-16: 0.4 GB free; nonpaged pool 3.1 GB; about 13 GB held by no process;
@@ -2708,3 +2756,169 @@ plays the first).
   hint at the bottom centre, and the overlay's bottom bar on each view covers it (test_trio's hint_bars). It showed on
   shift100's program only because the overlay was blank.
 - **Tests:** tools/test_overlay_check.py and tools/test_obs_restart.py (obs-steps).
+
+## Speech, the panel and the cameras in the overlay checks (2026-10-29, d29 batch349 SP, viewer Aurora site:5491)
+
+Aurora (09:29, during shift100's blank overlay): "Add recovery checks for panel rendering, camera state and a
+completed speech clip so 'live' alone cannot pass next shift." batch347's checks saw only whether the main page's event
+stream was open.
+
+- **Speech.** The stream service keeps a summary of the page's clip reports, in GET /overlay/status as `speech`: the
+  last clip played whole (state end, played >= its length - 0.5 s, not early) and how many in 30 min, and of the clips
+  posted in the last 15 min (not control) whose time is up (ended, skipped or expired), how many played whole and how
+  many were skipped. Bad: some, and none played whole (shift100: none reported at all). The health line says it;
+  tools/overlay_check.py watch prints it only when bad, at most once per --again s, and once when it is good again. No
+  toggle for speech alone: a page that is not connected is batch347's toggle.
+- **The panel.** The page posts POST /overlay/render {page, height} after a state frame, at most every 30 s, with its
+  right panel's height (overlay.js reportRender); the service keeps `rendered` and `panel_px` per page. Bad: a report
+  over 90 s old, or 0 px high. A page from before this says nothing. It is not in the connected test: a page cached
+  from before would never report, and the connected test decides the toggle.
+- **Cameras.** One RCON line (overlay_check.CAMS_LINE): the harness's camera list (remote.call cameras) and each
+  client's controller and whether it is connected. 0.68 ms on world n (d29, the one read: pog-cam1 spectator
+  connected, cam2 and cam3 spectator not connected). Bad: a connected camera in a cutscene or a character controller.
+  The health line says "cams: pog-cam1 spectator"; watch prints a change. The recovery is the runtime's own:
+  cameras.lua's tick runs make_director for a connected camera client that is not a spectator (exit_remote_view,
+  exit_cutscene, then the spectator controller), every tick, so a cutscene lasts a tick; the check reports.
+- **Tests:** tools/test_speech_cams.py (clips whole, cut short, all expired, none reported, none posted; render reports
+  fresh, stale, 0 px; a camera in a cutscene in status, watch and the health line); tools/test_overlay_check.py's
+  health line now reads the overlay part first.
+
+### cp2: a reload when a toggle does not bring the page back (d29 13:20, shift101)
+
+Shift101's start (13:14:53 reload) left the overlay blank again: "overlay: FAILED: not connected 30 s after the reload
+nor 30 s after a toggle"; the operator's second toggle (13:17) did not help either; `tools/obs.py reload-overlay`
+(refreshnocache, 13:18:46) brought it back in 5 s. At shift100's start (09:06) it was the other way round. So start and
+watch now run a recovery round: toggle, then reload-overlay, then toggle once more, each followed by up to --wait s for
+a connect; the round stops at the first that brings the page back, and the line names each step and what followed. watch
+keeps --again (600 s) between rounds. The health line says "(after a reload at the start)" or "(after a toggle at the
+start)" by the step that did. The "unnamed" page in /overlay/status is tools/stream/caster.py following /events with
+no page= (and replay.html when open): no overlay, which is why it stayed connected throughout.
+
+### cp2 item 3: a disabled scene item, and a page connected but blank (viewer Aurora site:5516)
+
+- **The scene item.** start and each watch pass run `tools/obs.py enable-overlay`: the "stream overlay" item in the
+  stream scene read, and switched on when it is off ("stream overlay: was off in stream, enabled (item N)"); the check
+  says so ("the scene item was off: enabled"). A toggle leaves an item that was off as it was, so a disabled item was
+  never brought back before.
+- **Connected but blank.** The page's render report (overlay.js reportRender, every 30 s while it draws) is part of the
+  test: start waits for a connect and a render at or after the reload; while running, a page connected for 60 s
+  (BLANK_S) with no render since its connect counts as not connected, and gets the same round (toggle, reload, toggle):
+  "the main page is connected but has drawn nothing for N s". A render from before the stream's connect is another
+  page's and does not count. status and the health line say "overlay NOT drawing: connected but blank, nothing drawn
+  for N s".
+- **A failed round stays in the health line.** watch keeps it in its state (`failed`), and the health line adds "the last
+  recovery FAILED: ..." (bad: "overlay recovery") until a later round brings the page back. POG_OC_STATE names the
+  state file (default /tmp/claude-501/overlay-check.json).
+- **Tests:** tools/test_overlay_blank.py (the item off at start and in watch; a blank page brought back by a reload at
+  start; a blank page in watch, a failed round kept in the health line, and cleared by one that works).
+
+
+### Quiet tours and train receipts (batch406, camera polish batch441)
+
+`basetour.choose` selects a new base scene at a shot boundary from 64-tile machine regions and the director's
+bounded, session-local `basetour.Memory`. Accepted builds, remote work, repair starts, damage/threat episodes,
+ship arrivals, changed chart recipe layouts and ship production changes sustained for 30 seconds supply facts.
+Activity scenes name and credit the engineer whose work is shown. Repeated inspections do not qualify as news. Unseen regions and fresh facts outrank unchanged
+regions; unchanged regions rest for ten minutes. Surface recency breaks ties. Tours begin at an observed machine,
+zoom from .4/.5/.6 to .8/.9/.75 for an 8/10/12-second closeup, pull back and travel 32–120 tiles to another
+observed machine, then zoom in and dwell again. Captions name the observed recipes. Compact clusters without
+a second charted destination get a stationary closeup. Each two-point leg's entire envelope at its widest zoom
+must be charted. A selected path is immutable; if no region is
+eligible, the director retains its ordinary calm agent/map/ship fallback. Logs include the scene's region,
+identity, composition and planned duration. Only a compositor-confirmed on-air scene earns shown credit.
+Quiet tours use the existing fallback movement path when native moves are unavailable. Its speed follows the
+command cadence so it reaches a destination instead of crawling during the dwell. At the final leg, the existing
+camera observation receipt confirms visible arrival before the final 8–12-second dwell. Waiting for arrival is
+bounded at 45 seconds beyond the planned tour; late arrival still gets its dwell. Urgent coverage may preempt.
+
+Ship surveys use the same fact/region memory for details, reconsidered between excursions. An active detail's
+position, zoom, caption and 8–14-second dwell stay fixed. Visible settled receipts earn credit. A later visit
+can start at the stern; resumed surveys retain their direction and coverage. Existing hull fits and urgent,
+host, operator and work priorities remain in charge.
+
+`WorkFeed.trains` consumes successful `train` replies in the journal tail already read by the service. `live.py`
+and `model.py` pass those receipts through to `onecam`; there is no train polling or new runtime camera mode.
+Within an already eligible quiet slot, fresh train receipts precede reusable scenery. Among trains, selection
+prefers cargo, a named destination, then the freshest receipt. A stationary receipt must have eight seconds of
+freshness left after any standby preparation; it starts at zoom .8, while moving receipts start at .5. The
+caption explicitly says “live”. A train shot
+holds its identity, zoom and caption for at most 24 seconds and follows only newly received positions. Moving
+receipts expire after 3 seconds, stationary ones after 12; missing/stale data ends the shot, and a shown train
+rests ten minutes. Sparse agent reads therefore cannot support continuous train coverage. No extrapolated
+position or cargo claim is generated. New train shots never displace urgent, host, operator or segment holds.
+Updates glide without replaying the opening jump, resetting an ordinary arrival hold or renewing the deadline.
+Stale receipts release immediately, even before the ordinary eight-second dwell. Expired standbys cannot cut
+onto the program. Failed initial shots re-enter quiet selection so an eventual success gets fresh clocks;
+only an already active train's reframes use the send retry path. A moving train's full dwell therefore still
+depends on naturally occurring fresh replies; TV never requests them.
+
+Ordinary ship views retain the rendered-world zoom floor (.3; inset panels .06), with .001 native-path headroom
+against floating-point interpolation dipping below the floor; these selectors create no ship
+map shots. Automatic visits and calm featured surveys at zoom .31 or below show a labelled “wide ship overview”
+for eight seconds, at most once per ship per ten minutes of confirmed on-air coverage, then use the existing
+machinery/hub detail at zoom .7 or closer. Visits then hold detail for at most 25 seconds; calm featured stints
+alternate machinery and bow/hub detail every 30 seconds. Manual surveys retain their existing coverage. This limits wide
+context independently of the renderer's pixel/map representation. Existing explicit base maps remain labelled,
+short (15 seconds) and infrequent (ten minutes, with
+unchanged-map backoff to an hour for the single-client program).
+
+### Overlay recovery and browser health (batch408)
+
+The camera layout retries failed HTTP responses, invalid JSON/layouts and requests that take over five seconds,
+with 0.5–15 s exponential backoff. The optional trio layout loads independently; the main camera bar can draw
+before it succeeds. A failed or silent-for-20-seconds SSE connection is replaced with backoff; audio listeners
+reattach to the same new stream so speech resumes after HTTP errors as well as dropped connections. State polling allows one request at a time, uses the same retry policy, and checks at least
+every 15 s even with SSE flowing. A delayed HTTP response cannot overwrite a newer SSE state. Camera labels and
+recap visibility update before sidebar widgets; a late layout immediately redraws the current snapshot.
+
+Every overlay page posts `/overlay/health` after startup and every ten seconds, retrying failures with bounded
+backoff. The service logs `overlay-health.jsonl` beside `audio-played.jsonl`. `GET /overlay/status` includes
+`health.sessions` (the latest 16 sessions): `capture` distinguishes OBS's browser binding from ordinary previews;
+`received_at`, `state_age_s`, `classes`, `requests` and `errors` identify stale state, `onecam`/`recap-active`, failed
+loads and console errors. `layers` gives bounding boxes and computed visibility for the camera/bar/label, voice
+container/current caption, platform card, tour subtitle, recap and side panel. An empty voice container is normal
+between clips; inspect `captions` and `layers.caption` during speech. A preview with page name `main` cannot replace
+the OBS session's evidence.
+
+These are **browser-layer** reports. A visible browser layer can still be covered by another OBS scene source.
+For a missing bar/subtitle, compare read-only `GetSourceScreenshot` of `stream overlay` and `stream`, then inspect
+`GetSceneItemList` ordering. In the batch408 capture, the browser rendered both but game captures above the overlay
+covered them in the composed program (overlay index 5, game capture cam1 at 7; game clean at 6 is audio-only).
+Page reloads cannot correct scene
+stacking. The operator owns live scene correction and deployment; the recovery fixture never calls OBS.
+
+Offline reproduction: `node tools/stream/overlay_recovery_browser.mjs OUTPUT PLAYWRIGHT_MODULE [SOAK_SECONDS]`.
+It starts an isolated service and a flaky HTTP proxy, reproduces the pre-fix primary-load failure, tests layout and
+state retries, actual WebAudio captions, timed tour subtitles, recap entry/exit, delayed response ordering, health
+logging and portrait recovery, then runs a ten-minute soak by default. `POG_TEST_PYTHON` and `POG_TEST_CHROMIUM`
+select existing runtimes. Audio is a synthetic tone; no game, TTS, recording, live-service or OBS calls are made.
+
+### OBS stacking invariant (batch408 cp2)
+
+The overlay is pinned above all scene items after camera cuts (including one-camera subsets, host view and trios),
+landscape/portrait scene builds, host-capture setup, show-card placement and stream-audio setup. Camera slots retain
+the director's relative ordering; unrelated items retain theirs. `cuts.order(..., overlays=...)` receives the actual
+overlay item IDs. Cuts also re-read the scene before the final pin to cover items appended during a panel rebuild.
+The vertical scene uses `vertical overlay`. Existing source enable states, transforms and audio settings are not
+changed by the stacking helper.
+
+`tools/obs-steps.sh` explicitly runs `tools/obs.py raise-overlay` after `stream-scene` and before selecting the program
+scene, reloading the browser or starting outputs. `raise-overlay` verifies the resulting top item. Failure stops
+startup with a nonzero result before those later steps. Scene builders also pin the overlay at their own completion,
+so calling a builder outside shift startup preserves the same invariant.
+
+The watchdog (`tools/overlay_check.py watch`) reads the current program scene and its items even when the page is
+connected and drawing. It reports `overlay order NOT top` with enabled item names/indices above the overlay, or
+missing/disabled status; OBS read failures report `UNKNOWN`. The policy is literally the top enabled item, including
+audio-only sources. The check does not reorder, toggle or reload anything for a stacking fault. It reports a changed
+fault once, returns bad status on every failing pass, and reports recovery once. The full result and `checked_at`
+are stored as `order_report` in the watchdog state file. `status` includes the same read-only check. Tests use
+`POG_OC_ORDER`; `POG_TEST=1` suppresses real OBS reads without that stub.
+
+Cause boundary: changing only `stream.json`'s camera list and restarting the service cannot by itself move a capture
+across a correctly placed overlay. The old cuts algorithm only permuted existing capture/host slots. It did preserve
+an already-bad slot above the overlay. Creating/replacing panel scene items appends them above existing items until
+`stream_scene` finishes its reorder; an interrupted or concurrent rebuild is a possible entry point, not a proven
+historical trigger. Startup's old fixed six-item reorder also left unmanaged extra sources above the overlay. The
+new tests cover correct and corrupt initial stacks, subset/full-camera restarts, panel/client rebuilds, trios, host
+view, inset cuts, extra captures/audio, and the watchdog's diagnosis and recovery.

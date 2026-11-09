@@ -1,3 +1,95 @@
+// Page-local evidence only: OBS scene compositing can still cover an otherwise visible browser layer.
+(() => {
+  "use strict";
+  const started = Date.now(), session = started.toString(36) + '-' + Math.random().toString(36).slice(2);
+  const errors = [], requests = {};
+  let stateAt = 0, stateSource = null;
+  function error(kind, detail) {
+    const message = String(detail && (detail.stack || detail.message) || detail).slice(0, 600);
+    const prior = errors.find(e => e.kind === kind && e.message === message);
+    if (prior) { prior.count++; prior.at = Date.now(); }
+    else { errors.push({ kind, message, count: 1, at: Date.now() }); if (errors.length > 20) errors.shift(); }
+  }
+  window.addEventListener('error', e => error('error', e.error || e.message || e.target?.src || 'resource load failed'), true);
+  window.addEventListener('unhandledrejection', e => error('rejection', e.reason));
+  const consoleError = console.error.bind(console);
+  console.error = (...args) => { error('console', args.map(x => x?.stack || String(x)).join(' ')); consoleError(...args); };
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = async (...args) => {
+    const url = String(args[0]?.url || args[0]).split('?')[0];
+    try {
+      const r = await nativeFetch(...args);
+      if (!r.ok && url !== '/overlay/health') error('fetch', url + ': HTTP ' + r.status);
+      return r;
+    } catch (err) { if (url !== '/overlay/health') error('fetch', url + ': ' + err); throw err; }
+  };
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  async function retryJSON(name, url, valid, revision) {
+    const info = requests[name] || (requests[name] = { attempts: 0, failures: 0, okAt: 0 });
+    let delay = 500;
+    for (;;) {
+      const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 5000);
+      const before = revision && revision();
+      info.attempts++; info.pending = true;
+      try {
+        const r = await fetch(url, { cache: 'no-store', signal: controller.signal });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const value = await r.json();
+        if (!valid(value)) throw new Error('invalid JSON shape');
+        info.okAt = Date.now(); info.error = null; info.retryMs = 0;
+        return revision ? { value, revision: before } : value;
+      } catch (err) {
+        info.failures++; info.error = String(err); info.retryMs = delay;
+        error(name, url + ': ' + err);
+      } finally { clearTimeout(timer); info.pending = false; }
+      await sleep(delay);
+      delay = Math.min(15000, delay * 2);
+    }
+  }
+  function layer(selector) {
+    const e = document.querySelector(selector);
+    if (!e) return { present: false, visible: false };
+    const r = e.getBoundingClientRect(), css = getComputedStyle(e);
+    let visible = r.width > 0 && r.height > 0 && r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight;
+    for (let p = e; p; p = p.parentElement) {
+      const c = getComputedStyle(p);
+      if (p.hidden || c.display === 'none' || c.visibility === 'hidden' || c.visibility === 'collapse' || Number(c.opacity) === 0) visible = false;
+    }
+    return { present: true, visible, display: css.display, visibility: css.visibility, opacity: css.opacity,
+      rect: [r.x, r.y, r.width, r.height].map(Math.round) };
+  }
+  function snapshot() {
+    const s = window.pogState, recap = s?.shift_recap;
+    return { session, page: new URLSearchParams(location.search).get('page') || document.body?.dataset.page || 'main',
+      capture: !!window.obsstudio, path: location.pathname, age_s: Math.round((Date.now() - started) / 1000),
+      classes: document.body?.className || '', state_age_s: stateAt ? Math.round((Date.now() - stateAt) / 1000) : null,
+      state_source: stateSource, static_version: s?.static_version || null,
+      recap: !!(recap?.active && !recap.holding), program_layout: s?.program?.layout || null,
+      captions: document.querySelectorAll('#voice .cap.on').length,
+      layers: Object.fromEntries(Object.entries({ camera: '#cam-main', bar: '#cam-main .cam-bar',
+        label: '#cam-main .cam-label', voice: '#voice', caption: '#voice .cap.on', platform: '#platform-metrics',
+        tour: '.tour-subs.on', recap: '#shift-recap', side: '#side' }).map(([k, v]) => [k, layer(v)])),
+      requests, errors };
+  }
+  window.PogOverlayHealth = { retryJSON, error, snapshot, stateReceived(source) { stateAt = Date.now(); stateSource = source; } };
+  let reportDelay = 1000;
+  async function report() {
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      const r = await nativeFetch('/overlay/health', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(snapshot()), signal: controller.signal });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      reportDelay = 1000;
+      setTimeout(report, 10000);
+    } catch (err) {
+      error('health', err);
+      setTimeout(report, reportDelay);
+      reportDelay = Math.min(15000, reportDelay * 2);
+    } finally { clearTimeout(timer); }
+  }
+  setTimeout(report, 1000);
+})();
+
 // Stream overlay: renders /events snapshots into a 1920x1080 transparent page (OBS browser source).
 (() => {
   "use strict";
@@ -178,23 +270,27 @@
   let trioCams = null, curMode = null;
   // portrait.html sets data-layout="layout-portrait" for the 9:16 canvas
   // ?layout=layout-3cam brings back the three-camera layout (main and two side cameras)
-  fetch("/static/" + (params.get("layout") || document.body.dataset.layout || "layout") + ".json").then((r) => r.json()).then((l) => {
+  const health = window.PogOverlayHealth;
+  const validLayout = l => l && l.cams && Array.isArray(l.cams.main) &&
+    Object.values(l.cams).every(r => Array.isArray(r) && r.length === 4 && r.every(Number.isFinite) && r[2] > 0 && r[3] > 0);
+  health.retryJSON("layout", "/static/" + (params.get("layout") || document.body.dataset.layout || "layout") + ".json", validLayout).then((l) => {
     layout = l;
     onecam = l.mode === "onecam";
     document.body.classList.toggle("onecam", onecam);
     if (onecam) SLOT_LABEL.main = "On air";
     const trio = onecam && !document.body.classList.contains("portrait") && !params.get("layout");
-    const go = (t) => {
-      trioCams = t;
-      for (const c of document.querySelectorAll(".cam")) if (!l.cams[c.dataset.slot] && !(t && t[c.dataset.slot])) c.remove();
-      // a bar along each view's bottom edge: it holds the label and covers the client's bottom-centre hint ("Press Tab
-      // to skip cutscene" stays on the cam clients after the Space Age intro, though they are spectators)
-      if (onecam) for (const id of ["cam-main", "cam-cam2", "cam-cam3", "cam-inset"]) if ($(id)) $(id).append(el("div", "cam-bar"));
-      applyLayout(curMode === "trio" && t ? "trio" : "onecam");
-    };
-    if (trio) fetch("/static/layout-3cam.json").then((r) => r.json()).then((t) => go(t.cams)).catch(() => go(null));
-    else go(null);
-  });
+    // The optional trio must never hold the main camera hostage. Keep its nodes for a later retry.
+    for (const c of document.querySelectorAll(".cam")) {
+      c.hidden = !l.cams[c.dataset.slot] && !(trio && ["cam2", "cam3"].includes(c.dataset.slot));
+      if (onecam && !c.querySelector(".cam-bar")) c.append(el("div", "cam-bar"));
+    }
+    applyLayout("onecam");
+    if (trio) health.retryJSON("trio-layout", "/static/layout-3cam.json", validLayout).then(t => {
+      trioCams = t.cams;
+      if (latestSnapshot) render(latestSnapshot);
+    }).catch(console.error);
+    if (latestSnapshot) render(latestSnapshot);
+  }).catch(console.error);
 
   // (d28 batch324 SF2) a panel trio (one client, two camera panels) names its own holes in the program
   let trioHoles = null, curHoles = "";
@@ -227,6 +323,7 @@
   const cards = new Map();
   let researchCard = null;
   let state = null;
+  let latestSnapshot = null;
 
   function renderHead(s) {
     setText($("title"), s.title || "Player of Games");
@@ -934,7 +1031,7 @@
       const cloudKey = renderCloud(frame, cam && cam.map ? cam : null, s);
       const agents = cam ? cam.agents.map((n) => s.agents.find((a) => a.name === n)).filter(Boolean) : [];
       if (slot !== "main" && slot !== "inset" && !(onecam && curMode !== "trio")) renderFill(frame, s, !agents.length && !(cam && cam.attack));
-      const sig = agents.map((a) => a.name + a.color + a.glyph + a.display_name).join("|") + "|" + (cam && cam.attack || "")
+      const sig = onecam + "|" + agents.map((a) => a.name + a.color + a.glyph + a.display_name).join("|") + "|" + (cam && cam.attack || "")
         + "|" + (cam && cam.work || "");
       const death = !!(cam && cam.attack && cam.alert === "death");
       label.classList.toggle("attack", !!(cam && cam.attack) && !death);
@@ -999,12 +1096,16 @@
         label.classList.add("on");
         continue;
       }
-      if (cam && cam.platform && (!agents.length || cam.platform.why === "follow")) { // whole ship, including an agent aboard
-        const psig = "plat|" + cam.platform.label;
+      if (cam && cam.platform) { // whole ship, including an agent aboard
+        const psig = "plat|" + cam.platform.label + "|" + (cam.work || "") + "|" + (cam.owner || "");
         if (label.dataset.sig !== psig) {
           label.dataset.sig = psig;
           label.textContent = "";
-          label.append(el("span", "ico", cam.platform.why === "departure" ? "🚀" : "🛰️"), el("span", "", cam.platform.label));
+          const owner = (s.agents || []).find(a => a.name === cam.owner)?.display_name || cam.owner;
+          let text = cam.work || cam.platform.label;
+          if (owner && text.startsWith(owner + " ")) text = text.slice(owner.length + 1).replace(/^·\s*/, "");
+          label.append(el("span", "ico", cam.platform.why === "departure" ? "🚀" : "🛰️"), el("span", "", text));
+          if (owner) label.append(el("span", "remote-owner", " · remote: " + owner));
         }
         label.classList.remove("attack", "death");
         frame.style.borderColor = "";
@@ -1613,7 +1714,8 @@
       const cam = (s.cameras || {})[slot] || {};
       const who = (cam.agents || [])[0];
       const L = who && byName.get(who) ? byName.get(who).loadout : null;
-      const hidden = !L || (slot === "inset" && !frame.classList.contains("on")) || (slot === "main" && seg && !seg.hidden);
+      const hidden = !L || cam.body_visible === false || cam.platform || cam.work || cam.attention || cam.vehicle || cam.did || cam.map ||
+        (slot === "main" && (s.hostview || s.show || s.replay?.playing)) || (slot === "inset" && !frame.classList.contains("on")) || (slot === "main" && seg && !seg.hidden);
       if (hidden) { if (strip) strip.hidden = true; continue; }
       if (!strip) { strip = el("div", "loadout"); frame.append(strip); }
       const { age_s, ...shown } = L;
@@ -1641,14 +1743,17 @@
     if (!strips.length) return;
     const boxes = [];
     for (const c of document.querySelectorAll("#voice .cap.on")) boxes.push(c.getBoundingClientRect());
-    for (const id of ["chat", "chat-pins", "chat-ticker"]) {
+    for (const id of ["chat", "chat-pins", "chat-ticker", "platform-metrics", "alerts"]) {
       const e = $(id);
       if (e && e.offsetParent !== null) boxes.push(e.getBoundingClientRect());
     }
     for (const s of strips) {
       s.classList.remove("lo-yield");
       const r = s.getBoundingClientRect();
-      if (r.width && boxes.some((b) => b.width && b.height && overlaps(r, b))) s.classList.add("lo-yield");
+      const inset = $("cam-inset");
+      const reserved = boxes.slice();
+      if (s.classList.contains("lo-main") && inset && inset.classList.contains("on")) reserved.push(inset.getBoundingClientRect());
+      if (r.width && reserved.some((b) => b.width && b.height && overlaps(r, b))) s.classList.add("lo-yield");
     }
   }
   let loadoutWatched = false;
@@ -1659,14 +1764,22 @@
     new MutationObserver(loadoutClear).observe(v, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
   }
 
+  const targetCountdown = window.PogTargetCountdown && window.PogTargetCountdown.create($("run-target"));
   function render(s) {
+    latestSnapshot = s;
+    window.pogState = s; // publish even a recap-only snapshot, before any optional widget can throw
     if (staleCheck(s)) return;
+    if (targetCountdown) targetCountdown.update(s.run_target);
+    // The prepared recap is available before an agent/model snapshot at startup.
+    if (window.PogShiftRecap) window.PogShiftRecap.render(s);
+    if (!Array.isArray(s.agents)) return;
     state = s;
     const holes = (s.program && s.program.layout === "trio" && s.program.holes) || null;
     const mode = onecam && (trioCams || holes) && s.program && s.program.layout === "trio" ? "trio" : "onecam";
     const hk = holes ? JSON.stringify(holes) : "";
     if (layout && (mode !== curMode || hk !== curHoles)) { trioHoles = holes; curHoles = hk; applyLayout(mode); }
-    window.pogState = s; // audio.js finds speaking agents' avatars here
+    // Draw the camera independently of sidebar widgets. Recap exit above also restores existing audio captions.
+    try { renderCams(s); } catch (err) { console.error("camera render", err); }
     renderHead(s);
     renderCards(s);
     renderProduction(s);
@@ -1675,7 +1788,11 @@
     renderBoard(s);
     renderAlerts(s);
     renderResearchCard(s);
-    renderCams(s);
+    if (window.PogPlatformMetrics) {
+      window.PogPlatformMetrics.render($("platform-metrics"), s.platform_metrics, undefined, s);
+      $("cam-main").classList.toggle("has-metrics", !!s.platform_metrics && !$("platform-metrics").hidden);
+      loadoutClear();
+    }
     renderSegment(s);
     renderLoadouts(s);
     renderPollStrip(s);
@@ -1683,6 +1800,22 @@
     watchVoice();
     watchLoadoutClear();
     watchAlerts();
+    reportRender();
+  }
+
+  // (d29 batch349) the page says it drew: after a state frame, at most every 30 s, its right panel's height in px
+  // (POST /overlay/render), so the start and watch checks see a panel that draws, not only a stream that is open.
+  let renderSaid = 0;
+  function reportRender() {
+    const now = Date.now();
+    if (now - renderSaid < 30000) return;
+    renderSaid = now;
+    const side = $("side");
+    const page = (new URLSearchParams((typeof location !== "undefined" && location.search) || "").get("page") || (document.body && document.body.dataset && document.body.dataset.page) || "main");
+    try {
+      fetch("/overlay/render", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ page, height: side ? Math.round(side.getBoundingClientRect().height) : 0 }) }).catch(() => {});
+    } catch (err) { /* no fetch: nothing to say */ }
   }
 
   // The site's poll under the chat (serve.py pollstrip.py decides when: ~30 s every 10 min while open, the result for
@@ -1770,19 +1903,61 @@
   }
 
   // ---------- feed: SSE with a polling fallback ----------
-  let lastMsg = 0;
+  let lastMsg = 0, reconnectDelay = 500, eventWatchdog = null;
   function connect() {
     // One event stream per page, shared with audio.js (voice clips arrive on it as `audio` events): a browser keeps
     // 6 connections per host and each open stream holds one (shake7: all 6 held, the voice clips never loaded).
     // (d29 batch347) It names the page (body data-page: main, portrait), so the service can tell that the main overlay
     // connected after a start (tools/overlay_check.py; shift100: blank for 26 min after its reload).
     const es = window.pogEvents || (window.pogEvents = new EventSource("/events?audio=1&page=" + encodeURIComponent((new URLSearchParams((typeof location !== "undefined" && location.search) || "").get("page") || (document.body && document.body.dataset && document.body.dataset.page) || "main"))));
-    es.onmessage = (e) => { lastMsg = Date.now(); try { render(JSON.parse(e.data)); } catch (err) { console.error(err); } };
-    es.onerror = () => { /* EventSource retries by itself */ };
+    if (window.pogAudioConnect) window.pogAudioConnect(es);
+    let reconnecting = false;
+    function reconnect(reason) {
+      if (reconnecting) return;
+      reconnecting = true;
+      health.error("events", reason);
+      clearTimeout(eventWatchdog);
+      es.close();
+      if (window.pogEvents === es) window.pogEvents = null;
+      setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(15000, reconnectDelay * 2);
+    }
+    function alive() {
+      clearTimeout(eventWatchdog);
+      eventWatchdog = setTimeout(() => reconnect("event stream stalled for 20s"), 20000);
+    }
+    alive();
+    es.onopen = () => { reconnectDelay = 500; alive(); };
+    es.addEventListener("clock", e => {
+      alive();
+      try { window.pogPlaybackClock.observe(JSON.parse(e.data).t); } catch (err) { console.error(err); }
+    });
+    es.onmessage = (e) => {
+      try {
+        const s = JSON.parse(e.data);
+        if (!validState(s)) throw new Error("invalid state snapshot");
+        alive(); stateRevision++; lastMsg = Date.now(); health.stateReceived("events"); render(s);
+      } catch (err) { console.error(err); }
+    };
+    // CEF/Chromium can permanently close EventSource after an HTTP error. Replace the shared transport and
+    // reattach audio as well as state listeners, with only one live stream per page.
+    es.onerror = () => reconnect("event stream disconnected; reconnecting");
   }
+  const validState = s => s && typeof s === "object" &&
+    (Array.isArray(s.agents) || Object.prototype.hasOwnProperty.call(s, "shift_recap"));
+  let stateRevision = 0, polling = false, lastPoll = 0;
   connect();
-  setInterval(() => {
-    if (Date.now() - lastMsg < 6000) return;
-    fetch("/state.json", { cache: "no-store" }).then((r) => r.json()).then((s) => { if (s && s.agents) render(s); }).catch(() => {});
-  }, 3000);
+  async function pollState() {
+    if (polling || (Date.now() - lastMsg < 6000 && Date.now() - lastPoll < 15000)) return;
+    polling = true;
+    try {
+      // Record revision per attempt: an older HTTP reply must not undo a newer SSE recap exit or camera cut.
+      const result = await health.retryJSON("state", "/state.json", validState, () => stateRevision);
+      lastPoll = Date.now();
+      if (result.revision === stateRevision) { health.stateReceived("poll"); render(result.value); }
+    } catch (err) { console.error(err); }
+    finally { polling = false; }
+  }
+  pollState();
+  setInterval(pollState, 3000);
 })();

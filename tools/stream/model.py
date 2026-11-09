@@ -27,6 +27,7 @@ import clouds as clouds_mod
 import loadout as loadouts_mod
 import efficiency as efficiency_mod
 import tokens
+import reminder_view
 
 FIGHT_EPISODE_GAP = 45.0  # seconds without a report: the next report at the same key is a new fight
 ATTENTION_TTL = 120.0  # seconds: an attention point older than this is no longer where the agent is looking
@@ -475,11 +476,13 @@ def platform_where(p):
     "from->to" are the space connection's ends and N its distance from `from`, whichever way the platform flies:
     `toward` (Model._orient_platforms) is where it is headed; toward `from`, the route and progress turn round."""
     at = p.get("at") or ""
+    if at == "in transit" and isinstance(p.get("route"), str) and p.get("len") and isinstance(p.get("km"), (int, float)):
+        at = f"{p['route']} {round(100 * p['km'] / p['len'])}%"
     m = AT_RE.match(at)
     route = None
     if m:
         a, b, pct = m[1], m[2], int(m[3])
-        if p.get("toward") == a:  # Sunward 14:09, Vulcanus to Nauvis on nauvis->vulcanus: not "leaving Nauvis"
+        if (p.get("toward") or p.get("to")) == a:  # Sunward 14:09, Vulcanus to Nauvis on nauvis->vulcanus: not "leaving Nauvis"
             a, b, pct = b, a, 100 - pct
         route = {"from": planet_label(a), "to": planet_label(b), "pct": pct}
         if p.get("turned_back"):  # (CN1) back to where it left, its far end never reached
@@ -491,6 +494,17 @@ def platform_where(p):
             "speed_kms": round(speed * 60) if isinstance(speed, (int, float)) and speed else None, "view": p.get("view")}
     if route:  # (d20 batch57 S3) the route's location names, origin first (edgedense.py: the edge legs' dense part)
         out["route_ids"] = [a, b]
+        # Score telemetry already carries the connection length and distance from its canonical origin.
+        # Keep those facts for automatic long-run coverage; no extra game read.
+        if isinstance(p.get("len"), (int, float)) and p["len"] > 0:
+            out["leg_km"] = p["len"]
+            out["leg_progress_km"] = p["len"] * pct / 100
+            if isinstance(p.get("km"), (int, float)) and isinstance(p.get("route"), str):
+                ends = p["route"].split("->")
+                if ends == [a, b]:
+                    out["leg_progress_km"] = p["km"]
+                elif ends == [b, a]:
+                    out["leg_progress_km"] = p["len"] - p["km"]
     return out
 
 
@@ -549,9 +563,10 @@ def gun_reach(view):
     return left, top, right, bottom
 
 
-def platform_shot(view, margin=10.0, *, travelling=False, frac=1.0):
-    """A camera shot of a whole platform from its view (live.py PLATFORM_LUA): the centre of its entities' bounds on
-    its surface, at the zoom that fits them. A director client at zoom 1 shows ~60x34 tiles (1920x1080 at 32 px per
+def platform_shot(view, margin=10.0, *, travelling=False, frac=1.0, overview=False):
+    """A camera shot of a platform from its foundation extents (exclusive right/bottom tile edges), falling back
+    to bounds from older snapshots. An explicit overview omits flight detail and gun reach.
+    A director client at zoom 1 shows 60x33.75 tiles (1920x1080 at 32 px per
     tile), so the zoom is what fits the bounds plus a margin, clamped to cameras.lua's 0.3..4. exact_zoom: the
     director sends it as is (no main/side scaling, which would crop the platform). In flight, include 32 extra
     tiles ahead and 8 aft and on each side for approaching asteroids. Forward on the platform surface is north
@@ -566,11 +581,12 @@ def platform_shot(view, margin=10.0, *, travelling=False, frac=1.0):
     reach across (DETAIL_ZOOM), starting at the bow (the top of the reach) and panning to the stern at DETAIL_CROSS_S
     per view height after DETAIL_BOW_S on the bow (`pan` with speed and bow_s; OneCam's pan_step). Docked: a still
     shot."""
-    b = view.get("bounds") or {}
+    b = view.get("hull") or view.get("bounds") or {}
     hub = view.get("hub") or {"x": 0, "y": 0}
     left, top = b.get("left", hub["x"] - 6), b.get("top", hub["y"] - 6)
     right, bottom = b.get("right", hub["x"] + 6), b.get("bottom", hub["y"] + 6)
     hull = (left, top, right, bottom)
+    travelling = travelling and not overview
     reach = gun_reach(view)
     if travelling and "guns" in view:
         margin = 4.0
@@ -579,14 +595,21 @@ def platform_shot(view, margin=10.0, *, travelling=False, frac=1.0):
     elif travelling:
         left, top, right, bottom = left - 8, top - 32, right + 8, bottom + 8
     w, h = right - left + margin, bottom - top + margin
-    zoom = max(0.3, min(2.0, 60.0 * frac / w, 34.0 / h))
+    # 1080 / 32 is 33.75, not 34. Round DOWN to the camera protocol's hundredths: rounding up clips margins.
+    # frac is the actual centre crop's width; a wide ship must fit the visible pane, not the full client.
+    fit = min(2.0, 60.0 * frac / w, 33.75 / h)
+    zoom = max(0.3, math.floor(fit * 100 + 1e-9) / 100)
     out = {"position": {"x": round((left + right) / 2, 1), "y": round((top + bottom) / 2, 1)}, "surface": view["surface"],
-           "zoom": round(zoom, 2), "exact_zoom": True}
+           "zoom": round(zoom, 2), "exact_zoom": True,
+           "platform_frame": {"bounds": dict(zip(("left", "top", "right", "bottom"), hull)),
+                              "source": view.get("bounds_source", "foundation" if view.get("hull") else "legacy"),
+                              "hull_centre": {"x": (hull[0] + hull[2]) / 2, "y": (hull[1] + hull[3]) / 2},
+                              "frac": frac, "fit_zoom": fit, "limited": fit < 0.3}}
     if "guns" in view:
         out["fit_zoom"] = out["zoom"]
     if travelling and reach:
         detail = max(DETAIL_ZOOM[0], min(DETAIL_ZOOM[1], 60.0 * frac / w))
-        dh = 34.0 / round(detail, 2)
+        dh = 33.75 / round(detail, 2)
         y0, y1 = top - margin / 2 + dh / 2, max(top - margin / 2 + dh / 2, hull[3] + margin / 2 - dh / 2)
         if detail > zoom + 0.05 and (y1 - y0) <= LONG_VIEWS * dh:
             out.update(zoom=round(detail, 2), position={"x": out["position"]["x"], "y": round(y0, 1)},
@@ -597,8 +620,8 @@ def platform_shot(view, margin=10.0, *, travelling=False, frac=1.0):
     # (the least zoom 0.3 shows ~113 tiles; Bastion in flight needs ~174): `pan`, the view's centre from the bow (north,
     # forward) to the stern; OneCam starts the shot at the bow and moves it (pan_step), a camera without that keeps the
     # centre
-    vh = 34.0 / round(zoom, 2)
-    if h > vh + margin:  # (a few tiles of the margin cut is no pan: Cinder in flight is 111 high at 0.31, ~110)
+    vh = 33.75 / round(zoom, 2)
+    if h > vh:
         y0, y1 = top - margin / 2 + vh / 2, bottom + margin / 2 - vh / 2
         out["pan"] = {"y0": round(y0, 1), "y1": round(y1, 1)}
     return out
@@ -730,6 +753,7 @@ class Agent:
         self.last_activity_t = None  # wall time of the last observed action or speech
         self.combat = False  # in a fight now: hit lately or fighting (combat_state)
         self.resting = None  # a rest between turns (pacing.py: {since, until, reason}), or None
+        self.resting_known = False
         self.combat_state = None  # "hurt" | "fighting" | "guard" | None
         self.vehicle_fire = None  # (d22 batch93 BC2) driving a spidertron: {range, ammo, targets, farthest, box, ...}
         self.combat_info = {}
@@ -937,6 +961,7 @@ class Model:
         self.basemap = None  # the base as a coarse grid (harness.BASEMAP_LUA), for the site's live map only
         self.turret_state = None  # (d20 batch50 G1) turretstate.py public(): counts, the turrets not armed, as_of
         self.planet_maps = {}  # the other planets' coarse maps by surface (census.lua via harness.planet_map), one read a minute
+        self.trains = []
         self.silos = None  # (d26 batch257) launches.SiloFeed's last read (live.py, every poll): the launch shot
         self.speaker_alarms = None  # (d28 batch326 RA2) harness ALARMS_LUA's last read: alarmquiet.py
         self.vehicles = None  # (d26 batch233 VM) the census's vehicles read {tick, rows, total, t} (live.py, every 10 s)
@@ -1116,6 +1141,8 @@ class Model:
             self.platform_hits = {r.get("platform"): r for r in obs["platform_hits"] if r.get("platform")}
         if obs.get("space") is not None or any(a.get("surface") for a in obs.get("agents", [])):
             self._space_moments(now)
+        if "trains" in obs:
+            self.trains = obs["trains"]
         for w in obs.get("work") or []:
             self._ingest_work(w, now)
         for x in obs.get("attention") or []:
@@ -1344,6 +1371,7 @@ class Model:
                 self.alert("rest", f"{ag.display_name} is {pacing.label(rest)}", key=f"rest:{ag.name}:{rest.get('until')}",
                            agent=ag.name, ttl=60)
             ag.resting = rest
+            ag.resting_known = True
         if "profile_set" in a:
             ag.profile_set = a["profile_set"]
         if a.get("position"):
@@ -1749,6 +1777,8 @@ class Model:
             board["progress"] = {r["id"]: r for r in b["progress"] if isinstance(r, dict) and r.get("id") is not None}
         if isinstance(b, dict) and "active_ids" in b:  # the ids an active read listed (live.py): the open and doing lists
             board["active_ids"] = set(b["active_ids"]) if b["active_ids"] is not None else None
+        if isinstance(b, dict) and "claim_ids" in b:  # the separate claim read, for recorded reminder cover
+            board["claim_ids"] = set(b["claim_ids"]) if b["claim_ids"] is not None else None
         if isinstance(b, dict) and "finished_ids" in b:  # (BI3) the finished tasks and requests a read listed
             board["finished_ids"] = set(b["finished_ids"]) if b["finished_ids"] is not None else None
         for it in items:
@@ -1901,13 +1931,16 @@ class Model:
                          "enabled": bool(j.get("enabled")), "done": bool(j.get("done")),
                          "next_due_in_s": j.get("next_due_in_s"), "last_result": clean_text(j.get("last_result") or "") or None,
                          "result_age_s": j.get("result_age_s"), "result_by": j.get("result_by"), "states": j.get("states"),
+                         "last_fired_tick": j.get("last_fired_tick"),
+                         "board_context": reminder_view.board_context(j, self.board),
                          # (d17 batch35 D3) runs each recipient missed ({name: runs}); states says when the owner was told
                          "missed": {str(k): v for k, v in (j.get("missed") or {}).items() if isinstance(v, int)} or None,
                          # (d20 batch70 AF2, viewer Aurora) its backup, and each recipient's latest result or wait
                          "backup": j.get("backup") or None, "latest": self._reminder_latest(j.get("latest")),
                          # (d19 batch43 A2) the evidence given with its acknowledgments (batch41 B2), whole
                          **with_evidence(j)})
-        return {"jobs": rows, "total": len(r.get("jobs") or [])}
+        return {"jobs": rows, "total": len(r.get("jobs") or []), "tick": r.get("tick"),
+                "capacity": reminder_view.capacity(r.get("jobs") or [], self.agents)}
 
     LATEST_RESULT = 240  # a recipient's latest result on the panel (the job's last result stays whole)
 
@@ -1994,7 +2027,8 @@ class Model:
         rem = self.reminders_snapshot() or {}
         return {"tick": self.tick, "items": [row(it) for it in items[:self.ALL_MAX]], "items_total": len(items),
                 "claims": [row(it) for it in claims], "projects": projects,
-                "reminders": rem.get("jobs") or [], "reminders_total": rem.get("total") or 0}
+                "reminders": rem.get("jobs") or [], "reminders_total": rem.get("total") or 0,
+                "reminders_capacity": rem.get("capacity")}
 
     def jobs_snapshot(self):
         """(open, doing): tasks and requests from the last active board read (board.active_ids), open with no owner, and
@@ -3008,7 +3042,7 @@ class Model:
             if isinstance(r.get("sent_tick"), (int, float)) and isinstance(tick, (int, float)):
                 row["sent_age_s"] = round(max(0, tick - r["sent_tick"]) / 60 + since)
             rows.append(row)
-        return {"rows": rows, "total": v.get("total") or len(rows), "read_age_s": round(since)}
+        return {"rows": rows, "total": v.get("total"), "read_age_s": round(since)}
 
     def snapshot(self, now, cameras=None):
         self.snap_now = now  # (BI5) the time a project's owner_work reads its wait at
@@ -3047,6 +3081,7 @@ class Model:
                 "surface": ag.surface, "where": where_label(ag.surface, ag.platform) if ag.surface else None,
                 "on_platform": bool(ag.platform), "attention": self.attention_row(ag, now), "auto": ag.auto,
                 "resting_until": ag.resting["until"] if self.is_resting(ag, now) else None,
+                "resting_known": ag.resting_known,
                 "tokens": (tok.get(ag.name) or {}).get("total") or None,  # this shift's, for the card's small figure
             })
         res = self.research
@@ -3095,6 +3130,7 @@ class Model:
             "space": self.space_snapshot(science, now),
             "work": self.work_snapshot(now),
             "fights": fights,
+            "trains": self.trains,
             "silos": self.silos,  # (batch257) launches.SiloFeed's last read
             "incoming": self.incoming_snapshot(now),
             "big_enemies": self.big_snapshot(now),

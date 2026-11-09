@@ -1,3 +1,4 @@
+local arrival_eta=require('arrivaleta')
 -- freight: what a space platform carried, stop by stop and leg by leg (Luna,
 -- shift12 12:47: of 995 agricultural science packs Sunward took from Gleba,
 -- 200 spoiled on the way and 200 more at Nauvis, 595 went down; she put that
@@ -71,17 +72,23 @@ return function(api)
   -- shortest way from it: Asterion's guard set Aquilo mid edge->shattered-planet and it turned back to the edge, while
   -- the leg read on to the Shattered Planet with 4M km left and a fuel alarm); else the way `distance` moved since the
   -- last read (not paused: a paused platform drifts back); else the end it did not come from (last visited).
-  local MOVED = {}  -- platform index -> {conn, d}: the last distance read
+  local MOVED = {}  -- fallback for module fixtures without a state provider
   local function heading_back(pl, c, from, to, length, d)
     local sch = pget(pl, 'schedule')
     local records = sch and sch.records
     local rec = records and records[sch.current or 1]
     local stop = rec and rec.station
     local idx, cname = pget(pl, 'index'), pget(c, 'name')
-    local m = idx and MOVED[idx]
+    -- Direction inferred from movement is history. A joining client must have the same previous distance,
+    -- especially when the schedule supplies no reachable stop (d29 batch367).
+    local moved_by=MOVED
+    if api.state then
+      local s=api.state(); s.freight_moved=s.freight_moved or {}; moved_by=s.freight_moved
+    end
+    local m = idx and moved_by[idx]
     local moved
     if m and m.conn == cname and m.d ~= d and not pget(pl, 'paused') then moved = d < m.d end
-    if idx and not (m and m.conn == cname and m.d == d) then MOVED[idx] = {conn=cname, d=d} end
+    if idx and not (m and m.conn == cname and m.d == d) then moved_by[idx] = {conn=cname, d=d} end
     if stop == from or stop == to then return stop == from end
     if stop and M.path then
       local pf, pt = M.path(from, stop), M.path(to, stop)
@@ -110,25 +117,25 @@ return function(api)
     local v = at_cruise and cruise or speed
     -- (d20 batch54 N5, Sol #1390) a leg under way at its own measured speed once it has one, the cruise only while it
     -- speeds up (engine.lua leg_speed); speed_from says which
-    local speed_from
+    local speed_from, motion
     if api.leg_speed and type(speed) == 'number' then
       local segs = M.segments and M.segments(pl) or {}
       local sg = segs[#segs]
       local since = sg and sg.kind == 'leg' and not sg['end'] and sg.start and game.tick - sg.start or nil
-      local s, by, own = api.leg_speed(pl, since, cruise, cruise and string.format('its cruise on the legs before, %.0f km/s', cruise * 60))
+      local s, by, own, observed = api.leg_speed(pl, since, cruise, cruise and string.format('its cruise on the legs before, %.0f km/s', cruise * 60))
+      motion = observed
       if s then v, at_cruise, speed_from = s, not own, by end
     end
     -- turned_back: it left the end it flies to now (a turn back mid-connection, its from never reached)
     local heading = back and from or to
     local turned = pget(pget(pl, 'last_visited_space_location'), 'name') == heading or nil
-    return {from=back and to or from, to=heading, flown=flown, length=length, left_km=left, turned_back=turned,
+    return {from=back and to or from, to=heading, flown=flown, length=length, left_km=left, turned_back=turned, speed_now_kms=type(speed)=='number' and speed*60 or nil, motion=motion,
       eta_ticks=type(v) == 'number' and v > 0 and left / v or nil, back=back, speed_from=speed_from,
       eta_from=at_cruise and string.format('about: it speeds up (%.0f km/s now), the rest at its cruise of %.0f km/s', speed * 60, cruise * 60) or nil}
   end
   -- {at (a space location, when there), stopped (there and not on its path),
   -- leg (M.leg while flying), text}. The platforms row and platform_arrived
-  -- both read this, so a wait is met exactly when the row says the platform is
-  -- stopped there.
+  -- both read this for current location; an arrival wait also remembers logged arrivals.
   -- departed (d19 batch48 2): the last departure a platform_schedule call caused, {from, tick, by} (space.lua), for
   -- wait_until platform_left begun just after it
   local function where_row(pl)
@@ -151,6 +158,7 @@ return function(api)
     w.departed = st and st.schedule_departures and st.schedule_departures[pl.name] or nil
     return w
   end
+  M.productionlegs = require('productionlegs'){state=api.state, where=M.where}
 
   -- Counting -----------------------------------------------------------------
   local function store()
@@ -1159,13 +1167,14 @@ return function(api)
   -- The platform's segments on record, oldest first (endurance.lua reads the last finished leg's time).
   function M.segments(pl) local rec = store()[pl.index]; return rec and rec.segs or {} end
   function M.track(pl, tick)
+    local w = M.where(pl)
+    M.productionlegs.watch_one(pl, tick)
     local counts = M.hub_counts(pl)
     if not counts then return end
     local all = store()
     local rec = all[pl.index]
     if not rec then rec = {segs={}}; all[pl.index] = rec end
     rec.name = pl.name
-    local w = M.where(pl)
     local key = key_of(w)
     local seg = rec.segs[#rec.segs]
     if key and key ~= rec.key then
@@ -1367,11 +1376,11 @@ return function(api)
     if w.leg then
       -- In flight: the rest of this leg at its speed now, then on from its end.
       local leg = w.leg
-      if not leg.eta_ticks then return nil, 'its speed is zero or unread now' end
-      secs = leg.eta_ticks / 60
-      speed = speed or (leg.left_km > 0 and leg.left_km / leg.eta_ticks) or nil
-      parts[#parts+1] = string.format('flying %s->%s: %d km left at %s: %ds', leg.from, leg.to, math.floor(leg.left_km + 0.5),
-        leg.speed_from or (leg.eta_from and 'its cruise (it speeds up now)' or 'its speed now'), math.floor(secs + 0.5))
+      local now, why = arrival_eta(leg)
+      if not now then return nil, why end
+      secs = now.seconds
+      speed = speed or leg.speed_now_kms/60
+      parts[#parts+1] = string.format('flying %s->%s: %s: %ds', leg.from, leg.to, now.basis, math.floor(secs + 0.5))
       at = leg.to
       if leg.to == location then
         return {eta_s=math.ceil(secs), after_s=math.ceil(secs), line=string.format('ETA %ds: %s', math.ceil(secs), table.concat(parts, '; '))}
@@ -1450,6 +1459,14 @@ return function(api)
       end
     end
   end
+  -- Bounded existing event log: the first matching arrival, including a stop crossed between observations.
+  function M.arrived_since(name, force, location, since)
+    for _, e in ipairs(events().list) do
+      if e.kind == 'arrived' and e.platform == name and e.force == force and e.tick >= since and (location == nil or e.at == location) then
+        return e
+      end
+    end
+  end
   -- The lines for agent p (h: its hint state): platforms of its force that stopped at or left its planet since it was
   -- last told (its first look: the last 5 minutes).
   function M.event_lines(p, h)
@@ -1483,6 +1500,7 @@ return function(api)
     for index in pairs(all) do if not seen[index] then all[index] = nil end end
     -- (BT1) the kept hubs and statistics of platforms gone
     for index in pairs(plats) do if not seen[index] then plats[index] = nil end end
+    M.productionlegs.prune(seen)
   end
   -- Built at once from the delivery (d17 batch16 A2, Grok/Wren: rocket-turret "came aboard 0" while the hull went from
   -- 9 turrets to 14: construction robots took each turret from the hub to a ghost within the second it arrived, so

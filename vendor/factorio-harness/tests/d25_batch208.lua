@@ -101,8 +101,9 @@ has(refused(plan({{action='transfer',args={item='coal',direction='to_entity',pos
 no_length(plan({{action='load_silo',args={first={coal=10}}}},true))
 no_length(plan({{action='load_silo',args={from={x=1,y=2}}}},true))
 -- feed counts its item with its items, as the action does
-local sixteen={} for i=1,16 do sixteen[i]='item-'..i end
-has(refused(plan({{action='feed',args={item='coal',items=sixteen}}},true)),'items has 17 entries (item counts too), outside 1..16, what feed takes')
+prototypes.item={coal={}}
+local sixteen={} for i=1,16 do sixteen[i]='item-'..i; prototypes.item[sixteen[i]]={} end
+has(refused(plan({{action='feed',args={item='coal',items=sixteen}}},true)),'items requires 1..16 item names')
 sixteen[16]='coal'; no_length(plan({{action='feed',args={item='coal',items=sixteen}}},true))
 -- refuel: 64 positions a walk, 128 for a tour with from, area or feed_chests, or in a dry run
 has(refused(function() runtime.step_length_check('refuel',{positions=places(65)}) end),'positions has 65 entries, outside 1..64, what refuel takes')
@@ -159,3 +160,12 @@ end
 -- the step label (64 bytes) was already checked at submit; it still is
 has(refused(plan({{action='wait_ticks',label=string.rep('l',65),args={ticks=60}}},true)),'label must be a string of at most 64 bytes')
 print('d25_batch208 QU1 queue step lengths: ok ('..n..' entries)')
+-- d30 batch372: the start filter is validated at queue submission and dry_run, before a watch can be replaced.
+for _,dry in ipairs({true,false}) do
+  local args={platform='Peregrine',asteroids=true,seconds=1200,track_filter={area={{0,0},{0,1}}}}
+  has(refused(plan({{action='platform_defense',args=args}},dry)),'track_filter.area needs left_top < right_bottom')
+  args.track_filter={area={{-5,-30},{5,-10}}}; args.seconds=nil
+  has(refused(plan({{action='platform_defense',args=args}},dry)),'track_filter is for starting an asteroid watch')
+end
+runtime.step_checks.platform_defense{platform='Peregrine',asteroids=true,seconds=1200,track_filter={area={{-5,-30},{5,-10}}}}
+has(refused(function() astra('platform_defense',{platform='Peregrine',track_filter={area={{0,0},{1,1}}}}) end),'track_filter is for starting an asteroid watch')

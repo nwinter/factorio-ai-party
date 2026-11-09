@@ -118,7 +118,7 @@ return function(api)
   end
   -- Lines for an item (or an entity of that name), newest first.
   function M.lines(item, surface)
-    local out = {}
+    local out = api.platform_lines and api.platform_lines(item,surface) or {}
     local list = store().list
     for i = #list, 1, -1 do
       local r = list[i]

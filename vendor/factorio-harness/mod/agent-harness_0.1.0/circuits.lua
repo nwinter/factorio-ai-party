@@ -491,6 +491,7 @@ return function(api)
     local parts = {}
     local function value(sig)
       if not (type(sig) == 'table' and sig.name) then return nil end
+      if sig.type == 'virtual' and (sig.name == 'signal-everything' or sig.name == 'signal-anything' or sig.name == 'signal-each') then return nil end
       local n, wired = 0, false
       for _, w in ipairs({defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green}) do
         local net = try(function() return e.get_circuit_network(w) end)

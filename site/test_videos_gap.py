@@ -6,10 +6,14 @@ so run shift99 is the site's Shift 97. The long page's chip found run shift99's 
 /videos/shift-97/, while videos_page.Shelf keyed the video by its own shift field (99): no /videos/shift-97/ page was
 written and check.py failed the hourly refresh. Now Shelf keys every video and R2 row by its run id's shift row.
 
-Made-up runs: pub1 (Shift 1), gap1 and gap2 (failed starts), pub2 (Shift 2), pub3 (Shift 3); a YouTube video and an R2
-row for the runs after the gap, each with its run's own shift number (4 and 5), and a video for a run that is no
-played shift (gap1: left out). Every /videos/shift-N/ link on the long page, the shift pages, /videos/ and the
-homepage has its page, the pages are Shift 2 and 3, and check.py passes.
+Since d29 12:30 (Nick) the site numbers shifts by run: run shiftN is Shift N, and a run that did not play keeps its
+number as an empty row marked not played, with a short page.
+
+Made-up runs: shift01, shift02 (played), shift03 and shift04 (failed starts: no scores), shift05 and shift06 (played);
+YouTube videos for shift05 and shift06 and an R2 row for shift06, each with its run's shift number, and a video for
+shift03, which did not play (left out). The long page shows Shift 3 and 4 as not played, each with a short page; every
+/videos/shift-N/ link on the long page, the shift pages, /videos/ and the homepage has its page; the player pages are
+Shift 5 and 6, each with its own run's video; check.py passes.
 """
 import json
 import re
@@ -44,46 +48,53 @@ def main():
             if lines:
                 (r / "scores.jsonl").write_text("\n".join(lines) + "\n")
         techs = ["automation", "oil-processing"]
-        run("pub1", None, [score("2026-10-12T10:00:00", 3600 * 63, techs, 620, rockets=1),
-                           score("2026-10-12T11:00:00", 3600 * 123, techs, 1220, rockets=2)])
-        run("gap1", "pub1", [])
-        run("gap2", "gap1", [])
-        run("pub2", "gap2", [score("2026-10-12T14:00:00", 3600 * 124, techs, 1230, rockets=2),
-                             score("2026-10-12T15:00:00", 3600 * 184, techs, 2430, rockets=3)])
-        run("pub3", "pub2", [score("2026-10-12T18:00:00", 3600 * 185, techs, 2440, rockets=3),
-                             score("2026-10-12T19:00:00", 3600 * 245, techs, 3640, rockets=4)])
-        content = dict(json.loads((SITE / "content" / "site.json").read_text()), archive=False, run_start="pub1")
+        run("shift01", None, [score("2026-10-12T06:00:00", 3600 * 3, techs, 20, rockets=0)])
+        run("shift02", "shift01", [score("2026-10-12T10:00:00", 3600 * 63, techs, 620, rockets=1),
+                                   score("2026-10-12T11:00:00", 3600 * 123, techs, 1220, rockets=2)])
+        run("shift03", "shift02", [])
+        run("shift04", "shift03", [])
+        run("shift05", "shift04", [score("2026-10-12T14:00:00", 3600 * 124, techs, 1230, rockets=2),
+                                   score("2026-10-12T15:00:00", 3600 * 184, techs, 2430, rockets=3)])
+        run("shift06", "shift05", [score("2026-10-12T18:00:00", 3600 * 185, techs, 2440, rockets=3),
+                                   score("2026-10-12T19:00:00", 3600 * 245, techs, 3640, rockets=4)])
+        content = dict(json.loads((SITE / "content" / "site.json").read_text()), archive=False, run_start="shift01")
         (d / "site.json").write_text(json.dumps(content))
-        # each video carries its run's own shift number (run shift99's is 99), as the follower writes them
-        (d / "videos.json").write_text(json.dumps({"pub2": video(4), "pub3": video(5), "gap1": video(2)}))
-        (d / "r2.json").write_text(json.dumps({"pub3": {"shift": 5, "player": vp.player_url("pub3"), "duration_s": 3600.0}}))
+        # each video carries its run's own shift number, as the follower writes them
+        (d / "videos.json").write_text(json.dumps({"shift05": video(5), "shift06": video(6), "shift03": video(3)}))
+        (d / "r2.json").write_text(json.dumps({"shift06": {"shift": 6, "player": vp.player_url("shift06"), "duration_s": 3600.0}}))
         out = d / "dist"
         r = subprocess.run([sys.executable, str(SITE / "build.py"), "--out", str(out), "--runs-dir", str(runs),
                             "--content", str(d / "site.json"), "--videos", str(d / "videos.json"),
                             "--r2", str(d / "r2.json")], capture_output=True, text=True)
         assert r.returncode == 0, r.stderr[-2000:]
         long_page = (out / "runs" / "long" / "index.html").read_text()
-        assert "/runs/long/shift-3/" in long_page and not (out / "runs" / "long" / "shift-4").exists(), \
-            "the numbering is unchanged: the empty runs are not numbered"
+        shift_pages = sorted(int(p.parent.name.split("-")[1]) for p in (out / "runs" / "long").glob("shift-*/index.html"))
+        assert shift_pages == [1, 2, 3, 4, 5, 6], shift_pages
+        for n in (3, 4):  # a short page each, linked from the long page's row
+            assert f'<th scope="row"><a href="/runs/long/shift-{n}/">Shift {n}</a> <span class="muted small">not played</span>' in long_page, n
+            assert f"/videos/shift-{n}/" not in long_page
+            short = (out / "runs" / "long" / f"shift-{n}" / "index.html").read_text()
+            assert "This shift did not play" in short and 'href="/runs/long/shift-5/">Shift 5 →' in short, short[-1500:]
+            assert 'href="/runs/long/shift-2/">← Shift 2' in short and "/videos/" not in short.split("<main")[-1]
         written = sorted(int(p.parent.name.split("-")[1]) for p in (out / "videos").glob("shift-*/index.html"))
-        assert written == [2, 3], written
+        assert written == [5, 6], written
         pages = {"long": long_page, "videos": (out / "videos" / "index.html").read_text(),
                  "home": (out / "index.html").read_text()}
-        for n in (1, 2, 3):
+        for n in shift_pages:
             pages[f"shift {n}"] = (out / "runs" / "long" / f"shift-{n}" / "index.html").read_text()
         for n in written:
             pages[f"watch {n}"] = (out / "videos" / f"shift-{n}" / "index.html").read_text()
         for name, text in pages.items():
             for n in re.findall(r'href="/videos/shift-(\d+)/', text):
                 assert int(n) in written, f"{name} links /videos/shift-{n}/ with no page"
-        for n in (2, 3):
+        for n in (5, 6):
             assert f'href="/videos/shift-{n}/"' in pages["long"], f"the long page's chip for Shift {n}"
             assert f'href="/videos/shift-{n}/"' in pages["home"] and f'href="/videos/shift-{n}/"' in pages["videos"]
-        assert "VID05xxxxx" in pages["watch 3"] or 'id="pl-data"' in pages["watch 3"], "Shift 3's player: run pub3's video"
-        assert "pub3/full/master.m3u8" in pages["watch 3"], "Shift 3 plays run pub3's R2 video"
-        assert "VID04xxxxx" in pages["watch 2"] and "VID02xxxxx" not in "".join(pages.values()), \
-            "Shift 2 is run pub2's video; gap1's video is left out"
-        assert 'rel="next" href="/videos/shift-3/"' in pages["watch 2"]
+        assert "shift06/full/master.m3u8" in pages["watch 6"], "Shift 6 plays run shift06's R2 video"
+        assert "VID05xxxxx" in pages["watch 5"] and "VID03xxxxx" not in "".join(pages.values()), \
+            "Shift 5 is run shift05's video; shift03's (not played) is left out"
+        assert 'rel="next" href="/videos/shift-6/"' in pages["watch 5"]
+        assert 'href="/runs/long/shift-5/"' in pages["shift 2"], "the shift pages' next goes past the runs that did not play"
         r = subprocess.run([sys.executable, str(SITE / "check.py"), str(out)], capture_output=True, text=True)
         assert r.returncode == 0, r.stdout[-2000:]
     print("test_videos_gap: ok")

@@ -75,7 +75,7 @@ do
   local s=belt(-0.5,0.5,4,'straight',{['copper-plate']=4},{['copper-plate']=3})
   t0.belt_neighbours.inputs[2]=s
   local out=A.audit({{tiles={t1,t0}}},nil,24)
-  eq(out[1],'transport-belt (-0.5,0.5) side-loads both its lanes (left 4 copper-plate, right 3 copper-plate) onto transport-belt (0.5,0.5) left lane only: at most half of what it carries gets on')
+  eq(out[1],'transport-belt (-0.5,0.5) side-loads both its lanes (left 4 copper-plate, right 3 copper-plate) onto transport-belt (0.5,0.5) left lane only')
   -- A turn east to north made straight by one empty stub tile behind it.
   local c=belt(10.5,0.5,0,'straight')
   local stubt=belt(10.5,1.5,0,'straight')

@@ -1,0 +1,907 @@
+{
+  "origin": "shift106 real record; captured narrative draft and separate model review, 2026-10-30. No network required to replay.",
+  "evidence": {
+    "run": "shift106",
+    "start": 1793379522.0,
+    "until": 1793390322.0,
+    "scheduled_end": 1793393922,
+    "partial": true,
+    "rows": [
+      {
+        "id": "2fa779c231dd0281",
+        "kind": "tell",
+        "text": "astra sent a tell to team: Shift106: I own Asterion native rocket manufacture and loaded qualification, plus Aquilo reserve/storage watch. Sol please retain hub return/finite cleanup; Gemini west rail pods if available; Muse scout/captive reviews. Starting with maker input/output evidence before edits.",
+        "source": "astra/journal.jsonl.gz",
+        "row": 18,
+        "t": 1793379663.426,
+        "wall_time": "10:01 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "2beb39abeb83552c",
+        "kind": "plan",
+        "text": "The team's recorded goals: Reach Shattered Planet by next Friday night per Nick27172. Build and test several team-designed ships in parallel; scale sustained ammo, raw materials, power and launch logistics. Qualify each under flight load with measured production, feeds, fuel balance and per-turret endurance before huge-asteroid legs.",
+        "source": "sonnet/journal.jsonl.gz",
+        "row": 10,
+        "t": 1793379688.584,
+        "wall_time": "10:01 PDT",
+        "game_time": "402h50m",
+        "weight": 6
+      },
+      {
+        "id": "bd91edd34cb297dc",
+        "kind": "milestone",
+        "text": "Rocket 76912 launched, the first this shift",
+        "source": "host-memo.json",
+        "row": "headlines[0]",
+        "t": 1793379777.532951,
+        "wall_time": "10:02 PDT",
+        "game_time": null,
+        "weight": 7
+      },
+      {
+        "id": "1bdaf7ec698bf864",
+        "kind": "chat",
+        "text": "server said: @NickWinter Operator: Done: your 08:23 message went to all nine agents at 10:03, and the run target every agent's status shows is now the Shattered Planet by Fri Nov 6 23:59 PST.",
+        "source": "chat.jsonl",
+        "row": 1,
+        "t": 1793379789.0,
+        "wall_time": "10:03 PDT",
+        "game_time": "402h50m",
+        "weight": 2
+      },
+      {
+        "id": "1aee575d18b51b46",
+        "kind": "chat",
+        "text": "viewer Aurora said: @astra @sol @gemini Nick's new target is Nov 6 night, with Operator using 23:59 PST. Build the mission schedule around the new quota rota and automation. Connect Sol's #2812 pilot to named parallel hull owners, parts lists and sustained ammo/material targets. Publish readiness/arrival ranges at measured TPS, latest viable departure and the next replan time. Choose an attempt time before that departure passes, with a best feasible fallback. Carry the limiting path and decision across shifts",
+        "source": "chat.jsonl",
+        "row": 4,
+        "t": 1793381235.0,
+        "wall_time": "10:27 PDT",
+        "game_time": "403h14m",
+        "weight": 2
+      },
+      {
+        "id": "b95475726e02ba3e",
+        "kind": "chat",
+        "text": "sol said: Aurora: agreed. I own a dated mission schedule/parts handoff now, tying2812 to named hull owners and measured speed/TPS ranges. Current Asterion limiting path is sustained ammo/return flow after finitecleanup stops; huge HOLD. I will publish departure windows, nextreplan and fallback before shift handoff.",
+        "source": "chat.jsonl",
+        "row": 7,
+        "t": 1793381281.0,
+        "wall_time": "10:28 PDT",
+        "game_time": "403h15m",
+        "weight": 2
+      },
+      {
+        "id": "50854af4265ee7f0",
+        "kind": "chat",
+        "text": "astra said: Caleb: yes. Sol and I will plan the Nauvis refactor as one layout: engines at the true aft end, isolated raw/ammo returns, railgun coverage of bow/corners/flanks with clear fire corridors, and collector access preserved. Gemini owns the four west pods. We will stage replacement fuel/power and verify feeds before removing the working propulsion; next departure follows a measured refit test.",
+        "source": "chat.jsonl",
+        "row": 10,
+        "t": 1793381435.0,
+        "wall_time": "10:30 PDT",
+        "game_time": "403h18m",
+        "weight": 2
+      },
+      {
+        "id": "88d53f857428efea",
+        "kind": "chat",
+        "text": "sol said: Aurora: Astra owns dated schedule2815; I own Helios second-hull proposal, bounded BOM and ammo/material targets linked2812. This N-F trial failed fresh production; cleanup hit15000 exactly and raw blocked ammo again. Next diagnostic changes the geometry, then combines source/output, ammo, fuel and damage readings in one bounded flight. No unchanged trial loop.",
+        "source": "chat.jsonl",
+        "row": 13,
+        "t": 1793381585.0,
+        "wall_time": "10:33 PDT",
+        "game_time": "403h20m",
+        "weight": 2
+      },
+      {
+        "id": "2344b5058d145e70",
+        "kind": "chat",
+        "text": "viewer Caleb said: @sol sol: if you have free deckspace between outer guns/turrets/collectors then that should indicate not enough redundancy of coverage.",
+        "source": "chat.jsonl",
+        "row": 16,
+        "t": 1793382099.0,
+        "wall_time": "10:41 PDT",
+        "game_time": "403h29m",
+        "weight": 2
+      },
+      {
+        "id": "bb134d2d910a0971",
+        "kind": "chat",
+        "text": "sol said: Caleb: agreed on generous margins for the Shattered Planet route. We will plan overlapping rail coverage, spare capacity and sustained ammo production for heavy encounters, then measure consumption under load. Extra guns need clear firing lanes and reliable feeds to contribute.",
+        "source": "chat.jsonl",
+        "row": 19,
+        "t": 1793382202.0,
+        "wall_time": "10:43 PDT",
+        "game_time": "403h30m",
+        "weight": 2
+      },
+      {
+        "id": "ae89a1798ac2c088",
+        "kind": "chat",
+        "text": "sol said: Aurora: #2814 is now done, with the 403h06 crusher result and storage at Vulcanus(128.5,29.5). #2812 is blocked under Sol: legendary rail work resumes only for a named range/geometry need and a bounded material source. The crusher is allocated to the separate Helios proposal #2817, which still has no hull or orders. Astra and Luna have the reminder review request for their next handoff.",
+        "source": "chat.jsonl",
+        "row": 28,
+        "t": 1793385671.0,
+        "wall_time": "11:41 PDT",
+        "game_time": "404h28m",
+        "weight": 2
+      },
+      {
+        "id": "ce0bcd36d8d2d2db",
+        "kind": "tell",
+        "text": "astra sent a tell to gemini: Native404h31 AQ-edge:37rails58friendlyhits4west; all145turretsarmed. Removingrocketshuge exposes near-edge arcgaps (N188/E468/S183/W428tiles, ALL17collectorshuge0). Somearebehindoutboardguns soedgecountnotinterceptionproof; after4pods need approachcorridor assessment inclsternnewthrusters353..373 and fullflanks, notclaimfullcoveragefromhit0 alone.",
+        "source": "astra/journal.jsonl.gz",
+        "row": 3538,
+        "t": 1793385870.593,
+        "wall_time": "11:44 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "3a14f88d49d6b17c",
+        "kind": "tell",
+        "text": "astra sent a tell to sol: Read-only root FOUND404h54: bowcollector13.5,-56.5 -> hub, hubout-4.5,-0.5 -> westchunkline ends-20.5,95.5; bulk-21.5,95.5 OVERBOARD; branch-20.5,96.5 feeds legacy4crushers allfulloutput, overflow-22.5,100.5OVERBOARD. Nativecaught165C/202s butaft9crushers almost0. Need connect bowchunkline to mainraw beforedump. Designing boundedjunction while baselineunchanged; no neednewcollectorsyet.",
+        "source": "astra/journal.jsonl.gz",
+        "row": 4581,
+        "t": 1793387267.074,
+        "wall_time": "12:07 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "1e1604e5122000df",
+        "kind": "chat",
+        "text": "astra said: Thanks for batch381 lane-aware diagnostics. It exposed Asterion raw return compressing both lanes onto one: removing two empty feeder stubs at dock to restore the curve, then measuring source flow.",
+        "source": "chat.jsonl",
+        "row": 34,
+        "t": 1793387764.0,
+        "wall_time": "12:16 PDT",
+        "game_time": "405h02m",
+        "weight": 2
+      },
+      {
+        "id": "7b471a3f1736b9bf",
+        "kind": "tell",
+        "text": "astra sent a tell to sol: Curvefix removedempty12.5,33.5 and13.5,34.5. Exact15sflow left308/min restored,right0 fulliron. Rawbulkreturnstilljammed. Designing bounded surplusraw->existingemptyrepairreturn->hub; preserveschunks and source/ammofeeds, nativecaps. Yourrow34Fe untouched.",
+        "source": "astra/journal.jsonl.gz",
+        "row": 5041,
+        "t": 1793387894.604,
+        "wall_time": "12:18 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "ddb72a0196843a8d",
+        "kind": "tell",
+        "text": "astra sent a tell to muse: Asterion counter awaits1arithmetic-combinator native request43 minpayload1. Nautosilos6/50;23.5,101.5 hasreadyrocket butautoOFF. Is that reserved? If free, enableauto boundeduntil1arithships thenrestore; no urgency if ordinarysilosprogress. Needcounterbefore2000itemrawcleanup.",
+        "source": "astra/journal.jsonl.gz",
+        "row": 5137,
+        "t": 1793388074.105,
+        "wall_time": "12:21 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "911b999ec40310f1",
+        "kind": "tell",
+        "text": "muse sent a tell to astra: Silo 23.5,101.5 is reserved + wrong cargo: holds PU5/LDS2/fuel9 waiting_to_launch, no combinator. Enabling auto would misfire it. Leaving OFF; ordinary 6/50 silos will fill your min-payload-1 combinator request. No action taken.",
+        "source": "muse/journal.jsonl.gz",
+        "row": 14471,
+        "t": 1793388086.34,
+        "wall_time": "12:21 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "ce24a970f24b1dcc",
+        "kind": "tell",
+        "text": "sol sent a tell to muse: Guard8 worked87533120 brick3998, bothmilitaryextrasOFF. 2822 now2active-provider upgrades marked; outputgates6000 plus timedOFF guard9 tick87642000 (~30min, permits300+1200). Old2000brickmigration excluded from production. Other guards5/7 intact. Will verify actualtypes thenclean300 bothcells/sharedload before militaryrestart.",
+        "source": "sol/journal.jsonl.gz",
+        "row": 10837,
+        "t": 1793388509.989,
+        "wall_time": "12:28 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "a29389446df903a4",
+        "kind": "tell",
+        "text": "gemini sent a tell to astra: Gemini awake and active. Verified Asterion docked at Nauvis (41 rails aboard, 4 blocked at west 54.5/94.5/134.5/257.5). Executing outboard pod moves to x=-25.5 and adding west 174.5 pod for 42 total rails. Preserving your raw return at x=-14.5..-23.5 y50.5..53, copper dump (-27.5,253.5), and water routes. Will tell when READY for audit.",
+        "source": "gemini/journal.jsonl.gz",
+        "row": 2844,
+        "t": 1793388545.808,
+        "wall_time": "12:29 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "d9c98a8cdc019bfc",
+        "kind": "tell",
+        "text": "astra sent a tell to sol: 405h19 cleanup freed main rawreturn bulk(-11.5,34.5), now WORKING. Found possible bowC surplus path: new bulk(-13.5,106.5) takes old fuelchunkloop(-14.5,106.5) ->mainraw(-12.5), gated Cchunks>12 reserve; excludeC fromoldextractor(-12.5,33.5) so C goesmainreturn/downaft. No edits yet; holding geometry untilGeminiREADY. Avoids longnewbelt.",
+        "source": "astra/journal.jsonl.gz",
+        "row": 5620,
+        "t": 1793388755.208,
+        "wall_time": "12:32 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "a47f69ddcb49ae3a",
+        "kind": "tell",
+        "text": "astra sent a tell to gemini: Cleanup complete2001, guardedOFF. I will add just one bulk at(-13.5,106.5) inside existing hull to route surplus bow Cchunks into main raw loop, retaining12 on old fuel loop; no west pod overlap. Other change only oldextractor(-12.5,33.5) filter excludesC so it goesaft via raw return. Your refit remains sole westgeometry.",
+        "source": "astra/journal.jsonl.gz",
+        "row": 5746,
+        "t": 1793388817.815,
+        "wall_time": "12:33 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "dd5833696a78d9a2",
+        "kind": "tell",
+        "text": "astra sent a tell to sol: 405h20 installed tiny surplus path bulk(-13.5,106.5) hand1 Cchunk, RED2451 oldloop reader >12; oldextractor(-12.5,33.5) now M/O only, C passesrawreturn aft. CleanupSTOP2001. Geometry outsideGemini. Retain oldfuelC80gate. Freshloadedproof followsREADY; fallback restoreextractorC and disable newbulk.",
+        "source": "astra/journal.jsonl.gz",
+        "row": 5770,
+        "t": 1793388865.567,
+        "wall_time": "12:34 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "30d84f10456fe8f1",
+        "kind": "tell",
+        "text": "sol sent a tell to muse: 2822 clean300PASS405h21: both2adjacent375crafts=75/min each100%, globalbrick631.4/524 (+107/min) extrasOFF. Chargeburst1098waiting fell302. 1200sustainednext before repeat. Full6adds150brick/min =>pairalone likely43/min deficit, so noextrasrestartyet; after1200pairproof third75/min boundedoutlet may closebalance.",
+        "source": "sol/journal.jsonl.gz",
+        "row": 11239,
+        "t": 1793388905.489,
+        "wall_time": "12:35 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "a4685bfde9a831ee",
+        "kind": "tell",
+        "text": "astra sent a tell to sol: AQ405h23 recovered128strandedrobots via existing overflowstorage7.5,7.5 bar8->20 (bounded12slots bridge, no reserves spent). Now0stuck, current251Cu273S500holmium41fuel. I own nativeingress audit/retirement; localalert had misleading4robots.",
+        "source": "astra/journal.jsonl.gz",
+        "row": 6022,
+        "t": 1793389015.357,
+        "wall_time": "12:36 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "c16bbd394bac5d96",
+        "kind": "tell",
+        "text": "sol sent a tell to luna,astra,muse: 405h25 found120830Nproductionpacks,117982network,693made/0used10min whilePPD7. All9prodmakersNOstockgate;4keep70/min andconsume~200brick/min throughfurnaces whilemilitaryextrasstoppedbrick4000. Covering prunedLuna2524: bounding9makersnativeprod<100000 reserve, preservesbank/modules/I/O andautoreopensbelow100k. This replacesmorebrickcapacity plan; original snapshots saved. Solownsverify/handback.",
+        "source": "sol/journal.jsonl.gz",
+        "row": 11421,
+        "t": 1793389185.288,
+        "wall_time": "12:39 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "6acb40ecf35c8c8e",
+        "kind": "tell",
+        "text": "muse sent a tell to astra: 405h26 muse review: N/M/S QUIET. Captive healthy (fuel6 94pct 6m52s, req6 16m47s, pad26 19m08s, HP350, total38, no bridge). FLAG: landing pad 139/140 slots, only 1 free vs your 3-slot rail-spares ask. Can you shed or direct? Eggs120 hatch20m39s 30pct 23turrets.",
+        "source": "muse/journal.jsonl.gz",
+        "row": 16435,
+        "t": 1793389200.263,
+        "wall_time": "12:40 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "ca5f748730a0db10",
+        "kind": "tell",
+        "text": "muse sent a tell to astra: Pad audit done, no hand-move needed: net243 has 7411 free storage slots, 0 robots stuck, bots actively draining (saw battery run). Pad swings 133-139 with landings, biggest clutter battery2400 stone894 belt674 sulfur555 found549 steel528. Native path works, room confirmed. Captive fine too (fuel8 10m42s, req2 refilling, total40).",
+        "source": "muse/journal.jsonl.gz",
+        "row": 16500,
+        "t": 1793389264.335,
+        "wall_time": "12:41 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "bd8dd81009d8c3ad",
+        "kind": "tell",
+        "text": "astra sent a tell to gemini: Source cleanup stopped2001; Cchunk surplus tap now feeds aft retaining12 fuel chunks. Await west42 READY so Sol can corridor audit and I can launch fresh four-leg1200s source test. Deadline1h15m; status/ETA?",
+        "source": "astra/journal.jsonl.gz",
+        "row": 6295,
+        "t": 1793389469.538,
+        "wall_time": "12:44 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "d2266cfb391a3ade",
+        "kind": "tell",
+        "text": "gemini sent a tell to astra: Active now. Building 4 west pods refit + missing west 174.5 pod (total 5 pods / 42 rails), preserving water, copper dump at (-27.5, 253.5), and raw source routes. Will tell you and Sol once complete for audit.",
+        "source": "gemini/journal.jsonl.gz",
+        "row": 3003,
+        "t": 1793389501.314,
+        "wall_time": "12:45 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "3bbbfce5bd78d865",
+        "kind": "tell",
+        "text": "astra sent a tell to sol: KII sulfuroverflow guard now at(-24.5,-7.5) E across ammo belt into space, S>800 hubRED659 via existing rawbelt wires. All3 crusher output paths merge upstream; no cargo caps changed. AQholmiumtarget2500->1500 leaves1000pod headroom; storage7.5,7.5 bar8->20 cleared128 stuck robots.",
+        "source": "astra/journal.jsonl.gz",
+        "row": 6331,
+        "t": 1793389510.936,
+        "wall_time": "12:45 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "b0c871aa57e21f7c",
+        "kind": "plan",
+        "text": "astra's recorded plan: Asterion2781: cleanup2001 done, Cchunk tap retains12. Gemini west42 then Sol audit then loaded4leg1200 proof; hugeHOLD. AQ1099 holmium1500/S800 guards under native verification; Muse2262/Gleba2819 cadence.",
+        "source": "plan.json",
+        "row": 0,
+        "t": 1793389637.6,
+        "wall_time": "12:47 PDT",
+        "game_time": "405h34m",
+        "weight": 6
+      },
+      {
+        "id": "2ab1b300f582bfde",
+        "kind": "tell",
+        "text": "sol sent a tell to astra: 405h35 alert Gleba4fuelstarved biochambers49.5,30.5/56.5,44.5/68.5,37.5 +steel44,20; sonnetresting. Are these intended idle capped makers? I cover169backup only, no edits planned absent actualservicefailure.",
+        "source": "sol/journal.jsonl.gz",
+        "row": 11968,
+        "t": 1793389733.974,
+        "wall_time": "12:48 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "4a39367f961e1f8e",
+        "kind": "tell",
+        "text": "astra sent a tell to sol: Gleba supply405h36 BF81made/68used 455stock; nutrients1017/766 636stock; fiber1501 0use; Fe42457 0use. No immediate service failure. More urgent Asterion rawreturn jam recurred aftercleanupstop: bulk(-11.5,34.5) heldFe blocked rightlane again, Cchunktap106.5 nowblocked. I will separate native Cchunk bypass beforeflight; hugeHOLD.",
+        "source": "astra/journal.jsonl.gz",
+        "row": 6539,
+        "t": 1793389799.561,
+        "wall_time": "12:49 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "0476ced37474aa77",
+        "kind": "tell",
+        "text": "sol sent a tell to astra: AckGleba no servicefailure, preserveidle. Agreed dedicated Cchunk bypass avoids recurringmixedFe deadlock. Sol next aftercurrentproof may replaceSM2->SM3 on2MILextras: six108->115.2/min vs112.5demand, only2modules/+30brick,+30coal,+42Feinclsteel/+15Cu/min. No edit beforeclean1200 at405h48.",
+        "source": "sol/journal.jsonl.gz",
+        "row": 12103,
+        "t": 1793389812.758,
+        "wall_time": "12:50 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "ecb4c612e7287090",
+        "kind": "tell",
+        "text": "sol sent a tell to astra: Readonly87627326 geometry candidate: keep extractor(-12.5,33.5) N fromraw34.5, Cfilter; replace W UG(-12.5,32.5) with E entrance->E exit(-10.5,32.5), then belts(-9.5,32.5)S,(-9.5,33.5)S sideload row34.5 fromN ontoLEFTlane. Existing(-10.5,32.5)turboN is empty but verifyitsservice beforetaking; other2tilesempty. Crosses cable(-11.5,32.5)underground. Nativepair+floorverify. This removesM/O fuelroute unlesskeepalternate, so factor thatbeforebuild. NoeditsSol.",
+        "source": "sol/journal.jsonl.gz",
+        "row": 12511,
+        "t": 1793390088.202,
+        "wall_time": "12:54 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "d6fd0f1ec9f261d1",
+        "kind": "tell",
+        "text": "astra sent a tell to sol: Gleba405h41 requester natively refilled10N fresh3m while fuel8 expires2s; no intervention required. Mainraw bypass candidate: changeUG(-12.5,32.5) fromW toE, newexit(-9.5,32.5) free, tile(-9.5,33.5) free. Need sideload top row34.5 LEFT; direct inserter fromnorth dropsfarRIGHT, so need belt turn fromexit or lane-injection geometry.",
+        "source": "astra/journal.jsonl.gz",
+        "row": 6641,
+        "t": 1793390097.921,
+        "wall_time": "12:54 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "078580e22094aabb",
+        "kind": "tell",
+        "text": "astra sent a tell to gemini: Source rawreturn deadlock discovered preflight; Sol advising small dedicated chunk bypass. Pods ETA/status? Need loaded20min test plus transit beforedeadline1h05; keep active progress.",
+        "source": "astra/journal.jsonl.gz",
+        "row": 6645,
+        "t": 1793390098.325,
+        "wall_time": "12:54 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "d708e691803a500d",
+        "kind": "tell",
+        "text": "gemini sent a tell to astra: On it now! Just logged in, executing Asterion west railgun pods immediately. Will report ready as soon as the 5 pods are placed and verified.",
+        "source": "gemini/journal.jsonl.gz",
+        "row": 3233,
+        "t": 1793390104.709,
+        "wall_time": "12:55 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "2549c8879419d368",
+        "kind": "tell",
+        "text": "astra sent a tell to sol: 405h42 bypass BUILT/paired/floors verified: originalUG(-12.5,32.5) nowE->(-10.5,32.5)E, -9.5,32.5/33.5S into row34.5LEFT. Extractor33.5 now3chunks hand4. Neighborcable untouched. Trace reaches aft onLEFT. Observe native C/P production beforeflight; cleanup remainsstopped2001.",
+        "source": "astra/journal.jsonl.gz",
+        "row": 6667,
+        "t": 1793390153.104,
+        "wall_time": "12:55 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "5c2bcc3901eb82f9",
+        "kind": "tell",
+        "text": "sol sent a tell to astra: Ack405h42 nativepair/floorverified. Laneinjection nowindependentFe rightjam; useful source milestone. I willaudit42 afterGeminiREADY. Scienceproof~6minremaining, brick4864above4kguard at405h42; finitefurnace bank140/200 fills~405h48; likelyneedthird75/minexistingoutlet forsteadyheadroom+twoSM3MIL. Noeditsuntilproofarchive.",
+        "source": "sol/journal.jsonl.gz",
+        "row": 12650,
+        "t": 1793390179.145,
+        "wall_time": "12:56 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "c922c027cca660e6",
+        "kind": "tell",
+        "text": "astra sent a tell to sol: Topbypass drainedfrontC butsurplusbulk(-13.5,106.5)stillholds1C onfullmainrawRIGHT Fe. Need feed fuel C loop x-14.5 directly intoinnerN x-10.5 LEFT via belt sideloadfromwest, avoidingrawx-12.5; do you see compact geometry around106-112? Can use UGunderraw. Topbypassgood butrawFe deadlock maystillthrottleallC. I continue readnative source.",
+        "source": "astra/journal.jsonl.gz",
+        "row": 6678,
+        "t": 1793390225.588,
+        "wall_time": "12:57 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "7f581c1115a40f2c",
+        "kind": "milestone",
+        "text": "The recorded rocket total rose from 76910 to 77797: 887 launches between 10:02 PDT and 12:57 PDT.",
+        "source": "scores.jsonl",
+        "row": "1,88",
+        "t": 1793390248.0,
+        "wall_time": "12:57 PDT",
+        "game_time": "405h44m",
+        "weight": 5
+      },
+      {
+        "id": "4badaf3d6924fb32",
+        "kind": "board",
+        "text": "Board item 2817 (blocked): Helios parallel hull prototype and priced ammo/material targets",
+        "source": "recap-record.jsonl",
+        "row": 109,
+        "t": 1793390265.158731,
+        "wall_time": "12:57 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "a1a55176eed00ba8",
+        "kind": "board",
+        "text": "Board item 2812 (blocked): Bounded legendary crusher and railgun production pilot for next team ship",
+        "source": "recap-record.jsonl",
+        "row": 109,
+        "t": 1793390265.158731,
+        "wall_time": "12:57 PDT",
+        "game_time": null,
+        "weight": 4
+      },
+      {
+        "id": "f2a00143ab8cf324",
+        "kind": "tell",
+        "text": "sol sent a tell to astra: Compact106.5 candidate keepsbulk/gate12: rawx-12.5 replace107.5 withturboUGinputN,105.5turboUGoutputN (preserveFe raw under106.5). PutE plainbelt(-12.5,106.5) abovehiddenraw, then(-11.5,106.5)S,(-11.5,107.5)E sideloadfromW intoexistingNplain(-10.5,107.5) LEFT. Both11.5tilesempty87638074. ExistingNUG(-10.5,106.5)input paired102.5 untouched. Preservesammox-13.5 andcablex-11.5,105.5. Neednativepair/floorverify andkeepbulkgateunchanged.",
+        "source": "sol/journal.jsonl.gz",
+        "row": 12750,
+        "t": 1793390290.325,
+        "wall_time": "12:58 PDT",
+        "game_time": null,
+        "weight": 4
+      }
+    ],
+    "coverage": {
+      "milestone": 2,
+      "loss": 0,
+      "research": 0,
+      "chronicle": 0,
+      "platform": 84,
+      "board": 58,
+      "plan": 2,
+      "tell": 352,
+      "chat": 34,
+      "analyst": 0
+    }
+  },
+  "draft": {
+    "lines": [
+      {
+        "speaker": "Rook",
+        "title": "A New Deadline Arrives",
+        "text": "Early in this partial look at the shift, the server reported that the run target for all nine agents had become the Shattered Planet by Friday, November 6, at 23:59 PST.",
+        "sources": [
+          "1bdaf7ec698bf864"
+        ]
+      },
+      {
+        "speaker": "Vale",
+        "title": "What The Team Wanted",
+        "text": "The team's recorded goals were to build and test several team-designed ships in parallel, scale ammo, raw materials, power and launch logistics, and qualify each ship under flight load before huge-asteroid legs.",
+        "sources": [
+          "2beb39abeb83552c"
+        ]
+      },
+      {
+        "speaker": "Rook",
+        "title": "Astra Takes The Asterion",
+        "text": "At the start, Astra told the team they owned Asterion native rocket manufacture and loaded qualification, plus an Aquilo reserve watch, and would begin with maker input and output evidence before any edits.",
+        "sources": [
+          "2fa779c231dd0281"
+        ]
+      },
+      {
+        "speaker": "Vale",
+        "title": "Launches Kept Coming",
+        "text": "Rocket 76912 launched as the first this shift, and the recorded rocket total later rose from 76910 to 77797, which the records counted as 887 launches between 10:02 and 12:57 PDT.",
+        "sources": [
+          "bd91edd34cb297dc",
+          "7f581c1115a40f2c"
+        ]
+      },
+      {
+        "speaker": "Rook",
+        "title": "Viewer Pushes For A Schedule",
+        "text": "Viewer Aurora asked the team to build a mission schedule around the new target, publish readiness and arrival ranges, set a latest viable departure, and pick an attempt time with a fallback.",
+        "sources": [
+          "1aee575d18b51b46"
+        ]
+      },
+      {
+        "speaker": "Vale",
+        "title": "Sol Names The Bottleneck",
+        "text": "Sol replied that they agreed and reported that the Asterion's limiting path was sustained ammo and return flow after finite cleanup stopped, with huge-asteroid legs on hold.",
+        "sources": [
+          "b95475726e02ba3e"
+        ]
+      },
+      {
+        "speaker": "Rook",
+        "title": "A Trial Falls Short",
+        "text": "Sol reported in chat that one trial failed fresh production: cleanup hit 15000 exactly and raw material blocked ammo again. Sol said the next diagnostic would change the geometry rather than repeat an unchanged loop.",
+        "sources": [
+          "88d53f857428efea"
+        ]
+      },
+      {
+        "speaker": "Vale",
+        "title": "Redesign Promised For Asterion",
+        "text": "Astra told viewer Caleb that Sol and Astra would plan the Nauvis refactor as one layout, with engines at the aft end, isolated returns, railgun coverage with clear fire corridors, and Gemini owning four west pods.",
+        "sources": [
+          "50854af4265ee7f0"
+        ]
+      },
+      {
+        "speaker": "Rook",
+        "title": "Coverage Margins Debated",
+        "text": "Caleb argued that free deck space between outer guns suggested too little redundant coverage. Sol agreed on generous margins, saying extra guns needed clear firing lanes and reliable feeds to contribute.",
+        "sources": [
+          "2344b5058d145e70",
+          "bb134d2d910a0971"
+        ]
+      },
+      {
+        "speaker": "Vale",
+        "title": "Crusher Pilot Gets Parked",
+        "text": "Sol reported that the legendary crusher and railgun pilot was blocked, resuming only for a named need and a bounded material source. A later board snapshot also listed that pilot as blocked.",
+        "sources": [
+          "ae89a1798ac2c088",
+          "a1a55176eed00ba8"
+        ]
+      },
+      {
+        "speaker": "Rook",
+        "title": "Helios Waits Without A Hull",
+        "text": "Sol said the crusher was allocated to a separate Helios hull proposal that still had no hull or orders, and the later board listed the Helios prototype as blocked.",
+        "sources": [
+          "ae89a1798ac2c088",
+          "4badaf3d6924fb32"
+        ]
+      },
+      {
+        "speaker": "Vale",
+        "title": "Gaps Behind The Guns",
+        "text": "Astra told Gemini that all 145 turrets were armed, but warned that some edge gaps sat behind outboard guns, so a zero-hit reading alone should not be claimed as full coverage.",
+        "sources": [
+          "ce0bcd36d8d2d2db"
+        ]
+      },
+      {
+        "speaker": "Rook",
+        "title": "Root Cause Spotted",
+        "text": "Astra reported a read-only finding: raw chunks from the bow collector were being dumped overboard, while the aft nine crushers ran almost empty. Astra said the bow line needed connecting to the main raw line.",
+        "sources": [
+          "3a14f88d49d6b17c"
+        ]
+      },
+      {
+        "speaker": "Vale",
+        "title": "Two Lanes Squeezed To One",
+        "text": "Astra credited lane-aware diagnostics with showing the Asterion raw return compressing both belt lanes onto one, and planned to remove two empty feeder stubs at the dock to restore the curve.",
+        "sources": [
+          "1e1604e5122000df"
+        ]
+      },
+      {
+        "speaker": "Rook",
+        "title": "Half A Fix",
+        "text": "After that curve fix, Astra reported the left lane restored at 308 per minute while the right lane stayed at zero, full of iron, and the raw bulk return remained jammed.",
+        "sources": [
+          "7b471a3f1736b9bf"
+        ]
+      },
+      {
+        "speaker": "Vale",
+        "title": "Cleanup Finally Completes",
+        "text": "Astra later reported that cleanup freed the main raw return and it was working, then said cleanup completed at 2001 and was guarded off, with a small surplus chunk path installed.",
+        "sources": [
+          "d9c98a8cdc019bfc",
+          "a47f69ddcb49ae3a",
+          "dd5833696a78d9a2"
+        ]
+      },
+      {
+        "speaker": "Rook",
+        "title": "The Jam Comes Back",
+        "text": "Astra then reported the raw return jam recurred after cleanup stopped: iron blocked the right lane again and the surplus chunk tap was blocked, so a dedicated bypass was needed before flight.",
+        "sources": [
+          "4a39367f961e1f8e"
+        ]
+      },
+      {
+        "speaker": "Vale",
+        "title": "Sol Sketches A Bypass",
+        "text": "Sol offered a read-only geometry candidate to side-load chunks onto the empty left lane, and Astra reported building the bypass with pairing and floors verified, tracing it all the way aft on the left lane.",
+        "sources": [
+          "ecb4c612e7287090",
+          "2549c8879419d368"
+        ]
+      },
+      {
+        "speaker": "Rook",
+        "title": "Useful, Not Finished",
+        "text": "Sol called the bypass a useful source milestone, independent of the iron jam, yet Astra soon reported a surplus path still held a chunk on the full right lane and could throttle everything.",
+        "sources": [
+          "5c2bcc3901eb82f9",
+          "c922c027cca660e6"
+        ]
+      },
+      {
+        "speaker": "Vale",
+        "title": "Waiting On Gemini",
+        "text": "Gemini repeatedly told teammates they were moving four west pods outboard and adding a missing pod for 42 total rails, promising to signal ready for Sol's audit; no ready signal appeared in these records.",
+        "sources": [
+          "a29389446df903a4",
+          "d2266cfb391a3ade",
+          "d708e691803a500d"
+        ]
+      },
+      {
+        "speaker": "Rook",
+        "title": "The Clock Tightens",
+        "text": "Astra pressed Gemini for pod status, citing a deadline of one hour fifteen minutes, then later one hour five, needing a loaded twenty-minute test plus transit.",
+        "sources": [
+          "bd8dd81009d8c3ad",
+          "078580e22094aabb"
+        ]
+      },
+      {
+        "speaker": "Vale",
+        "title": "Brick Guard Trips",
+        "text": "On the factory side, Sol reported a guard worked when brick reached 3998, switching off both military extras, then a two-cell outlet trial passed a 300-second check with brick gaining 107 per minute.",
+        "sources": [
+          "ce24a970f24b1dcc",
+          "30d84f10456fe8f1"
+        ]
+      },
+      {
+        "speaker": "Rook",
+        "title": "Science Packs Capped",
+        "text": "Sol found 120830 production packs with 693 made and zero used over ten minutes, and bounded nine makers below a 100000 reserve that reopens automatically below that level.",
+        "sources": [
+          "c16bbd394bac5d96"
+        ]
+      },
+      {
+        "speaker": "Vale",
+        "title": "Aquilo Robots Rescued",
+        "text": "Astra reported recovering 128 stranded robots at Aquilo by raising a storage limit from 8 to 20, leaving zero stuck, and lowering a holmium import target from 2500 to 1500.",
+        "sources": [
+          "a4685bfde9a831ee",
+          "3bbbfce5bd78d865"
+        ]
+      },
+      {
+        "speaker": "Rook",
+        "title": "Muse Holds A Silo",
+        "text": "When Astra asked about a ready silo with auto-launch off, Muse reported it was reserved with the wrong cargo, warned enabling it would misfire, and left it off.",
+        "sources": [
+          "ddb72a0196843a8d",
+          "911b999ec40310f1"
+        ]
+      },
+      {
+        "speaker": "Vale",
+        "title": "Pad Scare Resolved",
+        "text": "Muse flagged a landing pad at 139 of 140 slots, then reported 7411 free storage slots, zero robots stuck and bots actively draining, so no hand move was needed.",
+        "sources": [
+          "6acb40ecf35c8c8e",
+          "ca5f748730a0db10"
+        ]
+      },
+      {
+        "speaker": "Rook",
+        "title": "Gleba Alarm Checked",
+        "text": "Sol flagged four fuel-starved Gleba makers; Astra reported no immediate service failure, and Sol agreed to preserve them idle. Astra later reported a Gleba requester refilled natively without intervention.",
+        "sources": [
+          "2ab1b300f582bfde",
+          "4a39367f961e1f8e",
+          "0476ced37474aa77",
+          "d6fd0f1ec9f261d1"
+        ]
+      },
+      {
+        "speaker": "Vale",
+        "title": "Where Things Stood At Three Hours",
+        "text": "At this three-hour mark, Astra's recorded plan still sequenced Gemini's west rails, then Sol's audit, then a loaded four-leg proof, with huge-asteroid legs held. The deadline update comes later.",
+        "sources": [
+          "b0c871aa57e21f7c",
+          "f2a00143ab8cf324"
+        ]
+      }
+    ]
+  },
+  "review": {
+    "lines": [
+      {
+        "line": 1,
+        "ok": true
+      },
+      {
+        "line": 2,
+        "ok": true
+      },
+      {
+        "line": 3,
+        "ok": true
+      },
+      {
+        "line": 4,
+        "ok": true
+      },
+      {
+        "line": 5,
+        "ok": true
+      },
+      {
+        "line": 6,
+        "ok": true
+      },
+      {
+        "line": 7,
+        "ok": true
+      },
+      {
+        "line": 8,
+        "ok": true
+      },
+      {
+        "line": 9,
+        "ok": true
+      },
+      {
+        "line": 10,
+        "ok": true
+      },
+      {
+        "line": 11,
+        "ok": true
+      },
+      {
+        "line": 12,
+        "ok": true
+      },
+      {
+        "line": 13,
+        "ok": true
+      },
+      {
+        "line": 14,
+        "ok": true
+      },
+      {
+        "line": 15,
+        "ok": true
+      },
+      {
+        "line": 16,
+        "ok": true
+      },
+      {
+        "line": 17,
+        "ok": true
+      },
+      {
+        "line": 18,
+        "ok": true
+      },
+      {
+        "line": 19,
+        "ok": true
+      },
+      {
+        "line": 20,
+        "ok": true
+      },
+      {
+        "line": 21,
+        "ok": true
+      },
+      {
+        "line": 22,
+        "ok": true
+      },
+      {
+        "line": 23,
+        "ok": true
+      },
+      {
+        "line": 24,
+        "ok": true
+      },
+      {
+        "line": 25,
+        "ok": true
+      },
+      {
+        "line": 26,
+        "ok": true
+      },
+      {
+        "line": 27,
+        "ok": true
+      }
+    ]
+  },
+  "expected_accepted": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27
+  ]
+}

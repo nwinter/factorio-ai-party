@@ -2,6 +2,24 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { formatCompact, actionHelp, paginate, finalLine, shortClock } from '../host/format.js';
 
+test('ammunition scope labels survive compact resource tables and supply lines', () => {
+  const line = 'firearm-magazine: aboard (whole ship) 1461; stock (reachable) 1061';
+  const out = formatCompact({ok:true,result:{resources:[
+    {name:'firearm-magazine',aboard:1461,stock:1061,line},
+    {name:'rocket',aboard:200,stock:200,line:'rocket: aboard (whole ship) 200; stock (reachable) 200'},
+  ]}});
+  assert.ok(out.includes(line));
+  const warning = 'turret magazines excluded; whole ship: platform_endurance resources.aboard';
+  for (const body of [
+    {counts_scope:'where: counted supply holders; turret magazines excluded',counts_warning:warning,where:'1061: platform hubs 1061'},
+    {counts_scope:'where: counted supply holders; turret magazines excluded',lines:[warning,'where: 1061: platform hubs 1061']},
+  ]) {
+    const text = formatCompact({ok:true,result:body});
+    assert.ok(text.includes('counts_scope: '+JSON.stringify(body.counts_scope)));
+    assert.ok(text.includes(warning));
+  }
+});
+
 test('fh help ACTION: one action in about 1 KB; an unknown name lists the actions it resembles', () => {
   const describe = {actions:{craft:{recipe:'recipe name', count:'1..1000 (default 1)', returns:'queued, '+'x'.repeat(400), note:'n'},
     craftable:{recipes:'x'}, move_to:{position:'{x,y}', tolerance:'0.25..10', ticks:'1..36000'.repeat(40)}}};
@@ -38,6 +56,31 @@ test('long compact replies come in pages; the final error:/warning: line stays l
   assert.ok(rest && rest.endsWith('row 599: ' + 'z'.repeat(40) + '\nwarning: not done: 3\n'));
   const firstRest = rest!.split('\n')[0] ?? '';
   assert.ok(shown.includes('\n' + (lines[lines.indexOf(firstRest) - 1] ?? 'missing') + '\n'), 'pages meet at a line');
+});
+test('paging bounds oversized UTF-8 lines and diagnostics, with every original byte retrievable', () => {
+  for (const original of [
+    'x'.repeat(100000) + '\n',
+    '🙂漢'.repeat(12000) + '\nerror: ' + 'é'.repeat(30000) + '\n',
+    'warning: ' + 'w'.repeat(60000),
+    Array.from({length: 1000}, (_, i) => `row ${i}\n`).join('') + 'warning: ' + 'w'.repeat(40000) + '\n',
+  ]) {
+    let remaining = original, restored = '', pages = 0;
+    while (true) {
+      const {shown, rest} = paginate(remaining);
+      assert.ok(Buffer.byteLength(shown) <= 10000, String(Buffer.byteLength(shown)));
+      assert.ok(!shown.includes('\ufffd'), 'no split UTF-8 code point');
+      if (rest === undefined) { restored += shown; break; }
+      assert.ok(rest.length < remaining.length, 'every page progresses');
+      const consumed = remaining.slice(0, remaining.length - rest.length);
+      assert.ok(shown.startsWith(consumed), 'payload unchanged');
+      restored += consumed;
+      remaining = rest;
+      assert.ok(++pages < 100);
+    }
+    assert.equal(restored, original, 'including the full final diagnostic exactly once');
+  }
+  const tiny = paginate('🙂'.repeat(20), 1, 0);
+  assert.ok(tiny.rest && tiny.rest.length < 40, 'minimum one complete code point progresses');
 });
 test('corrected calls, empty moves and repeats reach the final warning line', () => {
   const out = formatCompact({ok:true,id:'x',result:{transferred:0,corrected:'craft {"recipe":"pipe"} (item is recipe)',
@@ -186,4 +229,16 @@ test('a paged reply leads with its one-line fields: page 1 says what the table h
   const {shown} = paginate(led);
   assert.match(shown, /pods_line: "47 pod journeys .* oldest first"/);
   assert.match(shown, /more lines, \d+ KB: \.\/fh more\]/);
+});
+
+test('damage forecast limitation and friendly-fire facts survive compact paging', () => {
+  const damage_model = 'area/splash and multi-target effects not modelled; each ammunition estimated independently';
+  for (const result of [
+    {damage_model, design:{width:35}, ammo_details:[{effects:{prototype:{area_damage:[{friendly_fire:'no',radius:2}]}}}]},
+    {damage_model, forecast:['example'], forecast_model:{damage_model}},
+  ]) {
+    const out = formatCompact({ok:true,result},true);
+    assert.ok(paginate(out).shown.includes(damage_model));
+    if ('ammo_details' in result) assert.ok(out.includes('friendly_fire=no'));
+  }
 });

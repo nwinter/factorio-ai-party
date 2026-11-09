@@ -88,6 +88,7 @@
 - `lookahead`: your plan line and how long since it changed, your open board items, the team goals, the research
   running and next, items whose stock in a logistic network falls to zero within 2 hours at the last 30 minutes' rate,
   and the time left in the shift. A reply carries it once about every 45 minutes (not in a shift's first 20 minutes).
+  A failed automatic lookahead appears separately in `warnings`; the primary action's result and ID are preserved.
 - `networks {platform?, fresh?}`: one line per electric network (draw over 5 minutes against capacity, machines on low
   power, boilers and their fuel in minutes; the lowest boiler: position, minutes, fuel, feeder; the 2 feed chests with
   the fewest minutes left: `feed chests: requester-chest (10,39) 50 coal, uses 15.0/min over 10 min, 3 min left`;

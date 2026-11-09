@@ -48,7 +48,7 @@ return function(api)
   -- Each target: done, researching, queued at a place, or waiting for room; what is left.
   function M.read(force)
     local rows = {}
-    for name, n in pairs(store(force)) do
+    for name, n in pairs((api.state().research_targets or {})[force.name] or {}) do
       local t = force.technologies[name]
       local lv = t and level(t) or 0
       local done = t and (try(function() return t.researched end) or lv > n)

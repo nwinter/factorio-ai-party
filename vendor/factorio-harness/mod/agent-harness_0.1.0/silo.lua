@@ -653,6 +653,23 @@ return function(api)
   -- items they lack, with what the network holds of each and a full rocket of it (on the copy: with 16-30
   -- low-density-structure in its network the silo took up no platform asking for it; with 320 it filled 200 and launched).
   -- The harness does not change the rule.
+  -- Snapshot before first pauses requests. Matching stock is observable; the engine's scheduling cause is not.
+  function M.first_status(e, platform)
+    local rk = M.rocket(e)
+    local rows, unread = M.request_rows(e, e.force, nil, platform)
+    local target = try(function() local t = e.transitional_request_target; return t and t.valid and t.name end)
+    local out = {read_tick=game.tick, rocket=rk.rocket, status=api.status_name(e) or 'unknown',
+      auto_requests=e.use_transitional_requests == true, send_to_orbit_automatically=e.send_to_orbit_automatically == true,
+      requesting_for=target, platform_requests=rows, unread=unread,
+      cause='the engine does not expose a reason for its automatic launch scheduling; a matched payload is not a launch guarantee'}
+    local lines = {string.format('native auto before load at tick %d: %s; status %s; automatic requests %s; send to orbit automatically %s; target %s',
+      game.tick, out.rocket or 'rocket state unavailable', out.status, out.auto_requests and 'on' or 'off',
+      out.send_to_orbit_automatically and 'on' or 'off', target or 'none')}
+    for _, r in ipairs(rows) do lines[#lines+1] = r.line end
+    lines[#lines+1] = out.cause
+    out.line = table.concat(lines, '; ')
+    return out
+  end
   function M.auto_wait(e, force, loaded)
     local target = try(function() local t = e.transitional_request_target; return t and t.valid and t.name or nil end)
     local pt = defines.logistic_member_index.rocket_silo_requester and try(function() return e.get_logistic_point(defines.logistic_member_index.rocket_silo_requester) end)

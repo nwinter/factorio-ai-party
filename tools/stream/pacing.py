@@ -36,7 +36,10 @@ def resting(agent_dir, now=None):
         return None
     if row["until"] <= (now or time.time()):
         return None
-    if isinstance(row.get("since"), (int, float)) and requested_since(agent_dir, row["since"]):
+    # (d29 21:25) a firm rest (the operator's quota pacing, pog-operator pace-loop.py) ends only at its time or by
+    # quota_rest.py --done: a call landing after the operator's Esc ended the rest, and the supervisor then nudged the
+    # agent back to work inside its window (Luna, Astra, Muse and Grok, 17:45-21:20)
+    if row.get("firm") is not True and isinstance(row.get("since"), (int, float)) and requested_since(agent_dir, row["since"]):
         return None
     return row
 
