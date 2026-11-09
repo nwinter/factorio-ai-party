@@ -148,6 +148,7 @@ class PublicTest(unittest.TestCase):
         stream.restore_obs(obs, receipt)
         self.assertEqual(obs.scene, 'stream')
         self.assertFalse(obs.recording)
+        self.assertFalse(receipt['recording_active'])
         for name, body in obs.calls:
             self.assertNotIn(name, ('StartStream', 'SetStreamServiceSettings', 'RemoveInput', 'RemoveScene'))
             if name.startswith('SetSceneItem'):
