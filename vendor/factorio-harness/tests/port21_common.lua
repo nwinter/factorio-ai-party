@@ -2,7 +2,8 @@
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 defines={inventory={crafter_input=2,crafter_output=3},entity_status={}}
 game={tick=6000}
-local r={name='test',ingredients={{type='item',name='iron-plate',amount=2}},products={{type='item',name='gear',amount=1}}}
+local r={name='test',energy=1,productivity_bonus=0,prototype={maximum_productivity=3},
+ ingredients={{type='item',name='iron-plate',amount=2}},products={{type='item',name='gear',amount=1}}}
 prototypes={recipe={test=r},item={['iron-plate']={}}}
 local input={{valid_for_read=true,name='iron-plate',spoil_tick=6600}}
 input.get_contents=function() return {{name='iron-plate',count=1,quality='normal'}} end
@@ -12,8 +13,10 @@ local G=require('gap'){}
 local A=require('makersall'){}
 local U=require('uptime'){status_name=function() return 'item_ingredient_shortage' end}
 local C=require('conditions'){position=function(p) return p end}
+local R=require('rates'){status_name=function() return 'item_ingredient_shortage' end}
+R.compute=function() return {rows={}} end
 for _,kind in ipairs{'assembling-machine','furnace','rocket-silo'} do
- local e={type=kind,name=kind,position={x=0,y=0},valid=true,products_finished=0,get_recipe=function() return r,{name='normal'} end,
+ local e={type=kind,name=kind,unit_number=1,crafting_speed=1,productivity_bonus=0,position={x=0,y=0},valid=true,products_finished=0,get_recipe=function() return r,{name='normal'} end,
   get_inventory=function(id) assert(id==2 or id==3,'removed inventory ID'); return id==2 and input or output end}
  local p={surface={find_entities_filtered=function() return {e} end},force={}}
  local gap=G.machine(p,e); assert(gap.ingredients[1].held==1,kind..' gap')
@@ -22,6 +25,9 @@ for _,kind in ipairs{'assembling-machine','furnace','rocket-silo'} do
  U.sample{samples=0,machines={m}}
  assert(m.short['iron-plate'].least==1,kind..' uptime input')
  if kind~='rocket-silo' then
+  R.select=function() return {e} end
+  local rate=R.bottleneck({surface={find_entities_filtered=function() return {} end},force={}},{})
+  assert(rate.groups[1].short=='iron-plate (1)',kind..' bottleneck input')
   assert(m.out_last.gear.normal==5,kind..' uptime output')
   local met=C.check(p,{['until']='spoil_within',position=e.position,seconds=20})
   assert(met,kind..' spoil condition')
