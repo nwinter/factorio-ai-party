@@ -148,7 +148,7 @@ EOF
     "$who" "$started" "$pid" "$save_label" "$root" "$host:$rcon_port" | remote "cat > '$dir/holder.json'"
   echo "started pid $pid on $host ($save_label), held by $who; waiting for RCON $host:$rcon_port"
   for attempt in $(seq 1 90); do
-    if out=$(rcon "/silent-command rcon.print('tick ' .. game.tick .. (game.tick_paused and ' (paused)' or ''))" 2>/dev/null); then
+    if out=$(rcon "/silent-command rcon.print('tick ' .. game.tick .. (game.tick_paused and ' (paused)' or ''))" 2>/dev/null) && [[ "$out" == tick\ * ]]; then
       if [ -n "$expected" ]; then
         check=$(rcon "/silent-command rcon.print(helpers.table_to_json({base=script.active_mods.base,harness=script.active_mods['agent-harness'],recycler=script.active_mods.recycler,interface=remote.interfaces.agent_harness~=nil}))")
         if ! remote "head -n 5 '$dir/server.out' | grep -F 'Factorio $expected (' >/dev/null" ||
