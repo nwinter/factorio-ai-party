@@ -1,0 +1,213 @@
+"""Read-only public projection of team stream services; one camera, round-robin.
+
+No Relay, viewer_say, inbox writes, or HTTP mutation routes. The camera controller
+is operator-only and reuses the stream harness and lookcam chart checks.
+"""
+import concurrent.futures
+import http.server
+import json
+import math
+import re
+import sys
+import threading
+import time
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent / 'stream'))
+from harness import Harness
+import lookcam
+
+CAMERA = 'pog-director2'
+
+
+def feeds(op):
+    rows = []
+    for line in (op / 'streams.txt').read_text().splitlines():
+        if not line.strip():
+            continue
+        team, url = line.split()
+        parsed = urllib.parse.urlsplit(url)
+        if not re.fullmatch(r'[a-zA-Z0-9_-]+', team) or parsed.scheme != 'http' or parsed.hostname != '127.0.0.1' or not parsed.port:
+            raise ValueError('streams.txt must contain TEAM http://127.0.0.1:PORT/')
+        if team in [r[0] for r in rows]:
+            raise ValueError('duplicate team in streams.txt (remove old entries before starting services)')
+        rows.append((team, url.rstrip('/') + '/state.json'))
+    if not rows:
+        raise ValueError('no team stream services')
+    return rows
+
+
+def fetch(url):
+    with urllib.request.urlopen(url, timeout=3) as response:
+        return json.load(response)
+
+
+def roster(tree, run, team):
+    agents = []
+    for line in (tree / 'runs' / run / team / 'team.tsv').read_text().splitlines():
+        if line and not line.startswith('#'):
+            name, kind, route, model, effort, label, harness = line.split('\t')
+            agents.append({'name': name, 'model': label, 'harness': harness})
+    return agents
+
+
+def project(team, state, agents, now):
+    """Deliberate allowlist: no paths, errors, tokens, confessions, operator requests."""
+    research, space = state.get('research') or {}, state.get('space') or {}
+    current = {a['name']: a for a in state.get('agents') or []}
+    chat = state.get('chat') or []
+    return {'team': team, 'stale': now - float(state.get('now') or 0) > 25,
+            'game_time': state.get('game_time'), 'paused': bool(state.get('paused')),
+            'agents': [dict(a, display_name=current.get(a['name'], {}).get('display_name') or a['name'],
+                            activity=current.get(a['name'], {}).get('activity')) for a in agents],
+            'research': {k: research.get(k) for k in ('label', 'current', 'progress', 'done_count')},
+            'science': {k: (state.get('science') or {}).get(k) for k in ('spm', 'stage_label')},
+            'space': {k: space.get(k) for k in ('rockets', 'planets')},
+            'chat': [{'name': str(m.get('name') or m.get('agent') or m.get('from') or ''),
+                      'text': str(m.get('text') or '')[:600], 't': m.get('t')} for m in chat[-5:]]}
+
+
+def target(state):
+    base = (state.get('basemap') or {}).get('core') or state.get('basemap') or {}
+    if all(isinstance(base.get(k), (int, float)) for k in ('x0', 'y0', 'w', 'h', 'cell')) and base['w'] > 0 and base['h'] > 0:
+        return 'nauvis', base['x0'] + base['w'] * base['cell'] / 2, base['y0'] + base['h'] * base['cell'] / 2
+    for a in state.get('agents') or []:
+        p = a.get('position') or {}
+        if a.get('surface') and all(isinstance(p.get(k), (int, float)) for k in ('x', 'y')):
+            return a['surface'], p['x'], p['y']
+    raise ValueError('no base or agent position yet')
+
+
+def cut(h, state):
+    surface, x, y = target(state)
+    if not all(math.isfinite(n) for n in (x, y)):
+        raise ValueError('invalid camera target')
+    player = h.lua(f"local p=game.get_player('{CAMERA}') rcon.print(helpers.table_to_json{{index=p and p.connected and p.index or false}})")
+    if not player.get('index'):
+        raise ValueError('public camera is not connected')
+    # Tighten the frame if the base is near the team's chart edge. No charting,
+    # highlights, surface scans, or gameplay changes for the public camera.
+    for zoom in (0.6, 0.9, 1.5, 3.0):
+        hw, hh = lookcam.frame_half(zoom, 1.0)
+        chart = h.lua(lookcam.chart_lua(surface, x, y, hw, hh))
+        if chart.get('center') and chart.get('charted') == chart.get('chunks'):
+            reply = h.camera({'player': player['index'], 'surface': surface, 'position': {'x': x, 'y': y},
+                              'zoom': zoom, 'smooth': False})
+            if not reply.get('ok'):
+                raise RuntimeError('camera command refused')
+            return {'team': h.team, 'surface': surface, 'x': x, 'y': y, 'zoom': zoom}
+    raise ValueError('camera frame is not fully charted by this team')
+
+
+class PublicOverlay:
+    def __init__(self, op, tree, run, port=8790, dwell=30, youtube=None, camera=True):
+        self.feeds = feeds(op)
+        self.rosters = {t: roster(tree, run, t) for t, _ in self.feeds}
+        self.harnesses = {t: Harness('imac2', t) for t, _ in self.feeds} if camera else {}
+        self.stop = threading.Event()
+        self.state = {'teams': [], 'camera': None, 'viewers': [], 'viewer_status': 'off', 'now': 0}
+        self.lock = threading.Lock()
+        self.dwell = dwell
+        owner = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path.split('?')[0] == '/state.json':
+                    with owner.lock:
+                        body = json.dumps(owner.state).encode()
+                    mime = 'application/json'
+                elif self.path.split('?')[0] in ('/', '/overlay.html'):
+                    body = (HERE / 'public-overlay.html').read_bytes()
+                    mime = 'text/html; charset=utf-8'
+                elif self.path == '/health':
+                    body, mime = b'ok', 'text/plain'
+                else:
+                    self.send_error(404)
+                    return
+                self.send_response(200)
+                self.send_header('Content-Type', mime)
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_):
+                pass
+
+        self.http = http.server.ThreadingHTTPServer(('127.0.0.1', port), Handler)
+        self.youtube = youtube
+
+    def start(self):
+        for fn in (self.http.serve_forever, self.poll):
+            threading.Thread(target=fn, daemon=True).start()
+        if self.youtube:
+            threading.Thread(target=self.viewers, daemon=True).start()
+
+    def poll(self):
+        index, next_cut, previous = 0, 0, {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.feeds)) as pool:
+            while not self.stop.is_set():
+                now, rows, fresh = time.time(), [], {}
+                pending = [(t, pool.submit(fetch, u)) for t, u in self.feeds]
+                for team, job in pending:
+                    try:
+                        data = job.result()
+                        row = project(team, data, self.rosters[team], now)
+                        if not row['stale']:
+                            fresh[team] = data
+                        previous[team] = row
+                    except Exception as e:
+                        print(f'feed {team}: {type(e).__name__}', flush=True)
+                        row = dict(previous.get(team) or project(team, {}, self.rosters[team], now), stale=True)
+                    rows.append(row)
+                with self.lock:
+                    self.state.update(teams=rows, now=now)
+                if self.harnesses and now >= next_cut:
+                    team = self.feeds[index % len(self.feeds)][0]
+                    index += 1
+                    try:
+                        if team not in fresh:
+                            raise ValueError('team feed unavailable')
+                        camera = cut(self.harnesses[team], fresh[team])
+                        with self.lock:
+                            self.state['camera'] = dict(camera, since=time.time())
+                        next_cut = time.time() + self.dwell
+                        print(f'camera: {team} {camera}', flush=True)
+                    except Exception as e:
+                        print(f'camera {team}: {e}', flush=True)
+                        next_cut = time.time() + 5
+                self.stop.wait(5)
+
+    def viewers(self):
+        # Reader and display filter only. Never construct Feed/Relay (which can
+        # write inboxes), even when POG_VIEWER_RELAY=1 is inherited.
+        from viewers import YouTubeChat, Filter
+        reader = YouTubeChat(self.youtube)
+        filt = Filter(agent_names=[a['name'] for agents in self.rosters.values() for a in agents])
+        lines = []
+        while not self.stop.is_set():
+            try:
+                msgs, deletions, wait = reader.poll()
+                # Deletions include author purges as well as individual IDs.
+                # Clear the short display lane conservatively on any deletion.
+                if deletions:
+                    lines = []
+                for msg in msgs:
+                    row, reasons = filt.check(msg, time.time())
+                    if not reasons:
+                        lines.append({k: row.get(k) for k in ('id', 'name', 'text', 't')})
+                lines = lines[-8:]
+                with self.lock:
+                    self.state.update(viewers=lines, viewer_status=reader.state)
+            except Exception as e:
+                print(f'viewer read: {type(e).__name__}', flush=True)
+                wait = 15
+            self.stop.wait(max(2, wait))
+
+    def close(self):
+        self.stop.set()
+        self.http.shutdown()
+        self.http.server_close()

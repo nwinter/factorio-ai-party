@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Factorio team tests</title>
+<style>
+*{box-sizing:border-box}body{margin:0;width:1920px;height:1080px;overflow:hidden;color:#eef3fa;font:23px system-ui;background:transparent}
+header{height:72px;background:#111b2b;display:flex;align-items:center;justify-content:space-between;padding:0 28px;border-bottom:3px solid #7bb5f1}
+h1{font-size:29px;margin:0}#camera{font-size:27px;font-weight:700}#cards{position:absolute;left:1440px;top:72px;width:480px;height:810px;background:#111b2b;padding:14px;display:flex;flex-direction:column;gap:12px}
+.team{flex:1;min-height:0;background:#1d2c40;border-left:7px solid var(--team);border-radius:8px;padding:12px 15px;overflow:hidden}.team.on{outline:2px solid #fff}.name{font-size:26px;font-weight:800;text-transform:capitalize}.badge{float:right;font-size:17px;background:#0d1726;padding:5px 9px;border-radius:4px}.agents{font-size:20px;margin:6px 0;color:#d3deef}.research,.space{font-size:19px;margin-top:5px}.track{height:5px;background:#101b2b;margin-top:6px}.fill{height:5px;background:var(--team)}
+footer{position:absolute;top:882px;height:198px;width:1920px;background:#111b2b;display:flex;border-top:2px solid #35516e;padding:14px 24px;gap:32px}section{width:50%;overflow:hidden}h2{font-size:18px;color:#a9bdd7;text-transform:uppercase;letter-spacing:1px;margin:0 0 9px}.line{font-size:21px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.who{font-weight:700}.muted{color:#a9bdd7}.stale{opacity:.55}#offline{display:none;position:absolute;top:82px;left:24px;background:#142238;padding:10px 20px}
+</style>
+<header><h1>Factorio: Space Age · Team tests</h1><div id="camera">Waiting for camera</div><div id="clock"></div></header>
+<div id="offline">Overlay connection lost</div><aside id="cards"></aside>
+<footer><section><h2>Team chat · <span id="chat-team">waiting</span></h2><div id="chat"></div></section><section><h2>Viewer chat · display only</h2><div id="viewers" class="muted">Viewer chat is off</div></section></footer>
+<script>
+const colors={red:'#ff7676',blue:'#79afff',green:'#77d69a',yellow:'#f2ce6d',white:'#eee'};
+const node=(tag,cls,text)=>{let n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n};
+function lines(el,rows){el.replaceChildren();for(const m of rows.slice(-4)){let row=node('div','line');row.append(node('span','who',(m.name||'')+': '),node('span','',m.text||''));el.append(row)}}
+function render(s){let cards=document.getElementById('cards');cards.replaceChildren();let on=s.camera?.team;document.getElementById('camera').textContent=on?'On camera: '+on+' · '+s.camera.surface:'Waiting for camera';document.getElementById('clock').textContent=s.teams.find(t=>t.team===on)?.game_time||'';
+for(const t of s.teams){let card=node('article','team'+(on===t.team?' on':'')+(t.stale?' stale':''));card.style.setProperty('--team',colors[t.team]||'#a2b3cb');let name=node('div','name',t.team);name.append(node('span','badge',t.stale?'STALE':t.paused?'PAUSED':on===t.team?'ON CAMERA':''));card.append(name);card.append(node('div','agents',t.agents.map(a=>a.display_name+' · '+a.model).join(' / ')));let r=t.research||{},p=Math.max(0,Math.min(1,Number(r.progress)||0));card.append(node('div','research',(r.label||r.current||'No active research')+(r.current?' · '+Math.round(p*100)+'%':'')));let track=node('div','track'),fill=node('div','fill');fill.style.width=p*100+'%';track.append(fill);card.append(track);card.append(node('div','space',(r.done_count??0)+' technologies · '+(t.space?.rockets??0)+' rockets · '+(t.science?.stage_label||'Starting')));cards.append(card)}
+let t=s.teams.find(t=>t.team===on)||s.teams[0];document.getElementById('chat-team').textContent=t?.team||'waiting';lines(document.getElementById('chat'),t?.chat||[]);let v=document.getElementById('viewers');if(s.viewers.length)lines(v,s.viewers);else v.textContent=s.viewer_status==='off'?'Viewer chat is off':'Waiting for viewer chat';document.getElementById('offline').style.display=Date.now()/1000-s.now>25?'block':'none'}
+async function poll(){try{let r=await fetch('/state.json',{cache:'no-store'});if(!r.ok)throw Error();render(await r.json())}catch(e){document.getElementById('offline').style.display='block'}}poll();setInterval(poll,2000);
+</script></html>
