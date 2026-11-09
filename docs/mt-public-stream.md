@@ -29,7 +29,7 @@ python3 tools/mt/public_stream.py stop RUN
 tools/mt/stop-mt.sh RUN
 ```
 
-`POG_MT_PUBLIC_PORT` defaults to 8790 (both Macs's local HTTP and pogwin's reverse
+`POG_MT_PUBLIC_PORT` defaults to 8790 (both this Mac's local HTTP and pogwin's reverse
 forward); `POG_MT_PUBLIC_DWELL` defaults to 30 seconds per team (10–300 allowed).
 `POG_MT_YOUTUBE` is optional and must be the intended broadcast ID, never an old
 channel stream chosen by accident. `POG_MT_STREAM=1` alone keeps its existing

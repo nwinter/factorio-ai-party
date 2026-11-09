@@ -8,6 +8,12 @@
 cd "$(dirname "$0")/../.."
 run=${1:?usage: stop-mt.sh RUN_ID} world=imac2 op=runs/$1/op
 [ -d "$op" ] || { echo "no multi-team run runs/$run (no op/)" >&2; exit 1; }
+# Public output stops first, while feeds still exist. Its persisted ownership is
+# used even if this shell no longer has POG_MT_PUBLIC=1. A live OBS broadcast must
+# be stopped by the operator before teardown can blank its program scene.
+if [ -f "$op/public-stream.json" ]; then
+  python3 tools/mt/public_stream.py stop "$run" || exit $?
+fi
 tree=$(cat "$op/launch-tree" 2>/dev/null || pwd)
 rundir=$tree/runs/$run
 for f in "$rundir"/*/supervisors.pid "$rundir"/*/helpers.pid "$rundir"/*/broker.pid "$op/helpers.pid"; do

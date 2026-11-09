@@ -20,10 +20,12 @@
 #   it names is every team's: B is in now), POG_SCORE_EVERY (default 120 s), POG_MT_CAM (default 1: the camera client
 #   on the iMac, tools/mt/imac_cam.py, which renders the agents' ./shot; 0 leaves it out and ./shot fails),
 #   POG_MT_STREAM (default 0; 1: the stream service per team on this Mac, overlays at 127.0.0.1:8791...),
+#   POG_MT_PUBLIC (default 0; 1: implies POG_MT_STREAM=1, pogwin spectator, public overlay, mt-stream OBS scene,
+#     recording; NEVER starts streaming). POG_MT_YOUTUBE=VIDEO_ID adds display-only viewer chat.
 #   POG_MT_HUMANS (default 0; 1: the human team, its freeze, and the server's game password and whitelist),
 #   POG_NETGATE (default 0; 1: Grok's, Muse's and agy's shells through the run's network gate, tools/mt/netgate.py).
 # Always: Space Age, real time, POG_BROKER=1 (no key in the run; the broker reaches the iMac, which Claude Code's
-# sandbox would not). Nothing of this run is public: no public stream, site, polls, casters, analyst or viewer relay.
+# sandbox would not). Public staging is opt-in; no site, polls, casters, analyst or viewer relay.
 # Lockdown (multiteam-design.md, moderate): POG_WEB_BLOCK (the site, YouTube, GitHub; tools/full_tools.py says per
 # harness what that does), POG_DENY_READ (this checkout, every mt/ worktree, the operator's folder) for the Claude Code
 # and Grok sandboxes, which also deny the other teams' folders (tools/launch-agent.sh). The operator's files (this log,
@@ -34,6 +36,7 @@ cd "$root"
 run=${1:?usage: start-mt.sh RUN_ID MINUTES [TEAMS_FILE]} minutes=${2:?usage: start-mt.sh RUN_ID MINUTES [TEAMS_FILE]}
 teams_file=${3:-agent/mt/teams-test.tsv}
 world=imac2
+if [ "${POG_MT_PUBLIC:-0}" = 1 ]; then export POG_MT_STREAM=1; fi
 case $run in */*|.*|op) echo "RUN_ID: a plain name" >&2; exit 64 ;; esac
 export POG_SPACE_AGE=1 POG_BROKER=1 POG_TIME_MODE=realtime POG_ENEMIES=${POG_ENEMIES:-normal} POG_SEED=${POG_SEED:-274274}
 export POG_KB=${POG_KB:-space-age-2.0.77}
@@ -110,6 +113,9 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   echo "2b. humans: $([ "${POG_MT_HUMANS:-0}" = 1 ] && echo "on: team white, players $(grep -v '^#' agent/mt/humans.tsv | cut -f1 | tr '\n' ' ')(game password and whitelist on the server)" || echo 'off (POG_MT_HUMANS=0)')"
   echo "2c. camera: $([ "${POG_MT_CAM:-1}" = 1 ] && echo 'pog-cam1 joins on the iMac (tools/mt/imac_cam.py, about 5 GB there) and renders ./shot; copied into shots/' || echo 'off (POG_MT_CAM=0): ./shot fails')"
   echo "3. agents: one Herdr tab per team, each agent's web and network state in the log; supervisors; per-team scores and chat logs in runs/$run/op/TEAM/, the team views in runs/$run/op/views.html; idle nudges $([ "${POG_IDLE_NUDGE:-0}" = 1 ] && echo 'on (per team)' || echo off)"
+  if [ "${POG_MT_PUBLIC:-0}" = 1 ]; then
+    echo "4. public staging: team feeds on 8791..., overlay 127.0.0.1:${POG_MT_PUBLIC_PORT:-8790}; one pogwin spectator via reverse SSH/UDP; mt-stream scene; recording ON, streaming OFF; viewer chat display-only"
+  fi
   exit 0
 fi
 
@@ -290,6 +296,7 @@ echo $! >> "$op/helpers.pid"
 # ./shot), no OBS, replays, night lift or image show, no viewer chat or relay. Its run config and state sit in the
 # team's folder (its journals, token logs and its own force's facts); the director logs in op/TEAM/.
 if [ "${POG_MT_STREAM:-0}" = 1 ]; then
+  : > "$op/streams.txt"
   port=8791
   for t in $teams; do
     td=$rundir/$t
@@ -310,6 +317,14 @@ EOF
     log "$t stream: http://127.0.0.1:$port/ (pid $!)"
     port=$((port + 1))
   done
+fi
+if [ "${POG_MT_PUBLIC:-0}" = 1 ]; then
+  if python3 tools/mt/public_stream.py start "$run" 2>&1 | tee -a "$op/start.log"; then
+    log "public stream staged: mt-stream scene, recording on; OBS streaming remains OFF"
+  else
+    log "PUBLIC STAGING FAILED: agents and team services remain running; inspect $op/public-stream.log, then retry public_stream.py start $run"
+    exit 1
+  fi
 fi
 if [ "${POG_IDLE_NUDGE:-0}" = 1 ]; then
   for t in $teams; do

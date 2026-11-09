@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import socket
 import struct
+import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -103,6 +105,22 @@ class PublicTest(unittest.TestCase):
             for bad in ('green http://evil.test:8791/', 'green http://127.0.0.1:8791/\ngreen http://127.0.0.1:8792/'):
                 path.write_text(bad)
                 with self.assertRaises(ValueError): overlay.feeds(op)
+
+    def test_public_launch_dry_run(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith(('POG_', 'FH_', 'FACTORIO_RCON_'))}
+        with tempfile.TemporaryDirectory() as d:
+            brief = Path(d) / 'quota.json'
+            brief.write_text('{"agents": []}')
+            env.update(POG_TEST='1', POG_DRY_RUN='1', POG_MT_PUBLIC='1', POG_MT_STREAM='0',
+                       POG_QUOTA_BRIEF=str(brief), POG_MT_TREE='/tmp/mt288-dry',
+                       PATH=str(Path(sys.executable).parent) + ':' + os.environ['PATH'])
+            result = subprocess.run(['bash', str(ROOT / 'tools/mt/start-mt.sh'), 'p288dry', '25'],
+                                    cwd=ROOT, env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('public staging: team feeds on 8791', result.stdout)
+        self.assertIn('recording ON, streaming OFF', result.stdout)
+        self.assertIn('viewer chat display-only', result.stdout)
+        self.assertFalse((ROOT / 'runs/p288dry/op').exists())
 
     def test_camera_chart_and_index(self):
         class Harness:
