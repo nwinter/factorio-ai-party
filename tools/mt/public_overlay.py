@@ -59,7 +59,8 @@ def project(team, state, agents, now):
     research, space = state.get('research') or {}, state.get('space') or {}
     current = {a['name']: a for a in state.get('agents') or []}
     chat = state.get('chat') or []
-    return {'team': team, 'stale': now - float(state.get('now') or 0) > 25,
+    freshness = state.get('poll_ok') if 'poll_ok' in state else state.get('now')
+    return {'team': team, 'stale': now - float(freshness or 0) > 25 or bool(state.get('poll_error')),
             'game_time': state.get('game_time'), 'paused': bool(state.get('paused')),
             'agents': [dict(a, display_name=current.get(a['name'], {}).get('display_name') or a['name'],
                             activity=current.get(a['name'], {}).get('activity')) for a in agents],

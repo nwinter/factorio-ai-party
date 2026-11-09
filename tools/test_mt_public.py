@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 import urllib.error
 import urllib.request
 
@@ -88,6 +89,7 @@ class PublicTest(unittest.TestCase):
         self.assertNotIn('SECRET', json.dumps(row))
         self.assertFalse(row['stale'])
         self.assertTrue(overlay.project('green', state, [], 126)['stale'])
+        self.assertTrue(overlay.project('green', dict(state, poll_ok=1), [], 110)['stale'])
         self.assertEqual(row['chat'][0]['name'], 'a')
         html = (ROOT / 'tools/mt/public-overlay.html').read_text()
         self.assertNotIn('innerHTML', html)
@@ -141,6 +143,43 @@ class PublicTest(unittest.TestCase):
         obs = FakeOBS(live=True)
         with self.assertRaises(RuntimeError): stream.setup_obs(obs, 'url', {})
         self.assertEqual([c[0] for c in obs.calls], ['GetStreamStatus'])
+
+    def test_record_start_is_asynchronous(self):
+        class DelayedOBS(FakeOBS):
+            waiting = 2
+            def call(self, name, body=None):
+                result = super().call(name, body)
+                if name == 'GetRecordStatus' and self.recording and self.waiting:
+                    self.waiting -= 1
+                    return {'outputActive': False}
+                return result
+        obs, receipt = DelayedOBS(), {}
+        with mock.patch.object(stream.time, 'sleep') as sleep:
+            stream.setup_obs(obs, 'http://127.0.0.1:8790/', receipt)
+        self.assertEqual(sleep.call_count, 2)
+        self.assertTrue(receipt['record_started'])
+
+    def test_viewer_chat_is_display_only_even_with_relay_env(self):
+        import types
+        service = overlay.PublicOverlay.__new__(overlay.PublicOverlay)
+        service.youtube = 'video'
+        service.rosters = {'green': [{'name': 'a'}]}
+        service.stop, service.lock, service.state = threading.Event(), threading.Lock(), {}
+        class Reader:
+            state = 'live'
+            def __init__(self, target): pass
+            def poll(self):
+                service.stop.set()
+                return [{'id': '1', 'name': 'Viewer', 'text': 'hello', 't': 1}], [], 2
+        class Filter:
+            def __init__(self, **kw): pass
+            def check(self, msg, now): return msg, []
+        forbidden = mock.Mock(side_effect=AssertionError('relay/inbox-capable feed constructed'))
+        fake = types.SimpleNamespace(YouTubeChat=Reader, Filter=Filter, Relay=forbidden, Feed=forbidden)
+        with mock.patch.dict('os.environ', {'POG_VIEWER_RELAY': '1', 'POG_VIEWER_ROUTE': '1'}), mock.patch.dict(sys.modules, {'viewers': fake}):
+            service.viewers()
+        forbidden.assert_not_called()
+        self.assertEqual(service.state['viewers'][0]['text'], 'hello')
 
     def test_broadcast_resume_bind(self):
         class Api:

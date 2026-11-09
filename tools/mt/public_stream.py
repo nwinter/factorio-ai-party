@@ -27,7 +27,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 sys.path.insert(0, str(HERE.parent / 'stream'))
 from obsws import OBS
-from public_overlay import PublicOverlay, CAMERA, fetch
+from public_overlay import PublicOverlay, CAMERA
 from udp_bridge import Bridge
 
 SCENE = 'mt-stream'
@@ -167,6 +167,8 @@ def supervise(op, run):
         if obs.call('GetStreamStatus')['outputActive']:
             raise RuntimeError('OBS is streaming; staging refused')
         stage()
+        if stop.is_set():
+            raise RuntimeError('startup cancelled')
         if remote_camera('status').stdout.strip():
             raise RuntimeError('an earlier mt camera still exists; stop its owning run before starting')
         relay = subprocess.Popen(powershell(f"& '{REMOTE}/bridge.ps1'"))
