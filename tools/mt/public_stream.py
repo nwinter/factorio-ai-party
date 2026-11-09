@@ -74,7 +74,7 @@ def setup_obs(obs, url, receipt):
     if SCENE not in scenes:
         obs.call('CreateScene', {'sceneName': SCENE})
     specs = [
-        ('mt background', 'color_source_v3', {'color': 0xff101820, 'width': 1920, 'height': 1080}, (0, 0, 1920, 1080)),
+        ('mt background', 'color_source_v3', {'color': 0xff201810, 'width': 1920, 'height': 1080}, (0, 0, 1920, 1080)),
         ('mt camera', 'game_capture', {'capture_mode': 'window', 'window': 'Factorio 2.0.77:Factorio:factorio-mtcam.exe',
                                      'priority': 2, 'capture_cursor': False, 'allow_transparency': False}, (0, 72, 1440, 810)),
         ('mt overlay', 'browser_source', {'url': url, 'width': 1920, 'height': 1080, 'fps': 30,
@@ -201,7 +201,7 @@ def supervise(op, run):
     finally:
         if overlay:
             overlay.close()
-        if obs:
+        if obs and receipt.get('previous_scene'):
             try:
                 restore_obs(obs, receipt)
             except Exception as e:
@@ -277,6 +277,9 @@ def main():
                 time.sleep(.5)
             else:
                 raise SystemExit('public stream cleanup still running; inspect public-stream.log')
+        final = json.loads(path.read_text()) if path.exists() else {}
+        if final.get('cleanup_error') or final.get('cleanup_camera_error'):
+            raise SystemExit(f'public supervisor exited with cleanup errors; inspect {path}')
         print('public stream stopped (only its owned processes)')
     else:
         if owned(receipt, a.run):
