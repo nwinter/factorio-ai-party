@@ -56,6 +56,7 @@ case "$args" in
   *"cat '/Users/owner/pog-copy/holder.json'"*) [ -f {d}/free ] || echo '{held}' ;;
   *"kill -0 4242"*) exit 0 ;;
   *"kill -0 5151"*) [ -f {d}/alive ] ;;
+  *"ps -p 4242"*) exit 1 ;;
   *"test -s"*) exit 1 ;;
   *"for f in"*) echo /Applications/x/factorio ;;
   *nohup*) echo 5151 ;;
@@ -75,6 +76,13 @@ esac''')
     r = run("stop", "d20-b205/batch279")
     assert r.returncode == 3 and "refused: held by d20-mt274/batch278, not d20-b205/batch279" in r.stderr, r
     assert "kill 4242" not in open(log).read() and "/quit" not in open(log).read()
+    r = subprocess.run([sh, "stop", "d20-mt274/batch278"],
+                       env=env_with(d, IMAC_RCON_PORT="27478"), capture_output=True, text=True)
+    assert r.returncode == 3 and 'holder RCON endpoint differs' in r.stderr, r
+    assert "/quit" not in open(log).read(), "mismatched endpoint must not stop another server"
+    r = run("stop", "d20-mt274/batch278")
+    assert r.returncode == 3 and 'holder PID no longer identifies' in r.stderr, r
+    assert "/quit" not in open(log).read() and "kill 4242" not in open(log).read()
     r = run("start")
     assert r.returncode != 0 and "usage: tools/imac-copy.sh start HOLDER" in r.stderr, r
     open(os.path.join(d, "free"), "w").close()

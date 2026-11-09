@@ -88,6 +88,9 @@ def main(argv=None):
     with open(path, "w") as f:
         f.write(patch(src, a.timers, a.folder_runtime))
     mods = [{"name": n, "enabled": True} for n in ("base", "elevated-rails", "quality", "space-age", "agent-harness")]
+    with open(os.path.join(a.mod, "info.json")) as f:
+        if json.load(f)["factorio_version"] == "2.1":
+            mods.insert(2, {"name": "recycler", "enabled": True})
     with open(os.path.join(a.out, "mod-list.json"), "w") as f:
         json.dump({"mods": mods}, f, indent=1)
     print(dest)
