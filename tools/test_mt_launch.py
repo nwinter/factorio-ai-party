@@ -180,6 +180,16 @@ def dry_run():
         out = subprocess.run(["bash", sh, "mt9", "30", "agent/mt/teams-four.tsv"], env=dict(env, POG_MT_TEAMS="blue,green"),
                              capture_output=True, text=True, cwd=ROOT)
         assert "team blue" in out.stdout and "team green" in out.stdout and "team red" not in out.stdout, out.stdout
+        fresh = os.path.join(tmp, "baseline.zip")
+        open(fresh, "wb").close()
+        out = subprocess.run(["bash", sh, "mt9", "25"], env=dict(env, POG_MT_FRESH="1", POG_MT_FRESH_SAVE=fresh),
+                             capture_output=True, text=True, cwd=ROOT)
+        assert out.returncode == 0 and fresh in out.stdout, out.stderr
+        assert all(f"team {t}" in out.stdout for t in ("green", "yellow", "blue")), out.stdout
+        assert "team red" not in out.stdout and "claude-b" not in out.stdout, out.stdout
+        out = subprocess.run(["bash", sh, "mt9", "25"], env=dict(env, POG_MT_FRESH="1", POG_RESUME="old"),
+                             capture_output=True, text=True, cwd=ROOT)
+        assert out.returncode == 64 and "conflicts" in out.stderr, out.stderr
         bad = os.path.join(tmp, "bad.tsv")
         open(bad, "w").write("red\tastra\tcodex\tcodex\tgpt-6-astra\tlow\tGPT-6 Astra\tCodex\nblue\tastra\tclaude\tx\ty\tlow\tL\tH\n")
         out = subprocess.run(["bash", sh, "mt9", "30", bad], env=env, capture_output=True, text=True, cwd=ROOT)
@@ -201,6 +211,13 @@ def team_files():
         assert all(re.fullmatch(r"[a-z][a-z0-9_-]{0,15}", r[1]) for r in rows), f   # tools/fh_broker.py's bot names
         seen[f] = rows
     assert len(seen["teams-four.tsv"]) == 12 and len(seen["teams-smoke.tsv"]) == 4
+    rows = [l.rstrip("\n").split("\t") for l in open(os.path.join(ROOT, "agent", "mt", "teams-test.tsv"))
+            if l.strip() and not l.startswith("#")]
+    assert len(rows) == 3 and len({r[0] for r in rows}) == 3
+    assert [(r[1], r[2], r[3], r[4], r[5]) for r in rows] == [
+        ("gemini", "agy", "agy", "gemini-3.8-flash-high", "-"),
+        ("grok", "grok", "grok", "grok-4.7", "low"),
+        ("muse", "muse", "muse", "muse-spark-1.3", "low")]
     # team_bots with a force: one table argument (control.lua's remote bot_create passes one), a mismatch named
     import team_bots
 
