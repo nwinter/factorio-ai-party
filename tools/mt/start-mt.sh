@@ -2,7 +2,7 @@
 # (mt277, private) Start a multi-team run on the mt server on the iMac (tools/mt/imac_mt.sh, world imac2): every team's
 # agents in their own folder runs/RUN/TEAM/<agent>, with the team's own roster, prompt, RCON broker sockets, team-tools
 # and carry, launched from the launch tree (tools/mt/launch-tree.sh) with the moderate lockdown (part E).
-#   tools/mt/start-mt.sh RUN_ID MINUTES [TEAMS_FILE]      (default agent/mt/teams-smoke.tsv: one agent per team)
+#   tools/mt/start-mt.sh RUN_ID MINUTES [TEAMS_FILE]      (default agent/mt/teams-test.tsv: one agent per team)
 # TEAMS_FILE: team<TAB>name<TAB>kind<TAB>route<TAB>model<TAB>effort<TAB>label<TAB>harness; the team is the force
 # (tools/mt/mt_map.py setup made red, blue, green, yellow). Each team's file runs/RUN/TEAM/team.tsv is the usual
 # 7-column team file, so quota_check, quota_rest, team_bots and the launch read it unchanged.
@@ -11,6 +11,8 @@
 #     used as it is. POG_RESUME=PREVIOUS_RUN: a later shift: each team's notes, tools/ and team-tools/ from
 #     runs/PREVIOUS_RUN/TEAM (with no POG_MT_SAVE and no server running, the server starts on its own saves/mt.zip,
 #     which tools/mt/stop-mt.sh's /quit left).
+#   POG_MT_FRESH=1: start from mt275-final; refuses a running server or POG_RESUME.
+#     POG_MT_FRESH_SAVE overrides the local baseline path.
 #   POG_MT_TREE: the launch tree (default worktrees/pog-p, made or updated from HEAD at each start);
 #     POG_MT_TREE=here launches from this checkout (no tree: the agents' tools can read tools/mt and agent/mt).
 #   POG_MT_TEAMS: only these teams (comma-separated), POG_DRY_RUN=1: the plan only, POG_FULL_TOOLS=1 as start-team,
@@ -30,7 +32,7 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$root"
 run=${1:?usage: start-mt.sh RUN_ID MINUTES [TEAMS_FILE]} minutes=${2:?usage: start-mt.sh RUN_ID MINUTES [TEAMS_FILE]}
-teams_file=${3:-agent/mt/teams-smoke.tsv}
+teams_file=${3:-agent/mt/teams-test.tsv}
 world=imac2
 case $run in */*|.*|op) echo "RUN_ID: a plain name" >&2; exit 64 ;; esac
 export POG_SPACE_AGE=1 POG_BROKER=1 POG_TIME_MODE=realtime POG_ENEMIES=${POG_ENEMIES:-normal} POG_SEED=${POG_SEED:-274274}
@@ -53,6 +55,11 @@ export POG_READ_SCOPE=1
 # browser off (POG_WEB_BLOCK above)
 export POG_SHELL_NET=socket
 resume=${POG_RESUME:-}
+if [ "${POG_MT_FRESH:-0}" = 1 ]; then
+  [ -z "$resume" ] && [ -z "${POG_MT_SAVE:-}" ] || { echo "POG_MT_FRESH conflicts with POG_RESUME/POG_MT_SAVE" >&2; exit 64; }
+  export POG_MT_SAVE=${POG_MT_FRESH_SAVE:-/Users/owner/code/pog-headless-mt274/saves/mt275-final.zip}
+  [ -f "$POG_MT_SAVE" ] || { echo "fresh baseline not found: $POG_MT_SAVE" >&2; exit 1; }
+fi
 only=${POG_MT_TEAMS:-}
 teams=$(awk -F'\t' -v only=",$only," '!/^#/ && NF >= 8 && (only == ",," || index(only, "," $1 ",")) && !seen[$1]++ {print $1}' "$teams_file")
 [ -n "$teams" ] || { echo "no team in $teams_file${only:+ (POG_MT_TEAMS=$only)}" >&2; exit 1; }
@@ -85,7 +92,7 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
   status=$([ "${POG_TEST:-0}" = 1 ] && echo 'not asked: POG_TEST=1' || tools/mt/imac_mt.sh status 2>&1 | head -1)
   echo "plan for $run ($minutes min) on world $world (the iMac mt server: $status), teams from $teams_file"
-  if [ -n "${POG_MT_SAVE:-}" ]; then echo "1. server: started on $POG_MT_SAVE if not running"
+  if [ -n "${POG_MT_SAVE:-}" ]; then echo "1. server: started on $POG_MT_SAVE if not running${POG_MT_FRESH:+; fresh mode refuses a running server}"
   elif [ -n "$resume" ]; then echo "1. server: if not running, started on its own saves/mt.zip (the last stop's)"
   else echo "1. server: must be running (or set POG_MT_SAVE)"; fi
   echo "   runtime deployed from $(git rev-parse --short HEAD); the world unpaused; the setup's join lines dropped from the chat"
@@ -126,6 +133,7 @@ log "lockdown: web blocked $POG_WEB_BLOCK; reads denied $POG_DENY_READ"
 
 # 1. The server.
 if tools/mt/imac_mt.sh status | grep -q '^running'; then
+  [ "${POG_MT_FRESH:-0}" != 1 ] || { log "refusing: POG_MT_FRESH needs a stopped server (stop the prior run first)"; exit 1; }
   log "server: $(tools/mt/imac_mt.sh status)"
 else
   save=${POG_MT_SAVE:-}
