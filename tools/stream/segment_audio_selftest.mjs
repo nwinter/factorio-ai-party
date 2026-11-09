@@ -56,17 +56,19 @@ function page(search) {
     if (u === "/audio/played") { P.reports.push(JSON.parse(o.body)); return { ok: true }; }
     const c = P.clips[u.split("/").pop()];
     if (!c || c.fail) throw new Error("404");  // the service restarted: the clip is gone
+    if (c.delay) await wait(c.delay);
     return { arrayBuffer: async () => Buffer.from(JSON.stringify({ seconds: c.seconds, name: c.name })) };
   };
   const ctx = vm.createContext({ window: {}, document, location: { search: search || "" }, URLSearchParams, console,
     requestAnimationFrame: (f) => setTimeout(f, 16), setTimeout, clearTimeout, fetch: fakeFetch, EventSource: FakeES });
   ctx.window.AudioContext = FakeCtx;
+  vm.runInContext(fs.readFileSync(path.join(here, "static", "playback-clock.js"), "utf8"), ctx);
   vm.runInContext(src, ctx);
   P.win = ctx.window;
   let seq = 0;
   P.send = (name, seconds, meta, id) => {
     id = id || `${name}-${++seq}`;
-    P.clips[id] = { name, seconds, fail: !!(meta && meta.fail) };
+    P.clips[id] = { name, seconds, fail: !!(meta && meta.fail), delay: meta && meta.delay };
     const clip = Object.assign({ id, url: `/audio/clip/${id}`, t: now(), expires: now() + 30, channel: "agent", speaker: name,
       text: name, duration: seconds }, meta || {});
     delete clip.fail;
@@ -174,5 +176,66 @@ const seg = (id, part, parts) => ({ channel: "narrator", rank: "urgent", segment
   check(fresh.maxActive === 1, "one voice at a time after the reload");
 }
 
+// Shift recap handoff: cancelling a timed clip already speaking cuts it and releases routine audio.
+{
+  const P = page("?holdgap=3");
+  await wait(50);
+  const clip = P.send("RECAP", 5, Object.assign(seg("shift-recap", 1, 2), { channel: "caster", at: now() + 0.2 }));
+  await wait(600);
+  P.send("AFTER_RECAP", 0.2);
+  P.event({ cancel: clip.id });
+  P.event({ release: "shift-recap" });
+  await wait(800);
+  check(P.reports.some(r => r.id === clip.id && r.state === "cut"), "agent-ready handoff cuts a recap already speaking");
+  check(P.played("AFTER_RECAP").length === 1, "agent-ready handoff releases routine speech");
+}
+// A service restart has lost clip ids; its stable segment id still stops decoded old audio.
+{
+  const P = page("?holdgap=3");
+  await wait(50);
+  const clip = P.send("OLD_SERVICE", 5, Object.assign(seg("shift-recap-old", 1, 2), { channel: "caster", at: now() + 0.2 }));
+  await wait(600);
+  P.event({ stop_segment: "shift-recap-old" });
+  await wait(400);
+  check(P.reports.some(r => r.id === clip.id && r.state === "cut"), "new service stops decoded prior-service recap audio");
+  check(!P.win.pogVoiceHolding(), "restart clears the prior segment hold");
+}
+// Recaps claim before their first clip, including in-flight fetches, timed tours and urgent lines.
+for (const loading of [false, true]) {
+  const P = page("?holdmax=0.1&holdgap=0.1");
+  const op = P.send("OP", 2, { channel: "operator", delay: loading ? 800 : 0 });
+  await wait(100);
+  P.event({ speech_owner: "recap", speech_revision: 1, speech_epoch: "service" });
+  const urgent = P.send("URGENT", 0.2, { channel: "caster", rank: "urgent" });
+  const narr = P.send("TOUR", 0.2, { ...seg("tour", 1, 1), at: now() + 0.2 });
+  const n = P.send("RECAP", 0.3, { ...seg("recap", 1, 2), at: now() + 0.1 });
+  await wait(1000);
+  check(P.win.pogVoiceHolding(), "recap ownership outlives batch319's timeout and inter-line gaps");
+  check(P.played("URGENT").length === 0 && P.played("TOUR").length === 0, "urgent and timed tour speech never starts under recap");
+  check(loading ? P.played("OP").length === 0 : P.played("OP")[0].end <= P.played("RECAP")[0].start,
+    loading ? "loading operator clip never starts" : "playing operator clip stops before recap starts");
+  P.event({ release: "recap" });
+  P.event({ speech_owner: null, speech_revision: 2, speech_epoch: "service", resume: [
+    { ...op, attempt: 1 }, { ...urgent, attempt: 1 }, { ...narr, attempt: 1, at: undefined, segment: undefined }
+  ] });
+  P.event({ ...op, attempt: 1 }); // reconnect duplicates the resumed transport
+  await wait(4000);
+  check(P.reports.filter(r => r.id === op.id && r.state === "end" && r.audible).length === 1, "unheard operator line completes audibly once after release");
+  check(P.maxActive === 1, "exclusive recap and resumed lines use one source at a time");
+  check(!P.reports.some(r => r.id === op.id && r.attempt === 0 && r.state === "end"), "held attempt never counts as heard");
+}
+for (const phase of ["loading", "scheduled", "playing"]) {
+  const P = page();
+  P.send("EARLIER_TOUR", 3, { ...seg("tour", 1, 2), at: now() + (phase === "scheduled" ? 2 : 0.05),
+    delay: phase === "loading" ? 700 : 0 });
+  await wait(150);
+  P.event({ speech_owner: "recap", speech_revision: 1, speech_epoch: "service" });
+  P.send("RECAP", 0.2, { ...seg("recap", 1, 2), at: now() + 0.1 });
+  await wait(850);
+  const tour = P.played("EARLIER_TOUR");
+  check(phase === "playing" ? tour.length === 1 && tour[0].end <= P.played("RECAP")[0].start : tour.length === 0,
+    `recap stops a timed tour while ${phase}`);
+  check(P.maxActive === 1, `no timed overlap when recap takes ${phase} tour speech`);
+}
 console.log(fails.length ? `FAILED: ${fails.length}` : "segment_audio_selftest: all ok");
 process.exit(fails.length ? 1 : 0);

@@ -231,25 +231,30 @@ export function actionHelp(describe: unknown, action: string, max = 1400): strin
 }
 /**
  * A long compact reply in pages (agent-minds study: Codex drops the middle of output past about 40 KB, agy keeps the
- * last 8 KB): the first `page` bytes at a line boundary, a line saying what is left and how to see it, and the final
- * error:/warning: line again so `| tail -1` still finds it; `rest` is what `fh more` prints next. Text that fits, as it is.
+ * last 8 KB): at most `page` payload bytes, then a retrieval marker and a bounded final diagnostic.
+ * Oversized lines split at UTF-8 boundaries; rest is the exact unconsumed suffix, including full diagnostics.
+ * Page overhead is at most 512 bytes. Text up to page + slack fits unchanged.
  */
 export function paginate(text: string, page = 8000, slack = 2000): { shown: string; rest?: string } {
+  page = Math.max(4, Math.floor(page)); // one complete UTF-8 code point always makes progress
   if (Buffer.byteLength(text) <= page + slack) return { shown: text };
-  const lines = text.replace(/\n$/, '').split('\n');
-  const tail = lines[lines.length - 1] ?? '';
-  const last = /^(error|warning): /.test(tail) ? tail : undefined;
-  const body = last ? lines.slice(0, -1) : lines;
-  let used = 0, n = 0;
-  while (n < body.length) {
-    const size = Buffer.byteLength(body[n] ?? '') + 1;
-    if (n > 0 && used + size > page) break;
-    used += size; n++;
-  }
-  const restLines = body.slice(n);
-  const rest = restLines.join('\n') + '\n' + (last ? last + '\n' : '');
+  const prefix = (value: string, bytes: number): string => {
+    const buf = Buffer.from(value);
+    let end = Math.min(bytes, buf.length);
+    while (end > 0 && end < buf.length && (buf[end]! & 0xc0) === 0x80) end--;
+    return buf.subarray(0, end).toString('utf8');
+  };
+  const first = prefix(text, page);
+  const newline = first.lastIndexOf('\n');
+  const cut = newline >= 0 ? newline + 1 : first.length;
+  const body = text.slice(0, cut), rest = text.slice(cut);
+  const tail = text.replace(/\n$/, '').split('\n').at(-1) ?? '';
+  const diagnostic = /^(error|warning): /.test(tail)
+    ? (Buffer.byteLength(tail) <= 256 ? tail : prefix(tail, 200) + ' [full diagnostic: ./fh more]') + '\n' : '';
+  const restLines = rest.replace(/\n$/, '').split('\n').length;
   const kb = Math.max(1, Math.round(Buffer.byteLength(rest) / 1024));
-  const shown = body.slice(0, n).join('\n') + '\n' + `[${restLines.length} more lines, ${kb} KB: ./fh more]\n` + (last ? last + '\n' : '');
+  const shown = body + (body.endsWith('\n') ? '' : '\n')
+    + `[${restLines} more lines, ${kb} KB: ./fh more]\n` + diagnostic;
   return { shown, rest };
 }
 /** Full status's teammates line and the standing orders line go right after the clock line. */

@@ -31,13 +31,27 @@ return function(api)
     local errors = {}
     local function run(name)
       local ok, out = pcall(api.reads[name], p, args)
-      if ok then return out end
+      if ok and type(out) == 'table' and not out.error then return out end
+      if ok then out = type(out) == 'table' and out.error or 'no structured result' end
       errors[#errors+1] = name .. ': ' .. err(out)
     end
     local plat, supply, endu, def = run('platforms'), run('platform_supply'), run('platform_endurance'), run('platform_defense')
     local row = plat and plat.platforms and plat.platforms[1] or {}
     local out = {platform=pl.name}
     local lines = {}
+    -- Page rows are detail, never whole-ship counts. Missing counts (including an older read) are unknown.
+    local counts = def and def.turret_counts or {status='unknown'}
+    out.turret_counts = counts
+    local incomplete, completeness = {}, 'complete'
+    local function missing(text, status)
+      incomplete[#incomplete+1] = text
+      if status ~= 'capped' or completeness == 'unknown' then completeness = 'unknown' else completeness = 'capped' end
+    end
+    for _, e in ipairs(errors) do missing(e) end
+    if counts.status ~= 'complete' then missing('platform_defense turret counts ' .. tostring(counts.status or 'unknown'), counts.status) end
+    if def and def.sides_capped then missing('platform_defense hull capped at ' .. def.sides_capped .. ' tiles', 'capped') end
+    if def and def.feed and (def.feed.error or def.feed.pending) then missing('platform_defense ammunition trace: ' .. (def.feed.error or def.feed.pending)) end
+    out.check = {status=completeness, incomplete=#incomplete > 0 and incomplete or nil}
     -- Stopped or blocked first: the supply chain's stops, collectors no turret reaches, hull sides with gaps, power.
     local stopped = {}
     for _, s in ipairs(supply and (supply.stops or (supply.first_stop and {supply.first_stop})) or {}) do stopped[#stopped+1] = s end
@@ -48,9 +62,12 @@ return function(api)
       if (sd.uncovered or 0) > 0 then stopped[#stopped+1] = string.format('%s side: %d edge tiles no turret reaches', sd.side, sd.uncovered) end
     end
     if endu and (endu.no_power or 0) > 0 then stopped[#stopped+1] = string.format('%d machines on no power', endu.no_power) end
+    if (counts.empty or 0) > 0 then stopped[#stopped+1] = string.format('%d empty ammo turrets%s', counts.empty, counts.status ~= 'complete' and ' among those read' or '') end
     out.stopped = #stopped > 0 and stopped or nil
-    lines[#lines+1] = #stopped == 0 and 'stopped or blocked: none of the collectors, crushers, makers, thrusters, guns, turret cover or power'
+    lines[#lines+1] = #stopped == 0 and (#incomplete > 0 and 'stopped or blocked: unknown'
+      or 'stopped or blocked: none of the collectors, crushers, makers, thrusters, guns, turret cover or power')
       or string.format('stopped or blocked (%d): %s%s', #stopped, table.concat(stopped, ' | ', 1, math.min(SHOW, #stopped)), #stopped > SHOW and string.format(' | +%d more', #stopped - SHOW) or '')
+    if #incomplete > 0 then lines[#lines] = lines[#lines] .. '; incomplete check: ' .. table.concat(incomplete, ' | ') end
     -- Route and arrival.
     local route = {}
     route[#route+1] = row.state and ('state ' .. tostring(row.state)) or nil
@@ -94,11 +111,16 @@ return function(api)
     if #out.tanks == 0 then out.tanks = nil end
     if #out.ammo == 0 then out.ammo = nil end
     -- Turrets: how many, empty, the ammunition that reaches them and what is stranded.
-    if def then
-      local n, empty = #(def.turrets or {}), 0
-      for _, t in ipairs(def.turrets or {}) do if t.ammo == 'no ammo' then empty = empty + 1 end end
-      local f = def.feed or {}
-      out.turrets = string.format('%d turrets, %d empty; ammunition that can reach a turret %s, stranded %s%s', n, empty, tostring(f.reaches or '?'), tostring(f.stranded or '?'),
+    local turret_text = 'whole-ship turret counts unknown'
+    if counts.status == 'complete' then
+      turret_text = string.format('%d turrets, %d empty', counts.total, counts.empty)
+    elseif counts.read then
+      turret_text = string.format('%d turrets read, %d empty among those read; whole-ship counts %s%s', counts.read, counts.empty, counts.status,
+        counts.capped and ' at ' .. counts.capped or '')
+    end
+    do
+      local f = def and def.feed or {}
+      out.turrets = string.format('%s; ammunition that can reach a turret %s, stranded %s%s', turret_text, tostring(f.reaches or '?'), tostring(f.stranded or '?'),
         f.stranded_groups and #f.stranded_groups > 0 and ' (' .. table.concat(f.stranded_groups, '; ', 1, math.min(4, #f.stranded_groups)) .. ')' or '')
       lines[#lines+1] = 'turrets: ' .. out.turrets
     end
@@ -112,6 +134,6 @@ return function(api)
     return out
   end
   M.schema = {platform_digest = {platform='platform name',
-    returns='lines: stopped or blocked first (the supply chain\'s stops: collectors, crushers, fuel and oxidizer makers, thrusters, empty guns; collectors no turret reaches; hull sides with uncovered edge tiles; machines on no power), route (state, where, leg, km left, arrival, next stop, speed, schedule), hub slots and the asteroid chunks in it, chunks made (collectors\' catch and crushers\' returns) and where each goes, fuel outlook (thruster fuel and oxidizer held, made and used a minute, whether each lasts the leg), crushers and fuel and oxidizer makers (recipe, state, in and out), thrusters, tanks (thruster fuel and oxidizer: stock, made and used, run-out), ammunition (stock by place, made and used, stranded), turrets (count, empty, ammunition that reaches them and stranded), power; job: each agent\'s queued or running job that acts on or waits on the platform (owner, lane, the step now and pending, its wait and what it saw, its drops so far); the same as fields (stopped, route, hub, chunks, crushers, makers, thrusters, tanks, ammo, turrets, power, jobs); errors (a read that failed, by name). Read only'}}
+    returns='turret_counts: platform_defense whole-ship counts (status complete|capped|unknown, read, total only when complete, empty, armed, unarmed, unread, by_hand, capped); no counts from page rows. check {status complete|capped|unknown, incomplete}: constituent failures, capped counts/hull or incomplete ammunition trace prevent a clear check; known stops still shown. lines: stopped or blocked first (the supply chain\'s stops: collectors, crushers, fuel and oxidizer makers, thrusters, empty guns; collectors no turret reaches; hull sides with uncovered edge tiles; machines on no power), route (state, where, leg, km left, arrival, next stop, speed, schedule), hub slots and the asteroid chunks in it, chunks made (collectors\' catch and crushers\' returns) and where each goes, fuel outlook (thruster fuel and oxidizer held, made and used a minute, whether each lasts the leg), crushers and fuel and oxidizer makers (recipe, state, in and out), thrusters, tanks (thruster fuel and oxidizer: stock, made and used, run-out), ammunition (stock by place, made and used, stranded), turrets (count, empty, ammunition that reaches them and stranded), power; job: each agent\'s queued or running job that acts on or waits on the platform (owner, lane, the step now and pending, its wait and what it saw, its drops so far); the same as fields (stopped, route, hub, chunks, crushers, makers, thrusters, tanks, ammo, turrets, power, jobs); errors (a read that failed, by name). Read only'}}
   return M
 end

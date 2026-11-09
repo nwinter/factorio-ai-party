@@ -122,7 +122,8 @@
   // (CK4) the caption on now: the one whose [t0, t1) holds now - subs_at, or null
   function captionAt(e, now) {
     if (!e || !e.subs || e.subs_at == null) return null;
-    const t = now - e.subs_at;
+    const t = window.pogPlaybackClock ? window.pogPlaybackClock.elapsed(e.id, e.subs_at) : now - e.subs_at;
+    if (t == null) return null;
     return e.subs.find((c) => c.t0 <= t && t < c.t1) || null;
   }
   window.PogTourLay = { moveAt, along, ease, active, viewAt, toScreen, pxPerTile, markGeom, markTimes, captionAt, clipAt };
@@ -282,7 +283,7 @@
   const lengthOf = (e) => (e.length != null ? e.length : e.until - e.cut);
   let shown = "";
   function frame() {
-    const s = window.pogState, now = Date.now() / 1000;
+    const s = window.pogState, now = window.pogPlaybackClock.now();
     const on = active(s, now);
     const cam = s && s.cameras && s.cameras.main;
     // on air: the program shows its look (an old clip's stop shows the clip whatever the camera does)

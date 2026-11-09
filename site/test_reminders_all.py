@@ -124,7 +124,7 @@ process.stdout.write(JSON.stringify(out));
     # Active: on and not finished (7 + 3 overdue); Overdue: a recipient overdue, its chip whole
     assert li(o["active"]) == 10 and 'data-rem-filter="active" aria-pressed="true"' in o["active"] and "message 1<" not in o["active"], o["active"]
     assert li(o["overdue"]) == 3 and all(f"message {i} " in o["overdue"] for i in (4, 10, 22)), o["overdue"]
-    assert 'fx-chip--red">Astra overdue (2 runs missed (the first at tick 7200, 1m00s ago; the last at tick 9000, 30s ago))</span>' in o["overdue"], o["overdue"]
+    assert 'fx-chip--red">Astra overdue (2 runs missed (the first at tick 7200, 1m00s ago; the last at tick 9000, 30s ago)) · rest state unknown</span>' in o["overdue"], o["overdue"]
     # a refresh keeps the reader's choice; stored for the next visit; closing goes back to the first 12
     assert o["refresh"] == o["overdue"] and o["stored"] == {"remindersAll": "1", "remindersFilter": "overdue"}, o["stored"]
     assert li(o["back"]) == 12, o["back"]
@@ -148,7 +148,7 @@ process.stdout.write(JSON.stringify(out));
     js = JS_STUB.replace("STORE", "{}") + fn + "process.stdout.write(remindersHtml(" + json.dumps({"jobs": [j], "total": 1}) + ", team));"
     r = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=10)
     out = r.stdout
-    assert r.returncode == 0 and '<div class="rem-latest"><span class="fx-muted small">Backup: Sol</span>' in out, out + r.stderr
+    assert r.returncode == 0 and 'Configured backup: Sol' in out, out + r.stderr
     assert "Astra: waiting 143 min, 15 runs missed, backup told; last acknowledged 147 min ago:</span> K2 Fulgora PU777/1000" in out, out
     assert "Sol: acknowledged 1 min ago by Astra for them:</span> pod ledger: PU 346 landed" in out, out
     assert "luna: acknowledged 2 min ago, no result given" in out and "grok: scheduled, never acknowledged" in out, out

@@ -548,6 +548,7 @@ return function(api)
   -- speed module 3s, made explosives too, 207/min at full speed) with item: the crafting machines on the platform whose
   -- recipe makes it, each at full speed as inspect gives it (craftrate.lua), and their sum. MAKERS_SHOWN listed.
   local MAKERS_SHOWN = 12
+  local makerinput = require('makerinput'){status_name=function(e) return api.status_name and api.status_name(e) end}
   local function makers(pl, item)
     local rows, sum = {}, 0
     local found = try(function() return pl.surface.find_entities_filtered{type={'assembling-machine', 'furnace'}} end) or {}
@@ -569,6 +570,7 @@ return function(api)
           rows[#rows+1] = {entity=e.name, quality=try(function() return e.quality.name end), position={x=e.position.x, y=e.position.y},
             recipe=rate.recipe, speed=rate.speed, productivity=rate.productivity, per_min=pr.per_min,
             status=api.status_name and try(function() return api.status_name(e) end) or nil,
+            input=makerinput.read(e, recipe),
             crafts=try(function() return e.products_finished end)}
         end
       end
@@ -580,7 +582,7 @@ return function(api)
       if i > MAKERS_SHOWN then words[#words+1] = string.format('+%d more', #rows - MAKERS_SHOWN); break end
       words[#words+1] = string.format('%s%s (%g,%g) %s %g/min (speed %g, productivity +%d%%%s)', r.entity,
         r.quality and r.quality ~= 'normal' and '@' .. r.quality or '', r.position.x, r.position.y, r.recipe, r.per_min,
-        r.speed, math.floor(r.productivity * 100 + 0.5), r.status and ', ' .. r.status or '')
+        r.speed, math.floor(r.productivity * 100 + 0.5), r.input and ', ' .. r.input.line or r.status and ', ' .. r.status or '')
     end
     return rows, math.floor(sum * 10 + 0.5) / 10, words
   end
@@ -648,6 +650,11 @@ return function(api)
       note='the game\'s production statistics for ' .. label .. ' over its 1 h, 10 h, 50 h and 250 h windows (game time; totals, not rates; an item over every quality): made is what its machines, drills and collectors made, used what its machines, labs, turrets and rockets used up. Imports are not production: items cargo pods or rockets bring in, or take away, are in neither. The items most made and used in all first, at most ' .. M.LONG_ROWS}
   end
   function M.production(p, a)
+    if a.legs ~= nil then
+      assert(a.leg == nil and a.long == nil and a.surface == nil and a.item == nil, 'legs goes with platform alone')
+      local pl = api.platform(p, a.platform)
+      return api.legs(pl, a.legs)
+    end
     if a.long ~= nil then
       assert(a.long == true, 'long is true')
       assert(a.leg == nil, 'long and leg go apart')
@@ -716,9 +723,10 @@ return function(api)
       note='the platform\'s own production statistics (its surface), as the production GUI shows them: made counts what every machine on it made, productivity included; with item, makers lists the crafting machines whose recipe makes it, each at full speed as inspect gives it (inspect\'s rate is one machine alone); wait_until {until: produced, platform, item, at_least} waits for what it makes from now'}
   end
   M.schema = {platform_production = {platform='platform name (or, with long, surface)', item='optional item or fluid name: that one only',
+    legs='optional integer 1..16: last N completed flights, including during the next flight, oldest first. legs [{id, from, to (ticks), from_location, to_location, heading (directed connection ends), start_position, end_position, ended_by (arrival, reversal, station_passed), start_source, end_source, partial, status, ammo, fuel ({name: {made, used}}), loaded, dropped ({item or item@quality: count}), cargo_capped, cargo_unknown, counter_status}], kept, limit, lines, note. Native counters at state events or the tick the position watch sees a boundary. Cargo is rockets launched to it and hub pods sent down; last 16 kept, not a delivery ledger. With platform alone',
     long='optional true (d29 batch336): made and used over the game\'s 1 h, 10 h, 50 h and 250 h windows (totals; game time), the 16 items most made and used in all first: lines, items [{name, kind, made_1h, used_1h, made_10h, used_10h, made_50h, used_50h, made_250h, used_250h}], note. Imports are not production: what cargo pods and rockets bring or take is in neither',
     surface='with long: a planet instead of a platform (nauvis, vulcanus, ...)',leg='optional true: the whole leg instead: since the platform left its last stop to now (the leg and the stop after it so far), and while it is stopped the last full leg alone: thruster fuel and oxidizer and each ammunition made and used, cargo loaded (rockets launched to it) and dropped (its cargo pods), totals and a minute: lines, since_departure and last_leg {from, to, minutes, fuel, ammo, loaded, dropped}',
-    returns='lines (the most made first), items [{name, kind, made, used (totals; an item\'s over every quality, made_by_quality and used_by_quality when not all normal), made_per_min_1m|10m|1h, used_per_min_1m|10m|1h}], where; with item, makers [{entity, quality, position, recipe, speed, productivity, per_min (at full speed, as inspect), status, crafts (products_finished)}] and makers_full_per_min, and a makers line; read only'},
+    returns='lines (the most made first), items [{name, kind, made, used (totals; an item\'s over every quality, made_by_quality and used_by_quality when not all normal), made_per_min_1m|10m|1h, used_per_min_1m|10m|1h}], where; with item, makers [{entity, quality, position, recipe, speed, productivity, per_min (at full speed, as inspect), status, input {status, ingredients [{name, type, quality, held}], missing (zero held), input_inserters, output_inserters, input_loaders, output_loaders, line}, crafts (products_finished)}] and makers_full_per_min, and a makers line; read only'},
     platform_bom = {platform='platform name (or surface)',surface='optional planet, without platform: every platform\'s active hub requests that import from it: requests [{platform, item, quality, asks, holds (at that quality), short, where}], lines (a line a platform with what it lacks)',
     request='optional true (A6): keep a hub section of its own (logistic group "platform_bom: NAME") asking for what the platform\'s ghosts still need, their module and other item requests and built machines\' too, less what its construction robots carry, one slot an item at a quality (as the ghosts need it; a normal item never covers a ghost of another quality) (import_from, default the planet it is at; area: only the ghosts there), read again every 10 s: lowered as they are built, removed with the last of them (each item keeps its slot from one rewrite to the next: one no longer needed is cleared where it stands, a new one takes a free slot); false removes it. Your other requests stay as they are. Returns lines (item, or item@quality past normal: request N from P (the ghosts need N; the hub holds H at that quality)), request, group, note',
     import_from='with request: the planet the items come from (default the one the platform is at)',

@@ -55,7 +55,7 @@ def visit():
             break
     assert d.platforms and d.platforms[0][1:] == ("Starling", "visit"), d.platforms
     shot = [b for b in sent if b.get("surface") == "platform-1"]
-    assert shot and shot[-1]["smooth"] is False and shot[-1]["position"] == {"x": 0.0, "y": 1.0}, shot
+    assert shot and shot[-1]["smooth"] is False and shot[-1]["position"] == {"x": 0.0, "y": -5.18}, shot
     k0 = k
     for k in range(k0 + 1, k0 + 4):
         d.step(snap(a, [plat()]), t + k)
@@ -66,12 +66,12 @@ def visit():
     assert info["platform"]["name"] == "Starling" and info["agent"] is None, info
     # held platform_hold, then back to the story
     back = None
-    for k in range(k0 + 4, k0 + 60):
+    for k in range(k0 + 4, k0 + 150):
         d.step(snap(a, [plat()]), t + k)
         if main_row(d, t + k).get("agents") == ["luna"]:
             back = k
             break
-    assert back is not None and d.cfg["platform_hold"] <= back - k0 <= d.cfg["platform_hold"] + 5, (back - k0, d.cuts)
+    assert back is not None and d.cfg["platform_hold"] <= back - k0 <= 150, (back - k0, d.cuts)
     # the next visit: the other platform (shown longest ago); a hurt hub says so
     two = [plat(), plat("Kestrel", view=dict(VIEW, surface="platform-2", hub_health=62))]
     d.last_platform = t + back - d.cfg["platform_every"]

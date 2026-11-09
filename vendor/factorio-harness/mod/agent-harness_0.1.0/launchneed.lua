@@ -18,7 +18,7 @@ return function(api)
     local parts = try(function() return e.rocket_parts end) or 0
     local required = try(function() return e.prototype.rocket_parts_required end) or 0
     if parts >= required then return {}, string.format('%d/%d', parts, required) end
-    local inv = try(function() return e.get_inventory(defines.inventory.assembling_machine_input) end)
+    local inv = try(function() return e.get_inventory((defines.inventory.crafter_input or defines.inventory.assembling_machine_input)) end)
     local out = {}
     for _, ing in ipairs(try(function() return recipe.ingredients end) or {}) do
       if ing.type == 'item' then

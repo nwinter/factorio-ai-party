@@ -57,6 +57,7 @@ const ctx = vm.createContext({ window: {}, document, location: { search: "" }, U
   requestAnimationFrame: (f) => setTimeout(f, 16), setTimeout, clearTimeout, fetch: fakeFetch, EventSource: FakeES });
 ctx.window.AudioContext = FakeCtx;
 ctx.AudioContext = FakeCtx;
+vm.runInContext(fs.readFileSync(path.join(here, "static", "playback-clock.js"), "utf8"), ctx);
 vm.runInContext(fs.readFileSync(path.join(here, "static", "audio.js"), "utf8"), ctx);
 
 let seq = 0;

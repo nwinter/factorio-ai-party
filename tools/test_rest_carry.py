@@ -108,7 +108,7 @@ def carried():
         assert ok, lines
         for i, n in enumerate(NAMES):
             r = written(new, n)
-            assert r and r["until"] == round(sun - 60 * i) and r["reason"] == "quota" and r["carried_from"] == "shift69", (n, r)
+            assert r and r["until"] == sun - 60 * i and r["reason"] == "quota" and r["carried_from"] == "shift69", (n, r)
             assert pacing.resting(os.path.join(new, n), now + 60), n
         muse = [x for x in lines if x.startswith("quota rest: muse:")]
         assert len(muse) == 1 and "carried from shift69" in muse[0] and "no fresh reading of its account" in muse[0], lines
@@ -136,9 +136,9 @@ def carried():
         assert g == ["quota rest: grok: shift69's rest until " + quota_rest.when(sun) + " (quota) not carried: a fresh "
                      "reading has room (Grok · Weekly 40%)"], lines
         gem = written(new, "gemini")
-        assert gem and gem["reason"] == "pace" and gem["until"] == round(now + 1200) and gem["carried_from"] == "shift69", gem
+        assert gem and gem["reason"] == "pace" and gem["until"] == now + 1200 and gem["carried_from"] == "shift69", gem
         m = written(new, "muse")
-        assert m and m["until"] == round(now + 86400) and "carried_from" not in m, m   # its reset, later
+        assert m and m["until"] == now + 86400 and m["carried_from"] == "shift69", m   # its reset, later
         # a stale reading never ends a rest; an old brief (over 30 min) is no fresh reading
     with tempfile.TemporaryDirectory() as root:
         prev, new, team = setup(root, now)
@@ -150,7 +150,7 @@ def carried():
         rest(os.path.join(prev, "grok"), now - 7200, sun)
         lines, ok = carry(new, team, prev, brief(now, pct={"grok": 100}, reset=3600), now, root)
         g = written(new, "grok")
-        assert g["until"] == round(sun) and g["carried_from"] == "shift69", g
+        assert g["until"] == sun and g["carried_from"] == "shift69", g
         assert any("resets sooner" in x for x in lines if x.startswith("quota rest: grok:")), lines
     # the CLI: --carry with a run name or path, a dry run writes nothing
     with tempfile.TemporaryDirectory() as root:
@@ -209,11 +209,64 @@ def resume():
         os.remove(os.path.join(d, "resting.json"))
         os.remove(os.path.join(d, "journal.jsonl"))   # (the made-up request above lies after this rest's start)
         carry(new, team, prev, brief(now, stale=NAMES), now, root)
-        since = written(new, "muse")["since"]   # written now (the clock's time, as aq.rest does)
+        since = written(new, "muse")["since"]   # the original rest's start is kept
         assert pacing.resting(d, since + 10)
         request(d, since + 20)
         assert pacing.resting(d, since + 30) is None
     print("resume: ok (no nudge while carried, one when it ends, card active, own request ends it)")
+
+
+def firm():
+    """A carried firm rest survives a new request and fresh quota room; every original field survives atomically."""
+    now = time.time()
+    for reading in (None, brief(now), brief(now, pct={"astra": 100}, reset=3600),
+                    brief(now, pct={"astra": 100}, reset=7200)):
+        with tempfile.TemporaryDirectory() as root:
+            prev, new, team = setup(root, now)
+            old = os.path.join(prev, "astra")
+            os.makedirs(old)
+            row = {"since": now - 7200, "until": now + 3600, "reason": "quota", "sleep_s": 10800,
+                   "resets": "original reset label", "firm": True, "used": 83.5, "optional": None,
+                   "disabled": False, "metadata": {"pacing": [1, "two"]}, "carried_from": "original-shift"}
+            json.dump(row, open(os.path.join(old, "resting.json"), "w"))
+            request(old, now - 30)
+            sent = []
+            push = quota_rest.aq.push
+            def capture(d, args):
+                # The full record must already be visible when its runtime push begins.
+                sent.append((json.load(open(os.path.join(d, "resting.json"))), args))
+            quota_rest.aq.push = capture
+            try:
+                lines, ok = carry(new, team, prev, reading, now, root)
+            finally:
+                quota_rest.aq.push = push
+            assert ok and len(sent) == 1, lines
+            got = written(new, "astra")
+            extended = reading and reading["profiles"][1]["windows"][0]["percent"] == 100 and \
+                reading["profiles"][1]["windows"][0]["resets_at"] > row["until"]
+            if extended:
+                for key in row.keys() - {"until", "reason", "sleep_s", "resets"}:
+                    assert got[key] == row[key], (key, got)
+                assert got["until"] == now + 7200 and sent[0][1]["until_s"] > 7100, sent
+            else:
+                assert got == row and 3500 < sent[0][1]["until_s"] <= 3600, (got, sent)
+            assert sent[0][0] == got
+            d = os.path.join(new, "astra")
+            request(d, now + 10)
+            assert pacing.resting(d, now + 20) == got
+            nudger = idle_nudge.Nudger(members=["astra"], start=now - 3600, run_dir=new)
+            nudges = []
+            nudger.step({"agents": [{"name": "astra", "alive": True, "standing_s": 3000}]}, now + 20,
+                        lambda *args: nudges.append(args), lambda e: None)
+            assert nudges == [], nudges
+            assert pacing.resting(d, got["until"] + 1) is None
+            if reading is None:
+                import subprocess
+                r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "quota_rest.py"), "--at-limit",
+                                    new, team, "--carry", prev, "--brief", os.path.join(root, "none.json")],
+                                   capture_output=True, text=True, timeout=60)
+                assert r.returncode == 0 and written(new, "astra") == row, (r.stdout, r.stderr)
+    print("firm carry: ok (all fields, fresh room, equal/later reset, atomic write, request and nudge)")
 
 
 def start_team():
@@ -228,5 +281,6 @@ def start_team():
 if __name__ == "__main__":
     carried()
     resume()
+    firm()
     start_team()
     print("test_rest_carry: ok")

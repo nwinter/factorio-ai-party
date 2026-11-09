@@ -23,7 +23,7 @@ return function(api)
     return string.format('%.2fx%.2f', b.right_bottom.x - b.left_top.x, b.right_bottom.y - b.left_top.y)
   end
   local function quality_of(e) return try(function() return e.quality.name end) or 'normal' end
-  function M.run(p, a)
+  function M.validate(p, a)
     local map = {}
     local want_q = a.quality
     if want_q ~= nil then
@@ -56,6 +56,10 @@ return function(api)
         for _, e in ipairs(p.surface.find_entities_filtered{position=q, radius=0.3, force=p.force}) do found[#found+1] = e end
       end
     end
+    return map, want_q, found
+  end
+  function M.run(p, a)
+    local map, want_q, found = M.validate(p, a)
     local ghosts, marked, skipped, need = 0, 0, {}, {}
     local seen = {}
     local function skip(text) if #skipped < 8 then skipped[#skipped+1] = text end end
@@ -105,6 +109,7 @@ return function(api)
     to='the entity name to upgrade (or downgrade) to, of the same kind (fast-replace group and size); optional with quality', from='optional: only entities or ghosts of this name',
     quality='optional target quality (normal, uncommon, rare, ... unlocked ones), as the planner\'s target item takes one; to left out: the same entity at that quality; not given: each keeps its own quality',
     map='or {from_name: to_name, ...} (several kinds at once, e.g. {"turbo-transport-belt": "transport-belt", "turbo-underground-belt": "underground-belt"})',
+    note='remote/platform queue lanes require explicit platform or surface; planner checks at submission and execution. wait_until {until: entity_quality, platform or surface, position, name?, quality, timeout} waits for a built entity at exactly that quality, not its upgrade mark or ghost',
     surface='optional planet name: by remote view there', platform='optional platform name',
     returns='as the upgrade planner: ghosts_upgraded (a ghost is changed in place, its wires and settings kept), marked_for_upgrade (a built one is marked; robots replace it with the item), skipped (another kind, refused), line'}}
   return M

@@ -1,9 +1,41 @@
--- Short-horizon plans execute at simulation speed. No coroutines or host clock.
+-- Plans execute at simulation speed. Wall time is only a reply projection, never a timer.
 return function(api)
   local LOOP_WALK
   local M = {handlers={}}
   local QUEUES=api.queue_key or 'queues'
   local MAX_PENDING, MAX_HISTORY, MAX_INSTANT, MAX_BYTES, MAX_GUARDS, CHECK_TICKS = 128, 64, 4, 1048576, 8, 10
+  local MAX_WAIT, MAX_PLATFORM_WAIT = 54000, 17280000
+  local function wait_limit(c)
+    return api.platform_lane and c and (c['until']=='platform_arrived' or c['until']=='platform_progress') and MAX_PLATFORM_WAIT or MAX_WAIT
+  end
+  -- Reply only: no wall clock, allocation or extra condition read in the tick path. Pending steps have no start
+  -- tick yet, so their absolute times are explicitly conditional, including staged and interrupted waits.
+  function M.wait_deadline(step,pending)
+    if step.action~='wait_until' or wait_limit(step.args)~=MAX_PLATFORM_WAIT then return nil end
+    local timeout=step.args.timeout or 3600
+    local tick=not pending and step.until_tick or game.tick+timeout
+    if not tick then return nil end
+    local left=math.max(0,tick-game.tick)
+    local wall=api.wall and api.wall()
+    local out={state=pending and 'if_started_now' or 'waiting',tick=tick,game_seconds=tick/60,ticks_left=left,
+      timeout_ticks=timeout,wall_unix_ms=wall and wall+left*1000/60 or nil,wall_seconds_left=left/60,
+      wall_basis='projection at 60 ticks/s from this reply; pauses and slower UPS delay it',
+      wall_unavailable=not wall and 'request has no wall timestamp' or nil}
+    out.line=string.format('%sdeadline tick %d (game %dh%02dm%02ds); %.3f game hours left; wall projection %.3f hours from this reply at 60 ticks/s%s',
+      pending and 'if started now: ' or '',tick,math.floor(tick/216000),math.floor(tick/3600)%60,math.floor(tick/60)%60,left/216000,left/216000,
+      wall and string.format(' (Unix ms %.0f)',out.wall_unix_ms) or '; wall timestamp unavailable')
+    return out
+  end
+  local function wait_deadlines(current,pending)
+    local rows={}
+    local function add(step,index)
+      local row=M.wait_deadline(step,index~=nil)
+      if row then row.id=step.id; row.pending_index=index; rows[#rows+1]=row end
+    end
+    if current then add(current) end
+    for i,step in ipairs(pending) do add(step,i) end
+    return #rows>0 and rows or nil
+  end
   -- Outcomes of timed actions that count as the step succeeding.
   local SUCCESS={duration_elapsed=true,target_mined=true,mined=true,repair_completed=true,arrived=true,arrived_near=true,path_built=true,constructed=true,nothing_to_do=true,clear=true,fed=true,collected=true,topped_up=true,target_destroyed=true,dropped=true,transferred=true,picked_up=true,
     -- load_silo walk (Luna, shift14 21:20): the list aboard, and launched
@@ -90,9 +122,10 @@ return function(api)
         end
         if action=='wait_until' then
           local timeout=args and args.timeout
-          assert(timeout==nil or (type(timeout)=='number' and timeout==math.floor(timeout) and timeout>=1 and timeout<=54000),'wait_until timeout must be 1..54000 ticks')
+          local limit=wait_limit(args)
+          assert(timeout==nil or (type(timeout)=='number' and timeout==math.floor(timeout) and timeout>=1 and timeout<=limit),'wait_until timeout must be 1..'..limit..' ticks')
           assert(args.on_timeout==nil or args.on_timeout=='hold' or args.on_timeout=='fail','wait_until on_timeout is "hold" (the step stays and the queue pauses with it) or "fail" (the default)')
-          checked('args',function() api.validate_condition(args) end)
+          checked('args',function() api.validate_condition(args,p) end)
         end
         out[#out+1]={action=action,args=args or {},wait=step.wait~=false,label=step.label,on_fail=on_fail,on_short=step.on_short,min_moved=step.min_moved}
       end)
@@ -146,7 +179,7 @@ return function(api)
       checked('guards['..i..']',function()
         assert(type(g)=='table','each guard is {when, goto|steps}')
         checked('when',function()
-          api.validate_condition(g.when)
+          api.validate_condition(g.when,p)
           if api.check_step then api.check_step('wait_until',g.when) end
           local why=p and api.guard_refusal and api.guard_refusal(p,g.when)
           if why then error(why,0) end
@@ -154,11 +187,56 @@ return function(api)
         if p and api.check_action then api.check_action(p.index,'wait_until',g.when) end
         assert(g['goto']==nil or type(g['goto'])=='string','guard goto must be a label')
         assert(not (g['goto'] and g.steps),'a guard takes goto or steps, not both')
+        assert(g.priority==nil or (type(g.priority)=='number' and g.priority==g.priority and math.abs(g.priority)<math.huge),'guard priority must be a finite number (higher takes precedence)')
+        assert(g.exclusive_group==nil or (type(g.exclusive_group)=='string' and #g.exclusive_group>=1 and #g.exclusive_group<=64),'guard exclusive_group must be a string of 1..64 bytes')
         assert(g.scope==nil or g.scope=='plan' or g.scope=='standing','guard scope is "plan" (the default: retired when the lane has no step left) or "standing" (armed until it fires, is removed or the queue is cancelled)')
-        out[#out+1]={when=g.when,['goto']=g['goto'],steps=g.steps and steps({steps=g.steps},p) or nil,scope=g.scope}
+        out[#out+1]={when=g.when,['goto']=g['goto'],steps=g.steps and steps({steps=g.steps},p) or nil,scope=g.scope,priority=g.priority,exclusive_group=g.exclusive_group}
       end)
     end
     return out
+  end
+  -- Control lasts only for this reaction's surviving steps, including held/requeued work.
+  -- Legacy queues have no controller and take the constant-time exit. This is also a read-only status helper.
+  function M.guard_control(q)
+    local c=q.guard_control
+    if not c then return nil end
+    if q.current and q.current.guard_run==c.run then return c end
+    for _,step in ipairs(q.pending) do if step.guard_run==c.run then return c end end
+  end
+  local function same(a,b)
+    if type(a)~=type(b) then return false end
+    if type(a)~='table' then return a==b end
+    for k,v in pairs(a) do if not same(v,b[k]) then return false end end
+    for k in pairs(b) do if a[k]==nil then return false end end
+    return true
+  end
+  -- Conservative warning: differing reactions can replace/cancel one another, whatever their conditions.
+  -- Compare only action inputs, never guard baselines or assigned job ids.
+  local function same_reaction(a,b)
+    if a['goto']~=b['goto'] or (a.steps==nil)~=(b.steps==nil) then return false end
+    if not a.steps then return true end
+    if #a.steps~=#b.steps then return false end
+    for i,s in ipairs(a.steps) do
+      local t=b.steps[i]
+      for _,k in ipairs({'action','args','wait','label','on_fail','on_short','min_moved'}) do
+        if not same(s[k],t[k]) then return false end
+      end
+    end
+    return true
+  end
+  local function guard_warnings(list,kept)
+    local all,out={},{}
+    for _,g in ipairs(kept or {}) do all[#all+1]=g end
+    for _,g in ipairs(list or {}) do all[#all+1]=g end
+    for i,a in ipairs(all) do
+      for j=i+1,#all do
+        local b=all[j]
+        if a.priority==nil and b.priority==nil and not same_reaction(a,b) then
+          out[#out+1]=string.format('%s and %s have potentially conflicting guard actions in this lane with no priorities set; a later firing can replace or cancel the earlier reaction',a.id or 'guards['..i..']',b.id or 'guards['..j..']')
+        end
+      end
+    end
+    return #out>0 and out or nil
   end
   -- (d26 batch251 GL, Sol #2466: queue_submit and its dry run took on_fail goto:missing-label, and an Asterion draft
   -- at tick 68087211 passed with step 11's goto:sink-source-stop on no step; a goto that finds no pending step of its
@@ -289,6 +367,7 @@ return function(api)
     if when['until']=='platform_hit' or when['until']=='platform_damage' then when.hit_since=when.hit_since or when.since_tick or game.tick end
     -- (d26 batch246 FL) platform_foundation_loss the same: a guard left as it was keeps fl_since and its read place
     if when['until']=='platform_foundation_loss' then when.fl_since=when.fl_since or when.since_tick or game.tick end
+    if when['until']=='platform_arrived' then when.platform_arrival=when.platform_arrival or {since=when.since_tick or game.tick} end
     for _,m in ipairs((when['until']=='all' or when['until']=='any') and when.conditions or {}) do seed(m) end
   end
   -- (d27 batch261 AD) the earliest tick a guard's tick_at_least meets it (alone or in any): from then the guards are
@@ -326,11 +405,18 @@ return function(api)
     elseif u=='platform_foundation_loss' then
       return c.fl_since and string.format('foundation tiles of %s destroyed since tick %d',c.platform,c.fl_since)
         or string.format('foundation tiles of %s destroyed from its first check',c.platform),c.fl_since
+    elseif u=='platform_speed_above' then return string.format('live speed of %s > %g km/s for %g s; sample gaps over %g s reset duration',c.platform,c.above,c.for_s or 0,c.max_age or 1)
     elseif u=='platform_progress' then return string.format('read at each check: %s flying %s->%s, %s of the leg flown',tostring(c.platform),c.from or 'any',c.to or 'any',tostring(c.at_least))
-    elseif u=='platform_ammo_below' then return string.format('the background reading of %s at each check: %s%s %s under %s; met too when that reading is older than %ss',
+    elseif u=='platform_ammo_below' then return string.format('the background reading of %s at each check: %s%s %s under %s; max_age %ss; on_stale %s (old reading or none past max_age)',
       tostring(c.platform),tostring(c.item),c.quality and ' ('..tostring(c.quality)..')' or '',
-      c.area and 'in that area' or c.loop and 'in the loop from that belt' or 'aboard',tostring(c.count),tostring(c.max_age or 120))
-    elseif u=='budget_below' then return string.format('read every 10 s: %s\'s return budget (platform_endurance turnaround), met once the binding item can go out less than %s km farther',tostring(c.platform),tostring(c.km))
+      c.area and 'in that area' or c.loop and 'in the loop from that belt' or 'aboard',tostring(c.count),tostring(c.max_age or 120),c.on_stale or 'met')
+    elseif u=='budget_below' then
+      local ta=c.turnaround or {}; local windows=c.windows or ta.windows
+      if windows then
+        return string.format('read every 10 s or when a window becomes eligible: %s; same item must bind in %s of [%s] under %s km; full same-leg windows only, no fallback; missing=%s',
+          tostring(c.platform),tostring(c.require or ta.require or 'all'),table.concat(windows,','),tostring(c.km),c.missing or ta.missing or 'binding')
+      end
+      return string.format('read every 10 s: %s\'s return budget (platform_endurance turnaround), met once the binding item can go out less than %s km farther',tostring(c.platform),tostring(c.km))
     elseif u=='launches_at_least' then return string.format('counted every 1 s: rockets to %s %s%s, launched (landed, in flight) + loaded in silos aimed at it, met at %s; the harness stops nothing: what follows is your own steps',
       tostring(c.platform),c.since_tick and 'since tick '..tostring(c.since_tick) or 'in the last '..tostring(c.window)..' s',c.origin and ' from '..tostring(c.origin) or '',tostring(c.n))
     elseif u=='platform_energy_below' then return string.format('read at each check: the accumulators on %s under %s of their capacity',tostring(c.platform),tostring(c.fraction))
@@ -353,13 +439,24 @@ return function(api)
     local e=g.read_error
     return e and {error=e.text,first_tick=e.tick,last_tick=e.last_tick,checks=e.checks,cleared_tick=e.cleared_tick} or nil
   end
+  -- Format saved failures only when replying; no extra condition reads or tick work.
+  function M.guard_read_errors(q)
+    local lines={}
+    for _,g in ipairs(q.guards or {}) do
+      local e=g.read_error
+      if e and not e.cleared_tick then
+        lines[#lines+1]=string.format('%s: read error since tick %d (%d checks): %s',tostring(g.id),e.tick,e.checks,e.text)
+      end
+    end
+    return #lines>0 and table.concat(lines,'; ') or nil
+  end
   local function guard_rows(q,status)
     local rows={}
     for _,g in ipairs(q.guards or {}) do
       local text,since=baseline(g.when)
       rows[#rows+1]={id=g.id,['until']=g.when['until'],set_tick=g.set_tick,since_tick=since,baseline=text,edit=status and status[g.id] or nil,scope=g.scope or 'standing',
         deadline_tick=g.deadline,ticks_left=g.deadline and math.max(0,g.deadline-game.tick) or nil,
-        read_error=read_error_row(g),
+        read_error=read_error_row(g),saw=g.saw,evidence=g.when.evidence,priority=g.priority,exclusive_group=g.exclusive_group,
         reaction=g['goto'] and ('goto '..g['goto']) or g.steps and (#g.steps..' step'..(#g.steps==1 and '' or 's')) or 'abort (the queue pauses)'}
     end
     return rows
@@ -419,7 +516,8 @@ return function(api)
   -- its scope-plan guards are retired in that tick, after its last step, with a history row and one team block line
   -- that names the standing guards still armed too.
   local function retire(q)
-    q.drain_seen=game.tick
+    -- A successor can finish in its first tick, without an intervening non-idle tick to clear retirement.
+    q.drained_plan=q.plan_seq or 0
     local gone,kept={},{}
     for _,g in ipairs(q.guards) do if g.scope=='plan' then gone[#gone+1]=g else kept[#kept+1]=g end end
     q.guards=kept
@@ -445,7 +543,7 @@ return function(api)
   end
   -- orders: true lists the standing orders' entries too (every entry, as before plans); else the plan's own entries,
   -- the orders' counted.
-  local function snapshot(q,recent,orders,with_args)
+  local function snapshot(q,recent,orders,with_args,owner_index)
     guard_ids(q)
     local list,from_orders=q.history,0
     if not orders then
@@ -493,7 +591,8 @@ return function(api)
     -- (QT3) a build or place_ghosts waiting on its clear_obstacles job or run again: continuation says which
     local cont
     if current and CLEARS[current.action] and api.clear_pending then
-      for i,each in pairs(api.state()[QUEUES] or {}) do if each==q then cont=api.clear_pending(i,current.action) end end
+      if owner_index then cont=api.clear_pending(owner_index,current.action)
+      else for i,each in pairs(api.state()[QUEUES] or {}) do if each==q then cont=api.clear_pending(i,current.action) end end end
     end
     if cont then
       local copy={}
@@ -501,6 +600,7 @@ return function(api)
       copy.continuation=cont; current=copy
     end
     local waiting=current and current.action=='wait_until' and {condition=current.args,saw=current.saw,until_tick=current.until_tick} or nil
+    if waiting then waiting.deadline=M.wait_deadline(current) end
     if waiting and api.wait_info then
       api.wait_info(waiting,current)
       local copy={}
@@ -516,7 +616,8 @@ return function(api)
         for k,v in pairs(g) do c[k]=v end
         c.scope=g.scope or 'standing'
         if g.deadline then c.deadline=nil; c.deadline_tick=g.deadline; c.ticks_left=math.max(0,g.deadline-game.tick) end
-        c.read_error=read_error_row(g)
+        c.read_error=read_error_row(g); c.saw=g.saw; c.evidence=g.when.evidence
+        c.baseline,c.since_tick=baseline(g.when)
         gl[i]=c
       end
     end
@@ -525,8 +626,8 @@ return function(api)
       order=q.order and {name=q.order.name,reason=q.order.reason,steps=q.order.total} or nil,
       orders_history=from_orders>0 and string.format('%d entries from standing orders left out (queue_status {"orders": true} lists them)',from_orders) or nil,
       history_total=trimmed and #q.history or nil,
-      waiting=waiting,kept_wait=kept,
-      guards=gl,last_failure=failure,after_direct=q.after_direct,
+      waiting=waiting,kept_wait=kept,wait_deadlines=wait_deadlines(q.current,q.pending),
+      guard_read_errors=M.guard_read_errors(q),guards=gl,guard_control=M.guard_control(q),guard_suppressed=q.guard_suppressed,guard_warnings=guard_warnings(q.guards),last_failure=failure,after_direct=q.after_direct,
       repeating=q.loop~=nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.loop and (q.orders or 'triggers') or nil,
       paused_why=q.paused and q.paused_why and string.format('%s (tick %d, %ds ago); queue_resume runs the rest',q.paused_why.line,q.paused_why.tick,math.floor((game.tick-q.paused_why.tick)/60)) or nil,
       times=q.loop and q.times or nil,rounds_left=q.loop and q.times and math.max(0,q.times-(q.cycle or 1)) or nil,
@@ -728,7 +829,8 @@ return function(api)
     record(q,step,false,result)
     -- (d25 batch205 QR1, Sol #2337) a pod_landed wait keeps its start and its drop: the resume counts from them
     table.insert(q.pending,1,{action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short,
-      min_moved=step.min_moved,plan=step.plan,id=step.id,pod_since=step.pod_since,drop_id=step.drop_id})
+      min_moved=step.min_moved,plan=step.plan,id=step.id,pod_since=step.pod_since,drop_id=step.drop_id,platform_arrivals=step.platform_arrivals,
+      condition_members=step.condition_members,guard_run=step.guard_run})
     local c=step.args or {}
     local what={tostring(c['until'])}
     for _,k in ipairs({'platform','item','at_least','below','location','surface','technology'}) do
@@ -788,11 +890,28 @@ return function(api)
       local ok,met,saw=true,false,nil
       if not paused or (g.deadline and game.tick>=g.deadline) then
         ok,met,saw=pcall(api.condition,p,g.when)
+        g.saw=ok and saw or tostring(met)
         if not ok then guard_error(q,g,met)
         elseif g.read_error and not g.read_error.cleared_tick then g.read_error.cleared_tick=game.tick end
       end
       if ok and met then
-        -- A guard fires once; its reaction replaces whatever was running.
+        -- A met lower-priority guard is consumed once, without stopping or changing the protected reaction.
+        local control=M.guard_control(q)
+        if control and g.priority~=nil and g.priority<control.priority and
+          (g.exclusive_group==nil or control.exclusive_group==nil or g.exclusive_group==control.exclusive_group) then
+          table.remove(q.guards,i)
+          local row={guard=g.id,priority=g.priority,exclusive_group=g.exclusive_group,condition=g.when['until'],saw=saw,
+            tick=game.tick,suppressed_by=control.guard,control_tick=control.tick,control_priority=control.priority,control_reason=control.reason,
+            reason=string.format('lower priority than %s (priority %g), which fired at tick %d: %s',control.guard,control.priority,control.tick,control.reason)}
+          q.guard_suppressed=q.guard_suppressed or {}
+          q.guard_suppressed[#q.guard_suppressed+1]=row
+          if #q.guard_suppressed>MAX_GUARDS then table.remove(q.guard_suppressed,1) end
+          q.history[#q.history+1]={action='guard_suppressed',ok=true,result=row,finished_tick=game.tick,plan=q.plan_seq}
+          if #q.history>MAX_HISTORY then table.remove(q.history,1) end
+          set_due(q); q.revision=q.revision+1
+          return
+        end
+        -- Equal/unset priorities and different explicit groups retain the original replacement behavior.
         table.remove(q.guards,i)
         -- (d22 batch92 BB2, BB3, Astra #1886, #1887) the trigger's evidence kept: platform_hit's first hits,
         -- platform_progress's progress and leg
@@ -801,9 +920,29 @@ return function(api)
         for _,m in ipairs((g.when['until']=='all' or g.when['until']=='any') and g.when.conditions or {}) do
           evidence=evidence or m.evidence or m.hit_first and #m.hit_first>0 and m.hit_first or nil
         end
+        -- A preceding progress/hit member must not hide the budget's full per-item rate evidence.
+        local budgets={}
+        for _,m in ipairs((g.when['until']=='all' or g.when['until']=='any') and g.when.conditions or {}) do
+          if m.evidence and m.evidence.return_budget then budgets[#budgets+1]=m.evidence end
+        end
+        local circuits={}
+        for _,m in ipairs((g.when['until']=='all' or g.when['until']=='any') and g.when.conditions or {}) do
+          if m.evidence and m.evidence.circuit_signal then circuits[#circuits+1]=m.evidence end
+        end
+        if #circuits>0 then
+          local merged={}; for k,v in pairs(evidence or {}) do merged[k]=v end
+          merged.circuit_conditions=circuits
+          evidence=merged
+        end
+        if #budgets>0 then
+          local merged={}; for k,v in pairs(evidence or {}) do merged[k]=v end
+          merged.budget_conditions=budgets
+          evidence=merged
+        end
         if q.current then record(q,q.current,false,{reason='guard',condition=g.when['until'],saw=saw,evidence=evidence}); q.current=nil end
         api.stop(p)
-        q.history[#q.history+1]={action='guard',ok=true,result={condition=g.when['until'],saw=saw,evidence=evidence,guard=g.id},finished_tick=game.tick,plan=q.plan_seq}
+        local fired={condition=g.when['until'],saw=saw,evidence=evidence,guard=g.id,priority=g.priority,exclusive_group=g.exclusive_group}
+        q.history[#q.history+1]={action='guard',ok=true,result=fired,finished_tick=game.tick,plan=q.plan_seq}
         if #q.history>MAX_HISTORY then table.remove(q.history,1) end
         local resumed=false
         if g.steps then
@@ -812,6 +951,14 @@ return function(api)
           resumed=true
         elseif g['goto'] and jump(q,g['goto']) then resumed=true
         else q.paused=true; q.paused_why={tick=game.tick,line='a guard fired: '..tostring(g.when['until'])..(saw and ' ('..tostring(saw)..')' or '')} end
+        q.guard_control=nil
+        if resumed and g.priority~=nil then
+          q.guard_run=(q.guard_run or 0)+1
+          local c={guard=g.id,priority=g.priority,exclusive_group=g.exclusive_group,tick=game.tick,run=q.guard_run,
+            condition=g.when['until'],reason=tostring(g.when['until'])..(saw and ': '..tostring(saw) or '')}
+          for _,step in ipairs(q.pending) do step.guard_run=c.run end
+          q.guard_control=c; fired.control=c
+        end
         -- (d27 batch261 AD) a deadline that fires on a paused or held remote lane runs its reaction now
         if paused and resumed then
           q.paused=false; q.held=nil
@@ -976,7 +1123,8 @@ return function(api)
         args=rest
       end
       if again then table.insert(q.pending,1,{id=step.id,action=step.action,args=args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short,min_moved=step.min_moved,plan=step.plan,ends_tick=ends,
-        pod_since=step.pod_since,drop_id=step.drop_id}) end
+        pod_since=step.pod_since,drop_id=step.drop_id,platform_arrivals=step.platform_arrivals,guard_run=step.guard_run,
+        condition_members=step.condition_members}) end
     end
     q.paused=true; q.revision=q.revision+1
     -- A standing order stopped by anything else (the agent's own request, a
@@ -1023,7 +1171,7 @@ return function(api)
     assert(#q.pending+#items<=MAX_PENDING,string.format('queue capacity exceeded: %d pending and %d more is over %d',#q.pending,#items,MAX_PENDING))
     assert(total(q.pending)+total(items)<=MAX_BYTES,'queue argument byte budget exceeded')
     assign(q,items)
-    for _,step in ipairs(items) do step.plan=cur.plan; step.order=cur.order end
+    for _,step in ipairs(items) do step.plan=cur.plan; step.order=cur.order; step.guard_run=cur.guard_run end
     for i=#items,1,-1 do table.insert(q.pending,1,items[i]) end
     if q.plan and q.plan.id==cur.plan and q.plan.steps then q.plan.steps=q.plan.steps+#items end
     if cur.order and q.order and q.order.name==cur.order then q.order.total=q.order.total+#items end
@@ -1094,11 +1242,22 @@ return function(api)
       assert(api.snapshots,'no snapshots here')
       return api.snapshots(p,a)
     end
-    local q=queue(p.index)
+    -- Status never creates a queue or assigns legacy guard ids in stored state.
+    local stored=(api.state()[QUEUES] or {})[p.index]
+    local q={revision=0,sequence=0,pending={},history={},paused=true}
+    if stored then
+      for k,v in pairs(stored) do q[k]=v end
+      if stored.guards then
+        q.guards={}
+        for i,g in ipairs(stored.guards) do
+          local copy={}; for k,v in pairs(g) do copy[k]=v end; q.guards[i]=copy
+        end
+      end
+    end
     assert(a.orders==nil or type(a.orders)=='boolean','orders must be true or false')
     assert(a.args==nil or type(a.args)=='boolean','args must be true or false')
     -- The plan's entries: up to 16 by default (its steps and outcomes); with orders, the newest 3 of all as before.
-    local s=snapshot(q,count_arg(a.history,a.orders and RECENT or PLAN_RECENT,MAX_HISTORY,'history'),a.orders==true,a.args==true)
+    local s=snapshot(q,count_arg(a.history,a.orders and RECENT or PLAN_RECENT,MAX_HISTORY,'history'),a.orders==true,a.args==true,p.index)
     local np=count_arg(a.pending,1,MAX_PENDING,'pending')
     if #q.pending>np then
       local some={}
@@ -1107,6 +1266,8 @@ return function(api)
     end
     s.pending_count=#q.pending
     s.history_total=#q.history
+    s.state=not stored and 'empty' or q.paused and (q.held and 'paused, held' or 'paused')
+      or (q.current or #q.pending>0 or q.loop) and 'running' or q.plan and 'completed' or 'empty'
     if q.current then
       local active={}
       for k,v in pairs(s.active) do active[k]=v end
@@ -1233,7 +1394,9 @@ return function(api)
       local new_guards=guards(a,p)
       assert(#items<=MAX_PENDING,'queue capacity exceeded')
       submit_checks((api.state()[QUEUES] or {})[p.index] or {pending={},guards={},revision=0},a,items,new_guards)
-      local out={dry_run=true,queued=false,steps=#items}
+      local stored=(api.state()[QUEUES] or {})[p.index]
+      local out={dry_run=true,queued=false,steps=#items,wait_deadlines=wait_deadlines(nil,items),
+        guard_warnings=guard_warnings(new_guards,a.mode~='replace' and stored and stored.guards or nil)}
       if api.simulate then
         local ok,sim=pcall(api.simulate,p,items)
         if ok then for k,v in pairs(sim) do out[k]=v end else out.simulate_error=api.reason and api.reason(sim) or tostring(sim) end
@@ -1329,7 +1492,7 @@ return function(api)
       'for_ticks must be 60..432000 ticks (2 hours)')
     if a.condition~=nil then
       checked('condition',function()
-        api.validate_condition(a.condition)
+        api.validate_condition(a.condition,p)
         if api.check_step then api.check_step('wait_until',a.condition) end
         if api.check_action then api.check_action(p.index,'wait_until',a.condition) end
       end)
@@ -1381,11 +1544,16 @@ return function(api)
       assert(not status[r.id],'guards.replace['..i..']: '..r.id..' is '..(status[r.id]=='removed' and 'removed in this call too' or 'replaced twice'))
       status[r.id]='replaced'
     end
-    local function specs(list) local out={}; for _,r in ipairs(list) do out[#out+1]={when=r.when,['goto']=r['goto'],steps=r.steps,scope=r.scope} end return out end
+    local function specs(list) local out={}; for _,r in ipairs(list) do out[#out+1]={when=r.when,['goto']=r['goto'],steps=r.steps,scope=r.scope,priority=r.priority,exclusive_group=r.exclusive_group} end return out end
     local added=checked('guards.add',function() return guards({guards=e.add},p) end)
     local swapped=checked('guards.replace',function() return guards({guards=specs(replace)},p) end)
-    -- (GR) a replaced guard keeps its scope unless the replacement gives one (one set before scopes: standing)
-    for i,r in ipairs(replace) do if swapped[i].scope==nil then swapped[i].scope=by[r.id].scope or 'standing' end end
+    -- A replacement keeps omitted policy fields (legacy scope: standing); supplied values were validated above.
+    for i,r in ipairs(replace) do
+      local g,old=swapped[i],by[r.id]
+      if g.scope==nil then g.scope=old.scope or 'standing' end
+      if g.priority==nil then g.priority=old.priority end
+      if g.exclusive_group==nil then g.exclusive_group=old.exclusive_group end
+    end
     local work=q.current~=nil or #q.pending>0 or q.loop~=nil
     plan_guards_idle(added,work,function(i) return 'guards.add['..i..']' end)
     plan_guards_idle(swapped,work,function(i) return 'guards.replace['..i..']' end)
@@ -1756,7 +1924,7 @@ return function(api)
           -- after the last step, before any later check
           if q.guards and #q.guards>0 then
             local idle=not q.paused and not q.loop and (q.order~=nil or (not q.current and #q.pending==0))
-            if idle and not q.drain_seen then retire(q) elseif not idle and q.drain_seen then q.drain_seen=nil end
+            if idle and q.drained_plan~=(q.plan_seq or 0) then retire(q) elseif not idle and q.drained_plan then q.drained_plan=nil end
           end
         end
       end
@@ -1767,7 +1935,7 @@ return function(api)
   M.schema={
     queue_status={snapshots='(d29 batch344) true: the snapshots taken when an ammo_below guard on a platform fired (on that tick: the lowest turret, its ammo and rounds, each inserter feeding it with status, held stack, hand settings, pickup and drop, its pickup belt\'s lane counts, power and circuit; the platform\'s leg and speed), newest first, 8 a page (from: next_from); the newest 32 a force kept',snapshot='a snapshot\'s id: that one in full',from='with snapshots: the first row (next_from of the page before)',args='optional true: each history entry with the arguments its step ran with, and loop_done with the finished loop\'s steps (as queue_repeat took them), so a finished plan or loop can be submitted again',history='optional count 0..64 or "all": newest history entries of the plan (default 16; with orders, of all entries, default 3)',pending='optional count 0..128 or "all": next pending steps (default 1)',
       orders='true: the standing orders\' history entries too, every entry in order as it ran (default: the plan last submitted only, the orders\' entries counted in orders_history)',
-      returns='active (the running step in full, running_s: how long it has run), pending (the next step), plan {id, kind submit|repeat, name, submitted_s_ago, steps, done, ok, failed, pending, running}: the plan last submitted (queue_submit or queue_repeat), history (its entries, the newest 16), orders_history (how many entries standing orders left, not listed), pending_count, history_total, last_failure (the plan\'s), waiting, guards, repeating, cycle; a loop with an end: times, rounds_left (after this round), stops_tick; loop_done {name, rounds, reason, tick} once one ended'},
+      returns='guard_control (active reaction guard, priority, exclusive_group, tick, reason), guard_suppressed (newest 8, with suppressor and firing tick), guard_warnings; active (the running step in full, running_s: how long it has run), pending (the next step), plan {id, kind submit|repeat, name, submitted_s_ago, steps, done, ok, failed, pending, running}: the plan last submitted (queue_submit or queue_repeat), history (its entries, the newest 16), orders_history (how many entries standing orders left, not listed), pending_count, history_total, last_failure (the plan\'s), waiting, guards, repeating, cycle; a loop with an end: times, rounds_left (after this round), stops_tick; loop_done {name, rounds, reason, tick} once one ended'},
     queue_repeat={resume_after_direct='optional true: from now on a direct call that pauses this queue resumes it when that call ends, success or failure (not one paused by queue_pause); false: off (the default; queue_resume_after: true on one call does it for that call)',steps='replace the queue with a repeating plan; errors pause it; cancel clear=true removes the loop',interval_ticks='60..36000 pause between cycles; default 1800',expected_revision='optional',
       orders='which standing orders may run in the pause between rounds: triggers (default: orders with when, as they would while you are free), all (the default routine too) or none; an order that runs then finishes before the next round loads (the round waits for it, up to its max_ticks); its hold counts from your own last request, not the round\'s last step; queue_status says orders_between_rounds',
       name='optional 1..32 characters: names the loop in its round lines',
@@ -1776,25 +1944,25 @@ return function(api)
       for_ticks='optional 60..432000: from this call, no round starts at or after that many ticks (a round under way finishes); with times, whichever comes first ends the loop',
       note='a loop that ends (times, for_ticks) leaves the queue empty: history entry loop_done {rounds, reason}, queue_status loop_done, and one team block line under queue ("queue NAME done after N rounds: ...");a round whose steps ran short (out_of_items, nothing_collected, inventory_full, none held, or a short reply) puts one line in the team block (queue: "queue NAME round N: K of M steps short: transfer iron-plate inventory_full x2, ..."), only when it differs from the last round\'s; a step with up_to=true or on_short=skip is left out of it (its history entry says short=true)'},
     queue_submit={resume_after_direct='optional true: from now on a direct call that pauses this queue resumes it when that call ends, success or failure (not one paused by queue_pause); false: off (the default; queue_resume_after: true on one call does it for that call)',steps='array of {action,args,wait?,label?,on_fail?,min_moved?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace|ahead|next|pending: next runs the new steps once right after the active step (which goes on), before the rest of the round or plan (a repeating plan keeps its loop; Opus 06:33); pending replaces the pending steps and keeps the active step and guards (ordinary plans; a repeating plan refuses); omitted refuses nonempty submits into a repeating plan, naming it; replace stops the active step (its history entry: stopped by queue_submit mode=replace; not run again), drops pending steps and guards, and removes a loop; ahead interrupts and restarts an absolute-goal step after the new steps (a wait_ticks resumes after them with its end tick), preserving the loop (other active steps refuse); append explicitly waits behind the current round',start='default true; false: staged: the lane is paused and held in the same call (an active step is stopped and requeued at the head, as queue_pause does), whatever its state was, until queue_resume; direct calls do not resume it (staged says what the lane was). Every reply: state running | paused | paused, held until queue_resume',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them',
-      dry_run='true: check the plan as a submit does (each step\'s numeric arguments against the ranges its action takes when it runs, too) and queue nothing (the queue is left as it is); returns steps, corrected, and the silo cargo the steps would leave: launches [{step, label, silo, cargo (before that launch), kg, min_cargo (lines), platform_now, would_refuse}], silos_after, notes (steps whose item moves are not counted); counted from what you, the chests and the silos hold now through transfer, load_silo and launch steps; world_checks (each platform_schedule step read as the call reads it now: "refused if it ran now:" its own refusal, such as new waits holding now without go: true, and "when it runs:" what a refusal then turns on; the first 4 requests steps on a platform as their dry run: waits_unmet and sends_down; past them named, not read), world_checks_note (the tick; the steps before each are not applied); staging (lines: each item_count wait at one requester or buffer chest whose requests name the item, the chest\'s requests then (its own now, the plan\'s requests steps before it applied): the slots its waits need at once and its requests ask, each item and quality ceil(count / stack size), with what it holds unrequested, against its slots under its bar, and what takes from it), staging_refused (waits that need more slots at once than the chest has while nothing takes from it between them: a submit is refused the same)'},
+      dry_run='true: check the plan as a submit does (each step\'s numeric arguments against the ranges its action takes when it runs, too) and queue nothing (the queue is left as it is); returns steps, corrected, and the silo cargo the steps would leave: launches [{step, label, silo, cargo (before that launch), kg, min_cargo (lines), platform_now, would_refuse}], silos_after, notes (steps whose item moves are not counted); counted from what you, the chests and the silos hold now through transfer, load_silo and launch steps; world_checks (platform_arrived waits name destination stops with no holding wait condition; each platform_schedule step read as the call reads it now: "refused if it ran now:" its own refusal, such as new waits holding now without go: true, and "when it runs:" what a refusal then turns on; the first 4 requests steps on a platform as their dry run: waits_unmet and sends_down; past them named, not read), world_checks_note (the tick; the steps before each are not applied); staging (lines: each item_count wait at one requester or buffer chest whose requests name the item, the chest\'s requests then (its own now, the plan\'s requests steps before it applied): the slots its waits need at once and its requests ask, each item and quality ceil(count / stack size), with what it holds unrequested, against its slots under its bar, and what takes from it), staging_refused (waits that need more slots at once than the chest has while nothing takes from it between them: a submit is refused the same)'},
     queue_edit={active_step='returned: the active step as read after the edit (still the active step, its action running), and that the edit changed pending steps only; a step interrupted while the queue ran reads interrupted in queue_status history with paused_by (what paused it) and, for a build not run again, left_undone {count, positions} and not_requeued',expected_revision='required from queue_status (not with id)',index='1-based pending index',remove='count to remove (with id: default 1, the step itself)',steps='replacement steps (with id: in its place; none: the step is deleted)',
       id='a pending step\'s job id (queue_status pending, "job-12"): edit, delete or move that step; the active step is never touched',to='with id: move that step to this pending place (1-based)',
-      guards='{remove=[guard ids], replace=[{id, when, goto|steps}], add=[guards as queue_submit takes them]} with expected_revision, nothing else: the guards only, all or none; the active step (its wait too) and the pending steps go on, and each guard not named keeps its baseline (platform_loss counts from the tick it did; one replaced or added counts from its since_tick or the edit). Returns revision, guards [{id, until, set_tick, since_tick (platform_loss), baseline, reaction, edit kept|replaced|added}], guard_lines, line'},
+      guards='{remove=[guard ids], replace=[{id, when, goto|steps}], add=[guards as queue_submit takes them]} with expected_revision, nothing else: the guards only, all or none; the active step (its wait too) and the pending steps go on, and each guard not named keeps its baseline (platform_loss counts from the tick it did; one replaced or added counts from its since_tick or the edit; replacement keeps omitted priority and exclusive_group, supplied values replace them, remove and add to clear them). Returns revision, guards [{id, until, set_tick, since_tick (platform_loss), baseline, reaction, edit kept|replaced|added}], guard_lines, line'},
     queue_cancel={clear='default true; false retains pending steps; always cancels active controls and pauses (a running wait_ticks ends here; cancelled_wait says so)',expected_revision='optional'},
     queue_resume={expected_revision='optional'},
     queue_pause={expected_revision='optional',returns='the queue paused by you: the running step stops and goes back to the head of pending; it holds until queue_resume (or a queue_submit or queue_repeat that starts it); direct calls between never resume it (held)'},
     wait_ticks={ticks='1..54000 simulation ticks: a queue step, or a direct timed action (fh call wait_ticks --wait); a queue step that a pause interrupts (a direct call that drives your character, queue_pause, a harness update) keeps its end tick: it ends there, or as the queue resumes if that tick passed while paused, and the steps after it never run sooner (queue_status kept_wait; its history entry kept)',pause_queue=PAUSE_QUEUE,
       wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or teammate\'s mention does by default)',
       wake_from='direct call only: 1..16 names (teammates, or operator; fh --wake-from a,b): only a tell or mention from them ends it',wake_local='direct call only: true (fh --wake-local): only tells and mentions to you, urgent news on your surface or in your claims',wake_on_operator='direct call only: false (fh --no-operator-wake): operator tells and reminder jobs do not end it',wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},
-    wait_until={n='launches_at_least (d29 batch346): 1..100000 rockets to the platform, launched + loaded, met at it',window='launches_at_least: seconds back from now, 1..86400 (or since_tick)',origin='launches_at_least: optional planet: only rockets from there and the silos there (default every planet)',turnaround='budget_below (d29 batch329): the turn as platform_endurance\'s turnaround ({km | fraction, back_to?, speed_floor?, margin?, reserve?})',km='budget_below: met once the item that binds first can go out less than this many km farther (its return budget read every 10 s; facts, nothing changed; a remote and platform lane wait and guard too, inside all/any)',tick='tick_at_least: a whole game tick, up to 6 game hours (1296000 ticks) ahead: met once the game reaches it (one passed already: at the first check); a pause, resume or requeue never moves it',names='platform_loss: optional 1..16 entity names: only losses of those',entity_names='platform_hit: optional 1..16 entity names: only hits on those',from='platform_progress: optional planet or space location the leg starts from, in the direction it flies',counter_from='produced: optional, with one machine (position): its products-finished count to count from instead of its count at the wait\'s first check (assembler_batch passes the count it read when it planned)',to='platform_progress: optional planet or space location the leg goes to',damage='platform_hit (platform_damage): met once the hits since the baseline sum this much damage (repaired or not); with at_least, whichever is reached first',fraction='health_*: 0..1; damaged: our buildings under this health fraction (default 1: any damage); platform_energy_below: met while the platform\'s accumulators together hold under this share of their capacity (0.3: under 30%)',since_tick='platform_loss, platform_hit, platform_foundation_loss: optional game tick the losses, hits or lost tiles count from (default the wait\'s or guard\'s first check); pod_landed: optional whole game tick 0..now: pods whose cargo was delivered after it count, from the pod ledger (default the wait\'s first check, which a held or requeued step keeps); platform_left: a departure from location logged at or after it counts (default: in a queue, the tick the step before it in the same plan began, so a platform_schedule step that sent it off counts; else its first check); launches_at_least: rockets sent after it count (or window)',level='researched, a technology with levels (an infinite one too): met once level N is researched (its level reads past N); default: the level it was on when the wait began, so the next level done meets it',drop_id='pod_landed: one drop\'s number (drop and drops give it): met once it has landed',last_drop='pod_landed: true: the platform\'s latest drop when the wait begins, met once it has landed',quality='item_count and platform_ammo_below: the quality counted (normal, uncommon, rare, epic, legendary), or "any" for every quality summed; the item\'s name alone counts normal quality only. pod_landed with item: that quality only (default every quality). No other condition takes it',['until']='no_enemy_structures|no_enemies|units_clear (enemy units only, as no_enemies counts them: worms and spawners stay)|turrets_idle|ammo_below|health_below|health_above|item_count|pod_landed (platform, item?, quality?, at_least?, since_tick?, location?: pods sent down from it that landed and whose cargo was delivered (about 80 ticks after the landing; saw counts the pods landed, cargo not delivered yet) since since_tick or the wait began, from the pod ledger (its last 1000 journeys a planet): pods, or with item how many of it; default 1; saw names the start tick; a held or requeued wait keeps its start)|spoil_within (position, seconds 1..3600, item?: the assembler or furnace there, met when its input\'s first stack of item, or any, spoils or hatches within seconds)|fluid_count (platform, fluid, at_least|below: the fluid in every tank, pipe, thruster and machine of ours there; saw says each kind)|circuit_signal (platform, signal, at_least|below: the hub\'s red and green wires; a hub with no wire reads every signal as 0, as the game\'s own circuit conditions do: below is met, and a guard at_least over 0 is refused there)|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss (platform, at_least?, names?, since_tick?: our entities on that platform destroyed since the wait or guard began (since_tick, default its first check), at_least of them (default 1), of names when given; saw names each with where, by what and when; a remote lane wait and guard too)|platform_hit (platform, at_least?, entity_names?, since_tick?: hits on our entities on that platform by anything not of our force (asteroids, enemies) since the wait or guard began (since_tick, default its first check), at_least of them (default 1), on entity_names when given; or damage: the hits\' damage summed, repaired or not; read only; saw names the first hits: entity, where, damage, by what, when, and a fired guard keeps them as its evidence (queue history); a remote lane wait and guard too: it fires on the first hit, before anything is lost; platform_damage is its other name)|platform_foundation_loss (platform, at_least?, since_tick?: foundation tiles of that platform destroyed since the wait or guard began (since_tick, default its first check), at_least of them (default 1): the hub\'s rebuilds of tiles on ghosts no one placed (a tile lost and rebuilt between checks counts), and the foundation ghosts no one placed aboard (a find at most once a second while it is checked; ghosts there at its first find not counted); floor placed by an agent or a player (the ghost log, the game\'s last user), hand-laid, mined or deconstructed is not counted; saw names each tile: where, the tick its ghost was first seen and the find before it, the tick it was rebuilt, and a fired guard keeps them as its evidence (queue history); a remote lane wait and guard too)|platform_energy_below (platform, fraction: the platform\'s accumulators together hold under that share of what they can hold, as their GUIs show; a remote lane wait and guard too)|platform_progress (platform, at_least: 0..1, from?, to?: the share of its leg flown, as the platforms read shows it, in the direction it flies; met at at_least on the leg asked only (a return leg, another leg or a stop is not, saw says why); a fired guard keeps the progress and leg as its evidence; a remote lane wait and guard too)|launches_at_least (platform, n, window | since_tick, origin?: the rockets sent up to that platform in the last window seconds or since since_tick, from origin or any planet: launched (the pod log\'s rockets, its last 1000 journeys a planet: landed, in flight) + loaded (silos with a rocket ready whose request target is that platform: launched next), met once they reach n; saw and a fired guard\'s evidence give each count; read only, counted every 1 s: the harness stops nothing, so a cap is your own guard whose steps act as you choose (e.g. a requests step on the platform\'s section), and an override is removing or re-arming that guard; a remote and platform lane wait and guard too)|tick_at_least (tick: met once the game reaches that tick, at the first check if it passed; nothing restarts it; with no timeout given a wait runs to its tick (a direct call up to 54000 ticks); in any it bounds the wait; a remote and platform lane wait and guard too)|all|any (silo_parts is rocket_parts; all: conditions=[...], met when every one holds; any: conditions=[...], met when one holds, matched names it; queue_done is a sleep\'s); a queue step, a standing order\'s when, a queue guard\'s when, or a direct timed action (fh call wait_until --wait): outcomes met | timed_out | failed; status/last show saw, wait_estimates (ETA/rate basis or no_estimate), idle_s (character idle seconds in this wait), wait_line (one line)',
-      position='area predicates: centre (default character); rocket_ready: the rocket silo (any tile of it), met when its rocket is built and ready to launch (saw: rocket state, parts, cargo); rocket_parts: the silo, met when the rocket being built has at_least parts (default all of them; a built rocket, rising or ready, has all of them; while one launches, the next one\'s count; saw: rocket parts N/50 and the silo line)',area='platform_ammo_below: one {left_top,right_bottom} aboard (up to 1024x1024): what each place in it holds, the hub when it stands in it; ammo_below/fuel_below: {left_top,right_bottom} up to 256x256, excludes position/radius (ammo_below with platform: platform coordinates); fluid_count with surface: the tanks, pipes and machines of ours in it',radius='1..256 (default 32)',count='ammo_below: per-turret ammo items; fuel_below: fuel items per burner machine (furnaces, drills, boilers, burner inserters, ...); platform_ammo_below: 1..1000000, met while the platform holds fewer of item in all',
-      max_age='platform_ammo_below: optional 30..900 seconds (default 120): a background reading older than this meets it, as does none by then after the first check (a stale reading counts as below)',loop='platform_ammo_below: optional {x,y} of a belt aboard: count only the belts joined to it (end to end, splitters, undergrounds, linked belts), the inserters taking from them and the ammo turrets those fill (area: an area aboard instead; neither: the whole platform)',
-      fluid='fluid_count: the fluid, e.g. thruster-fuel',signal='circuit_signal: the signal, an item, fluid or virtual signal name such as signal-A',conditions='all: 1..8 plain wait_until conditions (each {until, ...}), met when every one holds; any: 1..8, met when one holds (each read every check; saw names the first that holds, #N, then the others; the reply and the step\'s history give matched {index, until, saw})',item='item_count; produced (optional); platform_ammo_below: an ammunition item, counted aboard in all (hub, turret slots, belts, inserter hands, machine outputs, chests) from a reading kept in the background (a pass begun every 30 s while a check asks; saw gives each place and the reading\'s age)',platform_built='platform (name): met when no tile ghost (foundation) is left on it; entities: true also no entity ghost; saw: platform NAME: N tile ghosts left (, M entity ghosts); a remote and platform lane wait. With positions (1..512 {x,y}), area and/or tiles (an area or a list), as platform_plan ready takes them: only the entity ghosts at those positions and in area, and the tile ghosts in tiles (platform_ready is the same)',tiles='platform_built/platform_ready: an area or a list: the tile ghosts in them',platform_ready='platform (name): met when no ghost is left on it, entity or tile (entities: false: tiles only); with positions, area, tiles (platform_plan ready\'s subset): when none of those ghosts is left; saw counts the ghosts left; a remote and platform lane wait',entities='platform_built: true also waits for no entity ghost on the platform (default: tile ghosts only); platform_ready: false waits for the tile ghosts only (default: entity ghosts too)',produced='positions (or position): 1..64 machines of ours (surface: on that planet by remote view, in chunks our force has charted; a remote lane wait too); met when they made at_least items of item (crafts times what the recipe makes of it per craft; without item: crafts) since the wait began, by the products-finished counter each machine\'s GUI shows; a wait_until step or a direct wait only (a guard, an order\'s when or a loop condition refuses); saw: made N item (K crafts) in M machines since the wait began. A machine gone from its tile (mined, destroyed, replaced) or whose recipe changed since the wait began fails it, naming the machine',at_least='item_count; produced; rocket_parts: parts 1..required; ghosts_waiting: ghosts (entity and tile) in the area, or with platform on that platform (every ghost aboard, or in area: platform coordinates; a remote lane wait and guard too) (default 1); platform_loss: losses (default 1); platform_hit: hits (default 1); platform_foundation_loss: foundation tiles destroyed, 1..1000 (default 1); platform_progress: the share of the leg flown, over 0 and up to 1 (required)',below='item_count',positions='ammo_below with platform: 1..64 {x,y} of its ammo turrets (platform coordinates), or with surface: its ammo turrets on that planet. fluid_count with surface: 1..64 {x,y} of our tanks, pipes and machines there. item_count: 1..64 {x,y} of our entities (chests, machines) to count in, summed over all their inventories (a rocket silo\'s rocket cargo too; saw adds each silo\'s rocket state and cargo: the rocket is no item, the item rocket is ammunition); default the character\'s inventory',technology='researched',surface='produced, ammo_below, fuel_below, fluid_count (d20 batch62 X3): a planet (nauvis, ...): our machines, turrets, burners, or tanks, pipes and machines there by remote view, in chunks our force has charted, at position (with radius), positions or area there (produced: position or positions; fluid_count: positions or area); a remote lane wait too. rocket_ready, rocket_parts: the planet the silo stands on (default your own), read by remote view in a chunk our force has charted; a remote lane wait too. item_count: a planet (nauvis, ...): with positions, the chests there on that surface (those not in sight of our force now are not counted, said so); alone, what our logistic networks there hold (all of them); with network, that network there; queues in the remote lane too',network='item_count: {x,y}: the one logistic network covering that spot, what it holds as its GUI shows (surface: on that planet)',seconds='spoil_within: 1..3600, met when the input\'s first stack spoils or hatches within that many seconds',platform='ammo_below: the ammo turrets on that platform of ours (every one, or those at positions or in area, platform coordinates), as their GUIs show them; met when one holds under count; saw names the lowest turret and what it holds; a remote lane wait and guard too. item_count: count landed items in the named platform hub main inventory (not incoming cargo or hub trash); no positions or surface; platform_arrived, platform_left: a platform of ours by name; platform_arrived is met while it is stopped at a space location (the platform list shows it there, not on its path or a route); platform_left while it is not (Gemini, 16:50: departure); launches_at_least: the platform the rockets go to, by name',location='platform_arrived, platform_left: optional planet name; default any stop. pod_landed: only pods landed on that planet count (default every planet; saw names those landed elsewhere)',timeout='ticks 1..54000 (default 3600; fh call wait_until --wait takes it from --wait-timeout); timing out fails the step (timed_out)',on_timeout='a queue step only: "hold": on timing out the step stays first in pending and the queue pauses with it (history: timed_out, held; paused_why names the condition still unmet and what it saw); queue_resume waits for it again with a fresh timeout. "fail" (default): the step fails and follows on_fail. In a standing order\'s run it fails as before',
+    wait_until={damaged='platform: current damaged entities below fraction (default 1) or hp (absolute HP); either threshold when both supplied. Whole hull, or positions (1..64, footprint) or area (centres, at most 1024x1024). Fresh HP each check; healed entities no longer match. saw and evidence.platform_health: read_tick, count and worst 10 entities (health, max_health, name, unit_number, position, fraction), lowest fraction first (HP when only hp). Body, remote and platform lanes, guards and all/any. Missing positions are read errors; losses, empty guns and feed failures remain separate; no clean qualification.',hp='damaged with platform: absolute HP threshold, strict below, damaged entities only',name='entity_quality: optional entity prototype name at position',entity_quality='position, quality (exact), optional name, platform or surface: a built entity at that point reaches that quality; ghosts and upgrade marks do not satisfy it; uses current sight as upgrade does',above='platform_speed_above: required 0..1e9 km/s, strict greater than; LuaSpacePlatform.speed (km/tick) times 60; live each check; missing speed is a read error',for_s='platform_speed_above: sustained sampled duration 0..86400 game seconds (default 0); a reading at or below above, an unreadable speed or a sample gap over max_age resets duration; saw and guard evidence give speed_kms and tick',inventory_free_slots='platform hub, container or cargo landing pad main inventory (surface optional); trash excluded; submit/dry_run checks the target now; below/at_least whole free slots; live each check, all qualities, cargo-bay capacity, below the bar. saw: occupied/free/total, capacity/barred, read_tick; filtered empty slots included; excludes cargo in flight; inbound reserved slots unavailable in 2.0.77. Missing target: read error (wait fails; guard stays armed). No cached/stale reading; waits and guards, body/remote/platform lanes',missing='budget_below with windows: "binding" (default, conservative) or "pending" (neither binds nor clears); pending gives the eligibility tick, or unknown when no baseline exists; same level as windows/require',windows='budget_below: optional distinct list of 60, 180, 300, 600 (seconds), and/or "leg"; full same-leg data only, no shorter fallback; each measured NET is named in saw',require='budget_below with windows: "all" (default) or a count 1..number of windows; met when one same item binds under km in that many windows; may instead be inside turnaround with windows/missing',n='launches_at_least (d29 batch346): 1..100000 rockets to the platform, launched + loaded, met at it',window='launches_at_least: seconds back from now, 1..86400 (or since_tick)',origin='launches_at_least: optional planet: only rockets from there and the silos there (default every planet)',turnaround='budget_below (d29 batch329): the turn as platform_endurance\'s turnaround ({km | fraction, back_to?, speed_floor?, margin?, reserve?})',km='budget_below: met once the item that binds first can go out less than this many km farther (its return budget read every 10 s; facts, nothing changed; a remote and platform lane wait and guard too, inside all/any)',tick='tick_at_least: a whole game tick, up to 6 game hours (1296000 ticks) ahead: met once the game reaches it (one passed already: at the first check); a pause, resume or requeue never moves it',names='platform_loss: optional 1..16 entity names: only losses of those',entity_names='platform_hit: optional 1..16 entity names: only hits on those',from='platform_progress: optional planet or space location the leg starts from, in the direction it flies',counter_from='produced: optional, with one machine (position): its products-finished count to count from instead of its count at the wait\'s first check (assembler_batch passes the count it read when it planned)',to='platform_progress: optional planet or space location the leg goes to',damage='platform_hit (platform_damage): met once the hits since the baseline sum this much damage (repaired or not); with at_least, whichever is reached first',fraction='health_*: 0..1; damaged: our buildings under this health fraction (default 1: any damage); platform_energy_below: met while the platform\'s accumulators together hold under this share of their capacity (0.3: under 30%)',since_tick='platform_arrived: logged arrival at or after it counts even after departure (default wait start); platform_loss, platform_hit, platform_foundation_loss: optional game tick the losses, hits or lost tiles count from (default the wait\'s or guard\'s first check); pod_landed: optional whole game tick 0..now: pods whose cargo was delivered after it count, from the pod ledger (default the wait\'s first check, which a held or requeued step keeps); platform_left: a departure from location logged at or after it counts (default: in a queue, the tick the step before it in the same plan began, so a platform_schedule step that sent it off counts; else its first check); launches_at_least: rockets sent after it count (or window)',level='researched, a technology with levels (an infinite one too): met once level N is researched (its level reads past N); default: the level it was on when the wait began, so the next level done meets it',drop_id='pod_landed: one drop\'s number (drop and drops give it): met once it has landed',last_drop='pod_landed: true: the platform\'s latest drop when the wait begins, met once it has landed',quality='entity_quality: required exact quality; item_count and platform_ammo_below: the quality counted (normal, uncommon, rare, epic, legendary), or "any" for every quality summed; the item\'s name alone counts normal quality only. pod_landed with item: that quality only (default every quality). No other condition takes it',['until']='entity_quality|no_enemy_structures|no_enemies|units_clear (enemy units only, as no_enemies counts them: worms and spawners stay)|turrets_idle|ammo_below|health_below|health_above|inventory_free_slots|item_count|pod_landed (platform, item?, quality?, at_least?, since_tick?, location?: pods sent down from it that landed and whose cargo was delivered (about 80 ticks after the landing; saw counts the pods landed, cargo not delivered yet) since since_tick or the wait began, from the pod ledger (its last 1000 journeys a planet): pods, or with item how many of it; default 1; saw names the start tick; a held or requeued wait keeps its start)|spoil_within (position, seconds 1..3600, item?: the assembler or furnace there, met when its input\'s first stack of item, or any, spoils or hatches within seconds)|fluid_count (platform, fluid, at_least|below: the fluid in every tank, pipe, thruster and machine of ours there; saw says each kind)|circuit_signal (platform, signal, at_least|below: the hub\'s red and green wires; a hub with no wire reads every signal as 0, as the game\'s own circuit conditions do: below is met, and a guard at_least over 0 is refused there)|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss (platform, at_least?, names?, since_tick?: our entities on that platform destroyed since the wait or guard began (since_tick, default its first check), at_least of them (default 1), of names when given; saw names each with where, by what and when; a remote lane wait and guard too)|platform_hit (platform, at_least?, entity_names?, since_tick?: hits on our entities on that platform by anything not of our force (asteroids, enemies) since the wait or guard began (since_tick, default its first check), at_least of them (default 1), on entity_names when given; or damage: the hits\' damage summed, repaired or not; read only; saw names the first hits: entity, where, damage, by what, when, and a fired guard keeps them as its evidence (queue history); a remote lane wait and guard too: it fires on the first hit, before anything is lost; platform_damage is its other name)|platform_foundation_loss (platform, at_least?, since_tick?: foundation tiles of that platform destroyed since the wait or guard began (since_tick, default its first check), at_least of them (default 1): the hub\'s rebuilds of tiles on ghosts no one placed (a tile lost and rebuilt between checks counts), and the foundation ghosts no one placed aboard (a find at most once a second while it is checked; ghosts there at its first find not counted); floor placed by an agent or a player (the ghost log, the game\'s last user), hand-laid, mined or deconstructed is not counted; saw names each tile: where, the tick its ghost was first seen and the find before it, the tick it was rebuilt, and a fired guard keeps them as its evidence (queue history); a remote lane wait and guard too)|platform_energy_below (platform, fraction: the platform\'s accumulators together hold under that share of what they can hold, as their GUIs show; a remote lane wait and guard too)|platform_progress (platform, at_least: 0..1, from?, to?: the share of its leg flown, as the platforms read shows it, in the direction it flies; met at at_least on the leg asked only (a return leg, another leg or a stop is not, saw says why); a fired guard keeps the progress and leg as its evidence; a remote lane wait and guard too)|launches_at_least (platform, n, window | since_tick, origin?: the rockets sent up to that platform in the last window seconds or since since_tick, from origin or any planet: launched (the pod log\'s rockets, its last 1000 journeys a planet: landed, in flight) + loaded (silos with a rocket ready whose request target is that platform: launched next), met once they reach n; saw and a fired guard\'s evidence give each count; read only, counted every 1 s: the harness stops nothing, so a cap is your own guard whose steps act as you choose (e.g. a requests step on the platform\'s section), and an override is removing or re-arming that guard; a remote and platform lane wait and guard too)|tick_at_least (tick: met once the game reaches that tick, at the first check if it passed; nothing restarts it; with no timeout given a wait runs to its tick (a direct call up to 54000 ticks); in any it bounds the wait; a remote and platform lane wait and guard too)|all|any (silo_parts is rocket_parts; all: conditions=[...], met when every one holds; any: conditions=[...], met when one holds, matched names it; queue_done is a sleep\'s); a queue step, a standing order\'s when, a queue guard\'s when, or a direct timed action (fh call wait_until --wait): outcomes met | timed_out | failed; status/last show saw, wait_estimates (ETA/rate basis or no_estimate), idle_s (character idle seconds in this wait), wait_line (one line)',
+      position='circuit_signal: entity on the platform (default hub); combinators read input connectors; area predicates: centre (default character); rocket_ready: the rocket silo (any tile of it), met when its rocket is built and ready to launch (saw: rocket state, parts, cargo); rocket_parts: the silo, met when the rocket being built has at_least parts (default all of them; a built rocket, rising or ready, has all of them; while one launches, the next one\'s count; saw: rocket parts N/50 and the silo line)',area='platform_ammo_below: one {left_top,right_bottom} aboard (up to 1024x1024): what each place in it holds, the hub when it stands in it; ammo_below/fuel_below: {left_top,right_bottom} up to 256x256, excludes position/radius (ammo_below with platform: platform coordinates); fluid_count with surface: the tanks, pipes and machines of ours in it',radius='1..256 (default 32)',count='ammo_below: per-turret ammo items; fuel_below: fuel items per burner machine (furnaces, drills, boilers, burner inserters, ...); platform_ammo_below: 1..1000000, met while the platform holds fewer of item in all',
+      max_age='platform_speed_above: maximum gap between samples, 1/60..900 seconds (default 1); speed itself is read live, never cached. platform_ammo_below: 30..900 seconds (default 120), age from the pass start; saw gives reading tick, age, max_age and refresh_pending',on_stale='platform_ammo_below: "met" (default) | "wait" for an old reading or none past max_age after the first check; wait is unmet until a fresh reading is below count; both request the existing background pass; wait timeout unchanged; guards too',loop='platform_ammo_below: optional {x,y} of a belt aboard: count only the belts joined to it (end to end, splitters, undergrounds, linked belts), the inserters taking from them and the ammo turrets those fill (area: an area aboard instead; neither: the whole platform)',
+      fluid='fluid_count: the fluid, e.g. thruster-fuel',wire='circuit_signal: red | green | both (default; red+green, green+red, spaces and case accepted); explicit selections require every selected network',signal='circuit_signal: the signal, an item, fluid or virtual signal name such as signal-A',conditions='all: 1..8 plain wait_until conditions (each {until, ...}), met when every one holds; any: 1..8, met when one holds (each read every check; saw names the first that holds, #N, then the others; the reply and the step\'s history give matched {index, until, saw})',item='item_count; produced (optional); platform_ammo_below: an ammunition item, counted aboard in all (hub, turret slots, belts, inserter hands, machine outputs, chests) from a reading kept in the background (a pass begun every 30 s while a check asks; saw gives each place and the reading\'s age)',platform_built='platform (name): met when no tile ghost (foundation) is left on it; entities: true also no entity ghost; saw: platform NAME: N tile ghosts left (, M entity ghosts); a remote and platform lane wait. With positions (1..512 {x,y}), area and/or tiles (an area or a list), as platform_plan ready takes them: only the entity ghosts at those positions and in area, and the tile ghosts in tiles (platform_ready is the same)',tiles='platform_built/platform_ready: an area or a list: the tile ghosts in them',platform_ready='platform (name): met when no ghost is left on it, entity or tile (entities: false: tiles only); with positions, area, tiles (platform_plan ready\'s subset): when none of those ghosts is left; saw counts the ghosts left; a remote and platform lane wait',entities='platform_built: true also waits for no entity ghost on the platform (default: tile ghosts only); platform_ready: false waits for the tile ghosts only (default: entity ghosts too)',produced='positions (or position): 1..64 machines of ours (surface: on that planet by remote view, in chunks our force has charted; a remote lane wait too); met when they made at_least items of item (crafts times what the recipe makes of it per craft; without item: crafts) since the wait began, by the products-finished counter each machine\'s GUI shows; a wait_until step or a direct wait only (a guard, an order\'s when or a loop condition refuses); saw: made N item (K crafts) in M machines since the wait began. A machine gone from its tile (mined, destroyed, replaced) or whose recipe changed since the wait began fails it, naming the machine',at_least='item_count; produced; rocket_parts: parts 1..required; ghosts_waiting: ghosts (entity and tile) in the area, or with platform on that platform (every ghost aboard, or in area: platform coordinates; a remote lane wait and guard too) (default 1); platform_loss: losses (default 1); platform_hit: hits (default 1); platform_foundation_loss: foundation tiles destroyed, 1..1000 (default 1); platform_progress: the share of the leg flown, over 0 and up to 1 (required)',below='item_count',positions='ammo_below with platform: 1..64 {x,y} of its ammo turrets (platform coordinates), or with surface: its ammo turrets on that planet. fluid_count with surface: 1..64 {x,y} of our tanks, pipes and machines there. item_count: 1..64 {x,y} of our entities (chests, machines) to count in, summed over all their inventories (a rocket silo\'s rocket cargo too; saw adds each silo\'s rocket state and cargo: the rocket is no item, the item rocket is ammunition); default the character\'s inventory',technology='researched',surface='produced, ammo_below, fuel_below, fluid_count (d20 batch62 X3): a planet (nauvis, ...): our machines, turrets, burners, or tanks, pipes and machines there by remote view, in chunks our force has charted, at position (with radius), positions or area there (produced: position or positions; fluid_count: positions or area); a remote lane wait too. rocket_ready, rocket_parts: the planet the silo stands on (default your own), read by remote view in a chunk our force has charted; a remote lane wait too. item_count: a planet (nauvis, ...): with positions, the chests there on that surface (those not in sight of our force now are not counted, said so); alone, what our logistic networks there hold (all of them); with network, that network there; queues in the remote lane too',network='item_count: {x,y}: the one logistic network covering that spot, what it holds as its GUI shows (surface: on that planet)',seconds='spoil_within: 1..3600, met when the input\'s first stack spoils or hatches within that many seconds',platform='ammo_below: the ammo turrets on that platform of ours (every one, or those at positions or in area, platform coordinates), as their GUIs show them; met when one holds under count; saw names the lowest turret and what it holds; a remote lane wait and guard too. item_count: count landed items in the named platform hub main inventory (not incoming cargo or hub trash); no positions or surface; platform_arrived, platform_left: a platform of ours by name; platform_arrived is met while it is stopped at a space location (the platform list shows it there, not on its path or a route); platform_left while it is not (Gemini, 16:50: departure); launches_at_least: the platform the rockets go to, by name',location='platform_arrived, platform_left: optional planet name; default any stop. pod_landed: only pods landed on that planet count (default every planet; saw names those landed elsewhere)',timeout='ticks 1..54000; in lane platform:NAME only, platform_arrived or platform_progress: 1..17280000 (80 game hours). Default 3600 unchanged; longer arrival waits give ETA for the current flight leg only; fh call wait_until --wait takes it from --wait-timeout; timing out fails the step (timed_out)',on_timeout='a queue step only: "hold": on timing out the step stays first in pending and the queue pauses with it (history: timed_out, held; paused_why names the condition still unmet and what it saw); queue_resume waits for it again with a fresh timeout. "fail" (default): the step fails and follows on_fail. In a standing order\'s run it fails as before',
       checked='every 10 ticks; enemies count only if known from the chart (units only in visible chunks)',pause_queue=PAUSE_QUEUE,
       wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or teammate\'s mention does by default)',
       wake_from='direct call only: 1..16 names (teammates, or operator; fh --wake-from a,b): only a tell or mention from them ends it',wake_local='direct call only: true (fh --wake-local): only tells and mentions to you, urgent news on your surface or in your claims',wake_on_operator='direct call only: false (fh --no-operator-wake): operator tells and reminder jobs do not end it',wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},
     step_options={min_moved='transfer steps only, integer 1..10000, wait=true: require at least this many reported items moved after completion; otherwise on_fail applies, even with up_to=true or on_short=skip; missing moved count is unknown and fails; no rollback',label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it; the label is on a later step of the list, or a step pending behind it with mode next or ahead: a submit and its dry run refuse one on no such step); a place_ghosts or build step with failed entries (build all=true) fails: reason "place_ghosts: N entries failed (K placed); first: #i NAME (x,y): why", entries_failed N, the entries placed stay',on_short='skip: a step that runs short (out_of_items, nothing_collected, inventory_full, or no item held to give) counts as done (history: short=true) and the plan goes on; up_to=true in a transfer, collect or feed step does the same'},
-    guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the lane is not paused (every tick once a tick_at_least in its when is reached); each fires once, stops the running step; each has an id (guard-N) and set_tick (queue_status guards); queue_edit guards adds, removes or replaces them by id without touching the plan; scope: "plan" (default) retires the guard in the tick the lane has no step left (none running or pending, no repeating plan), with a guards_retired history row and a team block line; "standing" keeps it armed until it fires, is removed or the queue is cancelled (guards set before scopes existed are standing); queue_status guards_after_plan names guards armed with no step left; a guard whose when is tick_at_least (alone or in any) fires at its tick on a remote or platform lane even while it is paused or held, and its steps or goto run then; a guard whose read fails stays armed, read again at each check, said once (a guard_error history row and a team block line; queue_status guards read_error)',max=MAX_GUARDS}
+    guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the lane is not paused (every tick once a tick_at_least in its when is reached); each fires once, stops the running step; each has an id (guard-N) and set_tick (queue_status guards); queue_edit guards adds, removes or replaces them by id without touching the plan; scope: "plan" (default) retires the guard in the tick the lane has no step left (none running or pending, no repeating plan), with a guards_retired history row and a team block line; "standing" keeps it armed until it fires, is removed or the queue is cancelled (guards set before scopes existed are standing); queue_status guards_after_plan names guards armed with no step left; a guard whose when is tick_at_least (alone or in any) fires at its tick on a remote or platform lane even while it is paused or held, and its steps or goto run then; a guard whose read fails stays armed, read again at each check, said once (a guard_error history row and a team block line; queue_status guards read_error). Optional priority: finite number, higher takes precedence; exclusive_group: 1..64 bytes, limits comparisons to that group within the lane (either guard ungrouped means lane-wide). While a prioritized reaction has active or pending steps, a met guard with a lower explicit priority in the same scope is consumed as suppressed, without stopping or replacing those steps. Equal priorities or either priority omitted keep existing behavior. Different explicit groups keep replacement behavior. Protection ends when those steps finish or are removed; pause/requeue retains it, direct queue edits/cancel remain explicit overrides. queue_status guard_control gives guard, priority, group, firing tick and reason; guard_suppressed keeps the newest 8 suppressions, also in guard_suppressed history rows. Submit and dry_run guard_warnings name differing reactions with no priorities.',max=MAX_GUARDS}
   }
   return M
 end

@@ -28,7 +28,11 @@ from director import Director  # noqa: E402
 from onecam import OneCam, onair_doing, onair_info  # noqa: E402
 from segments import Segments  # noqa: E402
 from replays import Replays  # noqa: E402
+from shift_recap_camera import cue as recap_camera, on_air as recap_on_air
+from shift_phase import facts as shift_facts
+from target_countdown import facts as target_facts
 from model import Model  # noqa: E402
+from overlay_health import OverlayHealth
 import router  # noqa: E402
 
 STATIC = os.path.join(HERE, "static")
@@ -101,19 +105,29 @@ class AudioHub:
     EARLY_S = 0.5
     WINDOW = 3600.0
 
-    def __init__(self, log_path=None):
+    def __init__(self, log_path=None, require_capture=False):
         self.cond = threading.Condition()
         self.clips = {}  # id -> (bytes, ctype, meta)
         self.order = []
         self.seq = 0
+        self.clip_epoch = f"{time.time_ns():x}"  # distinct across service restarts, even within the same second
         self.playing = {}  # id -> {meta, started}
         self.done = set()  # ids started, ended, skipped or cancelled (not queued any more)
         self.skipped = set()  # ids whose skip was logged (two pages report each)
+        self.cancelled = set()
         self.listeners = 0
         self.last_report = None
         self.log_path = log_path
         self.ended = deque()  # (t, row) of the last hour's ends: {id, channel, speaker, agent, state, played, duration, early, reason}
         self.loads = deque()  # times the page loaded
+        self.receipts = deque(maxlen=2000)
+        self.completed = set()
+        self.speech_owner = None
+        self.speech_revision = 0
+        self.held = {}  # clip id -> hold start; kept by the service across page reloads
+        self.capture_session = None
+        self.require_capture = require_capture
+        self.capture_receipt = False
         # (d29 batch347 OR) each page's event streams by its name (/events?page=main|portrait): open now, the last
         # connect and the last write, for tools/overlay_check.py (shift100: the main overlay blank 26 min after a start)
         self.pages = {}
@@ -141,8 +155,16 @@ class AudioHub:
                 self.loads.append(r["t"])
             elif r.get("ended"):
                 self.ended.append((r["t"], r))
+            if r.get("id"):
+                self.receipts.append(r)
+                if r.get("completed"):
+                    self.completed.add(r["id"])
 
     def _log(self, row):
+        if row.get("id"):
+            row.setdefault("session", self.capture_session)
+            row.update(page="main", capture=self.capture_receipt)
+            self.receipts.append(dict(row))
         if not self.log_path:
             return
         try:
@@ -151,20 +173,28 @@ class AudioHub:
         except OSError:
             pass
 
-    def _end(self, cid, v, state, now, played=None, duration=None, reason=None):
+    def _end(self, cid, v, state, now, played=None, duration=None, reason=None, audible=None):
         """A clip's end: how long it played against its length, logged and counted (caller holds the lock)."""
+        measured = played is not None
         length = duration if duration is not None else v.get("audio_s") or v.get("duration")
         if state == "no_end":  # how long it played is not known: the page never said
             played = None
-        elif not played:  # no page measure (or an audio clock that did not move): the time between its reports
+        elif played is None:  # legacy diagnostic estimate, never evidence of audible completion
             played = round(now - v["started"], 2)
-        early = state in ("cut", "error", "reload", "no_end") or (length is not None and played < float(length) - self.EARLY_S)
+        early = state in ("cut", "held", "error", "reload", "no_end") or (length is not None and played < float(length) - self.EARLY_S)
         if state == "end" and early:
             reason = "short_end"
         row = {"t": round(now, 2), "id": cid, "ended": True, "state": state, "channel": v.get("channel"), "speaker": v.get("speaker"),
                "agent": v.get("agent"), "played": round(float(played), 2) if played is not None else None,
                "duration": round(float(length), 2) if length is not None else None,
-               "early": bool(early), "reason": (reason or state) if early else None}
+               "early": bool(early), "reason": (reason or state) if early else None,
+               "session": v.get("session", self.capture_session)}
+        row["audible"] = audible is True
+        row["completed"] = state == "end" and not early and audible is True and measured and bool(length) and played > 0
+        if v.get("recap"):
+            row["recap"] = v["recap"]  # durable line completion, recoverable by the successor service
+        if row["completed"]:
+            self.completed.add(cid)
         self.ended.append((now, row))
         self._log(row)
 
@@ -201,26 +231,95 @@ class AudioHub:
     def push(self, meta, audio, ctype):
         with self.cond:
             self.seq += 1
-            cid = f"{int(time.time())}-{self.seq}"
+            cid = f"{self.clip_epoch}-{self.seq}"
             meta = dict(meta, id=cid, url=f"/audio/clip/{cid}", t=time.time())
             meta["expires"] = meta["t"] + float(meta.pop("expires_in", 30))
             if isinstance(meta.get("at"), (int, float)):  # a scheduled clip: never expires before its moment
                 meta["expires"] = max(meta["expires"], float(meta["at"]) + 5)
             self.clips[cid] = (audio, ctype, meta)
             self.order.append(cid)
+            if self.speech_owner and meta.get("channel") != "control" and not self.owns(meta):
+                self.held[cid] = meta["t"]
             while len(self.order) > self.MAX_CLIPS:
                 gone = self.order.pop(0)
                 self.clips.pop(gone, None)
                 self.done.discard(gone)
                 self.skipped.discard(gone)
+                self.cancelled.discard(gone)
+                self.held.pop(gone, None)
             self.cond.notify_all()
             return meta
 
-    def cancel(self, cid):
-        """POST /audio/cancel {id}: a clip not started yet is taken back; the page drops it (a `cancel` event)."""
+    def owns(self, meta):
+        return (meta.get("segment") or {}).get("id") == self.speech_owner
+
+    def ownership(self):
+        return {"speech_owner": self.speech_owner, "speech_revision": self.speech_revision,
+                "speech_epoch": self.clip_epoch}
+
+    def acquire_speech(self, segment):
+        """Claim before preparing/posting the first recap line, including clips already in the browser."""
         with self.cond:
-            if cid not in self.clips or cid in self.done:
+            if self.speech_owner == segment:
+                return
+            self.speech_owner = segment
+            self.speech_revision += 1
+            now = time.time()
+            for cid, (_, _, m) in self.clips.items():
+                if (m.get("channel") != "control" and not self.owns(m)
+                        and (cid not in self.done or cid in self.playing) and m["expires"] > now):
+                    self.held.setdefault(cid, now)
+            self.push(dict(self.ownership(), channel="control"), b"", "text/plain")
+
+    def release_speech(self, segment):
+        with self.cond:
+            if self.speech_owner != segment:
+                return
+            self.speech_owner = None
+            self.speech_revision += 1
+            resume = self._resume_held(time.time())
+            self.push(dict(self.ownership(), channel="control", resume=resume), b"", "text/plain")
+
+    def _resume_held(self, now):
+        resume = []
+        for cid, since in list(self.held.items()):
+            self.held.pop(cid, None)
+            if cid not in self.clips or cid in self.completed or cid in self.skipped:
+                continue
+            m = self.clips[cid][2]
+            v = self.playing.pop(cid, None)
+            if v:
+                self._end(cid, v, "held", now)
+            # Match batch319's bounded relevance window, also on a newly loaded page.
+            if m.get("channel") in ("agent", "operator") or m.get("rank") == "viewer":
+                extension = min(max(0, 120 - m.get("hold_extension", 0)), max(0, now - since))
+                m["expires"] += extension
+                m["hold_extension"] = m.get("hold_extension", 0) + extension
+            self.done.discard(cid)
+            m["attempt"] = m.get("attempt", 0) + 1  # fence late receipts from the stopped source
+            if m["expires"] <= now:
+                self.played({"id": cid, "state": "skip", "reason": "expired", "attempt": m["attempt"],
+                             "capture": self.capture_receipt, "session": self.capture_session}, now)
+                continue
+            # A displaced timed narration joins the single voice queue; hourly tours cancel and
+            # resume their unaired stops with their pictures via the producer instead.
+            m.pop("at", None)
+            m.pop("segment", None)
+            resume.append(dict(m))
+        return resume
+
+    def subscription(self):
+        """Atomic SSE baseline: ownership precedes any replayed clip, even on reconnect."""
+        with self.cond:
+            return self.seq, [self.ownership(), *self.pending()]
+
+    def cancel(self, cid):
+        """Take back queued, held or playing speech; completed clips remain completed."""
+        with self.cond:
+            if cid not in self.clips or (cid in self.done and cid not in self.held and cid not in self.playing):
                 return False
+            self.held.pop(cid, None)
+            self.cancelled.add(cid)
             self.done.add(cid)
         self.push({"channel": "control", "cancel": cid, "expires_in": 30}, b"", "text/plain")
         return True
@@ -232,6 +331,26 @@ class AudioHub:
         self.push({"channel": "control", "release": str(segment), "expires_in": 30}, b"", "text/plain")
         return True
 
+    def interrupt(self, cid):
+        """End a prepared recap when the agents are up, including a clip already playing."""
+        with self.cond:
+            if cid not in self.clips:
+                return False
+            self.done.add(cid)
+            self.cancelled.add(cid)
+        self.push({"channel": "control", "cancel": cid, "expires_in": 30}, b"", "text/plain")
+        return True
+
+    def stop_segment(self, segment):
+        """Also reaches decoded audio from a prior service instance on a reconnecting page."""
+        with self.cond:
+            for cid, (_, _, meta) in self.clips.items():
+                if (meta.get("segment") or {}).get("id") == segment:
+                    self.done.add(cid)
+                    self.cancelled.add(cid)
+                    self.held.pop(cid, None)
+        self.push({"channel": "control", "stop_segment": segment, "expires_in": 30}, b"", "text/plain")
+
     def pending(self, now=None):
         """The clips a page that connects now still needs: not started, done or expired, not control events, a timed
         one only while its moment is less than 2 s past (the page plays none late)."""
@@ -239,7 +358,7 @@ class AudioHub:
         with self.cond:
             out = []
             for c in self.order:
-                if c not in self.clips or c in self.done:
+                if c not in self.clips or c in self.done or c in self.held:
                     continue
                 m = self.clips[c][2]
                 if m.get("channel") == "control" or m["expires"] <= now:
@@ -252,38 +371,80 @@ class AudioHub:
     def wait(self, seq, timeout):
         with self.cond:
             self.cond.wait_for(lambda: self.seq != seq, timeout=timeout)
-            return self.seq, [self.clips[c][2] for c in self.order if int(c.split("-")[1]) > seq and c in self.clips]
+            return self.seq, [self.clips[c][2] for c in self.order
+                             if int(c.split("-")[1]) > seq and c in self.clips and c not in self.held]
 
     def played(self, report, now=None):
         cid, st = report.get("id"), report.get("state")
         now = now or time.time()
+        # Only the landscape capture establishes what the stream heard. A portrait/preview reload must not
+        # interrupt its speech; late reports from an old capture session cannot complete a resumed line.
+        if report.get("page", "main") != "main":
+            return
+        if self.require_capture and report.get("capture") is not True:
+            return
 
         def num(k):
             v = report.get(k)
             return float(v) if isinstance(v, (int, float)) else None
         with self.cond:
+            meta = self.clips.get(cid, (None, None, {}))[2]
+            if cid and report.get("attempt", 0) != meta.get("attempt", 0):
+                return
+            session = report.get("session")
+            if session and st != "load" and self.capture_session not in (None, session):
+                return
+            if st != "load" and cid in self.cancelled:
+                # A cancelled source can still deliver its queued end callback.
+                # It may acknowledge the stop, but must never complete the beat.
+                if st == "end":
+                    st = "cut"
+            if st == "load" and session:
+                self.capture_session = session
+            self.capture_receipt = report.get("capture") is True
             self.last_report = now
             if st == "load":  # the page (re)loaded: what it was playing ended there
                 self.loads.append(now)
-                self._log({"t": round(now, 2), "state": "load"})
+                self._log({"t": round(now, 2), "state": "load", "session": session,
+                           "page": "main", "capture": self.capture_receipt})
                 for k, v in list(self.playing.items()):
-                    self._end(k, v, "reload", now)
+                    self._end(k, v, "held" if k in self.held else "reload", now)
                     self.playing.pop(k)
-            elif cid in self.clips and st == "start":
+                    if v.get("recap"):
+                        self.skipped.add(k)
+                for k in self.cancelled:
+                    if self.clips.get(k, (None, None, {}))[2].get("recap"):
+                        self.skipped.add(k)  # a reload also discards a cancelled, still-loading source
+            elif cid in self.clips and st == "start" and cid not in self.done:
+                # An SSE reconnect after a service restart sends no load receipt.
+                # Bind ownership to the page that actually starts this attempt.
+                if session:
+                    self.capture_session = session
                 at = num("started_at")  # (CK1) the moment the page started it, on the service's clock
                 self.playing[cid] = {"started": at if at and abs(at - now) < 30 else now, **self.clips[cid][2],
-                                     "audio_s": num("duration")}
+                                     "audio_s": num("duration"), "session": session}
                 self.done.add(cid)
-                if at:
-                    self._log({"t": round(now, 2), "id": cid, "state": "start", "started_at": round(at, 3),
-                               "channel": self.clips[cid][2].get("channel"), "at": self.clips[cid][2].get("at")})
-            elif st in ("end", "error", "cut"):  # cut: a line that mattered more faded this one out
+                self._log({"t": round(now, 2), "id": cid, "state": "start",
+                           "started_at": round(self.playing[cid]["started"], 3),
+                           "channel": meta.get("channel"), "at": meta.get("at"), "recap": meta.get("recap")})
+            elif st in ("end", "error", "cut", "held"):
+                playing = self.playing.get(cid)
+                if playing and playing.get("session") != session:
+                    return
                 self.done.add(cid)
                 v = self.playing.pop(cid, None)
                 if v:
-                    self._end(cid, v, st, now, num("played"), num("duration"))
+                    self._end(cid, v, st, now, num("played"), num("duration"), audible=report.get("audible"))
+                elif st == "error" and cid in self.clips and cid not in self.completed:
+                    self._end(cid, dict(self.clips[cid][2], started=now), st, now, 0, num("duration"))
+                if meta.get("recap") and cid not in self.completed:
+                    self.skipped.add(cid)  # the player retries; never resume a recap as ordinary speech
+                elif st == "held" and cid in self.clips and cid not in self.completed and cid not in self.cancelled:
+                    self.held.setdefault(cid, now)
+                    if not self.speech_owner:
+                        self.push({"channel": "control", "resume": self._resume_held(now)}, b"", "text/plain")
             elif st == "skip":  # expired in the page's queue: never played
-                if cid in self.skipped:
+                if cid in self.skipped or cid in self.completed:
                     return  # (batch319) a second page's report of the same skip: logged once
                 self.skipped.add(cid)
                 self.done.add(cid)
@@ -294,16 +455,19 @@ class AudioHub:
                        "speaker": meta.get("speaker"), "agent": meta.get("agent"), "played": 0.0,
                        "duration": meta.get("duration"), "early": False,
                        "reason": why if why in ("expired", "late", "cancelled") else None}
+                if why == "expired" and meta.get("attempt", 0) > 0:
+                    row["held_expired"] = True
                 self.ended.append((now, row))
                 self._log(row)
             # a page that goes away mid-clip never reports the end; forget clips well past their length
             for k, v in list(self.playing.items()):
-                if now - v["started"] > float(v.get("audio_s") or v.get("duration") or 20) + 5:
+                if not v.get("recap") and k not in self.held and now - v["started"] > float(v.get("audio_s") or v.get("duration") or 20) + 5:
                     self._end(k, v, "no_end", now, played=None)
                     self.playing.pop(k)
 
-    def page_event(self, page, what, now=None):
-        """A page's event stream: what = open (it connected), seen (a write went out to it) or close."""
+    def page_event(self, page, what, now=None, height=None):
+        """A page's event stream: what = open (it connected), seen (a write went out to it) or close; render (d29
+        batch349: the page drew a state frame, with its right panel's height in px, POST /overlay/render)."""
         now = now or time.time()
         with self.cond:
             r = self.pages.setdefault(page, {"open": 0, "connects": 0, "connected": None, "seen": None, "closed": None})
@@ -313,15 +477,42 @@ class AudioHub:
                 r["seen"] = now
             elif what == "close":
                 r["open"] = max(0, r["open"] - 1); r["closed"] = now
+            elif what == "render":
+                r["rendered"] = now
+                r["panel_px"] = int(height) if isinstance(height, (int, float)) else None
+
+    WHOLE_S = 0.5  # (batch349) a clip played whole: state end, played within this of its length, not early
+
+    def speech(self, now=None):
+        """(d29 batch349 SP, viewer Aurora: shift100's blank overlay played no voice and nothing said so) the page's
+        voices: the last clip played whole (state end, played >= its length - WHOLE_S, not early) and how many in the
+        last 30 min; clips posted in the last 15 min (not control) whose time is up (ended, skipped or expired), and how
+        many of those played whole."""
+        now = now or time.time()
+        with self.cond:
+            self._trim(now)
+            whole = [r for _, r in self.ended if r.get("completed")
+                     and isinstance(r.get("played"), (int, float)) and isinstance(r.get("duration"), (int, float))
+                     and r["played"] >= r["duration"] - self.WHOLE_S]
+            ids = {r["id"] for r in whole}
+            due = [c for c in self.order if c in self.clips for m in [self.clips[c][2]]
+                   if m.get("channel") != "control" and now - m.get("t", 0) <= 900 and (c in self.done or m["expires"] <= now)]
+            return {"last_whole": round(max((r["t"] for r in whole), default=0), 2) or None,
+                    "whole_30m": sum(1 for r in whole if now - r["t"] <= 1800),
+                    "due_15m": len(due), "due_15m_whole": sum(1 for c in due if c in ids),
+                    "due_15m_skipped": sum(1 for c in due if c in self.skipped)}
 
     def pages_status(self, now=None):
-        """GET /overlay/status: {now, up (the service's start), pages: {name: {open, connects, connected, seen, closed}}}
-        (epoch seconds)."""
+        """GET /overlay/status: {now, up (the service's start), pages: {name: {open, connects, connected, seen, closed,
+        rendered, panel_px}}, speech} (epoch seconds)."""
+        now = now or time.time()
         with self.cond:
-            return {"now": round(now or time.time(), 2), "up": round(self.up, 2),
-                    "pages": {k: {kk: (round(v, 2) if isinstance(v, float) else v) for kk, v in r.items()} for k, r in self.pages.items()}}
+            out = {"now": round(now, 2), "up": round(self.up, 2),
+                   "pages": {k: {kk: (round(v, 2) if isinstance(v, float) else v) for kk, v in r.items()} for k, r in self.pages.items()}}
+        out["speech"] = self.speech(now)
+        return out
 
-    def status(self):
+    def status(self, receipts_after=0):
         now = time.time()
         with self.cond:
             playing = [{"id": k, "channel": v.get("channel"), "speaker": v.get("speaker"),
@@ -333,6 +524,9 @@ class AudioHub:
                       for c in self.order if c in self.clips and c not in self.done
                       for m in [self.clips[c][2]] if m.get("channel") != "control" and m["expires"] > now]
             out = {"listeners": self.listeners, "playing": playing, "queued": queued,
+                   "speech_owner": self.speech_owner, "held": [{"id": c} for c in self.held],
+                   "receipts": [r for r in self.receipts if r.get("t", 0) >= receipts_after],
+                   "receipt_t": self.receipts[-1]["t"] if self.receipts else None,
                    "last_report": self.last_report, "clips": len(self.order)}
         out["voice"] = self.early(now)
         return out
@@ -357,8 +551,9 @@ def map_memory_paths(run_dir, hops=5, name="map-memory.json"):
 
 
 def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None, follow=None, director=None,
-                 platform=None, look=None, show=None, host=None, board_all=None, tour=None, replies_all=None):
+                 platform=None, look=None, show=None, host=None, board_all=None, tour=None, replies_all=None, recap=None):
     audio = audio or AudioHub()
+    health = OverlayHealth(os.path.join(os.path.dirname(audio.log_path), "overlay-health.jsonl") if audio.log_path else None)
     tour = tour or TourOverlay()
     segments = segments or Segments()
     analyst = analyst or AnalystBoard()
@@ -406,11 +601,22 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
             if path == "/segments":
                 return self.send(200, json.dumps(segments.types()).encode(), "application/json")
             if path == "/audio/status":
-                return self.send(200, json.dumps(audio.status()).encode(), "application/json")
+                match = re.search(r"[?&]receipts_after=([0-9.]+)", self.path)
+                try:
+                    after = float(match.group(1)) if match else 0
+                except ValueError:
+                    after = 0
+                return self.send(200, json.dumps(audio.status(after)).encode(), "application/json")
             if path == "/overlay/status":  # (batch347) which overlay pages hold their event stream, since when
-                return self.send(200, json.dumps(audio.pages_status()).encode(), "application/json")
+                status = audio.pages_status()
+                status["health"] = health.status()
+                return self.send(200, json.dumps(status).encode(), "application/json")
             if path == "/analyst.json":
                 return self.send(200, json.dumps(analyst.full(), ensure_ascii=False).encode(), "application/json; charset=utf-8")
+            if path.startswith("/shift-recap/assets/") and recap:
+                asset = recap.asset(path[len("/shift-recap/assets/"):])
+                if asset:
+                    return self.send(200, asset[0], asset[1])
             if path.startswith("/audio/clip/"):
                 clip = audio.clips.get(path.rsplit("/", 1)[-1])
                 if clip:
@@ -427,12 +633,19 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
         def do_POST(self):
             path = self.path.split("?", 1)[0]
             n = int(self.headers.get("Content-Length") or 0)
-            if n > 8 << 20:
+            if n > (OverlayHealth.MAX_BYTES if path == "/overlay/health" else 8 << 20):
+                self.close_connection = True
                 return self.send(413, b"too large", "text/plain")
             try:
                 body = json.loads(self.rfile.read(n) or b"{}")
             except ValueError:
                 return self.send(400, b"bad json", "text/plain")
+            if path == "/overlay/health":
+                try:
+                    health.record(body)
+                except ValueError as e:
+                    return self.send(400, str(e).encode(), "text/plain")
+                return self.send(200, b"{}", "application/json")
             if path == "/audio":
                 import base64
                 try:
@@ -447,6 +660,11 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                 return self.send(code, json.dumps(reply, ensure_ascii=False).encode(), "application/json")
             if path == "/audio/played":
                 audio.played(body)
+                return self.send(200, b"{}", "application/json")
+            if path == "/overlay/render":  # (batch349) a page drew a state frame: its right panel's height
+                name = str(body.get("page") or "unnamed")
+                if re.fullmatch(r"[A-Za-z0-9_-]{1,24}", name):
+                    audio.page_event(name, "render", height=body.get("height"))
                 return self.send(200, b"{}", "application/json")
             if path == "/audio/release":  # (batch319 SU) the tour ends its segment's hold
                 ok = audio.release(body.get("segment"))
@@ -530,13 +748,15 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
             self.end_headers()
 
         def audio_events(self):
-            """New clips only (a page that reconnects does not replay old lines)."""
+            """Ownership baseline and pending clips, then new audio/control events."""
             self.sse_head()
-            seq = audio.seq
+            seq, initial = audio.subscription()
             with audio.cond:
                 audio.listeners += 1
             try:
                 self.wfile.write(b": hello\n\n")
+                for c in initial:
+                    self.wfile.write(b"data: " + json.dumps(c).encode() + b"\n\n")
                 self.wfile.flush()
                 while True:
                     new, clips = audio.wait(seq, 15)
@@ -563,14 +783,17 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
             page = m.group(1) if m else "unnamed"  # (batch347) a page from before names itself unnamed
             self.sse_head()
             version, seq, quiet = -1, audio.seq, time.time()
+            self.wfile.write(b"event: clock\ndata: " + json.dumps({"t": time.time()}).encode() + b"\n\n")
+            self.wfile.flush()
             audio.page_event(page, "open")
             if want_audio:
                 with audio.cond:
                     audio.listeners += 1
             try:
                 if want_audio:  # (batch319 SU) the clips still queued, for a page that (re)connects
-                    for c in audio.pending():
-                        self.wfile.write(b"event: audio\ndata: " + json.dumps(c, ensure_ascii=False).encode() + b"\n\n")
+                    seq, initial = audio.subscription()
+                    for c in initial:
+                        self.wfile.write(b"event: audio\ndata: " + json.dumps(dict(c, server_time=time.time()), ensure_ascii=False).encode() + b"\n\n")
                     self.wfile.flush()
                 while True:
                     # with audio, wake often so a clip goes out within ~0.25 s (snapshots come once a second)
@@ -578,13 +801,14 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                     wrote = False
                     if new != version:
                         version = new
+                        self.wfile.write(b"event: clock\ndata: " + json.dumps({"t": time.time()}).encode() + b"\n\n")
                         self.wfile.write(b"data: " + payload + b"\n\n")
                         wrote = True
                     if want_audio:
                         seq_new, clips = audio.wait(seq, 0)
                         seq = seq_new
                         for c in clips:
-                            self.wfile.write(b"event: audio\ndata: " + json.dumps(c, ensure_ascii=False).encode() + b"\n\n")
+                            self.wfile.write(b"event: audio\ndata: " + json.dumps(dict(c, server_time=time.time()), ensure_ascii=False).encode() + b"\n\n")
                             wrote = True
                     if wrote:
                         quiet = time.time()
@@ -685,6 +909,9 @@ def main():
         import cuts as cuts_mod
         lay = json.load(open(cuts_mod.LAYOUT))
         frac = {"view_frac": cuts_mod.view_frac(lay), "trio_frac": cuts_mod.view_frac(json.load(open(cuts_mod.TRIO)))}
+        import cams as camera_clients
+        frac["platform_frac"] = cuts_mod.platform_view_frac(
+            [lay, json.load(open(cuts_mod.VERTICAL["layout"]))], camera_clients.CLIENT)
         if a.trio:
             frac.update(trio_force=True)
         director = OneCam(slots, camera, log_path, **dict(frac, **(run.get("director") or {})))
@@ -706,7 +933,8 @@ def main():
                                  sources=["stream cam1" if n == "main" else f"stream {n}" for n in names])
     else:
         director = Director(slots, camera, log_path, **(run.get("director") or {}))
-    segments = Segments(**(run.get("segments") or {}))
+    segments = Segments(**dict({"platform_frac": director.cfg.get("platform_frac") or
+                               director.cfg.get("view_frac", 1.0)}, **(run.get("segments") or {})))
     replays = None
     if (a.replays if a.replays is not None else not a.mock) and run.get("replays", True) is not False:
         from obsws import OBS
@@ -786,11 +1014,18 @@ def main():
     tour = TourOverlay()  # (CK3) the tour's overlay entries (tourlay.py)
     # the voice clips; the director reads which agent line is playing (say look= cues). The page's playback reports go
     # to audio-played.jsonl beside stream.json (the clips that ended early, and why)
-    audio = AudioHub(os.path.join(os.path.dirname(os.path.abspath(a.run)), "audio-played.jsonl") if a.run and not a.mock else None)
+    audio = AudioHub(os.path.join(os.path.dirname(os.path.abspath(a.run)), "audio-played.jsonl") if a.run and not a.mock else None,
+                     require_capture=not a.mock)
+    shift_recap = None
+    if a.run and not a.mock and run.get("shift") and run.get("shift_recap", True) is not False:
+        from shift_recap_air import ShiftRecap
+        shift_recap = ShiftRecap(os.path.dirname(os.path.abspath(a.run)), run, audio).start()
     follow = platform = look = host = None
     if mode == "onecam":  # an operator follow, kept beside stream.json so a restart keeps it (follow.py)
         from follow import FollowControl
         from platformcam import PlatformControl
+        from featured import Featured
+        director.featured = Featured(os.path.dirname(os.path.abspath(a.run)) if a.run and not a.mock else None)
         follow = FollowControl(director, os.path.join(os.path.dirname(os.path.abspath(a.run)), "director-follow.json")
                                if a.run and not a.mock else None, roster)
         platform = PlatformControl(director, os.path.join(os.path.dirname(os.path.abspath(a.run)), "director-platform.json")
@@ -874,6 +1109,11 @@ def main():
                 with lock:
                     snap = model.snapshot(now, cams)
                     snap["artillery"] = arty["res"]
+                snap["shift_recap"] = shift_recap.public if shift_recap else None
+                snap["run_target"] = target_facts(os.path.dirname(a.run)) if a.run and not a.mock else None
+                if a.run and not a.mock:
+                    snap["shift"] = shift_facts(os.path.dirname(a.run), run.get("shift"))
+                snap["speech_owner"] = audio.speech_owner
                 snap["segment"] = segments.step(snap, now)
                 if mode == "onecam":  # no layout change while a replay is (about to be) on air
                     cur = segments.cur
@@ -894,15 +1134,38 @@ def main():
                     snap["speech"] = [dict(v, id=k) for k, v in audio.playing.items()
                                       if v.get("channel") in ("caster", "agent", "operator", "narrator")]
                 snap["voice"] = audio.early(now)  # clips that ended early in the last hour, and why (operator read)
-                cams = director.step(snap, now, segments.camera())
+                # Recap cues use the director's existing segment camera path. No new
+                # game reads, OBS sources or layout; missing subjects keep normal air.
+                recap_cue = recap_camera(snap.get("shift_recap"), snap, now,
+                                         frac=getattr(director, "cfg", {}).get("platform_frac") or 1.0)
+                cams = director.step(snap, now, recap_cue or segments.camera())
+                if cuts:
+                    program = director.program()
+                    program["cameras"] = {s["slot"]: {"pending": s["slot"] in director.send_pending,
+                                                       "shot": director.state[s["slot"]]} for s in director.slots}
+                    program["frames"] = cams
+                    program["layout_info"] = director.layout_info()
+                    cuts.set(program)
+                    cut_state = cuts.public()
+                    aired = cut_state.get("on_air") or {}
+                    cams = aired.get("frames") or {}
+                    director.on_air = {s["slot"]: (aired.get("cameras", {}).get(s["slot"]) or {}).get("shot")
+                                       if s["slot"] in {r.get("client") for r in cams.values()} else None
+                                       for s in director.slots}
+                    snap["program"], snap["cuts"] = aired, cut_state
+                    snap["camera_states"] = director.camera_states()
+                snap["shift_recap"] = recap_on_air(snap.get("shift_recap"), snap)
                 if follow:
                     snap["follow"] = director.follow_info(now)  # the hosts: who the operator pinned on air, and why
                 if platform:
                     snap["platform_hold"] = director.platform_info(now)
+                    snap["featured_platform"] = director.featured.data
                 if look:
                     snap["look"] = director.look_info(now)
                 if host:
                     snap["hostview"] = director.host_info(now)  # the page's on-air card, the hosts
+                    if cuts and not snap["program"].get("host"):
+                        snap["hostview"] = None
                 if show:
                     snap["show"] = show.public()  # an image over the main camera: the page's caption, the hosts
                 if hasattr(director, "battle_info"):
@@ -926,18 +1189,23 @@ def main():
                     snap["onair"] = onair_info(snap, cams)  # who viewers watch: the label, the hosts' beats
                     if snap.get("hostview"):  # Nick's own view on air, not a camera (hostview.py): no agent is on air
                         snap["onair"].update(host=snap["hostview"], agent=None, display_name=None, doing=snap["hostview"]["label"])
-                    snap["onair"]["layout"] = director.layout_info()  # one camera or three tiles (the hosts, the page)
+                    snap["onair"]["layout"] = (snap["program"].get("layout_info") or {"mode": "onecam"}) if cuts else director.layout_info()
                     for row in cams.values():  # each tile's label: "Luna · fixing the north wall"
                         if len(row.get("agents") or []) == 1:
                             row["doing"] = onair_doing(snap, row["agents"][0])
-                    snap["program"] = director.program()
-                    if cuts:
-                        cuts.set(snap["program"])
-                        snap["cuts"] = cuts.public()
+                    if not cuts:
+                        snap["program"] = director.program()
                 for ag in snap["agents"]:
                     ag["camera"] = next((s for s, c in cams.items() if ag["name"] in c["agents"]), None)
                     if snap.get("hostview") and ag["camera"] == "main":  # (behind Nick's view: not on air)
                         ag["camera"] = None
+                if hasattr(source, "observe_platform_metrics"):
+                    try:
+                        snap["platform_metrics"] = source.observe_platform_metrics(snap, now)
+                        director.ship_metrics = (now, snap.get("mission_metrics") or snap["platform_metrics"] or {})
+                    except Exception as e:
+                        snap["platform_metrics"] = None
+                        snap.setdefault("errors", {})["platform_metrics"] = str(e)
                 snap.update(source_info)
                 snap["static_version"] = page_version
                 snap["viewers"], snap["viewers_status"] = feed.lane() if feed else ([], None)
@@ -949,6 +1217,10 @@ def main():
                     # (d17 batch35 D4) what each agent does and which places its claims hold, for routing by content
                     feed.relay.set_team(router.Team.from_snapshot(snap, list(model.board["items"].values())))
                 snap["analyst"] = analyst.public(now)
+                if shift_recap:
+                    with lock:
+                        recorded_board = model.board_all_snapshot()
+                    shift_recap.observe_snapshot(snap, recorded_board)
                 snap["tour"] = tour.public(now)  # (CK3) the tour's marks, captions and clip over the camera
                 snap["poll"] = polls.step(now) if polls else None
                 snap["library"] = lib.public() if lib else None
@@ -987,7 +1259,8 @@ def main():
                                                                     analyst=analyst, follow=follow, audio=audio,
                                                                     director=director, platform=platform, look=look,
                                                                     show=show, host=host,
-                                                                    board_all=board_all, tour=tour, replies_all=replies_all))
+                                                                    board_all=board_all, tour=tour, replies_all=replies_all,
+                                                                    recap=shift_recap))
     except OSError as e:
         sys.exit(f"cannot listen on {a.host}:{a.port}: {e}. Pick another --port and point the reverse tunnel at it: "
                  f"ssh -N -R 8787:127.0.0.1:PORT pogwin")

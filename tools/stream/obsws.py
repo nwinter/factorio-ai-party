@@ -84,10 +84,10 @@ class OBS:
                 return json.loads(data)
 
     # ---- requests ------------------------------------------------------------------------------------------------
-    def call(self, request, data=None):
+    def call(self, request, data=None, *, retry=True):
         """Send one request; returns responseData ({} when none). Reconnects once on a dropped connection."""
         with self.lock:
-            for attempt in (0, 1):
+            for attempt in ((0, 1) if retry else (1,)):
                 try:
                     if self.sock is None:
                         self._connect()

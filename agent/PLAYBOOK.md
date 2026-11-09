@@ -64,8 +64,8 @@ ones), in plain sentences with spaces between words, with exact coordinates and 
 - `## Lessons`: durable tool and game lessons, one line each.
 - `## Log`: one line per significant event; keep the last ~10 and fold older ones into the sections above.
 
-Update `## Now` whenever the goal changes and the rest after anything you would need to know later. When you are
-told your context was compacted (or you notice you lost track), read `notes.md` and `deadline.txt` first.
+Update `## Now` when the goal changes. After compaction, a supplied recovery brief covers those notes;
+read missing detail only. Without a brief, read `notes.md`. Always read `deadline.txt`.
 
 ## Stopping
 

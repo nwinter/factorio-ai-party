@@ -110,6 +110,7 @@ fh call status
   taken stays as it is (`rearm`: the turret there); with `radius` neither is touched (`rearm`: the radius's centre). Queue steps (`queue_submit`, `queue_repeat`, `queue_edit`)
   are corrected the same way, and the reply lists each in `corrected` (`step 1: collect {...} (position is positions
   (a list))`).
+- Machine inventory names `crafter_input`, `crafter_output`, and `crafter_modules` work for furnaces, assemblers, and silos. Existing names such as `furnace_source`, `furnace_result`, and `assembling_machine_input` remain accepted.
 - `transfer` is `{position, direction: "to_entity"|"to_player", item, count, inventory?}` at one entity
   (`fh call transfer --args '{"count":50,"direction":"to_entity","inventory":"rocket_silo_rocket","item":"rocket-fuel",
   "position":{"x":15.5,"y":59.5}}'`), or `{pick, positions, item or items, to}` to take at the first listed place that
@@ -127,8 +128,10 @@ fh call status
   logistic chests, car and spider trunks, cargo wagons, landing pads and hubs.
 - `transfer {position, direction, items: {"iron-plate": 50, "coal": 10}, walk?}` moves several items at one entity. `direction` is explicit (`to_entity` or `to_player`); the map has 1..32 item names with counts 1..10000, exclusive with `item`, `count`, `total`, `positions` and `to`. The whole map is checked before movement. Items run in name order; each independently uses the ordinary inventory, quality, reach, target-cap and personal trash-limit rules. `entries` gives each item's `requested`, `transferred`, `missing`, full-inventory facts or `error`; `short` totals shortages. Partial moves stay moved; if every item fails, the call fails with the first item and reason. With `walk:true` there is one walking action to that entity; completion carries `entries` too. A queue step leaves its following steps in place.
 - A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
-  `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
-  `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
+  `error:`/`warning:` line (at most 256 bytes, with full detail in the remaining pages). Oversized lines split at
+  UTF-8 boundaries. `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
+  `FH_MORE_FILE`). Page overhead is at most 512 bytes; replies up to page size + 2000 bytes fit unchanged.
+  `FH_PAGE_BYTES` sets the payload page size (minimum 4; 0 prints everything); `--format json` is never paged.
 - Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `kite`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given (`rearm` also with `area` or `surface`), with `transfer` or `collect` when they walk (`walk`, `pick`), with `recover`, and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`). A timed `collect` (`wait_ticks`, `keep_taking`) and a `load_silo` that runs over time block without `--wait` too, with the same exit status; `--no-wait` returns at acceptance.
 - With `--wait`, the command exits 0 when the action ended successfully, 1 when it failed, and 3 when the wait ended
   while the action still runs: a tell or mention ended it (the reply's `still_running` and `note` say so), or the wait
@@ -256,6 +259,12 @@ fh call status
   another date of the shift clock than the day it was pushed, and the label then names it: `resting until Sat 15:59
   (quota)`. Any agent's quota rest: `tools/quota_rest.py RUN AGENT --until "YYYY-MM-DD HH:MM" [--reason quota|pace]`
   (resting.json and this push; `--done` ends it); start-team writes one for an agent whose account is at its limit.
+  At a shift change, `--carry` preserves the full `resting.json`, including `firm` and the original start. A firm
+  operator rest stays effective for supervisors and idle nudges despite fresh quota room or an agent request; it ends
+  at its wall-clock time or `--done`. A later quota reset may extend its scheduling fields; other metadata is retained.
+  Resumed `start-team.sh` runs hold the world tick-paused from before deployment through stream/OBS/helpers and all
+  launches, then resume immediately after `started: N/M`, even with failed launches. Startup failure also releases
+  the pause; `start.log` records the paused duration and failures. See `docs/LAUNCH-NOTES.md`.
   An agent's own next request is one whose reply carries its clock line: describe (launch-agent.sh), profiles,
   cameras and peeks do not end a rest; its first status does.
 - `use_item {item, position}` throws a capsule you hold (grenade, cluster grenade, poison or slowdown capsule, defender,
@@ -380,6 +389,10 @@ fh call status
     and their dry runs give it.
   - `placements {platform, name: "cargo-bay", near?}` lists where it fits on that platform by the game's own build
     check, which knows the hub and bay attachment (near in platform coordinates, default the hub).
+  - `build` and `place_ghosts` dry runs check prototype surface conditions (gravity, pressure and each other named
+    property) against the target surface. `surface_conditions` lists failed entries, required bounds and actual values.
+    `check_inserters: true` refuses the whole batch before placing anything if any entry fails those conditions.
+    A blocked planned pickup or drop target names its entry and placement reason in the inserter row.
   - `check_inserters: true` on `build` or `place_ghosts` (Luna, d15: misaligned and blocked seed-feeder inserters took many
     round trips) runs the call's dry run first. Each planned inserter's pickup and drop (what stands there: built,
     planned in this call, a ghost), power (a pole's supply area, built or planned; a build only) and filters (one that
@@ -1599,6 +1612,16 @@ the selected queue. `queue_edit` revisions refer to the selected lane.
 A full `drop` waits on the existing pod-dispatch channel. A competing drop finishes
 before the next queued remote drop starts. Already-started full drops continue
 sending their remaining pods after queue cancellation, as in the body lane.
+`queue_status {agent:"sol", lane:"platform:Asterion"}` reads a teammate's queue with the owner's existing
+history/pending limits (defaults 16/1, caps 64/128; history defaults to 3 with `orders:true`). Agent and display
+names are case-insensitive; omitting `agent` reads the caller. Replies include `owner`, `state`, current and pending
+steps, plan/history, guard baselines and cached evidence (`saw`, `when.evidence`), read errors and pause/failure
+reasons. `history:"all"`/`pending:"all"` use the caps; `args:true` includes history arguments. Unknown agents fail;
+an absent queue returns `state:"empty"` without creating it or registering a lane. Reads do not evaluate guards.
+Queue edits, cancels, pauses, resumes and submissions remain owner-scoped and reject `agent`; the status reply
+states that restriction. Snapshot options retain their existing force-wide scope. Request telemetry and delivered
+messages remain the caller's; wall-clock projections use the time of each read.
+
 `queue_status` returns the selected lane in full and `lanes.body`/`lanes.remote`
 summaries; `status`, including `brief`, returns both under `queues`. `sleep` wakes
 when either running lane finishes or stalls; a remote wake has
@@ -1629,6 +1652,20 @@ fh queue repeat --file plan.json
 
 - `"wait":false` lets a step overlap the next one, for example shooting while walking.
 - `wait_ticks` and `wait_until` are queue steps and also direct timed actions (see Waiting below).
+- In a `platform:NAME` lane, a `wait_until` step with `until: "platform_arrived"` or `"platform_progress"` accepts
+  `timeout: 1..17280000` ticks (80 game hours). Dry and live submissions share the bound, including guard steps.
+  Other conditions, `all`/`any`, body/remote lanes, direct calls and `wait_ticks` retain their limits. The 3600-tick
+  default and its existing ETA extension stay unchanged. One long wait is one step; checks still run every 10 ticks,
+  guards interrupt as before, and the realtime clock keeps running. Pending steps remain capped at 128.
+  Submission (including dry run) and `queue_status` return `wait_deadlines` for these platform waits: deadline `tick`
+  and `game_seconds`, `ticks_left`, `wall_unix_ms` and `wall_seconds_left`. Wall time is a projection at 60 ticks/s from
+  the request timestamp; pauses and slower UPS delay it. Requests without a wall timestamp say `wall_unavailable`.
+  A pending step has `state: "if_started_now"`: its projected deadline depends on when preceding work finishes or the
+  queue resumes. An active step has `state: "waiting"` and its actual game deadline (also in `waiting.deadline` and the
+  platform lane summary). Guard reactions, arrival, explicit cancellation or failure can end it earlier.
+  For an explicit timeout over 54000, the arrival ETA uses only the current flight leg; before departure or for a
+  later destination it reports `no_estimate`. The full schedule projection is excluded from these long waits to
+  keep a check below the tick-work budget; arrival checks themselves still run every 10 ticks.
 - A failed step pauses the queue. Use `on_fail` (`abort`, `skip`, `goto:<label>`) and `guards` to handle failures instead.
   `on_fail` is on the step, outside `args`: `{"action":"craft","args":{"recipe":"iron-gear-wheel","count":10},"on_fail":"skip"}`.
   `craft` hand-crafts from your inventory whatever stock the factory holds, and names that stock (`stock`). With
@@ -1648,7 +1685,8 @@ fh queue repeat --file plan.json
   compact reply's `guard_ids` marks them `(standing)`. Guards armed before this runtime have no scope and stay
   standing. A scope-plan guard on a lane that would have no step left is refused (`guards[1]: scope plan (the default)
   retires a guard when the lane has no step left, ...`). `queue_edit` guards `replace` keeps the guard's scope unless
-  it gives one.
+  it gives one. Retirement is tracked per plan: a successor that finishes in its first tick retires its own
+  plan guards, while standing guards remain armed.
 - Deadlines (d27 batch261, Astra #2508: Luna's 15-minute boost had a relative timeout that started late and restarted
   at a resume, and its gate was restored 4m21s after the cutoff): `wait_until {until: "tick_at_least", tick}` is met
   once `game.tick` reaches `tick` (a whole tick, at most 1296000 ticks ahead), at the first check when it has passed.
@@ -1730,8 +1768,15 @@ fh sleep 900 --until researched                       # ...or until the research
     observations at least one game second apart establish the rate; zero change or movement away from the
     threshold gives no estimate. Strict `below` uses the next integer below the threshold. Starting a new wait
     starts a new sample pair. The predicate's count supplies the sample, with no second inventory/entity scan.
-  - Platform arrival: distance left on the current flight leg divided by current speed, assuming unchanged speed.
-    A stopped/paused platform, zero speed, or a leg to another destination gives no estimate for a pending arrival.
+  - Platform arrival: distance left in the direction now flown divided by the speed now, assuming that speed is
+    maintained. This uses the same `leg_left_km` as the platform row after a mid-leg reversal. `speed_kms`,
+    `heading_to`, `speed_trend` and `eta_uncertain` identify the inputs and uncertainty. Acceleration/deceleration
+    comes from the latest existing speed sample within two game seconds, with its speed pair and interval in the
+    basis. No fresh comparison is explicitly uncertain. Past cruise or a 60-second mean is not substituted for
+    the current leg's arrival speed. `platforms` and hub `inspect.flight` use the same calculation for `eta_min`,
+    `eta_s`, `eta_basis` and `eta_uncertain`. `eta_to` uses it for the current leg and retains the explicitly named
+    cruise assumption for later legs. A paused platform or zero/unavailable speed gives no pending arrival ETA;
+    a stopped platform or a later destination uses the schedule estimate when one is available.
     Hand crafting uses the remaining queue at the current hand-crafting speed. Event conditions without a rate
     (including alerts and platform departure) say no estimate.
   `idle_s` is the character's cumulative idle game seconds in this wait, also printed in `wait_line`. Body actions
@@ -1774,6 +1819,10 @@ fh sleep 900 --until researched                       # ...or until the research
   does, for at most S seconds, and returns at once when nothing runs (friction1300: Grok and Haiku read `fh wait --max
   150` as that; it slept the whole 150 s while the walk had ended after 46). Out of time it ends as a timed-out wait
   (`wait_timeout`, `still_running`).
+  - Completion uses fresh outcomes from every movement or combat channel observed running during the wait,
+    including a channel that starts after the first poll. A failure such as combat `out_of_ammo` gives exit 1
+    even if movement succeeds; compact output names the failed action. Older results from before the observed
+    work do not decide the wait. If both succeed, compact output shows the latest completion.
   - Nothing running when the wait begins, and the last action ended before your previous call's reply (friction3:
     Haiku's two waits after a rearm had ended printed its old `timed_out` as a fresh error, exit 1): `outcome: idle`,
     `note: nothing was running when this wait began: the last action, gather, ended timed_out 90 s ago, before your
@@ -1815,7 +1864,8 @@ fh sleep 900 --until researched                       # ...or until the research
 - `fh sleep SECONDS [--until COND]` (1..900; more runs 900 and `corrected` says `asked 1150 s; slept the 900 s maximum`,
   or `capped at the 900 s maximum` when something woke it sooner; d26 batch238) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early on an urgent alert (`woke: urgent`, with `urgent`: the alert; below), when your character takes damage (`woke: damaged`, with `health` and `lost`; a hit that names no attacker, such as a spitter's acid, counts too, `by: enemies`, and the health it falls from is the highest seen in the sleep, so a sleep begun hurt that healed still wakes on the next hit; round1950a), dies (`died`, exit 1), a teammate's chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`; a viewer's `@mention` only with `--wake-on-viewers`, else it waits for the next reply), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`; `told` and `mentioned` carry `woke_by` `{kind: tell|mention, seq, from, viewer?, source?}`, the item that woke it, and `fh wait --until`'s line adds `woke_by: tell #92032 from astra`, so a script can stop at its own safe point; d26 batch238), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), eggs of ours on your surface or in a holder you built will hatch within 5 minutes (`eggs`, with the line; delivered in `team.alerts`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles; a standing order's round does not end it either, unless `wake_on_orders: true` (`--wake-on-orders`): while one runs, `while_asleep` says `your standing order NAME runs in your queue (N steps pending); its rounds do not end this sleep (wake_on_orders: true ends it on them)`, and the sleep is not capped at 300 s; Opus, shift17 12:20: about 30 sleeps ended on copper-fuel rounds), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second. Past 1.25 x SECONDS + 10 s of real time it goes on while the game still advances below 55 ticks/s (Luna, Astra, Sol, 13:41: after the crash world n ran at 7-10 ticks/s and 12 game s took 85 real s), up to 3 x SECONDS + 60 s, and then exits 1 with `timed_out` (`the game advanced 12 of the 60 s asked in 240 s of real time (slow_game: 3 ticks/s, 5% of normal)`); when no game tick passed for 20 s it exits 1 with `paused` (`no game tick passed for 20 s (the game is paused or stopped)`). A sleep that ran in a slow game carries `slow_game: 18 ticks/s, 30% of normal`. The same holds for `--wait` on actions and `fh wait`: a computed wait budget (the action's ticks at 60/s x 1.25 + 5 s) goes on while a slow game advances, up to 3 x those ticks' time + 60 s (45 min at most), names `slow_game` in its reply, and a `wait_timeout` says whether the game stopped or ran slow; an explicit `--wait-timeout MS` stays as given.
   - `--until`: `researched` (the research running now) or `researched TECH`, `crafting_done`, `item_count ITEM>=N` or `ITEM<N` (the character's inventory; also `>`, `<=` and the words `below`, `under`, `above`, `at_least`), `item_count ITEM>=N at X,Y X,Y ...` (summed over our entities on those tiles, every inventory: chests, machines; up to 64; a level fallen under at one chest, Haiku 12:20: `item_count coal below 20 at 10,39`, then one feed), `rocket_ready X,Y` (the silo at X,Y has its rocket built and ready to launch), `platform_arrived PLATFORM [PLANET]`, any other `wait_until` condition as `NAME key=value ...` (`ammo_below count=5 radius=20`), or the condition as JSON. A condition met already ends the sleep on its first check (`already_met: true` in the sleep reply). The action is `sleep {seconds, condition}`; `item_count` takes the same `positions` in `wait_until` and queue steps.
-  - `platform_arrived {platform, location?}` (a `wait_until` condition, so also `fh wait --until`, queue steps, guards and a standing order's `when`; Gemini, shift10: rocket launches wait on a platform's arrival): met while the platform is stopped at a space location, at `location` (a planet) when given, else at any stop; `saw` is `Sunward at gleba` or `Sunward flying nauvis->gleba 25%`. On a private 2.0.77 server a platform leaving a stop is on its route within 4 ticks, and one arriving reads at the planet from that tick (the game's speed value still falls for a few seconds); `fh wait --until "platform_arrived Sunward gleba"` woke when Sunward reached Gleba. An unknown platform fails the wait.
+  - `platform_arrived {platform, location?, since_tick?}`: met while stopped at the destination (any stop without `location`), or by a logged arrival at or after the wait's start; `since_tick` selects a whole game tick 0..now instead. An arrival followed by departure between checks still meets it. `saw` gives the recorded arrival tick, subsequent logged departure and current location/leg. Freight retains its last 40 arrival/departure events; a matching event stays latched in that wait across reloads, timeout holds and requeues. A departed arrival before the baseline does not count. Already docked retains immediate success.
+    `queue_submit {dry_run:true}` includes facts in `world_checks` for matching schedule stops with no holding wait condition, including waits inside `all`/`any`. It reads the schedule now; earlier plan steps are not applied. An arrival wait does not hold the platform at the stop; a following step or guard may run after departure.
   - `platform_left {platform, location?}` (Gemini, 16:50: departure as a condition, the same places as
     `platform_arrived`): met while the platform is not stopped at `location` (a planet), or, without one, at no stop
     (flying, or still at a location but on its path), by the rule the `platforms` row follows; `saw` as
@@ -2029,6 +2079,11 @@ bottleneck calls to find) gives, per surface:
   the reactor rows took about 0.4 ms a reactor and 0.3 ms a combinator trace.
 - The users come from the census's last background pass (`as_of`; before its first pass none are listed and
   `pending` says so); their state is read at the call, at most 2048 a call (`capped`). The read is kept 10 seconds.
+
+
+Batch411: every damage-based endurance forecast includes `damage_model`: area/splash and multi-target effects are not modelled; each ammunition is estimated independently. The existing scalar flattens damage entries in the first projectile (explosive rocket: 50 direct + 100 area), then applies them to one asteroid; secondary projectiles are excluded. It is not direct-only damage or total area damage.
+
+`platform_endurance {platform, design:{width, speed, ammo:["explosive-rocket"], stock:{"explosive-rocket":0}, details:true}, route:[...]}` adds `ammo_details[].effects`: cached prototype direct damage by type, area damage entries by type/radius/friendly_fire (yes/no/unknown), nested actions, projectile attack/final actions, repeat counts and distance falloff. Values are base damage per effect; ammunition quality multiplier is separate, force/turret bonuses excluded. Radii are unscaled. Repeats, probability and overlapping areas are not totalled. Created entities, beams and streams are named only; bounds (16 projectiles, 512 nodes, depth 24) report `truncated`. Native weapon settings are unchanged.
 
 `platform_endurance {platform, route?}` (read; Astra, d15: Wayfarer was lost at Aquilo after its rockets, fuel and
 repair packs ran out on the way) projects a planned route at the rates the platform shows now:
@@ -2767,8 +2822,13 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   whitelist/blacklist mode for collectors, so `filter_mode` is refused there. With `platform` it works through remote
   view like the other configure paths.
 - `inspect {platform, position}` and `configure {platform, position, ...}` act on your own space platform by name
-  (platform coordinates, hub at 0,0; the whole platform is in sight; configure works through remote view, so a recipe
-  change needs an empty, idle machine). There `inspect` adds `construction_blocked` when the entity is marked or has a
+  (platform coordinates, hub at 0,0; the whole platform is in sight). A platform recipe/quality change returns held
+  input/output items and interrupted-craft items to the hub (`to_hub`). The current check reserves one empty hub slot
+  per occupied input/output stack and per in-progress item ingredient; partial hub stacks are not counted as empty
+  slots. The refusal names free slots under the hub's bar, the reservation and its items, leaving the recipe and
+  held items unchanged. Each asteroid chunk takes one hub slot. Reapplying the same recipe and quality leaves its
+  contents in place. `deliver {platform, position, items}` requests the current recipe's ingredients from the hub
+  into the machine; `transfer` and `pickup` require a character's hands. There `inspect` adds `construction_blocked` when the entity is marked or has a
   ghost on it, and on the hub `hub_slots` (`0 of 65 free`). `platforms` shows `hub_slots` per platform, and with
   `platform` set, `construction_blocked`: `hub full: 0 of 65 slots free; 1 marked for deconstruction wait for room
   (removed entities and their contents go to the hub)`, `ghosts wait for items the hub lacks: inserter (ghosts need 1, hub has 0)`.
@@ -2934,7 +2994,8 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   conditions `1 of 2 requests unmet (iron-plate 40/100)`. Arrivals are watched once a second; a stop under way before
   the harness first looked says `waited at least Ns`. The maximum time reads `the maximum (about 414 days)`.
 - With `platform` set, `thrust_inputs`: a line per thruster input under half full, with the chain behind it, as the
-  slow-flight alert gives it (below).
+  slow-flight alert gives it (below). The source trace follows connected same-fluid ports through other thrusters,
+  keeping each fluid box separate, and crosses pumps only toward their input side when they push toward the engine.
 - `platform_schedule {platform, paused: true}` says what pausing does: on a route (`note: paused on the route: the
   platform stays among the route's asteroids and drifts back the way it came ...; it reaches no orbit until
   unpaused`), in orbit (`paused in orbit: the platform stays where it is, among that orbit's asteroids`).
@@ -3072,8 +3133,10 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     buffer chest's (or a landing pad's) requests there the same way and reads them back: `target: "requester-chest at
     (5.5,135.5) on vulcanus"`, `sections`. With `surface` it needs `position` (never your character's requests).
   - `configure {surface, position, recipe}` sets an assembler's recipe there as a remote recipe change does in reach
-    of nothing: an empty, idle machine takes it (`remote: true`); occupied input or output slots, or crafting
-    progress, produce a refusal naming the machine, surface and blocking state. Modules stay as in the game (Astra,
+    of nothing: off a platform an empty, idle machine takes it (`remote: true`); occupied input or output slots, or
+    crafting progress, produce a refusal naming the machine, surface and blocking state. A platform is the exception:
+    a real recipe/quality change returns held items to its hub when enough empty slots are free (as above), with
+    `to_hub` naming the returned items. `deliver` requests its current recipe's ingredients from that hub. Modules stay as in the game (Astra,
     shift17 10:50: an idle crusher holding efficiency modules was refused; checked on a private 2.0.77 server): a
     module stays unless the new recipe forbids one of its positive effects or its category (productivity modules out
     for wooden-chest, a quality module out for a barrel recipe; a speed module's negative quality and an efficiency
@@ -3722,13 +3785,14 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     one too). `build`, `place_ghosts` and `paste` replies list the chests they placed the same way.
   - `underground_side_feed` (Sol, shift10: an inserter side-feeding an underground entrance, long nutrient
     starvation): a planned inserter dropping onto an underground belt entrance from one of its sides, a planned belt
-    running into an entrance's side, or a planned entrance beside built ones. Read on a private 2.0.77 server
+    running into either underground end's side, or a planned end beside built feeders. Read on a private 2.0.77 server
     (burner inserters and belts into underground pairs): an inserter beside an entrance puts its items on the far lane
     only, as on a belt, so `#2 inserter (7.5,84.5) drops onto underground-belt (6.5,84.5), an entrance flowing north,
     from its east side: only its west (left) lane gets these items; its east (right) lane gets none from it`; a belt
-    side-loading an entrance passes only its lane on the entrance's downstream side: `... side-loads underground-belt
-    (6.5,84.5), an entrance flowing north, from its west side: only the belt's north (left) lane goes in; its south
-    (right) lane stops at the entrance`. An underground without a `type` is an entrance for `place_ghosts`, and for
+    side-loading an entrance passes only its lane on the entrance's upstream side: `... side-loads underground-belt
+    (6.5,84.5), an entrance flowing north, from its west side: only the belt's south (right) lane goes in; its north
+    (left) lane stops at the entrance`. At an exit the feeder's downstream lane passes instead. These lane labels
+    match native transport lines 1 (left) and 2 (right), checked in all four directions at both ends. An underground without a `type` is an entrance for `place_ghosts`, and for
     `build` an exit when the nearest one of its kind upstream within reach is an entrance. A `build` reply says the
     same for what it built (an inserter, a belt, or an entrance beside standing ones).
   - `requests_kept` (a paste): for each entity with requests the blueprint lands on (a platform hub, requester and
@@ -3981,6 +4045,8 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   factory made in the last 10 minutes, `researchable_now` `{name, units, packs, queued}` fewest units first; the rest in
   `waiting_for_packs`, grouped by `packs_not_made`; and `made_last_10_min` per pack. Labs or chests may still hold
   packs of a group that waits.
+- Platform deconstruction preserves every item inventory and inserter-held stack, plus transport-belt, underground-belt and splitter contents, through native mining into the hub. Fuel, burnt results, machine input/output, ammo, chest and collector contents, and modules retain their quality and stack data (including spoilage and partial magazines). Native planner orders use the same preservation handler. Fluids and ingredients already consumed into an unfinished craft are not item inventory contents. `where_is {item,surface}` reports recent platform return manifests in `deconstructed`: tick, entity, position, item, quality and count. The last 32 entity removals are retained, with the newest 6 matches returned. Hub overflow spills onto the platform, marked for native pickup when room is available. A receipt records the mining return; it is not a current stock count. This requires the updated mod's platform mining event handlers and a server restart, as well as runtime deployment.
+- Before a harness `deconstruct` marks any platform entity, it checks the whole batch's contents and mined entity items against shared hub capacity using exact stack metadata. An unreadable/uncovered item source or insufficient room refuses the entire batch, including empty entities and ghosts; mixed ground orders wait for this check. Dry run returns `platform_returns` (safe, reason, entities/contents, aggregated returns and short items), `platform_return_lines`, and on refusal `would_refuse: true, would_mark: 0`. Existing partial stacks count as room. Cargo-bay capacity changes and filtered hub slots are not modelled and refuse; preflight is bounded to 128 entities and 8192 source inventory/line slots. The capacity snapshot is taken at the call; subsequent native planner orders or inventory changes still use preservation and native overflow pickup.
 - `where_is {item, limit?, surface?}` (read): where an item is on your surface (or `surface`): `total`, `by_kind`
   (chest, pod (a landed cargo pod's container), lab, machine, vehicle, pad, hub, roboport, belts, inserter_hands,
   characters) and `places` (each chest, pod, lab,
@@ -4056,7 +4122,8 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
 - `fh call science [--args '{"pack":"logistic-science-pack","surface":"nauvis"}']` (read; an observe scope): per pack the current research needs (or `pack`), over the whole surface and the same for everyone: `line` (made and used in 10 min from the game's statistics, the crafters set to it by name, Space Age ones too, and their states (`makers 14 (12 assembling-machine-2, 2 electromagnetic-plant; 9 working, ...)`), packs in their output, in chests, in landing pads and platform hubs (beside the chests: `chests 185, landing pads 766`; Sol, 23:03: the pad's 766 was left out and Muse read 170 left), on belts and in labs, labs that have none, carried by agents, the largest holders, chests, landing pads and hubs alike (`largest holders: (52,54) cargo-landing-pad 766, ...`)) and `reach`: where else it sits (chests by kind, inserter hands, robots), the inserters taking from its makers (output side full: into what), the inserters feeding the labs (by status, what the waiting ones' sources hold), each logistic network's requesters for it (met, on the way, unmet with reasons, as `supply` gives them) and the worst lab (position, the packs it lacks, its feeder's source, the nearest stock). One scan for all packs (`supply`'s, with labs as the users).
   Each pack also has `chain` (Sonnet, shift09: "I spend most cycles diagnosing that by hand"): its recipe tree from the pack down, built from the same scan's crafters (assemblers, furnaces, silos; no other find), each step with its makers and made and used per minute (the force's item or fluid statistics over 10 minutes). The line follows the ingredient most of a step's makers lack while more than half of them lack one, and ends at the first step whose makers mostly do not, or that no crafter makes: `chain: chemical-science-pack: 9 of 14 makers lack advanced-circuit, made 12/min, used 30/min; advanced-circuit: 12 of 17 makers lack plastic-bar, made 8/min, used 20/min; plastic-bar: 4 of 4 working, made 30/min, used 52/min`. A maker lacks an ingredient when its status is an ingredient shortage and its input holds less than one craft of it. `chain_tree` lists every step down to what nothing makes: `{item, depth, made_per_min, used_per_min, makers, working, states, lacking {ingredient: makers}, miners, miner_states, outputs}`, at most 40 steps (`chain_cut`); a step's makers are the crafters whose recipe (a furnace's last one when idle) makes it, and its children the ingredients of those recipes. Miners make ores and fluids (Grok, 04:55: the chain said stone has no assembler): a mining drill or pumpjack makes its mining target's products, an offshore pump the fluid it pumps; such a step reads `stone: 7 electric-mining-drill, 1 burner-mining-drill (5 working, 2 output full, 1 no resource left) into 6 transport-belt, 2 wooden-chest, made 40/min, used 52/min` (states in words: working, output full, no resource left, else the status; what item drills put into, `the ground` when nothing), and a resource's required fluid (sulfuric acid for uranium) is the step below it, the drills short of it lacking it. A drill whose resource ran out has no mining target; the product it mined last is kept per drill. A step nothing makes reads `no assembler, furnace, silo, mining drill or pump makes it`. The science read's scan and `team.science` find the mining drills and offshore pumps with the crafters.
 - `fh call supply --args '{"item":"advanced-circuit"}'` (read; an observe scope; optional `"near":{"x":0,"y":0}` with `"radius"` 1..512, default 64, and `"surface"`; `"radius"` alone looks around you on your surface, round1650d): where one item sits and why it does not reach the machines that use it, the same for everyone. `flow` (made and used in 10 min on the surface); `where` (the total and each place: belts, requester/passive-provider/active-provider/storage/buffer and other chests, landing pads, landed cargo pods, platform hubs, vehicles, machine outputs, users' inputs, silo rockets, labs, inserter hands, robots, the team's characters); `chests` (the 5 largest, and what a requester or buffer chest asks for: `requests N`, `no request for it`, or that its section asking for it is off or a circuit sets its requests); `networks`, one line per logistic network with a requester for it (or covering `near`): what its providers, storage and buffer chests hold, how much is reserved for deliveries and free (the engine's free count is net of reservations), what its requester chests hold (trash-unrequested can let robots remove unrequested items), which requesters the reserved stock is for (`reserved for (20,3) requester-chest 2, (24,3) requester-chest 1`, most first, up to 4: each logistic robot's order queue, a pickup from a provider then a delivery to a requester; Grok, 10:50), what its robots carry and what is due at its requesters, its logistic robots (idle, out, carrying, charging, waiting to charge, items each), and its requesters met / on the way / unmet with the reasons tallied; then up to 5 unmet ones (most short first, nearest first with `near`) as `(x,y) name have/want (+coming): reason`. Reasons: `not in a logistic network`, `logistics off`, `off by its circuit condition`, `inventory full: all 48 slots taken (spoilage 494 in 10 slots, nutrients 300 in 3 slots, ...)` (every slot of the requester taken and none a stack of the item with room: what fills them, the most slots first, spoilage named; before any robot reason; Sol, 22:08: a requester on Gleba with 494 spoilage among its 48 slots read as `no idle robots`), `no idle robots`, `all N held are reserved for other deliveries`, `only buffer chests hold it (this requester does not take from buffers)`, `none in providers or storage`, `short N, below its minimum delivery M`, `free stock and idle robots`. Landing pad and platform hub requests are filled from orbit and not listed. `makers` and `users` (every crafter by its type: assemblers, furnaces with their last recipe, silos, and Space Age's electromagnetic plants, foundries, cryogenic plants, biochambers, crushers and recyclers, which are assembling-machine or furnace types; labs when the research needs the pack): the machines counted by name (`7 makers (5 assembling-machine-2, 2 electromagnetic-plant): ...`; Astra, 06:19, read the worst three as all of them), counts by status with the missing ingredients (`12 item_ingredient_shortage (12 missing advanced-circuit, 7 missing electronic-circuit)`), the recipes; `makers_worst`/`users_worst`: 3 with positions (no power first, then missing this item, other shortages, output full, low power), a user with what it holds, the feeder carrying the item (its source and that source's request state; or that none of its feeding inserters takes from a place holding or requesting it) and the nearest stock with distance; `feeders` (inserters into the users by status; the waiting ones' sources with none of it by kind, and how many hold it); `takers` (inserters out of the makers; output side full: into what); `throughput` (up to 5 of the first 64 makers and 64 users whose inserters in, or a maker's out, carry less than its recipe at full speed, as `trace {position}` says it); `counted` (crafters, labs, chests, belts, inserters, robots and networks read; caps 2048 crafters, 1024 labs, 5000 chests, 10000 belts, 8192 inserters, 4096 robots, said when reached). With `near` the entity scans cover that circle and network totals stay whole. About 45 ms on a 6000-belt surface. The same read (item, surface, `near` and radius) within 10 s returns the same reply with `as_of: "4s ago (the same read within 10 s is reused)"` and scans nothing; `science` does the same per surface, packs and research. Example line: `network 8 (18 roboports (-92,-155)-(86,60)): providers 2 (4 reserved, 0 free), storage 0, buffers 0, in its requester chests 98; robots carry 3, 7 due at requesters; logistic robots 147: 19 idle, 128 out (57 carrying), 15 charging, 0 waiting to charge, 2 items each; requesters 21: 5 met, 0 on the way, 16 unmet, 157 items short (reasons: 16 all 2 held are reserved for other deliveries)`.
-- `supply {item:"lubricant", surface:"nauvis", near:{x:0,y:0}, radius:64}` also reads fluids. `made_10min`/`used_10min` come from the surface's fluid statistics; `stored` and `capacity` count each connected segment containing that fluid once, as in the fluid GUI (a machine box without a segment counts on its own). `segments_count` covers the counted segments; `segments` lists the largest 8 with amount, capacity and one visible access point. A segment touching the search may extend beyond the area: its whole connected stock is counted, stated in `scope`. `makers` and `users` report counts, statuses and up to 5 positions from recipes, mining targets and filtered machine ports. At most 2048 relevant entities are found; only visible ones are read (own platforms are visible), and `counted` reports coverage and the cap. The same read is cached for 10 seconds like item supply.
+- `supply {item:"lubricant", surface:"nauvis", near:{x:0,y:0}, radius:64}` also reads fluids. `made_10min`/`used_10min` come from the surface's fluid statistics. `stored` and `capacity` sum native machine boxes plus each distinct transport segment once. `thrusters`, `pipes` (segments, including storage tanks), and `machines` (including pumps) each give `amount` and `capacity`. A thruster can expose its joined segment's ID and contents while its capacity describes only its own tank: the tank is separate stock, and segment capacity is read at a pipe or tank anchor. `segments_count` counts only transport segments; `segments` lists all counted IDs once, sorted by ID, with amount, capacity and one pipe/tank access point. A segment touching the search may extend beyond the area: its whole stock is counted, while native boxes count only inside the search. Empty locked/filtered boxes contribute capacity. Stock is never clamped to capacity. `makers` and `users` report counts, statuses and up to 5 positions. At most 4096 relevant entities are found; only visible ones are read (own platforms are visible), and `counted` reports coverage and the cap. The same read is cached for 10 seconds like item supply.
+- `platform_supply {platform, fuel:true}` uses the same accounting and returns `fluids["thruster-fuel"]` and `fluids["thruster-oxidizer"]` with those stock fields and `counted`, plus a summary line for each. These totals cover the whole platform, including disconnected stock; the existing feedstock trace still describes only the segments joined to the consumer through pumps. Compare with a whole-surface `supply` at the same tick (check its cache age).
 - `fh call freight_audit --args '{"item":"agricultural-science-pack"}'` (read; Luna, 16:50: one pack's freight put
   together by hand from science on Gleba and supply on Nauvis): one item across every planet and platform. `lines`,
   one per planet that makes, uses, holds or lacks it, then one per platform holding or requesting it:
@@ -4167,9 +4234,13 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
 
 ## Retries
 
-- A dropped connection reports `outcome_unknown`: the request went out and no answer came. The CLI never replays the action automatically.
-- A call that could not reach the game (RCON or the broker refused the connection, or the login failed) reports `game_unreachable`: `game unreachable since 13:41:05 (2m10s): ...; the request was not sent (nothing was done)`. The first reply after the outage carries `outage: the game was unreachable from 13:41:05 to about 13:52:40 (11m35s; the last failed call at 13:52:31: ...)`, once.
-- Through the RCON broker (pog tools/fh_broker.py), a retried `--id` is answered from the broker's record when the game answered it before (`result.broker: answered from the broker's record: request X was answered at 13:40:02 (tick 9204100); it was not sent again`, adding when the game has since rolled back past that tick). One whose answer was lost (`outcome_unknown`) is sent again after a read of the game's tick, and the answer says which: `the game answered it from its own record (...): it was applied then and not again now`, or `the game had no record of it (never applied, or applied and then rolled back): it ran now`. While the game is unreachable such a retry says nothing was sent and that whether the first send was applied is not known yet (Luna, 13:41: every exact-ID retry read outcome_unknown).
+- Across an RCON or broker drop, the CLI retries the same request ID for up to `FH_RETRY_MS` (default 90 s).
+  If any attempt has an unknown outcome, subsequent reconnect failures cannot make it unsent: without a verified
+  reply it ends `outcome_unknown`, retaining the request ID. A verified reply resolves the uncertainty.
+  A failed connection on an explicit `--id` retry also remains unknown, including in a later CLI invocation:
+  the client cannot prove whether an earlier invocation sent that ID.
+- A fresh request whose attempts all failed before sending (RCON or the broker refused the connection, or the login failed) reports `game_unreachable`: `game unreachable since 13:41:05 (2m10s): ...; the request was not sent (nothing was done)`. The first reply after the outage carries `outage: the game was unreachable from 13:41:05 to about 13:52:40 (11m35s; the last failed call at 13:52:31: ...)`, once.
+- Through the RCON broker (pog tools/fh_broker.py), a retried `--id` is answered from the broker's record when the game answered it before (`result.broker: answered from the broker's record: request X was answered at 13:40:02 (tick 9204100); it was not sent again`, adding when the game has since rolled back past that tick). One whose answer was lost (`outcome_unknown`) is sent again after a read of the game's tick, and the answer says which: `the game answered it from its own record (...): it was applied then and not again now`, or `the game had no record of it (never applied, or applied and then rolled back): it ran now`. While the game is unreachable, the CLI keeps an explicit `--id` retry `outcome_unknown`: a failed reconnect does not establish whether the earlier send was applied.
 - A rollback (the server restarted from an earlier save): the first reply whose tick is more than 600 under the last one this workspace saw carries, first, `rolled_back: the game rolled back from tick 9205000 to tick 9187000 or earlier (the server restarted from a save): what you did after 13:35 is gone; redo lists what your journal shows you changed after it (4 calls), oldest first` and `redo` (`13:37:12 build {"name":"assembling-machine-2",...}`; builds, ghosts, crafts, transfers, configures, request edits and the like whose reply came with a tick above the new one; at most 20, then `+N more`). Shown once; a reply to an `--id` retry (which may come from a record with its old tick) counts for neither. The workspace keeps the last tick, the speed and an outage in course in `.fh-pace.json` beside the journal (`FH_PACE_FILE`).
 - The `clock:` line names the game speed when it was under 55 ticks/s between two of this workspace's replies 5 s to 10 min apart in the last 3 minutes: `...; game speed 18 ticks/s, 30% of normal`.
 - Pass `--id ID` on a call to make retries safe. Repeating the same call with the same ID returns the cached result instead of running it again. The game keeps the last 256 results.
@@ -4849,6 +4920,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   5; `none`, or `under 30 min of network samples yet`), `time left in the shift: 1h20m` (fh, from the deadline file),
   then `look ahead: a moment to think past the current task: what you and the team will need in the next hour or
   two, and whether your plan line still says it. What you do with this is up to you.`
+  If the automatic read fails, the primary action's result, ID and exit status are preserved. A separate `warnings`
+  entry names the failed lookahead request and the primary request; the lookahead is not marked as shown.
 - Networks (networks.lua): `networks {surface?}` (read, `fh call networks`) and `team.shift.networks` (up to 8 lines,
   the agent's surface first, `+N more networks: fh call networks`), one line per network, numbers only:
   `nauvis electric #7 (10 poles near (32,0)): draw 18.5 MW avg over 5 min (now 18.5 MW) of 22.1 MW capacity (84%);
@@ -6347,11 +6420,24 @@ fh watch    # deploy on every change
   `no ghost at N (a new placement each): ...`. Checked on the copy: of two belts and a solar panel killed on Swift, the
   hub had rebuilt both belts and a ghost stood for the panel.
 - `damage_log {position, radius?, surface?}` (B8, Sol, board #695: incident 973 blamed a flamethrower that faced away):
-  hits on our entities, alive or destroyed since, only where our force saw at the time (a chunk in radar coverage or a
+  hits on our entities, only where our force saw at the time (a chunk in radar coverage or a
   character's sight): each row's age, count, damage type and amount, and its source, its position and facing (or no
   source the game names: a fire or projectile that outlived it). Hits from one source within a second are one row; the
-  last 8 rows an entity, 512 entities. `inspect` adds `damage_history`. On the copy the log adds about 6-12 ms per 1000
-  hits in the container (about 0.002 ms a hit on n).
+  last 8 rows per unit, 512 units. `inspect` adds `damage_history`.
+  (d29 batch356 DL) Each entity row identifies the original `unit_number` and name. `hit_rows` holds the original
+  unit/name, first `tick`, `last_tick`, copied hit `position`/`surface`, count, damage and type; `hits` keeps the source
+  and cause text. Hits at different positions form separate groups. An area read returns matching historical hits;
+  its top-level `position`, `hit_tick` and `last_hit_tick` identify the latest matching group.
+  `state` is `alive` only for the same original unit in current sight (saved entity reference, by-unit lookup, or a
+  visible same-ID occupant for old records), with `current_position` and `current_surface`. `destroyed` requires a
+  recorded death; `removed` requires mining or a script-raised removal, with `removal` tick/position/surface.
+  Otherwise it is `unknown`, including an absent unit without a removal event or a unit outside current sight.
+  `alive` is true/false only for confirmed states and absent for unknown. Moving away does not confirm destruction.
+  `current_occupants` separately lists entities standing at the returned historical position when visible, including
+  each occupant's own unit number (when it has one), name and position and whether it is the original. Its status is `complete`, `capped`
+  (17 entities reached, at most 16 listed), or `unknown` (outside sight or failed lookup).
+  Saved history from before this change has no per-hit target position: `position_status: unknown`, with no hit
+  position or surface. The old first-observation search anchor is explicitly labelled by `position_basis`.
 - `platform_rename {platform, name}` (C1, Astra 13:30): renames one of our platforms, as its GUI does, refusing another
   platform's name; `still_named` lists each agent's queue steps (pending and running), running action, standing orders,
   saved plans and open board items that name the old name. Nothing of theirs is changed. Platform schedules and
@@ -6467,8 +6553,7 @@ fh watch    # deploy on every change
   give each target: researching level L (queued to level M), queued N times from place P (levels), or not queued (the
   queue full, after the pending names), and the levels left. The tick: 1.9 ms over 360 ticks in the container.
 - `trace {position, forward: true, audit: true}` (C3, Opus 18:20: 3 of 4 trunks ran at half capacity): `audit` names,
-  along the belts the walk followed, a belt side-loading both its carried lanes onto one lane (at most half gets on;
-  whether that lane is full), a curve made a side-load (an empty stub of at most 3 tiles behind the turn tile keeps it
+  along the belts the walk followed, a belt side-loading both its carried lanes onto one lane (with whether that lane is full), a curve made a side-load (an empty stub of at most 3 tiles behind the turn tile keeps it
   straight), and a route ending where the run goes on within 4 tiles ahead (the missing tiles, what that run carries,
   "nothing reaches it from here"; a ghost waiting there; or a belt against it facing another way). On the copy, the NW
   coal trunk: transport-belt (-291.5,-312.5) side-loads 4 coal on each lane onto the fast belt's right lane, which is
@@ -6661,6 +6746,8 @@ fh watch    # deploy on every change
   and `rocket_parts` takes no `at_least` for every part: `--until "silo_parts>=40 at 14.5,140.5"`,
   `--until "rocket_parts at 14.5,140.5"`. A refused until now lists the names and says a sleep also takes queue_done.
   `{until: "all", conditions: [...]}` holds when every one does (B2 uses it).
+  Each `all`/`any` member keeps its own pod, research and platform baseline, including sleep's `any`/list members.
+  Hold/resume and reload retain those member baselines; the enclosing wait supplies timing and reports the combined diagnostics.
 - `silo {position, why: true}` (A2, Sonnet 22:50: low-density-structure, then plastic, then coal found by hand): the
   rocket-part ingredient the silo is shortest of (one it lacks for the next part first), each place its feeding
   inserters take from (what it holds of it; a requester: its request, what its logistic network holds and robots
@@ -6992,7 +7079,7 @@ fh watch    # deploy on every change
   - (d23 batch124b, Sol #2071: 16 lines of fire returned of Asterion's 23 railguns) `railguns_only: true` keeps, of
     the turrets picked, those whose shots are a line. The lines of fire of the picked turrets whose shots are a line
     come 16 a page: `line_page` 2, 3, ... (`lines_page {page, pages, per_page, total, returned, from, to, next, filter,
-    clear, hitting, hit, cut, unread}`; `lines_of_fire [{name, position, facing, engages, line, hit, ghosts, cut,
+    clear, hitting, hit, cut, unread}`; `lines_of_fire [{name, position, facing, engages, line, hit, ghosts, cut, corridor,
     entities, destroyed_ours, unread}]`). A turret row whose line is on another line page carries `line_page`.
     Every reply has two count lines, `turret rows: page 1 of 2, turrets 1-64 of the 120 picked (120 turrets read); 56
     more on page 2..2` and `lines of fire: line_page 1 of 2, turrets 1-16 of the 23 picked whose shots are a line: 15
@@ -8208,13 +8295,25 @@ fh watch    # deploy on every change
   arrival, hub slots and chunks, chunks collected and where they go, crushers, makers, thrusters, tanks, ammunition,
   turrets, power; `errors` for a read that failed. `platform_supply` now also returns `stops` (every entry not
   working, in the chain's order; `first_stop` is the first). tests/platdigest.lua.
+  - PD (d29 batch354, Aurora site:5523): `platform_defense.turret_counts` counts the whole ship before row filters
+    or pages: `status` (`complete`, `capped`, `unknown`), `read`, `total` (complete only), `empty` (ammo turrets),
+    `armed`, `unarmed`, `unread` (readiness unknown), `by_hand`, and `capped` (the find limit, 256, when reached).
+    Capped or unknown counts describe only the turrets read. `platform_digest` uses these structured counts,
+    including empties past row 64; `turrets` remains text and `turret_counts` carries the counts and status.
+    Its `check {status, incomplete}` names failed constituent reads, capped counts or hull reads, and failed/pending
+    ammunition traces. An incomplete check never says “stopped or blocked: none”; known stops remain listed.
+    `platform_defense.sides_capped` names the 40,000-tile hull limit when reached. These are read results.
+    Tests: `tests/platdigest_counts.lua` (65/137 turrets, only empty on page 2; 256/257 cap; failures and filters).
+    The census vehicle summaries in the stream harness, model and public state also preserve a missing total as
+    unknown (`null`); their rows stop at 64. `site/test_vehicles.py` covers totals 137, 0 and missing through all three.
+    The map does not report no vehicles on a surface when rows are missing or a vehicle lacks a known position.
 - B2 (Astra, ~10 times on Kestrel): `belt_flow {position, seconds?, platform?}` (beltsample.lua) walks the belt line
   (64 tiles back and on, undergrounds followed), cuts it into sections at each merge, and samples each section's last
   tile and each belt merging in for 2..30 s: each lane's items by `unique_id` (2.0.77's detailed transport line
   contents), every half of the ticks an item takes to cross a tile. An item gone at a later sample has passed: items a
   minute per lane; a lane whose items did not move is stopped (full at 4 or more on the tile). `merges`: the line
   before and each belt in, against the line after. The sampler runs from on_tick (at most 16 tiles, 2 lanes each; 16
-  tiles' lanes read in 0.08 ms on world n); the CLI reads `belt_flow {}` each second until the result is in
+  tiles' lanes read in 0.08 ms on world n); the CLI reads `belt_flow {id}` each second until its result is in
   (`--no-wait`: the start). tests/beltsample.lua, tests/cli.test.ts.
 - B3 (Astra: tiles deconstruct only from exposed edges, learned by trial): `platform_tiles {platform, positions |
   area}` (tilecheck.lua `query`, batch22 A1's rules as the game showed them on a copy of world n): up to 64 tiles,
@@ -8404,11 +8503,12 @@ fh watch    # deploy on every change
   (fireline.lua).
   - The rule, read from the 2.0.77 prototypes at runtime:
     - railgun-turret's base has a direction, and its attack_parameters give turn_range 0.2 of a turn (it aims within
-      36 degrees of its facing, 72 in all), range 40 and projectile_creation_distance 3.6.
+      36 degrees of its facing, 72 in all), base range 40 and projectile_creation_distance 3.6. Turret quality scales
+      both targeting range and line length by range_multiplier; start, minimum range and width stay fixed (batch458).
     - railgun-ammo's action is a `line` 50 long and 1 wide with force `all`, and its collision mask takes every object
       layer, belts included. It damages every entity it crosses, ours too.
     - An entity of ours with health whose box (widened by half the line) a ray at some bearing of the arc crosses
-      between 3.6 and 53.6 tiles is hit when the turret fires that way. The test uses the box corners' bearings and
+      between 3.6 and the quality-specific shot reach (53.6 at normal) is hit when the turret fires that way. The test uses the box corners' bearings and
       distances, and 17 rays where the box straddles the start or the reach.
     - Ghosts take no damage. They are named apart, as hit once built.
     - Any turret whose shots are a line and whose turn_range is under a full turn is read the same way.
@@ -8544,10 +8644,16 @@ fh watch    # deploy on every change
   - `load_silo {position, platform, first}` (runtime.lua M.load_first) builds that call:
     - `items`: each item named at what the hub lacks of its requests (its sections that are on), or `{item: count}`.
       Items it lacks none of are named in `first_skipped`, and a call where it lacks none of them is refused.
-    - `from`: the chests of the silo's logistic network that robots would take each item from first
-      (select_pickup_point, up to 4 an item, 16 in all), unless `from` is given.
+    - `from`: preferred pickup chests, then other eligible storage/active/passive provider chests of the silo's
+      network until inventory plus sources cover the manifest (16 chests total). Buffers remain excluded from
+      automatic pickup, as in the original selector; explicit `from` still permits them. Insufficient normal-quality
+      stock refuses before any walk, load or auto-request pause, naming selected sources, excluded sources and reasons.
+      Explicit `from` keeps its existing semantics, including partial loads.
     - `walk: true`, `launch: true`, and `auto_requests: "pause"` when the silo's automatic requests are on. `first`
-      in the reply says the counts and the chests.
+      in the reply says the counts and the chests. `first_warning` keeps the partial/auto-OFF warning visible.
+      `native_auto_before` reports the read tick, rocket state, native switches, current target and platform payload
+      matches before pausing. The engine does not expose the cause of its automatic launch scheduling; matching stock
+      is not a launch guarantee. Native behaviour is unchanged (#2937, d37 batch457).
   - Found on the way: a dry run with `auto_requests: "pause"` switched the automatic requests off and never back on
     (no launch follows a dry run). A dry run now switches nothing and says what the load would do.
 - B8 (Luna 07:18: to make Spindle wait at Nauvis, stop 1, for fuel and oxidizer >= 24000 she set current 2, as current =
@@ -8730,7 +8836,10 @@ fh watch    # deploy on every change
   - `rearm {from: {position, count?}}`: a transfer of the ammo (default 200) from that chest to you, walking to it.
     The tour then runs with the other arguments once the take ends `transferred`, `collected` or `topped_up`
     (`then_after`: finish now runs a then_call after those outcomes too, not only after a met wait). In reach, the tour
-    runs at once (`took_first`).
+    runs at once (`took_first`). The original area or positions and other tour arguments survive the pickup and
+    save/load. If no ammo is taken, the tour does not run. If the pickup or the follow-up rearm fails, `last.outcome`
+    is `failed`, `last.error` gives the reason, and `last.pickup_outcome` retains the pickup's outcome; ammo already
+    taken remains carried. A successful pickup alone does not mean the turrets were rearmed.
   - `retry_when_clear` now also covers turrets a tour leaves out for passing enemies (stock.screen records their
     positions, 64). Once the tour ends, it runs `rearm {positions: them, walk, retry_when_clear}` (`left_out_retry`),
     which waits for units_clear as a refused rearm does (6 tries in all).
@@ -9856,7 +9965,7 @@ fh watch    # deploy on every change
   counts it when the wait began in the same tick or up to 60 ticks after (a queue's previous step), from `location`
   when given: `Kestrel IV left aquilo at tick T (platform_schedule by sol, 0 ticks before this wait began)`. A
   departure by the game's own schedule (its waits met) is not recorded this way; a wait begun while the platform still
-  waits there is met when it leaves, as before. `platform_arrived` reads the state (stopped there), so it is met at
+  waits there is met when it leaves, as before. `platform_arrived` also latches arrivals since the wait started (batch407); it is met at
   once when the platform arrived before the wait began: no such gap. Test tests/d19_batch48.lua.
 - cp2 (Sol 18:01: Kestrel IV at Nauvis, `platform_schedule {stops: [6 stops], current: 2}` read no_schedule and the
   queue step failed after 305 ticks; a 2-stop [nauvis, fulgora] current 2 too): the game keeps a platform at its
@@ -10922,7 +11031,7 @@ fh watch    # deploy on every change
   any wait_until with `surface` or `platform`.
 - Still refused with `surface`: `no_enemy_structures`, `no_enemies`, `units_clear` (enemies, not ours), `health_below`,
   `health_above`, `crafting_done` (the character), `researched` (the force), `turrets_idle` (turrets firing),
-  `damaged` (health), `ghosts_waiting` (ghosts, `platform` only), `circuit_signal` (a platform hub's wires), and the
+  `damaged` (health), `ghosts_waiting` (ghosts, `platform` only), `circuit_signal` (platform hub wires, or `position` and `wire` for an entity's native networks), and the
   platform conditions.
 - Tests: tests/d20_batch62c.lua (fails on main's conditions.lua); tests/d20_batch52.lua and d20_batch62b.lua quote the
   widened refusals.
@@ -12354,7 +12463,7 @@ Each fails on the code before the fix.
 - Why: `fh wait` (host/cli.ts waitForIdle) waits on the character's action (status `active`, `combat`). A belt_flow
   sample is a bounded watch (measures.lua), not an action, so with nothing active the wait returned the last ended
   action. `stop` pauses the queue and ends the action and combat (runtime.lua handlers.stop); it does not touch a
-  watch. A sample ends at its until_tick, or when a new `belt_flow {position}` replaces it.
+  watch. A sample ends at its until_tick. Since batch381, each call has an independent ID.
 - The change (CLI):
   - fh wait's polls ask for the watches: `status {peek, brief, work: true}`; a runtime that refuses `work` gets the
     polls as before.
@@ -12374,7 +12483,7 @@ Each fails on the code before the fix.
   - Exit 3's stderr line for a sample says that no action or stop ends it (the action line's "a call that drives
     your character stops it" does not hold for a sample).
 - belt_flow's start and progress replies have `ends`: "the sample ends at until_tick: stop and your actions do not end
-  it (a new belt_flow {position} replaces it); fh wait waits for it when nothing else runs". Its help (returns) says
+  it; each call now has its own ID; fh wait waits for it when nothing else runs". Its help (returns) says
   the same.
 
 ## d22 batch110 BT1: the harness's garbage (Lua heap churn)
@@ -12517,7 +12626,7 @@ A full-edge abort must keep the return leg's ammunition. `item_count` with `plat
 `ammo_below` each turret alone, so no wait or guard could test the total aboard.
 
 - New condition kind for `wait_until` and queue guards, in the body, remote and platform lanes (conditions.lua,
-  ammoreserve.lua; runtime deploy needed): `platform_ammo_below {platform, item, count, quality?, max_age?}`.
+  ammoreserve.lua; runtime deploy needed): `platform_ammo_below {platform, item, count, quality?, max_age?, on_stale?}`.
   - `item`: an ammunition item. `quality`: as `item_count` (default normal; a quality name; "any" sums every quality;
     the item's name alone is normal quality only, checked on the copy).
   - The count is the item aboard in all places a player can open: the hub's main inventory, each ammo turret's ammo
@@ -12531,13 +12640,17 @@ A full-edge abort must keep the return leg's ammunition. `item_count` with `plat
   a tick, and reads the hub on its last step. Each entity is read once a pass, so nothing is counted twice within one
   reading. An item that moves between two places during the pass (about 2.2 s on Asterion) can be counted in both or
   in neither.
-- Age and staleness (conservative, as Astra asked): age is ticks since the reading's pass began. With `max_age`
-  (30..900 s, default 120) the condition is also met when the newest reading is older than max_age ("...; older than
-  max_age 2m00s: met (stale reading)"), and when there is no reading max_age after the platform's first check. A guard
-  on it therefore fires on a stale reading. While the first pass has not finished within max_age it is not met, and saw
-  says so ("no reading of its ammunition yet (a pass began 0s ago; ...; met if none by max_age 2m00s)").
-- A guard's baseline line names the background reading and max_age. The wait estimate label is "platform_ammo_below
-  ITEM aboard PLATFORM" (it said "in PLATFORM hub").
+- Age is ticks since the reading's pass began. `max_age` is 30..900 seconds (default 120).
+  `on_stale:"met"` (default) also meets when the reading is older than max_age, or none exists past max_age after
+  the first check. `on_stale:"wait"` stays unmet in both cases, including a stale low count; only a reading within
+  max_age whose total is below count meets it. At exactly max_age a reading is still fresh. Both policies request
+  the same background pass, with the same cadence and per-tick work limits. No check scans entities.
+  Before the first reading, within max_age, both are unmet. For a scope the missing-reading clock starts at its
+  first check. The wait timeout and finite `produced` budget are unchanged.
+- Every `saw` includes `reading_tick` (pass start, or none), `age` (seconds and exact ticks, or unknown), `max_age`,
+  `refresh_pending` (a pass running or awaiting its turn), and `on_stale`. Missing readings also give elapsed time
+  since the first check. A guard's baseline and the wait estimate label include the policy. Body, remote and
+  platform lane waits and guards accept it, including members of `all` and `any`.
 - Measured on a headless copy of world n's 22:10 autosave (Asterion at Aquilo: 6743 belts with 14510 transport lines
   read, 289 inserters, 97 ammo turrets, 56 machines, no chest), with Astra's platform lane waiting on it:
   - `profile_ticks {seconds=60}`: `ammoreserve.tick` 323 ms over 60 s (0.09 ms a tick on average). That includes one
@@ -12645,6 +12758,14 @@ on Gleba breeders invalidated Luna's samples three times, and she reset each win
   - A second edit of the same entity in the same tick counts once.
 - What happens at the first edit and each one after:
   - The watch's read up to the edit is kept: `mixed.parts` holds from_tick, to_tick, line, and up to 64 lines.
+    Flight watches keep the complete observation read in each part, including all observed turret rows and their
+    lines, damage, losses, empty-turret runs, railgun/laser energy and fire, accumulators, fuel, ammunition, repairs
+    and foundation. The normal read's 24 ammo-turret / 64 powered-turret display limits do not truncate these parts;
+    the watch's sampling caps still apply. Parts contain no nested mixed history.
+  - Flight-watch edits on the same tick share one boundary: the baseline refreshes after each target, but no
+    zero-duration part is saved. At most 3 positive-duration parts are kept (`mixed.parts_limit`); a fourth drops
+    the oldest, counted by `mixed.parts_dropped`. Existing zero-duration parts are removed on the next edit;
+    observations already evicted by older code cannot be recovered from the watch.
   - The watch starts again from the edit tick with its first arguments, to the same end tick. A flight watch's counts
     begin again, to its arrival or limit.
   - The watch ends at the edit instead, its final being that part, in three cases: an entity it measures was mined or
@@ -12796,6 +12917,14 @@ Now (spoilflow.lua):
   supply measured it; otherwise the last line names it as not counted. The crafts run: made over what the statistics
   count a craft (products past a returned catalyst, with the makers' average productivity bonus from the census).
 Regression: tests/d22_batch122b.lua.
+- d37 batch440 follow-up: dependency's measured net rate and stock coverage use the supply sample's exact tick
+  interval. Its displayed minutes are rounded to one decimal; using that display value as the divisor made a
+  61-second, 100-item stock fall read -100/min instead of -98.4/min and could mark over ten minutes of stock short.
+  Regression: tests/d37_batch440.lua also checks the inclusive 1/60-minute sample edges and 30-minute quote expiry.
+- The same check found `fuel_budget` omitted recipe inputs for machines with burners. A biochamber now appears
+  in its burner group for the fuel slot and in its recipe group for fuel-valued ingredients, each inventory once.
+  The copy's 600-second window consumed 14,400 nutrients in egg crafts and 3,038 as fuel; production statistics
+  counted their sum, 17,438. Group rates remain estimates for the machines working now, not measured window totals.
 - cp2: the background jobs' per-entity garbage, module by module (the same facts; each module's tests, and new
   tests/d22_batch110_misc.lua and tests/d22_batch110_freight.lua comparing kept and fresh reads):
   - walk.lua: one filter and area table for every band; the band is the find's own list with the entities outside it
@@ -15015,7 +15144,8 @@ QN3 (Sol #2328): supply's residual. Nauvis agricultural science held 2801 then 2
   - Now mixed.lua closes the old watch through api.close.asteroid_watch (asteroidwatch.close): done at the edit tick,
     its full result made, its tracked records and who hit which kept (keep, as a watch done at its end), its turret
     and walk state dropped. It hangs on the new watch as `segments` (the oldest first), at most SEGMENTS 3 and
-    SEGMENT_RECORDS 3000 tracked asteroids together (the newest always kept; `segments_dropped` counts the rest).
+    SEGMENT_RECORDS 3000 tracked asteroids together (batch456: first plus newest two; second oldest evicted first,
+    even the newest if needed to keep the first within the record cap; `segments_dropped` counts the rest).
     Later splits carry them on; a watch the agent starts anew has none.
   - mixed.parts names the segment (`segment_start`); every read lists `segments` [{segment_start, end_tick, seconds,
     closed_by, line}]; `segment_start: <tick>` reads one in full (trajectory_page, trajectory_limit, asteroid_names).
@@ -15553,6 +15683,15 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   - The cover (idle_nudge `cover_for`): an active (a request of its own in 10 min, not resting) coverer of one of its
     active claims (`board_update {id, cover: true}`: the board read's covers), else the handoff's lead (the first
     active --lead, else the member with the latest request of its own); never the agent. None: logged, not sent.
+  - d30 batch388 CA: no eligible cover or a failed tell leaves the alert pending. Retries wait 5, 10, 20, then every
+    30 min while the episode lasts. A successful tell completes the alert; its log says `told`, with no cover
+    acceptance recorded. `pacing.resting` excludes ordinary and firm rests at selection, including claim coverers,
+    leads and the fallback member; the next eligible recipient is selected.
+  - Provider-stop episodes (original stop time, resume attempts, pending alert retry time and delivered recipient)
+    persist in `runs/RUN/pane-resume-state.json`, atomically replaced before log callbacks. Restart reloads pending
+    retries and completed alerts. An unreadable/invalid state file raises instead of silently discarding delivery
+    history. Dry runs read this state and only mark their simulated delivery in memory; they never write the file.
+    Tests: `tools/test_cover_alert.py` uses fixed times, fake panes and tells for failure, rest and restart cases.
   - A purchase or credit screen ("Buy more credits", "Buy credits", "Add credits", "Purchase", "Add funds", "Upgrade
     plan", "Payment method") on the pane's last 40 lines: nothing pressed or typed, logged once (`purchase_screen`),
     for a provider stop and for a rest's end; Grok's limit dialog keeps batch213's Try Again rule.
@@ -15825,6 +15964,20 @@ chests; the build at 62773462 placed them and refused both, "configure sets bar 
   `ready` 8.7 / 7.4 ms. No tick work added: the tick's rows read the same request rows as before.
 - Test: tests/d26_batch223.lua (in lua.test.ts), failing on main; tests/d22_batch91.lua and d22_batch110_freight.lua
   take the new texts.
+## d30 batch392 (SV: receipt-driven ship surveys; Aurora site:5676–5677)
+- Stream-only: visits, ship holds, aboard follows and featured ships share `camerapath.Survey`. The view pans
+  beyond the foundation bow/stern using batch387's pane fit, dwells at both ends, zooms into a section, dwells,
+  pulls back and returns to the saved survey position/direction. Details do not change the survey pace.
+- `Harness.camera({player, panel?, observe:true})` is a host-side bounded direct Lua read of one rendered camera;
+  it never enters gameplay dispatch. It reads actual position/zoom, surface, connection, game speed and panel
+  visibility. Existing `cameras` replies describe destinations and cannot establish arrival. Compositor-confirmed
+  visibility plus these receipts earns coverage. No runtime/tick work or new agent action is added.
+- A preempted phase survives its original hold deadline (maximum 240 seconds), then restarts. Existing host,
+  operator, urgent and work priorities remain. Native camera moves and smooth panel/old-runtime fallbacks share
+  the path. Future work-aware tours can supply section candidates; base-tour selection remains unchanged.
+- Checks: `tools/stream/test_ship_survey.py`; private-copy receipts, frame strips and shift replay variants in
+  the operator's batch392 report. The operator restarts the live stream service after merging.
+
 ## d26 batch222 (CD: the camera director; viewers Aurora 20:09, site:4851, site:4876-4879, Caleb d25 base tours)
 - Host only (tools/stream; docs/STREAM-NOTES.md "Loops, fresh events, base tours, remote vehicles"): no runtime
   change and no new game read (status `active.remote` was read already; live.py PLAN_KEYS passes it on).
@@ -16987,8 +17140,8 @@ PL. Kestrel II's wait for 2200 uranium-rounds-magazine meant for Aquilo counted 
   inserter_stack_size_bonus (burner, basic, long-handed, fast). Quality changes none of it. An override above 0 caps
   it; one above the most reads back as set and the most applies. A circuit's set stack size writes the override (1
   with no signal, 0 when turned off). `inserter_target_pickup_count` reads the result at once.
-  - From a belt every inserter waited at the belt for a full hand (compressed turbo, sparse, moving or stopped). From
-    a chest holding 1, all but stack-inserter swung with 1.
+  - The belt observations below measured pickup sizes; they do not establish a full-hand requirement.
+    `wait_for_full_hand` is false for fast, long-handed and bulk inserters, true for stack inserters.
   - A compressed turbo belt, 60 s: basic 50, long 72, fast 144 swings a minute of 3 (their arm turns); bulk 86 of 12
     and stack 75 of 16 stopped, 78 and 64 moving. One item every 16 ticks on one lane: a basic inserter took none.
 - inspect (built or ghost): `effective_hand_size`, `hand_size_override` (0 none), `hand_size_max`, `capacity_bonus
@@ -17685,6 +17838,40 @@ turrets1s."
   arrival at the pickup, each with its start tick; each read once a tick; runs cut at the start or end; a gone turret
   ends it; the bounds.
 
+## d29 batch359 (AS, Sol #2770: aim-watch statistics over all shots)
+
+`platform_defense {platform, aim: true, seconds: 10..120, positions?}` keeps its existing targeting/hit attribution
+and 24-record `recent` cap. Each railgun now also returns `statistics`, accumulated independently of `recent`:
+
+- `shots`, `since_tick`, `prior_shots`: coverage. A running watch from an older runtime starts these counters at its
+  next read and says how many earlier shots are excluded; an already finished old watch has no statistics.
+- `intervals`: `count`, `sum_ticks`, `min_ticks`, `max_ticks`, `mean_ticks`. No interval before the first detected
+  shot; min/max/mean absent until there is an interval. Timestamps are the existing detector's read tick minus 1.
+- `intervals.histogram`: `ticks` maps decimal tick strings to counts through `exact_through_ticks` (prototype
+  cooldown rounded up, plus 1; at most the watch limit of 7200 ticks). Missing counts are zero. Three `wider` buckets
+  cover the next range through twice that threshold, then four times it, then everything greater, with inclusive
+  `min_ticks`/`max_ticks`; the final bucket has no maximum. Their sum plus `ticks` equals the interval count.
+- `shots_by_second`: 120 entries at most, including zero counts; entry 1 covers `start_tick..start_tick+59`.
+  `shots_by_target_size`: small/medium/big/huge/other/unknown, over all detected shots, including uncertain aims.
+  These are the targets retained from the previous tick, not a count of exact aimed hits or collateral hits.
+- `nominal_cooldown`: prototype name, `ticks`, and source `LuaEntityPrototype.attack_parameters.cooldown` (170 in
+  2.0.77). This base value excludes ammunition/force modifiers, turning, aiming and power limits. It is distinct from
+  observed intervals. If unavailable, the histogram's exact threshold is 1 and the nominal ticks are absent.
+- `samples`: valid-turret tick `count`; `energy_ready_ticks/share`, `target_present_ticks/share`,
+  `ammo_present_ticks/share`, and `energy_threshold_j`. Full-buffer means `energy >= electric_buffer_size`:
+  the 2.0.77 railgun data has a 10 MJ buffer and 10 MJ per shot. The target is `shooting_target`; ammo is the turret's
+  inventory count. These shares are independent observations, not causal diagnoses or a ready-to-fire flag. 2.0.77
+  exposes no remaining turret cooldown or ready-to-fire state. No additional entity reads per tick are needed.
+
+The existing detector counts an ammo decrease or a buffer drop over half capacity. If several ammo items disappear
+in one read, their precise individual firing times are unknown: `multi_shot_observations` marks that read, all are
+assigned its detected tick, with zero intervals inside it. Inventory removal can therefore imitate shots. Samples
+are counted only once when a paused tick resumes, and stop for a removed turret. All replies describe facts only.
+
+Regression `tests/d29_batch359.lua`: 120 s of saturated fire (43 shots, 42 intervals of 171 ticks), early extrema
+outside `recent`, exact arithmetic mean, all histogram boundaries and sums, second/target counts, independent
+sample shares, ambiguous multi-item reads, removed turrets and old-watch coverage.
+
 ## d29 batch332 (RT, Sol #2734: what each railgun shot was aimed at)
 
 Sol's report: "Native hit_by classes cannot identify which asteroid a round was aimed at; medium58%hits does not
@@ -17731,6 +17918,29 @@ world or the targeting.
 batch321 found that the agents compared factory and research against the ship only when a viewer asked, and named the
 facts they lacked; and that dated checks lived in note text and never came due. Facts only: nothing here advises.
 
+- **Explicit level costs (batch355).** `technologies {name: "low-density-structure-productivity", level: 16}`
+  accepts one exact enabled technology and a level in its prototype's range; lists, filters and paging cannot
+  accompany `level`. This is a read: no queue insertion, level assignment, progress write or target update.
+  The entry's `level` is requested, `force_level` is native, `count`/`full_units` is the full level cost and
+  `remaining_units` deducts current/saved progress only at the native level (zero for completed levels).
+  `progress_source` names which; `cost.eta_seconds`/`takes` uses the measured research-work rate including
+  productivity, for this level alone with no queue wait or assumed supply changes. No positive measured rate
+  means ETA unavailable. A future level never inherits the current level's remainder.
+  The engine evaluates the prototype formula with L and l; the difficulty multiplier applies unless ignored,
+  after flooring the formula result, then the multiplied value is floored again (native 2.0.77 checks).
+  Out-of-range/overflow/trigger requests are refused. `cost.rate` gives the measurement date, age and window.
+  `cost.nominal_packs_per_unit`, `nominal_packs_full`, `nominal_packs_remaining` are recipe amounts before lab
+  drain/productivity. `physical_packs_remaining` is a conditional estimate in fresh normal-quality full-durability
+  pack equivalents: nominal remainder times sum(speed * drain/100) / sum(speed * (1 + productivity)) across
+  working compatible labs. `cost.cohort` lists grouped labs by surface/type/quality/speed/drain/productivity/status,
+  the current research, census membership date, compatible/working counts, and its assumption. Live properties
+  come from the listed labs. It is not a count of inventory items: freshness, quality and partially consumed packs
+  matter. Incomplete census, the 256-lab cap or no working compatible labs omits physical demand with a reason.
+  Plain catalog `packs_needed`/`packs_short` remain nominal and say so in `packs_basis`; entries also name full
+  and remaining units. Queue entries label successive levels of repeated infinite technologies, their individual
+  full/remaining costs and progress source. Only the first occurrence carries current/saved progress; cumulative
+  `done_in` uses each level's cost. Unknown costs stop the queue clock. Sample pairs spanning a changed unit cost
+  of the same infinite technology no longer contribute to throughput.
 - **1. Effects.** `technologies` entries carry `effects` as the research screen lists them (research.lua unlocks,
   cached per name), and for a technology with levels `next_level` ("level 8 adds ...; N units"). A recipe
   productivity research carries `change`, not `modifier`: it read no effect before (low-density-structure
@@ -17793,6 +18003,13 @@ ship ..."
 
 **`wait_until {until: "budget_below", platform, turnaround, km}`**
 - Met once the binding item's `out_km_max` is under `km`.
+- Submit/edit require exactly one of `turnaround.km` or `turnaround.fraction`; outer `km` is never inherited.
+  Turnaround fields use the same argument validation as `platform_endurance` (including return allowance).
+- `queue_status.guard_read_errors` and each lane summary show active guard read failures with the first failed
+  tick, consecutive check count and latest error. A successful read clears this summary; `guards[].read_error`
+  retains the cleared record. Failed or empty return-budget reads (including unavailable turnaround geometry)
+  use this error channel and remain cached for 600 ticks. Stops, no flight leg and nothing binding remain plain
+  not-met. Read errors fire no guard action and release no hold. No additional condition reads are made.
 - The budget is read at most every 600 ticks (`BUDGET_EVERY`); between reads the last reading stands, and its tick is
   said.
 
@@ -17843,6 +18060,24 @@ binds ... Clean179s leg: held853fuel/558oxid vs fuel_outlook7208aboard; fuel7190
   - Railgun ammunition binds (165,696 km), its second rate over the last 1 min since the 10 would hold the leg's
     startup.
   - The read takes 10.8-10.9 ms with a turnaround and 9.9-11.6 ms without, at that state of Resolute.
+## d34 batch420 cp2 (#2883): inventory_free_slots on cargo landing pads
+
+`inventory_free_slots` with surface/position includes a cargo landing pad's main inventory. Its trash is excluded,
+as hub trash already is. Native size includes attached cargo-bay capacity; the bar and filtered-empty-slot rules
+are unchanged. Inbound pods' reserved slots remain unavailable in Factorio 2.0.77; the reported free count does not
+subtract cargo in flight. Submit and dry-run validation resolve the target and main inventory, including in
+`all`/`any`; missing, unsupported, ambiguous or uncharted targets are refused before queue execution. Validation
+does not require the threshold to hold and does not reserve capacity. Later disappearance remains a read error.
+
+## d34 batch420 (#2882): flight_watch arrival handoff before its next sample
+
+A start by the setter without `replace` takes the old watch's final sample immediately when native state already
+shows arrival: it has flown, is no longer flying, and has a space location. The arrival test, final sample and
+finalization are shared with the periodic sampler. The old result is returned in `previous_watch` with
+`previous_line`; its end tick and arrival ammunition boundary end at this observation, and its totals are frozen
+there. The same call arms or starts the new watch. In-flight watches retain the existing refusal message.
+Another setter's watch and explicit `replace: true` retain their existing behavior. No new stored fields or options.
+
 ## d29 batch337 (WR, Sol #2741: a queued flight_watch start refused after a queued read)
 
 Sol's report: "Cinder queued flight_watch read:true and queued explicit id1660 both returned archived donewatch, but
@@ -17868,6 +18103,17 @@ next queued flight_watch refused done and not read."
 - Another agent's start is refused and nothing is read.
 - Reads by `read: true` and by id mark a done watch, whoever reads it, and the next start goes on.
 - `replace: true` is unchanged.
+
+## d29 batch360 (BC, Astra #2772: budget_below cannot carry a previous leg's budget)
+
+`budget_below` reuses a read for up to 600 ticks only for the same platform, connection, from/to, direction and
+turnaround arguments (including nested reserve, items and return_allowance values). A changed leg or arguments
+reads again immediately. A stop/arrival or no flight leg clears the cached budget. No fresh successful budget for
+the new leg means not met, with the reason in `saw`; failed reads are retried after 600 ticks on that leg, or
+immediately if its leg/arguments change. `saw` names the cached leg, connection, direction and read tick.
+
+This also applies inside `all`/`any` and remote/platform lane guards: an AQ->EDGE cached budget cannot satisfy a
+new EDGE->Shattered guard. The underlying endurance read's rate windows and stock scopes are unchanged.
 
 ## d29 batch346 (LC, Astra #2754: a launch count to guard on; Astra #2755: budget_below in lane guards)
 
@@ -18006,6 +18252,26 @@ lowest turret and what feeds it on that tick (turretsnap.lua).
   belt lanes 0).
 
 **Test:** tests/d29_batch344.lua.
+
+## d29 batch348 (CS, Sol #2758: a queued circuit_set is checked as the live call checks it; red+green is both)
+
+Shift100: Sol's four-step Resolute clock draft passed queue_submit's dry run (ticks 82212119, 82212130) and Astra's
+(82261065) with decider rows and outputs `first_networks` / `networks` "red+green", the text inspect shows. Live,
+Astra's plan 113 ran its two actuator steps and stopped at the first clock step (alert at 18:01:33 UTC, tick
+82275474): "step job-2210 circuit_set failed: decider.conditions 1.first_networks is red, green or both". Astra
+resubmitted the clocks with "both" (82276082) and they applied.
+
+- **One validator.** circuits.lua check_args parses circuit_set's values with no entity, through the parsers the live
+  call uses (conditions, decider, arithmetic and selector parameters with their networks, a constant combinator's
+  signals, the switches' types); plan_set calls it too. It is circuit_set's queued-step check (runtime.lua
+  step_checks), which runs at submit, live and dry, so a value the live call would refuse refuses the plan before any
+  step runs. What depends on the entity (a decider on a decider combinator, an inserter's read switches) is still
+  checked when the step runs.
+- **Networks.** "red+green" (and "green+red", spaces and case aside) is both, in the one networks parser every
+  combinator field uses; the refusal says "red, green or both (red+green, as inspect shows it, is both)". inspect and
+  circuit reads keep saying red+green.
+- **Tests:** tests/d29_batch348.lua (each network spelling; each field's value refusals; queue_submit dry and live
+  refused before any step; Sol's red+green clock passes and parses as both).
 ## d29 batch345 (BP, Astra #2753: assembler_batch stages ingredients for base crafts)
 
 Astra's foundry at Vulcanus (26.5,47.5), +50% productivity on turbo underground belts (2 a craft, 2 express underground
@@ -18026,3 +18292,691 @@ crafts at +50% (opus-ugbatch-228-refused.txt, tick 81798147).
 - **Tests:** tests/d29_batch345.lua (Astra's 228 and a count that fits; two adjacent batches with the bar carried;
   every even count 2..60 at five bars: the fewest base crafts, never short; no productivity, and a product productivity
   leaves out, staged in full).
+
+## d29 batch351 (RA, Astra #2762: an opt-in return allowance for the turnaround budget)
+
+Resolute's 36th deep turn (shift100, Astra's read at tick 82449670): turnaround {km 10000, back_to aquilo, speed_floor
+35, margin 0.2, reserve rail 1500}: 11646 km flown on solar-system-edge->shattered-planet, back 21646 km to the edge,
+then 100000 km to Aquilo; railgun ammunition net 35/min (the last 1 min, the worse); 1356 usable, out_km_max -15148,
+the planned turn 25148 km too far. The Aquilo leg alone at 35 km/s is 2857 s, 47.6 min x 35 = 1666.7 rails; Astra's
+whole Aquilo return measured rail made 2522, used 2432.
+
+- **The argument.** turnaround.return_allowance {legs, items, label, evidence_ticks?}: the caller's count of each item
+  over the named legs back after the connection's start, in place of net x time there. Checked (endurance.lua
+  check_allowance): a table of those keys; label 1..200 characters; 1..8 legs, each "from->to", none twice; items known,
+  counts 0..1e9 (no production credit); evidence ticks up to now. Matched (match_allowance) against the turnaround's
+  legs with turn "on": each named leg exactly one of them, else refused naming those there are; none when back_to is
+  the connection's start.
+- **The arithmetic** (return_budget, o.allowance = {items, km}): x = ((usable - count) / net x v - flown - (back - km)) /
+  2; left_at_return = stock - net x (2 out + flown + back - km) / v - count. An item made at least as fast as used
+  with a count over its usable stock: allowance_over_usable. The read without it: unadjusted, binds_unadjusted.
+- **Default:** no allowance, replies unchanged (no new fields).
+- **budget_below** passes its turnaround to the read, allowance and all.
+- **Tests:** tests/d29_batch351.lua (Astra's numbers with 0 and 300 over the Aquilo leg; the unadjusted kept; an item not
+  named; legs absent, ambiguous, none after the start; argument refusals; budget_below with and without).
+## d29 batch352 (RR, Astra #2764: diagonal railgun rotation)
+
+Astra's report: Resolute's corner railguns face north, edge impacts arrive 53-63 degrees outboard, past their +/-36
+degree arcs; `rotate` refused northeast and northwest.
+
+**What the game allows (a copy of world n, 2.0.77, on Resolute and on Nauvis):**
+- The railgun turret is built in 8 directions (`building-direction-8-way`; place_ghosts and build already take
+  northeast/northwest), and its turn range is 0.2 (+/-36 degrees).
+- **R and Shift+R:** `LuaEntity.rotate` returns false for every placed railgun turret, its ghost, and a gun turret,
+  on a platform or a planet; `rotatable` reads true all the same. In person and by remote view it is the same call.
+- **In person, the same turret built over it facing another way:** the game's fast replace. `can_fast_replace` is
+  true for another direction and false for its own.
+  - The turret comes back as a new unit, facing there, with its ammo, quality, priority list, ignore setting,
+    circuit wire and control settings: a rare railgun with 7 rounds, 1 target, ignore on, a red wire, read ammo and
+    enable/disable came back with all of them.
+  - `create_entity{fast_replace, character}` gives the old turret back to the character's inventory and takes none;
+    a player's build spends one, so the player ends even.
+- **The footprint (its 3x5 box turned 45 degrees), side by side in a row:**
+  - two railgun turrets facing north fit 3 tiles apart;
+  - one facing a diagonal needs 4 to one facing north or the same diagonal, and 5 to one facing the other diagonal.
+  - `can_fast_replace` refuses every turn (diagonal or east) in Resolute's front row, which is 3 apart. At a spot
+    with room on both sides it allows it.
+- **Blueprint pastes:** a blueprint of the turret facing another way, pasted normal or forced (Shift), by a player
+  too, places nothing over it. Superforced (Ctrl+Shift) marks the turret, and whatever the new footprint meets, for
+  deconstruction and places the ghost.
+- **The rebuild on Resolute:**
+  - The hub took the turret and its 10 rounds at once and built the new one 46-121 ticks later. Its feeder refilled
+    it.
+  - The new one had no priority list, ignore setting, circuit wire or control settings, unless the blueprint carries
+    them. A blueprint captured from the turret carries `priority-list` and `ignore-unprioritised`.
+  - Copying settings from a neighbour restored its targets.
+  - Twice the feeding inserter dropped what it held on the floor.
+  - In the front row (3 apart) the superforced paste also marked a neighbour, which was lost from the row.
+- **Not a player's action:** a script ghost placed with fast_replace removed the turret and spilled it and its ammo on
+  the floor.
+
+**The change:**
+- `rotate {position, direction}` on a placed turret, in person, holding the same turret (name and quality): the fast
+  replace a player's build over it is. One item is taken, the old one comes back, and the reply's `replaced` names
+  the new unit.
+- Refused, with nothing changed:
+  - where the game refuses the fast replace (the turned footprint meets a neighbour; a railgun's diagonal gets the
+    4-tile line);
+  - with no such item;
+  - by remote view, naming the rebuild routes and what they cost;
+  - plain R on a turret.
+- Queue steps run the same handler.
+
+**Live, through the deployed runtime on the copy:**
+- `rotate {platform: Resolute, position: (10.5,-75.5), direction: northeast}` (remote view): refused, naming the
+  in-person fast replace and the rebuild routes.
+- Haiku on Nauvis, holding a railgun turret, rotated a north one to northeast in person. It came back as a new unit
+  with its 6 rounds, priority target and ignore setting, and Haiku still held one.
+- Muse's northwest turn of the next railgun 4 tiles away was refused, with nothing changed: it would need 5.
+
+**Tests:** tests/round1520d.lua: no item held (the refusal with the facts and routes), the footprint refused, plain R,
+and the fast replace (the item spent, the old one back, the new unit).
+
+
+### d29 batch362: completed flight production
+
+`platform_production {platform, legs: N}` (integer 1..16, with platform alone) returns the last N completed
+flights, oldest first, retained while the next flight is underway. The separate ring keeps 16 completed flights
+per platform, independent of freight's eight stop/leg segments. `leg: true` retains its existing current-window
+behavior; it is not a completed-history selector.
+
+Each row has `from/to` ticks, `from_location/to_location/heading` (the directed connection ends), actual
+`start_position/end_position` (location, or connection and distance), `ended_by` (arrival, reversal, station_passed),
+`start_source/end_source`, `partial`, `status`, `ammo/fuel {name: {made, used}}`, and `loaded/dropped` cargo maps.
+Native cumulative production counters are snapshotted on platform state events and, for changes without an event,
+on the tick a position watch observes a location, connection or native distance-direction change. A location on the path closes the incoming leg
+without needing a station wait. The position watch runs each tick over known platforms; freight adds platforms on its existing second watch, and state events add them immediately. Counter reads happen at boundaries, never on unchanged watch samples or reads.
+A reversal closes the outgoing interval and starts the return interval with the same snapshot; fluid deltas retain
+native precision. Ammo sums every quality at each boundary, including qualities first made during that leg.
+
+Cargo counts rockets launched to the platform and hub pods sent down at their engine event ticks, not delivery at
+the other end. Keys include `@quality` past normal, with 64 keys per direction per interval. Cargo caps/failures,
+missing/reset native counters, and first observation during flight make the row `incomplete`; unknown counters
+are absent, with `counter_status`. Deleted platforms are pruned by the existing freight watch. No pre-install
+history is reconstructed. Two changes wholly between position samples cannot be reconstructed; a stationary schedule edit alone is not an observed reversal.
+
+The state event is forwarded by control.lua; installing this change's control.lua requires a mod reload/server
+restart. The position fallback operates on a runtime-only deploy, but does not give state-event boundaries.
+### Return-budget rate evidence (d29 batch363)
+
+`platform_endurance {platform, turnaround:{...}}` keeps the conservative budget unchanged and adds diagnostics to **every** `return_budget.items` row:
+
+- `rate_basis`: window, start/end ticks where available, production `made`, consumption `used`, `net` (**made minus used**), rates and the exact `budget_net_used` (**used minus made**) used in the calculation. Existing fuel/phase rate rounding and fuel's `within_step` treatment remain explicit. A moving-phase aggregate spans separate moving intervals and is periodically halved; it has weighted counts and an explicit `endpoints_unavailable`, not invented contiguous timestamps.
+- `windows.whole_leg/last_1_min/last_3_min/last_5_min`: the same counts and signed NET. Whole leg uses departure counter snapshots for ammunition and fuel; `partial` means first observed underway. Repair packs have no departure production baseline and say unavailable. The engine's one-minute count interpolates its oldest bucket and includes its partial bucket: `start_tick/end_tick` are the nominal window, `read_tick` is the observation tick, and `oldest_bucket` gives its exact bounds and weight. These counts can be fractional, not exact event deltas; three/five minutes sum 90/150 completed two-second production-graph buckets, ending at the stated boundary, with age and bucket width. Windows crossing departure say `includes_before_leg`. These are production/consumption counts, not changes in stock (cargo and location changes are separate).
+- `usable_after_reserve_margin`: min/max and ticks for `(stock-reserve)/(1+margin)` **observed at reads** on this leg, with first/last sample ticks and sample count. No continuous or pre-installation extrema are inferred. Changing leg, scope, reserve or margin starts another observation series; at most 32 series per platform leg are retained.
+- `cap_conditions`: currently readable item-referencing circuit/logistic enable conditions on machines, inserters, belts and pumps, with entity, position, condition, tick and `on`/`off`/unknown state. An unwired circuit is labeled ignored. Indirect virtual signals are not attributed to an item. A gate being off never changes the budget's net rate.
+  Removed or rebuilt entities refresh this read's entity list even when its count is unchanged; the replacement's current conditions are reported. Bound entity methods are never retained across reads (Factorio 2.0.77 can crash when one is called after destruction).
+
+`budget_below` includes the binding item's used window and multiwindow line in `saw`. On firing its evidence keeps the **whole return budget**, including every item's rate basis, counts, windows, stocks and cap states. In an `all`/`any` guard, `evidence.budget_conditions` keeps each met budget member even if a preceding progress or hit condition already supplied evidence. Cached reads retain their original tick; fired snapshots are detached from later reads.
+
+
+### Explicit return-budget windows (d29 batch364)
+
+`platform_endurance` accepts `turnaround.windows`: a distinct subset of `[60,180,300,600,"leg"]`, meaning seconds or the current leg. With windows, `require` defaults to `"all"`; an integer from 1 to the number of windows is also accepted. **One same selected item must bind in that many windows.** Different items binding in different windows do not combine. Omitting windows keeps the existing conservative calculation unchanged.
+
+```json
+{"until":"budget_below","platform":"Resolute","km":5000,
+ "turnaround":{"km":25000,"back_to":"aquilo","speed_floor":55,"margin":0.2,
+               "items":["firearm-magazine","rocket","railgun-ammo"]},
+ "windows":[60,300,600],"require":"all","missing":"pending"}
+```
+
+For a turnaround read, put all three options inside `turnaround`. A guard accepts them at its top level or inside `turnaround`, never both. Each window uses measured made/used counts divided by its full duration, with the same stock, selection, reserve, margin, speed and caller return allowance. It does not replace a measured deficit with zero because a gate is off or fuel is within a maker's batch. An item binds when its maximum distance farther out is strictly less than the threshold. A one-minute deficit with that item's three/five-minute and leg nets in surplus is 1/4 binding, not met for `"all"` and met for `1`.
+
+**Every window stays on the current leg**, keyed by platform identity/name, connection, endpoints and direction. A stop or changed leg clears the old boundary. A matching recorded freight segment supplies its start. Before that baseline arrives, all requested windows are unavailable under the selected missing-data policy, even on a repeated route; no earlier departure supplies rates. The first observation remains a lower bound, so an older segment cannot override an observed stop or turn. Eligibility is unknown until a matching baseline arrives. Each fixed window then requires its full length since that boundary, with no shorter fallback. The one- and ten-minute native counts include an interpolated oldest bucket; that whole bucket must start on this leg too. The three/five-minute windows use completed two-second buckets. Consequently eligibility can be up to one bucket later than the nominal duration; `eligible_tick` gives the exact tick. Whole-leg data must have a complete, matching departure baseline; partial or old-leg baselines are unavailable.
+
+`missing:"binding"` is the default: a selected item's unavailable window counts as binding, conservatively. `missing:"pending"` makes it neither bind nor clear. With `require:"all"`, any pending window prevents that item from meeting the condition. With a numeric count, an item can meet it once enough other windows bind. If no item meets and an item's pending windows could still meet the count, the result says pending (not met). `saw` names which windows are pending and their eligibility ticks. For absent counters, partial whole-leg baselines or an unknown planning speed, no recovery tick is invented: it says ready tick unknown and why. Unselected missing rows do not count. A measured zero is distinct from missing data. A stopped ship, absent flight leg or failed whole read retains the existing not-met/error behavior.
+
+`return_budget.window_budgets` retains every item for each named window, its rate basis (window, endpoints, made/used/NET), unavailable reasons and eligibility ticks. An unavailable `rate_basis` has no counts or NET; any rejected sample is separately labeled `excluded_rate_basis`. `window_check` gives per-item binding/pending counts, each window's state and NET, and `binding_items`. The read checks its planned turnaround distance; the guard separately checks its own `km` and labels the scope. Default `items` and `binds` remain the conservative comparison. A fired guard keeps `evidence.window_check` plus the entire return budget; composite guards retain this too. The per-leg cache includes these options and refreshes at the first pending window's eligibility tick or after ten seconds. A matching segment's arrival, replacement or disappearance invalidates the cached window read at the next guard check. Both the reply and guard description state the full same-leg, same-item rule; window checks name the leg and baseline status.
+
+Batch364 label corrections (Sol tick 84054702): `usable_after_reserve_margin` replaces the ambiguous `usable_stock_extrema` name. Its `measure` and `formula` explicitly identify budget usable after reserve and margin: `(stock - reserve) / (1 + margin)`. For stock 5908, reserve 3600 and margin 0.2, the observed value is 1923.333333, not raw stock 5908. Existing observations retain their values. An item's legacy `window` follows authoritative `rate_basis.window`; `recent_window` preserves the separately labeled comparison candidate, including in the explanatory line. No budget arithmetic changes.
+
+
+## d29 batch368 CP: circuit_signal at an entity on a platform
+
+Sol #2777: "circuit_signal reads hub wires only; Resolute M/R/L loop reader13.5,31.5 has independent count."
+
+`wait_until {until:"circuit_signal", platform:"Resolute", position:[13.5,31.5], wire:"red", signal:"rocket", below:2300}`
+reads the native red circuit network of the entity at that platform position. The same condition works in queue
+steps, lane guards, `all`/`any`, sleep conditions, standing orders and repeat conditions. No position selects the hub.
+No wire selects both; `red`, `green`, `both`, `red+green` and `green+red` are accepted, ignoring spaces and case.
+Combinators read their input connectors. A position must identify one of our entities with a circuit connector.
+
+An explicit position or wire requires every selected network to exist and be readable. Missing entities, entities
+without circuit connectors, ambiguous positions and missing selected wires refuse submission, including dry runs;
+the refusal names what stands there. A network that disappears during a wait is unreadable, with its reason in
+`saw`; the condition remains unmet and is read again. An existing network with no such signal reads zero. Without
+either selector, the hub keeps its existing unwired-zero behavior (and positive `at_least` guards are refused there).
+
+`saw` gives the entity/position, each selected network's ID and count, total count and read tick. A fired guard's
+`evidence` gives `entity {name, position, unit_number}`, `platform`, `signal`, `wire`, `networks [{wire,id,count}]`,
+`count`, `tick` and `circuit_signal:true`. Compound guards retain these under `circuit_conditions` alongside other
+evidence. Guard status also exposes the latest `saw`. Network identities and signal values are read afresh at each
+check; no hub fallback or cached zero is substituted for an unreadable entity network.
+## d29 batch365 FL (eng/d20-batch365)
+
+`flight_watch {platform, from:"leg"}` arms at the current leg and begins on the next observed connection, oriented
+from/to, or direction change: a departure from a stop, pass-through, or reversal. `from:"departure"` retains its
+meaning: leaving a stop, excluding pass-through. A stop alone does not start a leg watch. Both modes check on the
+watch's existing once-per-second phase and end unbegun after 24 game hours. The watching window and limits are
+unchanged. Direct calls, queue submission and dry runs accept the same `from` values.
+
+The read and start alert identify the change. `watch.start_change` keeps `kind` (departure, connection, direction),
+`before` and `after` (location or connection/from/to/back), and the observation ticks `from_tick` and `tick`.
+The reason survives a mixed split and remains in the final read. Registration captures the baseline immediately;
+changes between samples can be missed. Distance and speed changes within a leg do not start a watch.
+
+## d30 batch372 AW: asteroid-watch admission filter (Sol #2778)
+
+`platform_defense {platform, asteroids:true, seconds:1200,
+track_filter:{asteroid_names:["small-promethium-asteroid"], area:[[-20,-80],[20,-40]]}}`
+selects detailed records before the 3000-asteroid cap. Either names or area may be omitted;
+when both are present both must match. Names accept the same 1..16 exact names or `*` patterns
+as the read's `asteroid_names`, compiled to a name set once at start. The rectangle uses
+platform coordinates (north is negative y), includes left/top and excludes right/bottom;
+coordinates must be finite within +/-1000000, with positive width and height. Named corners
+`{left_top:{x,y},right_bottom:{x,y}}` also work.
+
+Admission is decided at the first observation (sample or damage/death event). Excluded
+asteroids remain untracked even if they later enter the rectangle; admitted records keep
+following them outside it. No extra scan is added. Global `by_name` seen, hit, destroyed,
+left/in-view and cohort counts and turret hits/kills/damage cover all asteroids as before.
+Turret kills of untracked asteroids now count too (previously omitted after the cap).
+`platform_hits_all` counts every distinct asteroid that hit the platform; existing
+`platform_hits` and its detailed lines, classes and trajectories cover only tracked records.
+
+Every start and read, including completed watches and segments, names `track_filter`
+(expanded names, or `{all:true}` without a filter) and `track_scope`. `filtered_out` and
+`past_cap` split the untracked count. Read-only `asteroid_names` continues to select pages;
+it does not alter admission. The cap still applies to matching asteroids. A filter does
+not guarantee that any given duration stays below the cap.
+
+## d30 batch370 SF (eng/d20-batch370)
+
+Resolute's filtered splitter (-18,-61.5) had normal/= railgun-ammo and normal incoming rail ammo. On the private
+copy, its packed left (non-filter) outlet held up the input despite an empty right outlet. Keeping only the left
+outlet clear sent normal rail ammo through the unchanged right underground. Rail already sitting on the left output
+is not evidence that the current filter routes new rail there.
+
+Native 2.0.77 splitter_filter="railgun-ammo" and {name="railgun-ammo",quality="normal"} both read normal/"=".
+{name="railgun-ammo"} has no quality condition. Configure previously forced that table to normal and discarded
+comparators. It now uses the same filter parser as inserters/loaders: strings retain normal/=, name@quality and
+name@>=quality preserve conditions, name@any or a table without quality matches all qualities. Invalid quality,
+comparator or extra filter keys refuse before either priority changes. Clear and ghost behavior remain supported.
+
+Configure and inspect.splitter expose filter_quality and filter_comparator, including normal/= and any/none, and
+state both in the line. Inspect adds outputs: at most two adjacent belt lookups, with two surface lanes per straight
+belt or underground mouth (items by quality, can_insert_at_back). It does no downstream traversal or background work.
+
+
+## d30 batch380: belt_route underground types and combined placement checks (Sol #2810)
+
+`belt_route {dry_run: true, details: true}` returns placement entries in `entities`:
+`{name, position, direction, type?}`, with `type: "input"` or `"output"` on every underground belt.
+The list is accepted unchanged by `place_ghosts` within its entry limit. Dry-run per-entry placement status,
+footprints and refusal reasons are retained in `entity_checks`; `blocked`, `summary` and other checks remain.
+Real route replies use the same placement-entry shape, including the return line. Pipe-to-ground endpoints
+already use direction alone and `pipe_route` keeps its existing output.
+
+`place_ghosts` and `belt_route` dry runs return `undergrounds` for placeable underground-belt ends:
+`checked`, `paired`, `unpaired`, `external`, `requested_flow_mismatch` count ends, not pairs. `rows` names each unpaired
+end, each partner outside the request (built or ghost), and both ends whose requested flow differs. With `details: true`,
+ordinary pairs appear too. The check combines all entries and charted existing ends of our force; it follows
+same-tier tunnel axes within prototype reach and checks intervening lava and empty space. The results describe
+tunnel partners after the placeable ghosts are built. Requested flow is compared before the engine
+reverses an endpoint: in the private-copy test, two requested outputs faced opposite ways and the engine
+reversed the earlier end into an input. Placement success remains separate from paired flow.
+
+Baseline on Factorio 2.0.77: route `E1 uE5 E4` from (0,0) to (10,0), around a wall, reported seven placeable
+entries. Copying its unmodified diagnostic rows into `place_ghosts` was refused for `footprint, index, status`.
+Copying only name/position/direction passed both calls; the real call placed seven ghosts and both underground
+ends, (1.5,0.5) and (6.5,0.5), were input and unpaired. `place_ghosts` passes `type=spec.type` to create_entity;
+when omitted, Factorio creates an input ghost. With this change the unchanged route entries pass both calls
+and those endpoints are input/output with mutual neighbours. Regression suite: `tests/d30_batch380.lua`.
+### Recorded shift recaps (operator stream tool)
+
+`tools/stream/shift_recap.py rehearse --run-dir runs/RUN --out OUT --offline` renders a shift's
+script, cards and timeline from existing records. The stream prepares its voiced recap at
+three hours, appends closing developments at the deadline, and plays it through the next
+start until `start.log` says `started: N/M agents`. Prepared assets survive service restarts.
+Refused drafts and exact claim/number diagnostics are retained in `shift-recap/audit/` and
+`review.md`; valid narrative lines survive a refusal. Extracts exclude compressed tells/plans
+and use readable recorded events or conversation, with headings matched to the event.
+Recap/transition cover the full landscape or portrait canvas and restore the normal layout
+on completion/interruption. Each beat binds to a timestamped image/clip of its recorded
+ship/surface or a neutral card. Evidence paths stay offline. To replay the exact overlay
+from a reviewed manifest: `python3 tools/stream/shift_recap_rehearsal.py --manifest MANIFEST --out OUT`.
+`tools/stream/recap_capture.py` saves subject-tagged camera stills from existing director receipts: read-only
+OBS `GetSourceScreenshot`, at most one attempt/minute and one saved frame/subject/five minutes, 128 MiB/shift.
+Preparation refreshes media bindings without changing narration; no-media and per-beat asset failures appear
+in `prep.log` and `review.md`. No new game reads or clients. See `tools/stream/shift-recap.md`.
+## d30 batch377: stream platform metrics
+
+The operator-only `platform_metrics {platform, area?}` read supplies the featured/main-camera ship card. It returns
+directed leg geometry, turret tooltip counters and shooting targets, existing platform hit counters, ammunition
+in hub/turrets and surface production totals, repair packs, thruster/storage-tank fluids, and recorded entity
+losses on a fully observed leg. Optional `area` is two numeric corners, at most 512 tiles per side; asteroid counts
+are for that sampled camera rectangle. Turret/tank and count limits omit incomplete figures. This starts no watch
+and adds no game-tick work. The stream converts matching samples to wall-minute rates and wall-time ETA. Stock
+locations and the current-speed/rate assumptions remain explicit; the read performs no endurance calculation.
+The field definitions and freshness rules are in `tools/stream/platformmetrics.md` in the enclosing repository.
+
+
+## d30 batch382: analyst helper import collision
+
+The stream's commentary TTL/provenance module is `tools/stream/commentary_freshness.py`; the public-site/repo
+freshness alarm remains `tools/freshness.py`. The analyst, analyst board and caster import the commentary module
+by its distinct name, including after the analyst's game module puts `tools/` first on Python's import path.
+`tools/stream/test_analyst_startup.py` launches the analyst entry script with replay data, a temporary local /ask
+listener and digest-only mode, then checks both module import orders. It makes no live game or model call.
+
+## d30 batch384 (Sol #2820): design ammunition
+
+`platform_endurance` with `design.ammo` uses exactly the selected 1..8 names, deduplicated and sorted. The model
+uses compatible turrets aboard with their current target settings, ammo quality (normal when unloaded), researched
+damage and magazine sizes. Unselected turret categories do not generate asteroid fragments in this model.
+Unknown ammunition, types without compatible turrets aboard, and types whose damage cannot be read are refused;
+the error lists accepted names. Without `design.ammo`, the previous light model and ordinary forecast are unchanged.
+
+The reply names the effective set in `ammo`, its source in `ammo_source`, and gives `ammo_details` with damage per
+shot, compatible target settings, stock and its source, shots per item, total shots, items required and stock after
+subtracting that requirement. Optional `design.stock: {ammo: count}` supplies nonnegative integer item counts for
+selected ammunition. Omitted counts use stock aboard; `stock_read` states scope, cached belt/hand tick and any cap.
+Production, feed reachability and partial magazines are not modelled. `current_targets` separately records all
+built turrets' current settings; the read changes no turret, inventory, route or platform.
+
+Design field audit: width sets spawn frontage; speed sets minutes and the 600-second window; tiles supplies the
+bounding box. Height and mass are echoed with their non-use stated: height does not enter the spawn line, and mass
+does not enter this model at a supplied speed. Width/height with tiles is refused. Unknown fields are refused.
+Tests: `tests/d30_batch384.lua` and the existing design/forecast suites, including `tests/d24_batch183.lua`.
+
+## d30 batch381: independent belt watches and native lane/input facts
+
+`belt_flow {position, seconds}` returns its own `id` in start, progress and final.
+`belt_flow {id}` reads that watch; `{}` reads the latest. The CLI polls the ID it started, and `fh wait` keeps the
+ID it first waited for. `status {brief:true, work:true}` lists all retained watches. Each agent retains four watches
+including completed results. While all four are sampling a new start is refused without replacing anything.
+Otherwise a new start evicts the oldest completed result and returns its `evicted_id` and `warning`. An ID owned
+by another agent, or an evicted ID, is refused. Runtime reload and edits keep the ID; an edit still splits the
+measured window into the existing `mixed.parts`.
+
+`trace {position, forward:true, audit:true}` adds `lane_facts` on its visible walked belts. `belts` lists every native
+transport line index, item/quality counts, stack count, front item (minimum native line position),
+`can_insert_at_back`, and entity status. `side_loads` names two source lines whose native connections lead to one
+destination line, with contents at both ends, even when empty or carrying the same item. `inserters` includes
+status, held item, pickup/drop positions and targets, native left/right pickup permissions, and near/far lanes
+from native lane positions. Both belts and inserters include circuit/logistic conditions, their fulfillment and
+current signal values. Wildcard circuit signals have no single numeric value; their native fulfillment remains.
+These are snapshots: a full lane is not a measurement that it stopped, and permissions do not report pickup order.
+Inserters with unset targets are included by pickup/drop points on the belt tile. No current contents are read
+past visibility. `max_tiles` (1..3000, with forward) bounds lane tiles read; a stopped route names `continue_at`.
+
+Lane facts cover 32 walked lane tiles by default. `lane_facts_limit` accepts 1..256; `lane_facts_offset` accepts
+0..2999 (default 0), with `forward:true, audit:true`. These only page the added facts; the original routes and
+audit keep their coverage. `lane_facts:false` skips the extra contents, controls and inserter-position lookups.
+`lane_tiles_total`, `lane_tiles_included`, `lane_tiles_omitted` and `truncated` state the facts coverage. `more`
+names the limit/offset for the first up-to-256 lane tiles; `next` names the next page when one remains. Top-level
+`lane_facts_coverage` names the omitted count and those options on the CLI's first page. Counts are walked (belt, lane) pairs, including repeat belts on
+different lanes; the included belts report all their native transport lines. Each page is a current read, not a
+stored snapshot. `max_tiles` still independently limits the original walk, so facts counts cover that walk only.
+
+`platform_production {platform,item}` retains nominal maker capacity and native status, adding each maker input
+with ingredient counts at recipe quality, zero-held ingredient names, input/output inserter and loader counts.
+An inserter counts by native target or, when unset, its pickup/drop point on the machine footprint. Loaders count
+by native container and direction. The nearby arm search is bounded at 256 and says when capped. A machine
+without arms or ingredient stock says so beside capacity; no achievable rate is inferred.
+
+## d30 batch385 (Sol #2825): paper turret targets
+
+`platform_endurance design.targets` is `{turret-prototype: [asteroid-names] | "any"}`. Overrides replace the target
+set for every participating turret of each named prototype, only in the forecast. With explicit `design.ammo`, only
+compatible selected turrets participate; otherwise the existing loaded-ammunition model is used. Lists hold 0..64
+asteroid names; duplicates form one set, an empty list targets nothing, and `"any"` targets every asteroid. Omitted
+prototypes retain their native settings. Unknown or nonparticipating turret names and unknown/non-asteroid target
+names are refused with accepted lists. Malformed mappings and sparse lists are refused.
+
+The reply returns `target_source` (`design.targets` when overrides are present, otherwise `platform`),
+`effective_targets [{turret, count, targets, source}]` for participating turrets, and `current_targets` for all native
+turrets separately. A partial mapping has per-group sources; `ammo_details.targets` also uses effective settings.
+No entity, native priority list, ignore-unprioritised flag, inventory or route is changed. Overrides do not carry
+into later reads. Empty mappings retain platform settings.
+
+The same damage and fragment model is used. Reply `estimated` states that piercing through multiple asteroids and
+interception order between turrets are not modelled: each ammunition independently counts full shots for its own
+targets and their targeted fragments. This does not simulate target allocation between weapons or firing order.
+
+`tests/d30_batch385.lua` compares width 35, speed 40, the full edge-to-Shattered-Planet connection, 41 huge-only rails
+and medium-targeting guns, against rails targeting huge and big asteroids. It checks shots and gun fragment demand,
+native settings before/after, later reads without overrides, explicit/implicit ammunition, partial/empty/any
+profiles, duplicate targets, invalid keys and target names, and the model-limit text. Existing batch384 and design
+tests retain their numerical results.
+
+- Ammunition count scope: `supply {item}` (including `compact:true` and `stock:true`) returns `counts_scope` for its counted supply holders and a warning: turret magazines excluded; whole ship: `platform_endurance resources.aboard`. Counts and reads are unchanged. `platform_endurance` ammunition rows always expose `aboard` (whole ship, including turret magazines), and label it beside `stock` (reachable, excluding stranded) in the resource line and compact output.
+
+## d32 batch401 (Sol #2856): uptime items checked before queue submission
+
+`uptime.items` names and qualities are checked by `uptime.check_items` at execution and queue validation.
+Only item prototypes are accepted; fluids and unknown names are refused before submission, including nested
+guard steps. Dry and live submission name the step, argument and cause, for example
+`steps[17] (uptime): args: items[2]: water is not an item (fluid prototype)`.
+The check uses prototype lookups for at most eight entries; it reads no entities or production statistics.
+`tests/d32_batch401.lua` covers valid items, fluids, unknown names, mixed lists and qualities, plus a 28-step
+queue whose invalid step 17 prevents every step from running and preserves the current watch.
+
+`wait_until` condition `inventory_free_slots` takes a platform name (its hub main inventory), or one container
+`position` with optional planet `surface`. `below` / `at_least` are integer free-slot thresholds (0..1e9;
+when both are present, at_least <= free < below). Example:
+`{"until":"inventory_free_slots","platform":"Asterion","below":16}`. It works in direct waits, sleeps,
+queue waits and queue guards, including `all`/`any`, in body, remote and platform lanes (remote needs platform
+or surface). Guards check every 10 ticks and run their supplied reaction once.
+`saw` reports occupied, free, total usable slots, physical capacity, barred slots, and `read_tick`.
+Capacity is the current native inventory size, including cargo bays and quality. Barred slots are outside
+usable counts; empty filtered slots are included (for their matching item); a partial stack occupies one slot.
+Hub trash and cargo in flight are excluded. Inbound reserved inventory slots are reported unavailable:
+Factorio 2.0.77 exposes cargo-hatch reservations, not reserved inventory-slot counts. Free slots do not account
+for future arrivals. Guard evidence contains `inventory_free_slots` with the same numbers.
+The read is live at each check, with no stale cache or `on_stale` option. Missing targets raise the existing
+read error: direct waits refuse/fail, queued waits follow `on_fail`, guards remain armed and report
+`read_error`; an `any` member that remains readable can still trigger. Containers are limited to our
+container/logistic-container/linked-container at one footprint, in a charted chunk for remote reads.
+
+## d32 batch412 RC: proposed railgun corridors
+
+`platform_defense {platform, planned_entities:[{name,position:{x,y},direction?}]}` returns a standalone read of
+proposed footprints against existing built and ghost `railgun-turret`s belonging to the platform's force. This
+mode bypasses the ordinary hull, ammunition-feed and per-gun nearby-entity scans. It creates no ghosts/entities
+and starts no watches/background jobs. `planned: true` remains the separate existing-ghost defense view.
+
+Input: 1..8 entries; prototype name, finite position within +/-1,000,000, direction 0..15 or compass name (default
+north). Nonrotatable prototypes use north. Invalid input is an error; nothing is staged. The footprint is the
+axis-aligned envelope of the rotated prototype collision box. Diagonal envelopes can overstate the footprint.
+The mode takes only `platform` and `planned_entities`; watch and ordinary defense options cannot combine with it.
+
+Output: `entities [{index,name,position,direction,railguns,complete,capped}]`; each `railguns` list has
+1-based indices into the top-level `railguns [{index,name,position,direction,ghost,unit_number,corridor}]`. `railguns_checked` counts all sources tested; only intersecting sources appear in `railguns`. Every intersecting
+source read is returned, with no per-row hit truncation. Top-level `complete`, `capped`, `limits`, `corridor`, `note`
+and `lines` accompany the rows. At most 64 sources are tested, built first, with one extra source fetched to detect
+truncation; exactly 64 is complete, more is capped. A capped empty-hit row is incomplete too. More than 8 proposals
+is refused: 106 proposals take thirteen batches of 8 and one of 2 entries. Input indices are local to each call. Proposed railguns do not
+become corridor sources; only existing built and ghost railguns are sources.
+
+The shared predicate is `fireline.intersects`, extracted from `fireline.hits` without changing its box/wedge rule:
+prototype arc and longest line-ammo reach at each source gun's quality, expanded collision box by half the line width, corner bearings and
+nearest/farthest radii, then 17 slab-tested rays when a box straddles start/reach. Base railgun values are a 72-degree
+wedge, shot start 3.6, line length 50 and width 1, reach 53.6. The original same-turret and origin-containing-box
+exclusions remain. `complete` describes source enumeration, not exact geometry. Cheap half-plane and outer-radius
+rejections precede this predicate for proposals. This is geometric corridor intersection, independent of readiness,
+ammunition held, target filtering or damage. It does not validate construction placement.
+
+The existing read retains its 2,048 nearby-entity cap per source, 12 names in prose, and platform_defense's 16-source
+line page / 256-turret scan. Proposed reads do not use those scans or caps. No new stream-service action was added.
+Tests: `tests/d32_batch412.lua`, plus existing `tests/d17_batch31.lua` corridor regression.
+
+Private OrbStack measurement on Asterion (42 built railguns, 21,287 foundation tiles, 9,065 force entities): 106
+synthetic proposals, positioned 20 tiles ahead of the guns, in fourteen calls. Warm handler plus JSON serialization:
+3.43–7.71 ms/call; two complete warm passes: 81.64 and 84.80 ms total. First cold call: 16.74 ms. A full harness
+dispatch sample for 8 proposals took 13.08 ms first, then 8.95 and 8.42 ms. The cap bounds work; it is not a cold-latency
+guarantee. No shared-server probe was run. Entity/ghost counts and game tick were unchanged across the measured audit.
+
+`wait_until {until:"platform_speed_above", platform:"Asterion", above:35, for_s:2, max_age:1}`
+reads native `LuaSpacePlatform.speed` (km/tick) times 60, and holds only above 35 km/s for 2 sampled game seconds.
+`above` is required (0..1e9 km/s); `for_s` defaults to 0 (0..86400); `max_age` defaults to 1 second (1/60..900).
+At/below the threshold, an unreadable value, or a sample gap over `max_age` resets duration. Each check reads
+live speed; no cached speed is accepted. Direct waits, queue steps and guards in body/remote/platform lanes and
+`all`/`any` use the same condition. Zero and finite negative native readings are below threshold and clear duration;
+negative values within 1e-9 km/s of zero normalize to 0. Larger negative readings remain signed in evidence
+(starved platforms can report these in flight). Missing platforms and missing/unreadable speed fields have
+distinct errors. Guards expose `speed_kms`, sample `tick`, and `source: "LuaSpacePlatform.speed"` in evidence;
+`saw` names the same reading, tick and source.
+A guard fires once, replacing current/pending steps with its recovery steps. Platform entity `configure` and
+`circuit_set` do not replace schedule records or stop an active `flight_watch`; a recovery can change the thrust
+circuit followed by an arrival wait. Guards run every 10 ticks while the lane is unpaused.
+
+`queue_submit dry_run` and submission validate every `platform_schedule` wait, including recovery steps, using
+the execution parser. Refusals name step/label and `stops[i].wait[j]` (or `wait[j]` with `stop`), and show accepted
+condition syntax. A count/circuit wait uses `condition:"iron-plate >= 100"` or `{signal, comparator, value}`;
+`comparator` is not a top-level wait field. Validation does not write schedules or saved wait lists.
+
+## d36 batch422 (#2895): uptime production counters
+
+`uptime.items` accepts 1..16 item or fluid prototype names, or `{name, kind?, quality?}`.
+A name shared by an item and fluid requires `kind:"item"` or `kind:"fluid"`. Items read every quality
+unless quality is specified; fluids reject quality and return one row with kind fluid and no quality.
+Fluid produced/consumed deltas and per-minute rates use surface fluid production statistics. All rows
+share the exact `flows.start_tick`/`end_tick`, stated once in the flow line; completed and saved watches
+keep those counters. The 64-machine cap and sampled machine counters are unchanged.
+
+- Remote/platform queue `upgrade` steps require explicit `platform` or `surface`. The direct planner checks run at submission and execution; submission makes no upgrade marks. Execution uses the direct call: ghosts change in place with wires/settings kept, built entities are marked for replacement.
+- `wait_until {until: "entity_quality", platform: "Asterion", position: {x: 1, y: 2}, name: "inserter", quality: "epic", timeout: 54000}`: true when an owned built entity at that position has exactly that quality. `name` is optional; `surface` replaces `platform` for a planet. Ghosts, missing entities and pending upgrade marks are false. Current sight is required, as for upgrade. The condition works in remote/platform lanes, including guards and all/any.
+
+## d37 batch426: logistics_audit storage cargo and coverage
+
+`logistics_audit {storage: true}` separates cargo observations from confirmed storage failures:
+
+- `cargo_no_order`/`cargo_no_order_items`: cargo with no order (no destination).
+- `cargo_with_orders`/`cargo_with_orders_items`: cargo with orders, counted separately.
+- `no_storage`/`no_storage_items`: the subset of no-order cargo for which a successful engine
+  `select_drop_point` call found no drop point for even one item at that quality. The legacy
+  `robots_stuck`/`stuck_items` fields now alias these confirmed failures, not all no-order cargo.
+  Existing matching stacks can have room even when every inventory slot is occupied.
+- `robots_read`, `robots_total`, `coverage {scanned,total}`, `robots_unscanned`: coverage of deployed
+  logistic and construction robots; robots stored in roboports are outside this scan. The line says
+  scanned of total and whether `robot_scan_cap` (2048, shared across both types) was hit
+  (`robot_scan_cap_hit`, true at exactly 2048 as well). All cargo counts are among scanned robots.
+- Room results are cached per item/quality, with at most 32 engine lookups (`storage_room_checks`,
+  `storage_room_check_cap`). `storage_room_unconfirmed` counts no-order cargo robots whose lookup
+  failed or exceeded that cap; an API error is never a no-storage confirmation.
+  `cargo_unknown_order` counts cargo robots whose order queues could not be read.
+
+Storage chest/free-slot/bar/filter totals retain their existing meaning. The two deployed-robot
+lists are retrieved once each and reused for coverage; no second robot pass or new Lua chest scan.
+Item lists retain quality. This is an on-demand read with no background tick work or mutations.
+Tests: `tests/logaudit_storage.lua`, existing network storage and barred-storage suites.
+
+
+Recap component/event beats now bind a named position to a dated, containing camera still
+(`tools/stream/shift_recap_detail.py`), hold its crop/highlight through narration, and label
+missing detail as an overview/map fallback. Capture view/zoom and before/after receipts
+survive preparation; capture/record timing stays explicit. Next-shift service/helper restart
+and overlay page reload load this change; no game runtime deploy or site rebuild. See
+`tools/stream/shift-recap.md` for geometry, timing bounds and offline verification.
+
+## d37 batch431: foundation-loss evidence in asteroid watches (#2909)
+
+`platform_defense {platform, asteroids:true}` returns `floor_impacts` separately from `platform_hits_all`
+(entity hits). It counts witnessed lost foundation **tiles**, not unique impacting asteroids. The global headline
+includes it even when the causal trajectory was excluded by `track_filter` or the tracked-record cap.
+
+`floor_witnesses` retains the newest 32 tile witnesses: `tick`, `tick_basis` (`ghost_seen` or `hub_rebuild`),
+`tiles: [{x,y}]`, `after_tick`, `seen_tick`, `rebuilt_tick` when available, `cause`, and `candidates`.
+`floor_witnesses_dropped` counts older rows. The existing foundation-loss ledger supplies observations, including
+hub rebuilds between checks. A later rebuild updates the same witness without counting it twice. Player/agent
+construction and known pre-existing ghosts keep the ledger's exclusions. No tile scan is added; unrepaired losses
+without an existing foundation-loss check can remain unseen. The observation tick is not an exact impact tick.
+
+Factorio 2.0.77 supplies no causal event for bare foundation destruction, so `cause` is `"unknown"`.
+The newest 128 asteroid deaths and inferred fragments are retained independently of trajectory admission.
+Up to three candidates within 32 tiles and 600 ticks before discovery are returned, nearest first, with
+`inferred:true`, `kind`, `name`, `unit`, `position`, `tick`, `distance`, and `age_ticks`. Fragment `parent` includes
+its retained name/unit/position/tick and `inferred:true`. Proximity and fragment matching are evidence, not causal
+proof. Rebuild delay or record eviction may leave no candidates. Counts begin with this instrumentation; old
+losses are not reconstructed. Completed watches and closed segments retain their own bounded evidence.
+### batch433 — idempotent platform recovery current (#2910 Sol, #2911 Astra)
+
+`platform_schedule {platform, current:N}` with no `stops` or `stop` succeeds with `changed:false` when N is already
+current and the platform is unpaused and waiting or flying there. The call preserves schedule records, wait timers,
+flight distance and direction. A different current still selects that stop. A paused platform still takes the game's
+go-to-station path, which switches to automatic (unpauses), including when `paused:true` accompanies current.
+
+Replies confirm `current`, `heading_to` (schedule destination), `paused_before`, `paused` (both explicit booleans),
+and `changed`; in flight they also give `direction:{from,to}`, `progress` (fraction flown in that direction) and
+`distance` (connection fraction). `confirmed` repeats the current, changed and pause values as text because compact
+format omits false boolean fields. The selected current and unpaused state are checked after go-to.
+
+The same handler runs in body, remote and platform queues, including recovery guards. A satisfied current step
+continues the queue without `on_fail:skip`. Missing platforms/stops and empty schedules still fail. Genuine
+`no_schedule` and `no_path` still use the existing delayed recheck (normally 300 ticks): queues hold the step until
+confirmation and pause on persistent failure; direct calls retain the recheck and failure tell. A no_schedule read
+while waiting at the current station on unmet conditions remains the existing valid waiting case. `schedule_check`
+and describe text now match the idempotent behavior.
+
+## d37 batch437 (#2915, Sol: another agent's completed collector tally)
+
+- `platform_supply {collection:true,agent:"opus"}` returns that agent's newest completed collector tally in `tally`.
+  `id:"collector_tally@121787697/opus"` selects a retained completed tally. Like uptime, agent names ignore case and
+  accept `@`/`pog-` prefixes; an id without its owner must be unambiguous. Both selectors must agree when supplied.
+  Optional `platform` filters the result; no platform is required for these stored-result reads.
+- The tally includes `id`, `agent`, `platform`, `start_tick`, `end_tick`, and its original catch/type/collector counts.
+  This path reads stored evidence only, without a platform scan. It does not start, stop, replace or mark any watch
+  read, or attach the caller's watch metadata. The selected tally's own `mixed` edit history is preserved.
+  `seconds`, `reason` and `fuel` are refused with selectors.
+- Rest does not clear collector tallies or stop their completion. A new watch retains up to four previous completed
+  results, oldest dropped first; replaced running watches are not archived as completed. This retention starts with
+  deployment: previously overwritten results cannot be recovered. A missing, unknown, running or no-longer-retained
+  selection is a clear error. Without selectors, the caller's existing start/read behavior is unchanged.
+## d37 batch434: inspect full-hand waiting (Sol #2912)
+
+- `inspect.hand_line` distinguishes maximum pickup size from the prototype's fixed full-hand requirement.
+  Fast, long-handed and bulk inserters say "does not require a full hand"; stack inserters say "waits for a full hand".
+  Hand capacity, held count and the throughput upper bound remain separate quantities. Built entities and ghosts
+  use the same value as `configure wait_for_full_hand`; requesting its opposite is still refused, not toggled.
+- Prototype facts are cached by name across inspect, configure, entities, ghosts and qualities. The runtime property
+  is tried once; a false result is cached too. Factorio 2.0.77 does not expose LuaEntityPrototype.wait_for_full_hand
+  (https://lua-api.factorio.com/2.0.77/runtime-api.json), so that version uses the verified data-stage defaults:
+  stack true; burner, basic, fast, long-handed and bulk false. An unknown prototype without a readable boolean
+  reports unknown and configure refuses it. Reloading the runtime rebuilds the cache. No per-tick work is added.
+- Describe and the building reference no longer claim that every inserter requires a full hand from a belt.
+- Tests: tests/d37_batch434.lua covers the four requested inserters, built/ghost wording, configure agreement,
+  cached true/false/unknown reads, property precedence over names, and the 2.0.77 unavailable-property fallback.
+
+## d37 batch446: optional guard priority (#2920)
+
+Guards in `queue_submit` and `queue_edit` accept `priority` (any finite number; higher takes precedence)
+and `exclusive_group` (a nonempty string up to 64 bytes). Example: a critical-loss guard with `priority:100`
+and a damage guard with `priority:10`, both `exclusive_group:"flight"`. Once the critical guard fires, a met
+damage guard is consumed as suppressed while any critical reaction step is active or pending. Its actions
+do not stop, replace or cancel the critical reaction. This applies to recovery `steps`, a guard `goto` tail,
+and lower-priority abort guards. Paused/held and requeued reaction steps retain protection. Completed or
+removed steps release it; guard-created continuations inherit it. A reaction consisting only of an immediate
+schedule write is complete once that step ends; subsequent flight time is protected only while its reaction
+still has a step, such as an arrival wait.
+
+The comparison is local to the caller's lane. Two different explicit groups do not compare. When either
+guard omits the group, the comparison covers the lane. Equal priorities, or either priority omitted, retain
+the existing replacement behavior. Existing saved guards require no migration and keep their behavior.
+Direct queue edits, replacement and cancellation remain explicit overrides; this is guard-to-guard control.
+
+`queue_edit guards.replace` retains omitted `priority` and `exclusive_group`, as it retains omitted `scope`.
+Supplied values replace those fields and use the same validation as submission (including priority zero).
+Remove and add a guard to clear its priority or group. Timeout hold/resume and hot updates keep the reaction's
+identity and protection in body, remote and platform lanes, including steps restarted by an update. A completed
+or removed reaction still releases protection.
+
+`queue_status.guard_control` (also lane summaries) gives the controlling guard ID, priority, group, firing
+tick and trigger reason. Fired history rows include the control record. `guard_suppressed` retains the newest
+eight suppressions, with guard ID, trigger, priority, suppressor ID, its priority/firing tick/reason, and the
+suppression tick. Each suppression also has a `guard_suppressed` queue-history row (normal history limit 64).
+
+Submit and dry-run replies include `guard_warnings` for pairs of differing reactions when neither has
+priority, including retained guards on append. Identical reactions are omitted. The warning is conservative:
+it reports potential replacement/cancellation, without predicting whether both conditions will fire.
+The guard describe text documents the same optional fields and compatibility rules.
+## d37 batch438 (Astra #2917: return endpoint already ahead)
+
+The default `platform_endurance` turnaround and `budget_below` semantics are unchanged: fly the requested
+`km` farther (or to `fraction`), reverse to the current leg's origin, then travel to `back_to`.
+When `back_to` is the current destination, `return_budget.warning`, its line, and guard `saw` explicitly
+state this detour and the direct remaining distance after the advance. Fired budget evidence retains the warning.
+
+Opt in with `turnaround.direct:true`, using the same `km | fraction` and `back_to` fields:
+
+```json
+{"platform":"Asterion","turnaround":{"km":10000,"back_to":"aquilo","direct":true}}
+```
+
+For either leg direction, a destination target continues along the connection. An origin target (including
+omitted `back_to`) keeps the existing reversal. Direct mode refuses other targets and `return_allowance`, which
+replaces costs on onward legs via the origin. `direct:false` and omitted `direct` retain all existing calculations.
+
+The budget adds `mode`, `from`, `to`, `direction` (`forward`/`back` from the current leg), `remaining_km`
+(to the current destination now), `direct_remaining_km` (to that destination after the advance, when targeted),
+`reverse_km`, `via_origin_km`, and `total_km`. Existing `out_km`, `flown_km`, `connection_km`, and `back_km`
+remain: `back_km` is recovery after the advance; `total_km = out_km + back_km`. The route's legs agree.
+
+Astra's tick 122071200 example, edge->Aquilo, 36,793/100,000 flown and another 10,000 km:
+
+| Mode | Advance | Reverse | Via origin onward | Recovery (`back_km`) | Total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Default turnaround | 10,000 | 46,793 | 100,000 | 146,793 | 156,793 |
+| Direct | 10,000 | 0 | 0 | 53,207 | 63,207 |
+
+For direct destination recovery, let `R = usable / net_used * planning_speed` in km (speed in km/min).
+`out_km_max = R - direct_remaining_km`: the advance budget after reserving recovery from the planned point.
+`spare_km = out_km_max - out_km = R - remaining_km`: the whole direct plan's distance surplus/deficit.
+Stock at arrival pays for both the advance and recovery, using the same measured net rate.
+The budget's `budget_basis` states this formula; no factor of two is applied to direct destination travel.
+Origin recovery keeps the existing factor of two. `budget_below` still compares `out_km_max < km`, including
+explicit window budgets; its `turnaround` accepts the same opt-in. Mode changes invalidate the cached read.
+No existing guard is changed, and no route, schedule, or floor is written by this read.
+### Current platform health
+
+`wait_until {until:"damaged",platform:"Asterion",fraction:0.5}` reads current damage on the whole hull. Optional `positions:[{x,y},...]` (1..64, any tile of each entity's footprint) or `area:[[x0,y0],[x1,y1]]` (centres inside, upper bounds excluded, at most 1024x1024) restricts it. Position/radius and combined positions/area are refused. Missing positions are read errors, not loss detection.
+
+`fraction` (0.01..1, default 1 when hp is absent) and/or `hp` (absolute HP) match a currently damaged entity strictly below either supplied threshold. Repair above the thresholds clears the match; fully repaired entities do not match. Exact health, max_health, name, unit_number, position and fraction for the worst 10 matches appear in `evidence.platform_health`, with count and read_tick; `saw` also names the values and tick. Lowest fraction first, or lowest HP with hp alone. Reads use damage events and re-read live HP each check (guards: every 10 ticks); the first hull read seeds the set, bounded at 32768 entities and refusing larger hulls without partial qualification. Positions use bounded direct reads.
+
+Available to waits and guards on body, remote and platform lanes, including all/any. Example guard condition: `{until:"damaged",platform:"Asterion",positions:[{x:0,y:0}],fraction:0.5}`. A not-met health guard says nothing about losses, empty guns, feed failures or clean-flight qualification; their existing separate guards remain unchanged. `platform_hit` continues to count cumulative damage, including repaired hits.
+## d37 batch448: rotated railgun foundation (#2921, Astra)
+
+`place_ghosts dry_run` uses the rotated collision footprint for diagonal eight/sixteen-direction buildings.
+The dry run's `tiles.positions` and `tiles.needed`, live foundation placement, and `ghosts` foundation diagnostics
+use the same intersecting tiles. Existing floor and tile ghosts still count as supplied; enclosed-hole filling
+and foundation connection by a side or corner keep their existing checks. The dry run places nothing.
+
+In Factorio 2.0.77 a railgun has eight construction directions (0,2,...,14). Its unobstructed footprint needs 15
+foundation tiles cardinally and 17 diagonally; hull connections and enclosed regions can change the total new floor.
+The harness rejects odd construction directions. Native creation rounds them down to the preceding even direction.
+`tools/test_d37_batch448_private.py --imac` checks all 16 native inputs on a held private copy: one missing tile at a
+time, dry-run versus live tile ghosts, read-only behavior, ghost diagnostics, and native revival. Its no-argument
+invocation skips. `tests/d37_batch448.lua` retains the engine tile fixtures, including negative coordinates.
+
+## d37 batch456: preserve the first impact segment and aim failure (#2929)
+
+`platform_defense {asteroids:true}` retains the first closed segment and the newest two, carrying them across
+same-tick destruction cascades and subsequent edits. Whole segments stay within the existing 3000 tracked-record
+cap: the second oldest is evicted first, including the newest when only the first fits. The original inbound
+trajectory, impact evidence and full paged result remain readable with `segment_start`. A fresh watch resets this
+history; already evicted segments cannot be reconstructed. `segments_dropped` still counts evictions.
+
+`platform_defense {aim:true}` has no edit segments. Per railgun its existing 24-shot history now pins
+`first_failure`: the first shot with a surviving aimed target or uncertain attribution, plus the newest 23 other
+shots (newest 24 before a failure). This is observed evidence, not proof of a targeting error. `recent_more` counts
+evictions; all-shot statistics remain unchanged. A running watch from before this instrumentation can preserve
+only the earliest such shot still in `recent` at its next shot. New watches reset this history. `recent_note` and
+`describe` state retention.
+
+## d37 batch458: quality railgun corridors (#2939)
+
+Every `lines_of_fire` row and every intersecting `planned_entities` source in `railguns` now returns
+`corridor {quality, range_multiplier, range, base_range, min_range, line_length, base_line_length, start, reach, width, arc, ammo}`.
+`range` is the quality-specific targeting range; `line_length` is the damage line from its shot start;
+`reach = start + line_length` is the distance from the gun centre used for corridor collision checks and the nearby-entity find.
+The top-level proposed `corridor` is a labelled normal-quality reference; each source row carries the geometry actually tested.
+Built guns, turret ghosts and build/place_ghosts previews use their own quality. Text names non-normal quality and
+gives the corresponding targeting range and shot reach. The minimum targeting range stays 3.5; shot start 3.6,
+line width 1 and aiming arc 72 degrees are unchanged.
+
+| Turret quality | Targeting range | Damage line length | Shot reach from centre |
+| --- | ---: | ---: | ---: |
+| normal | 40 | 50 | 53.6 |
+| uncommon | 44 | 55 | 58.6 |
+| rare | 48 | 60 | 63.6 |
+| epic | 52 | 65 | 68.6 |
+| legendary | 60 | 75 | 78.6 |
+
+Native Factorio 2.0.77 private-copy shots with normal railgun ammunition confirmed that line length scales with
+the turret quality range_multiplier, alongside targeting range. At each quality, aligned friendly chests
+53/58/63/68/78 tiles from the gun centre were destroyed, while chests at 54/59/64/69/79 survived.
+This distinguishes the growing line from a fixed 50-tile line and from multiplying the start offset too.
+The existing conservative box/wedge geometry, 17 boundary rays, result caps and read-only behavior remain.
+Tests: `tests/d37_batch458.lua` covers all five qualities, built and ghost sources, proposed footprints,
+platform rows, preview quality, mixed sources, radial hit/miss boundaries and unchanged angular limits.

@@ -48,8 +48,8 @@ def held():
     assert len(sent) == n  # a held shot does not spam camera commands
     flight = plat(at="nauvis->vulcanus 30%")
     row = advance(d, a, [flight], 1010, 1013)
-    assert d.onair == on and row["zoom"] < shot["zoom"] and "travelling to Vulcanus (30%)" in row["platform"]["label"]
-    assert sent[-1]["smooth"] is True and sent[-1]["position"]["y"] < shot["position"]["y"]
+    assert d.onair == on and row["zoom"] == shot["zoom"] and "travelling to Vulcanus (30%)" in row["platform"]["label"]
+    assert len(sent) == n  # overview stays centred on the hull; flight detail is a separate shot
     n = len(sent)
     advance(d, a, [plat(at="nauvis->vulcanus 31%")], 1013, 1017)
     assert len(sent) == n  # progress/labels refresh without a camera call
@@ -77,7 +77,7 @@ def held():
     assert row["zoom"] == shot["zoom"] and "in orbit of Vulcanus" in row["platform"]["label"]
     expanded = dict(VIEW, bounds={"left": -36, "top": -18, "right": 42, "bottom": 24})
     row = advance(d, a, [plat(at="vulcanus", view=expanded)], 1093, 1094)
-    assert d.onair == on and row["zoom"] < shot["zoom"] and row["frame"]["position"] == {"x": 3.0, "y": 3.0}
+    assert d.onair == on and row["zoom"] < shot["zoom"] and row["frame"]["position"] == {"x": 3.0, "y": -10.09}, row
     # Clearing before its deadline must not leave the fixed shot's old until active.
     pc.clear(1094)
     row = advance(d, a, [plat(at="vulcanus")], 1094, 1100)
@@ -95,7 +95,7 @@ def aboard():
     p = plat(at="nauvis->vulcanus 30%")
     row = advance(d, a, [p], 1004, 1008)
     assert row["platform"]["why"] == "follow" and row["agents"] == ["sol"]
-    assert row["zoom"] == platform_shot(VIEW, travelling=True)["zoom"] and "follow" not in row["frame"], row
+    assert row["zoom"] == platform_shot(VIEW)["zoom"] and "follow" not in row["frame"], row
     assert "aboard Starling" in row["platform"]["label"] and "Sol's trip" in row["platform"]["label"]
     info = onair_info(snap(a, [p]), d.public(1007))
     assert info["agent"] == "sol" and info["doing"] == "Sol's trip · aboard Starling", info

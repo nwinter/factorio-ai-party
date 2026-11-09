@@ -160,8 +160,7 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
   ("onecam" or "trio") and, in a trio, which client is in which hole.
 """
-import json, math, os, re, time
-
+import copy, json, math, os, re, time
 from director import Director, BUILD, FIGHT, HOLDS, WALK, dist, frame_of, in_frame, surface_of
 import clouds
 from mapcam import map_shot
@@ -259,6 +258,7 @@ ONECAM = {
     "loss_recut": 180.0,    # a loss within this long of the last loss cut is an inset, not a cut
     "resume_min": 30.0,     # back from an urgent shot, the story it interrupted holds at least this much longer
     "view_frac": 1.0,       # share of the client's width the on-air hole shows (serve.py: from layout.json's crop)
+    "platform_frac": None, # shared landscape/portrait crop for ship fits; other shots keep view_frac
     "work_cut": False,      # work away from the body was a side camera's shot; no side cameras now
     "trio": True,           # sometimes one big tile and two small ones (module doc)
     "trio_hold": 90.0,      # a trio lasts this long ...
@@ -390,15 +390,10 @@ ONECAM = {
     # danger, a ship entering the edge's dense asteroids, a departure and a visit move the one client there and back, as
     # they cut with three; the story's agent waits in a free camera panel meanwhile (away_inset). The map, a cloud and a
     # visit wait while the story on air has readable action (a fight, a big action, its news); danger and edge do not.
-    # A visit with one client opens on the whole ship visit_overview_s (a long ship's pan), then the ship's bow defense
-    # (in flight: its foremost turrets and the space they reach) and its machinery (the most working crafting machines
-    # in one frame at visit_machine_zoom), visit_beat_s each, in turn from visit to visit; a framing with nothing
-    # changing in it (docked: no bow defense; no machine working) is left out, so a still ship is on air
-    # visit_overview_s only.
+    # Ship visits use camerapath.Survey on every client count. Bow/machinery selection supplies section
+    # candidates; the controller owns all motion, dwell and interrupted progress.
     "one_client_shots": True,
     "away_inset": True,
-    "visit_overview_s": 7.0,
-    "visit_beat_s": 7.0,
     "visit_bow_rows": 12.0,     # tiles: turrets this close to the foremost one are the bow's
     "visit_machine_zoom": 0.7,
     # (batch318) With one client a ship's departure or edge entry within one_repeat of its last one on air is a repeat:
@@ -764,6 +759,10 @@ def onair_info(snap, cams):
             "tour": main.get("tour"), "vehicle": main.get("vehicle"), "did": main.get("did")}
 
 
+class CameraPending(Exception):
+    """Stop this decision before it records a failed camera send as shown."""
+
+
 class OneCam(Director):
     def __init__(self, slots, sender, log_path, **tuning):
         tuning = dict(ONECAM, **{k: v for k, v in tuning.items() if v is not None})
@@ -815,6 +814,7 @@ class OneCam(Director):
         self.plat_rows = {}    # name -> the snapshot's platform row (model.platform_where: where, route, view)
         self.plat_moving = {}  # name -> travelling at the last look (a departure: False -> True)
         self.plat_shown = {}   # name -> when it was last on air
+        self.wide_context_shown = {}  # confirmed automatic wide ship context, at most once per ten minutes
         self.last_platform = None  # when the last visit went on air (None: platform_first after the start)
         self.departure = None  # {"name", "t", "label", "until"?, "maiden"?, "news"?, "route"?, "why"?}: seen, not on air yet
         self.route_source = None  # (AS1) the model (serve.py): route_last and platform_visited across restarts
@@ -848,6 +848,8 @@ class OneCam(Director):
         self.follow = None    # an operator follow: {agent, until, label, by, since} (set_follow)
         self.fol = None        # the agent it pins on air at this step, or None
         self.platform_follow = None  # POST /platform: {name, until, label, by}; kept by PlatformControl
+        from featured import Featured
+        self.featured = Featured()  # soft platform preference; never an operator pin
         self.plat = None       # the operator's platform available to pin this step (takes priority over fol)
         self.look_hold = None  # POST /look: {surface, position, zoom, until, label, by}; kept by LookControl (lookcam.py)
         self.host_hold = None  # POST /hostview or the host's !view: {until, caption, label, by}; HostControl (hostview.py)
@@ -978,7 +980,7 @@ class OneCam(Director):
                                     "slot": "program", "reason": f"cut to {slot}: {reason}",
                                     "target": cur and {k: cur[k] for k in ("agents", "zoom", "vehicle", "did") if k in cur}}) + "\n")
         who = "+".join(cur["agents"]) if cur and cur.get("agents") else (cur or {}).get("subject", "-")
-        print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} ON AIR {slot}: {who}  <- {reason}", flush=True)
+        print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} PROGRAM requested {slot}: {who}  <- {reason}", flush=True)
 
     def retarget(self, target, reason, scores, now):
         """One client (POG_CAMS=1, Sunday 2026-10-18): no standby to frame on, so a cut moves the client on air to the
@@ -993,7 +995,7 @@ class OneCam(Director):
                                     "slot": "program", "reason": f"move {slot['slot']}: {reason}",
                                     "target": {k: target[k] for k in ("agents", "zoom", "vehicle", "did") if k in target}}) + "\n")
         who = "+".join(target.get("agents") or []) or target.get("subject", "-")
-        print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} ON AIR {slot['slot']}: {who}  <- {reason} "
+        print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} PROGRAM requested {slot['slot']}: {who}  <- {reason} "
               f"(one client: moved)", flush=True)
 
     def frame_on(self, slot, target, reason, scores, now):
@@ -1009,6 +1011,10 @@ class OneCam(Director):
         if cur and cur.get("subject") in scores and not self.pending:
             self.resume = {"subject": cur["subject"], "since": self.onair_since}
         cp = (cur or {}).get("platform") or {}
+        close = (cur or {}).get("closeup")
+        if cp.get("why") == "work" and (self.ordinary_busy(now) or (close and not close.get("done"))):
+            self.resume = dict(subject=cp.get("agent"), since=self.onair_since,
+                               shot=copy.deepcopy(cur), expires=now + 120)
         if cp.get("why") == "departure" and now < cur.get("until", 0) and not reason.startswith("platform"):
             # a departure cut short by an urgent shot: back to it after, for what is left of it (maybe_departure)
             self.departure = {"name": cp["name"], "t": now, "label": cp["label"], "until": cur["until"],
@@ -1025,8 +1031,20 @@ class OneCam(Director):
 
     def ready(self, slot, now):
         t = self.state.get(slot)
+        if t and t.get('train'):
+            import basetour
+            if not basetour.train_fresh(t['train'], now) or now >= t.get('until', 0):
+                if self.pending and self.pending['slot'] == slot:
+                    self.pending = None
+                return False  # a standby must not put an expired receipt on the program
+        if t and (t.get("follow") or t.get("remote_work")):
+            import remotework
+            who = t.get("follow") or (t.get("agents") or [None])[0]
+            remote, shot = remotework.shot(self, getattr(self, "agents_now", {}).get(who), now)
+            if remote and (not shot or not remotework.same(t, shot)):
+                return False  # an old acknowledged body/destination cannot satisfy the new remote request
         need = self.pending.get("ready_s") if self.pending and self.pending["slot"] == slot else None
-        return bool(t) and now - t.get("framed", t.get("since", now)) >= (self.cfg["ready_s"] if need is None else need)
+        return slot not in self.send_pending and bool(t) and now - t.get("framed", t.get("since", now)) >= (self.cfg["ready_s"] if need is None else need)
 
     def next_wake(self, now):
         """Seconds until the director should step again sooner than serve.py's 1 s tick (a cut timed to land before
@@ -1111,6 +1129,19 @@ class OneCam(Director):
 
     def apply(self, slot, target, reason, scores, now, quiet=False):
         """(BC2) A follow shot of an agent whose spidertron fires (fire_zoom): sent at the wider fit."""
+        if target and target.get("follow") and target.get("subject") != "@attack":
+            import remotework
+            a = (getattr(self, "agents_now", None) or {}).get(target["follow"])
+            remote, shot = remotework.shot(self, a, now)
+            if remote:
+                if not shot:
+                    raise CameraPending(slot["slot"])  # wait for the surface; never send a parked-body substitute
+                target = {k: v for k, v in target.items() if k not in ("follow", "position", "surface", "plan_fit", "pan")}
+                held = {k: target[k] for k in ("subject", "until") if k in target}
+                target.update(shot)
+                target.update(held)
+        if target and target.get("remote_work") and target["work"] not in reason:
+            reason += " · " + target["work"]
         if target is not None and target.get("follow") and not target.get("exact_zoom") and not target.get("map"):
             a = (getattr(self, "agents_now", None) or {}).get(target["follow"])
             fit = self.fire_zoom(a) if a else None
@@ -1118,7 +1149,91 @@ class OneCam(Director):
             if fit and fit < target["zoom"] * scale - 1e-9:
                 target = dict(target, zoom=fit, exact_zoom=True, fire_fit=fit, solo_zoom=target.get("solo_zoom", target["zoom"]))
                 reason = f"{reason} (zoom {fit}: {self.fire_text(a)})"
-        return super().apply(slot, target, reason, scores, now, quiet=quiet)
+        old = self.state.get(slot["slot"]) or {}
+        if target and slot["slot"] == self.onair and not any(target.get(k) for k in ("survey", "pan", "move", "vehicle", "did", "train", "tour")):
+            changed = any(old.get(k) != target.get(k) for k in ("surface", "position", "zoom", "follow"))
+            if changed:
+                target = dict(target, destination_since=now)
+                if (target.get("position") or target.get("follow")) and not target.get("jump"):
+                    target["settle"] = dict(sent=now, arrived=None)
+                else:
+                    target.pop("settle", None)
+        if not super().apply(slot, target, reason, scores, now, quiet=quiet):
+            raise CameraPending(slot["slot"])
+        return True
+
+    def ordinary_busy(self, now):
+        """A readable ordinary shot; urgent selectors never consult this hold."""
+        t = self.state.get(self.onair) or {}
+        if not t or t.get("subject") in ("@attack", "@incoming", "@look"):
+            return False
+        if t.get('train'):
+            return now < t.get('until', 0) and self.fresh_train(t['train']['id'], now) is not None and now-self.onair_since < 8
+        if ((t.get("platform") or {}).get("why") in ("operator", "follow") and t.get("until", 0) <= now) or (t.get("featured") and not self.featured.active):
+            return False
+        if t.get("swap") and now >= t.get("until", 0):
+            return False
+        settle = t.get("settle")
+        if settle and settle.get("arrived") is not None:
+            return now < settle["arrived"] + 8
+        if settle and now < settle["sent"] + 45:
+            return True
+        starts = [v for v in (self.onair_since, t.get("destination_since", -1e9)) if v <= now]
+        return bool(starts) and now - max(starts) < 8
+
+    def arrival_step(self, now):
+        self.tour_arrival_step(now)
+        t = self.state.get(self.onair) or {}
+        settle = t.get("settle")
+        if not settle or settle.get("arrived") is not None or now >= settle["sent"] + 45:
+            return
+        aired = self.on_air.get(self.onair) or {}
+        if aired.get("sent") != t.get("sent") or self.hold_layout or self.hosting(now):
+            return
+        slot = self.slot(self.onair)
+        try:
+            r = self.sender(dict(player=slot["player"], panel=slot.get("panel", 0), observe=True))
+        except Exception:
+            return
+        if not isinstance(r, dict):
+            return
+        pos = r.get("position")
+        followed = (getattr(self, "agents_now", {}) or {}).get(t.get("follow")) or {}
+        surface = t.get("surface") or followed.get("surface") or "nauvis"
+        position_ok = bool(t.get("follow")) or (pos and dist(pos, t["position"]) <= 1)
+        if (r.get("ok") and r.get("connected") and r.get("visible") and position_ok and
+                r.get("surface") == surface and
+                isinstance(r.get("zoom"), (int, float)) and abs(r["zoom"] - t["game_zoom"]) <= .03):
+            settle["arrived"] = now
+            if t.get("until") is not None:
+                t["until"] = max(t["until"], now + 8)
+
+    def tour_arrival_step(self, now):
+        """Finish a quiet tour with a visible destination dwell, bounded if the camera never arrives."""
+        t = self.state.get(self.onair) or {}
+        tour, move = t.get('tour'), t.get('move')
+        if not tour or not move or t.get('tour_arrived') is not None:
+            return
+        last = move['segments'][-1]
+        elapsed = now-t.get('moved', now)
+        if elapsed < last['t1'] or elapsed >= tour['seconds']+45:
+            return
+        # Native paths run in game time. Low UPS must not turn the final closeup into a cut mid-travel.
+        t['until'] = max(t.get('until', 0), now+1)
+        aired = self.on_air.get(self.onair) or {}
+        if aired.get('tour') != tour or self.hosting(now) or self.hold_layout:
+            return
+        slot = self.slot(self.onair)
+        try:
+            r = self.sender(dict(player=slot['player'], panel=slot.get('panel', 0), observe=True))
+        except Exception:
+            return
+        goal = last['pts'][-1]
+        if (isinstance(r, dict) and r.get('ok') and r.get('connected') and r.get('visible') and
+                r.get('surface') == t['surface'] and r.get('position') and dist(r['position'], goal) <= 1 and
+                isinstance(r.get('zoom'), (int, float)) and abs(r['zoom']-goal['zoom']) <= .03):
+            t['tour_arrived'] = now
+            t['until'] = max(t['until'], now+max(8, tour['seconds']-last['t1']))
 
     def near_onair(self, subject, position, by_name):
         """Do viewers see this now: the agent on air is in it, or its position is inside the on-air frame."""
@@ -1151,7 +1266,8 @@ class OneCam(Director):
             else:
                 target.update(zoom=self.fight_zoom(position.get("extent")), exact_zoom=True)
         target.update(label=al["text"], kind=al["kind"], attack_t=now, fight=al.get("key"))
-        big = al["kind"] == "death" or (al["kind"] == "loss" and not minor_loss(al["text"]))
+        big = al["kind"] == "death" or (al["kind"] == "loss" and not minor_loss(al["text"])) or bool(
+            self.featured.active and al["kind"] == "attack" and "friendly fire" not in al["text"])
         if self.look or self.plat or (self.fol and subject != self.fol):
             big = False  # an operator follow: other agents' urgent events are insets or toasts, never cuts
         elif self.battle and not self.fol and not (subject and subject == self.battle.get("agent")) and \
@@ -1583,6 +1699,10 @@ class OneCam(Director):
     def body_shot(self, name, by_name, zoom, now, fit=None):
         """The shot of an agent: its character followed, or (batch222) its vehicle by remote view, or (batch240) where
         its latest build landed away from it."""
+        import remotework
+        remote, shot = remotework.shot(self, by_name.get(name), now)
+        if shot:
+            return shot
         spot = self.vehicle_spot(by_name.get(name), now)
         if spot:
             z = self.cfg["vehicle_zoom"]
@@ -1598,12 +1718,57 @@ class OneCam(Director):
             shot.update(exact_zoom=True, plan_fit=fit)
         return shot
 
+    def refresh_remote(self, by_name, now):
+        """Keep staged, main and inset work shots on the latest destination, including during speech/follow holds."""
+        import remotework
+        for slot in self.slots:
+            old = self.state.get(slot["slot"]) or {}
+            who = old.get("follow") or ((old.get("agents") or [None])[0] if old.get("remote_work") else None)
+            if not who or who not in by_name or old.get("subject") == "@attack":
+                continue
+            remote, shot = remotework.shot(self, by_name[who], now)
+            if remote and not shot:
+                continue  # the acknowledged view stays until the new surface is available
+            if shot and remotework.same(old, shot):
+                # A new verb on the same frame is a caption change, not a new camera readiness interval.
+                for key in ("work", "attention", "platform"):
+                    if key in shot:
+                        old[key] = shot[key]
+            elif shot:
+                if slot["slot"] == self.onair and self.ordinary_busy(now):
+                    continue
+                target = dict(shot, subject=old.get("subject", who), since=old.get("since", now), framed=now, jump=True)
+                for key in ("seg", "segment", "until", "hold_until"):
+                    if key in old:
+                        target[key] = old[key]
+                try:
+                    self.apply(slot, target, "remote work: " + shot["work"], {}, now)
+                except CameraPending:
+                    continue  # another camera may still be available for an urgent cut
+            elif not remote and old.get("remote_work"):
+                if slot["slot"] == self.onair and self.ordinary_busy(now):
+                    continue
+                target = self.body_shot(who, by_name, self.cfg["solo_zoom"], now)
+                target.update(subject=old.get("subject", who), since=old.get("since", now), framed=now, jump=True)
+                for key in ("seg", "segment", "until", "hold_until"):
+                    if key in old:
+                        target[key] = old[key]
+                try:
+                    self.apply(slot, target, "remote work ended: " + who, {}, now)
+                except CameraPending:
+                    continue
+
     def scores(self, agents, now):
         out = super().scores(agents, now)
         cfg = self.cfg
         for a in agents:
             n = a["name"]
             if n not in out:
+                continue
+            import remotework
+            remote, shot = remotework.shot(self, a, now)
+            if remote and not shot:
+                out.pop(n)
                 continue
             k = plan_kind(a)
             loop = self.loop_s(n, now)
@@ -1638,12 +1803,13 @@ class OneCam(Director):
     def surface_of(a):
         return str((a or {}).get("surface") or "nauvis").lower()
 
-    @staticmethod
-    def balance_surface(a):
-        """The planet an agent stands on, for the surface balance: its body's surface (the harness reads the body, not
-        a remote view); None aboard a platform or riding a cargo pod (no body on a planet: a platform has its own
-        shots, a pod is in the sky) and on a platform's surface (platform-N)."""
+    def balance_surface(self, a):
+        """The work planet for remote shots, otherwise the body's; platform and cargo-pod shots have no planet quota."""
         a = a or {}
+        import remotework
+        remote = remotework.focus(a, self.plat_rows)
+        if remote:
+            return None if remote.get("platform") else remote.get("surface")
         s = str(a.get("surface") or "nauvis").lower()
         if a.get("travel") or a.get("on_platform") or s.startswith("platform-"):
             return None
@@ -1654,6 +1820,8 @@ class OneCam(Director):
         cur = self.state.get(self.onair)
         if not cur:
             return None
+        if cur.get("surface"):
+            return str(cur["surface"]).lower()
         who = cur.get("follow") or (cur.get("agents") or [None])[0]
         if who and who in by_name:
             return self.surface_of(by_name[who])
@@ -1852,7 +2020,33 @@ class OneCam(Director):
 
     def step(self, snapshot, now=None, segment=None):
         now = now or time.time()
+        try:
+            return self._step(snapshot, now, segment)
+        except CameraPending:
+            return self.public(now)
+        finally:
+            self.retry_sends(now)
+
+    def _step(self, snapshot, now=None, segment=None):
+        now = now or time.time()
         self.step_t = now
+        self.arrival_step(now)
+        for shown in self.on_air.values():
+            if not shown:
+                continue
+            scene = (shown.get("tour") or {}).get("scene")
+            if scene and self.tour_memory.shown.get(scene["region"], (None,))[0] != shown.get("since"):
+                self.tour_memory.seen(scene, shown.get("since", now))
+            train = shown.get("train")
+            if train:
+                self.train_shown[train["id"]] = shown.get("since", now)
+            if shown.get('wide_context'):
+                self.wide_context_shown[shown['platform']['name']] = shown.get('since', now)
+        self.tour_memory.observe(snapshot, now)
+        self.train_rows = list(snapshot.get("trains") or [])
+        cur_train = self.state.get(self.onair) or {}
+        if cur_train.get("train") and not self.fresh_train(cur_train["train"]["id"], now):
+            cur_train["until"] = now
         agents = snapshot["agents"]
         by_name = {a["name"]: a for a in agents}
         self.agents_now = by_name  # (BC2) apply's spidertron fit reads the agent it frames
@@ -1864,18 +2058,22 @@ class OneCam(Director):
         self.watch_clouds(snapshot, now)
         self.fight_list = list(snapshot.get("fights") or [])
         self.watch_silos(snapshot, now)  # (batch257) launches due
+        self.watch_platforms(snapshot, now)
         scores = self.scores(agents, now)
         ranked = sorted(scores, key=lambda n: -scores[n])
         if not self.slots:
             return {}
-        self.watch_platforms(snapshot, now)
+        self.featured.prepare(self, snapshot, now)
         # Host view (hostview.py; Nick 16:39: "it would be interesting for the stream viewers to also see my view"):
         # his own client's capture is on air over the cameras; nothing cuts, no inset (it would sit over his view), no
         # trio, segments and cues wait. The cameras stay where they are and the story goes on after it.
         if self.hosting(now):
             self.inset, self.pending, self.trio_pending = None, None, None
             self.leave_trio("host view", now)
+            self.survey_step(now)  # freeze native motion and its receipt clock behind the host
             return self.public(now)
+        if not self.hold_layout and not (segment and segment.get("recap")):
+            self.refresh_remote(by_name, now)
         # (after host view: a maiden flight waits for it like a segment, and is shown after if still within maiden_late)
         self.watch_maiden(snapshot, now)
         self.look = self.looking(now)
@@ -1891,6 +2089,9 @@ class OneCam(Director):
         if self.pending and (self.look or self.plat or (self.fol and
                 (self.state.get(self.pending["slot"]) or {}).get("subject") != self.fol)):
             self.pending = None
+        if segment and segment.get("recap") and self.pending and self.state.get(self.onair) and \
+                (self.state.get(self.pending["slot"]) or {}).get("seg") != segment["id"]:
+            self.pending = None  # a pre-recap routine standby cannot cut underneath its first line
         if self.pending and self.ready(self.pending["slot"], now):
             since = self.pending.get("since")
             self.cut(self.pending["slot"], self.pending["reason"], now)
@@ -1916,6 +2117,15 @@ class OneCam(Director):
             self.on_alert(attack, by_name, scores, now)
         cur = self.state.get(self.onair)
         urgent_hold = cur and cur.get("subject") == "@attack" and now < cur.get("until", 0)
+        if segment and segment.get("recap") and not attack and not urgent_hold and not pinned:
+            if segment.get("hold_current") and cur:
+                # Keep the existing physical shot, including on an unknown subject.
+                # No synthetic follow, camera send or ordinary quiet-tour selection.
+                self.pending = self.trio_pending = None
+                return self.public(now)
+            if cur and cur.get("seg") == segment["id"]:
+                cur["until"] = segment["until"]  # end receipts, never a 120 s timeout
+                return self.public(now)
         if segment and not attack and not urgent_hold and not pinned:  # (a follow or a battle: no segment cuts in)
             pend = self.state.get(self.pending["slot"]) if self.pending else None
             if (not cur or cur.get("seg") != segment["id"]) and not (pend and pend.get("seg") == segment["id"]):
@@ -1929,14 +2139,24 @@ class OneCam(Director):
                 elif segment.get("position"):
                     target.update(position=segment["position"], surface=segment.get("surface"),
                                   exact_zoom=bool(segment.get("exact_zoom")))
+                    if segment.get("platform_frame"):
+                        target["platform_frame"] = segment["platform_frame"]
+                    if segment.get("pan"):
+                        target["pan"] = segment["pan"]
+                        target["position"] = dict(target["position"], y=target["pan"]["y0"])
                 if follow or "position" in target:
                     self.urgent(target, f"segment: {segment['label']}", scores, now)
+                    if segment.get("recap"):
+                        return self.public(now)
         elif cur and cur.get("subject") == "@segment" and (not segment or cur.get("seg") != segment["id"]):
             cur["until"] = 0  # the segment ended or was cut: back to normal directing
         if not pinned:
             self.cloud_operator(scores, now, segment)
         # (batch245 MB) a battle takes the camera from a tour's look; an operator's look holds it
         look_holds = self.look and not (self.battle and self.cfg["battle_all"] and self.look.get("by") in AUTO_LOOKS)
+        if not pinned:
+            self.maybe_danger(scores, now, segment)
+        featured = self.featured.main(self, snapshot, scores, now, pinned, segment, attack)
         if pinned:  # an operator follow, or a key battle: on air, nothing else takes the camera
             self.leave_trio("look" if self.look else f"platform {self.plat}" if self.plat else f"follow {fol}" if fol else f"battle: {self.battle['label']}" if self.battle
                             else f"incoming: {self.incoming['label']}", now)
@@ -1953,14 +2173,14 @@ class OneCam(Director):
                 self.incoming_direct(snapshot, by_name, scores, now)
                 if self.battle:  # contact: the battle hold from this step on
                     self.battle_direct(by_name, scores, now)
+        elif featured:
+            pass  # the ship holds its readable dwell; urgent coverage was processed above
         elif self.mode == "trio":
-            self.maybe_danger(scores, now, segment)
             self.maybe_edge(scores, now, segment)
             self.maybe_departure(scores, now, segment)
             self.maybe_work(snapshot, by_name, scores, now, segment)  # (batch267) builds_waiting: the trio leaves for one
             self.tiles(by_name, scores, now)
         else:
-            self.maybe_danger(scores, now, segment)
             self.maybe_edge(scores, now, segment)
             self.maybe_departure(scores, now, segment)
             self.direct(by_name, scores, ranked, now)
@@ -1969,6 +2189,7 @@ class OneCam(Director):
             self.maybe_attention(by_name, scores, now, segment)
             self.maybe_swap(by_name, scores, now, segment)
             self.maybe_launch(snapshot, by_name, scores, now, segment)  # (batch257) before a quiet view
+            self.resume_survey(by_name, scores, now, segment)
             self.maybe_quiet(by_name, scores, now, segment)
             self.maybe_tour(scores, now, segment)
             self.maybe_map(scores, now, segment)
@@ -1980,10 +2201,15 @@ class OneCam(Director):
         self.maybe_artillery(snapshot, by_name, scores, now, segment)
         self.maybe_enemy_pip(snapshot, by_name, scores, now)
         self.maybe_group_pip(snapshot, by_name, scores, now)
+        if not pinned and not segment and not attack:
+            self.train_step(now)
+        self.featured.inset(self, scores, now)
         self.release_maps(now)
+        self.wide_context_step(now)
+        if (self.state.get(self.onair) or {}).get('tour') and not self.hosting(now) and not self.hold_layout:
+            self.step_move(now)  # quiet tours share the existing native-move fallback used by explicit looks
         self.pan_step(now)
         self.closeup_step(now)
-        self.beat_step(now)
         shown = [self.onair, self.inset and self.inset["slot"]] + list((self.trio or {}).get("tiles", {}).values())
         for t in (self.state.get(s) for s in shown if s):
             for n in (t or {}).get("agents") or []:
@@ -2157,7 +2383,10 @@ class OneCam(Director):
         here = t.get("position") or {}
         d = math.hypot(x - here.get("x", x), y - here.get("y", y))
         target = {k: v for k, v in t.items() if k not in ("jump", "move")}
-        target.update(position={"x": round(x, 2), "y": round(y, 2)}, zoom=round(z, 3), glide=round(max(0.5, d / self.MOVE_LEAD), 2))
+        # Commands arrive MOVE_STEP apart. Dividing their delta by the longer look-ahead time made
+        # the camera lag the path, then crawl at .5 tiles/s throughout the destination dwell.
+        target.update(position={"x": round(x, 2), "y": round(y, 2)}, zoom=round(z, 3),
+                      glide=round(min(60, max(0.5, 2*d / self.MOVE_STEP)), 2))
         self.apply(self.slot(self.onair), target, "reframe", {}, now, quiet=True)
         nt = self.state.get(self.onair)
         nt.update(move=t["move"], moved=since, move_ok=False)
@@ -2811,6 +3040,8 @@ class OneCam(Director):
         subj = cur.get("subject")
         if not busy and subj in by_name and (self.fighting(subj, by_name, now) or big_plan(by_name[subj])):
             busy = f"{subj} {'fighting' if self.fighting(subj, by_name, now) else plan_kind(by_name[subj])} on air"
+        if not busy and self.ordinary_busy(now):
+            busy = "the current shot is arriving or dwelling"
         if not busy:
             return "cut", "nothing more interesting on air"
         if (self.inset and self.inset.get("why") not in ("attention", "cue", "departure")) or self.inset_free(self.standbys()) is None:
@@ -2853,7 +3084,7 @@ class OneCam(Director):
                 f"{subj[1:]} held" if subj in HOLDS and now < cur.get("until", 0) else None)
         if not busy and subj in by_name and (self.fighting(subj, by_name, now) or big_plan(by_name[subj])):
             busy = f"{subj} {'fighting' if self.fighting(subj, by_name, now) else plan_kind(by_name[subj])} on air"
-        return busy
+        return busy or ("the current shot is arriving or dwelling" if self.ordinary_busy(now) else None)
 
     def speech_target(self, kind, name, until, by_name, now):
         if kind == "agent":
@@ -3358,7 +3589,8 @@ class OneCam(Director):
         "Sol · placing ghosts 40 m north")."""
         if att.get("platform"):
             from model import platform_shot
-            shot = platform_shot(self.plat_rows[att["platform"]]["view"])
+            shot = platform_shot(self.plat_rows[att["platform"]]["view"],
+                                 frac=self.cfg.get("platform_frac") or self.cfg["view_frac"])
         else:
             ext = att.get("extent") or 0
             z = min(self.cfg["attn_zoom"], Director.fight_zoom(self, ext)) if ext else self.cfg["attn_zoom"]
@@ -3379,6 +3611,10 @@ class OneCam(Director):
         cur = self.state.get(self.onair) or {}
         subj = cur.get("subject")
         ins = self.inset
+        if cur.get("remote_work"):
+            if ins and ins.get("why") == "attention":
+                self.inset = None
+            return  # the work is already the main shot; do not add the parked body or duplicate work in a panel
         if ins and ins.get("why") == "attention":
             a = by_name.get(ins["agent"])
             if subj != ins["agent"] or not a or self.hold_layout or self.pending:
@@ -3572,16 +3808,16 @@ class OneCam(Director):
         if not self.tours:
             return None
         import basetour
-        for surface in sorted(self.tours.planets, key=lambda s: (self.toured.get(s, -1e9), basetour.PLANETS.index(s)
-                                                                 if s in basetour.PLANETS else 9)):
-            plan = self.tours.get(surface, self.cfg["view_frac"])
-            if not plan:
-                continue
-            return {"agents": [], "subject": "@tour", "position": dict(plan["position"]), "surface": surface,
+        plan = basetour.choose(self.tours, self.tour_memory, now, self.cfg["view_frac"])
+        if plan:
+            surface = plan["surface"]
+            return {"agents": [plan["scene"]["agent"]] if plan["scene"].get("agent") else [],
+                    "subject": "@tour", "position": dict(plan["position"]), "surface": surface,
                     "zoom": plan["zoom"], "exact_zoom": True, "move": plan["move"], "moved": now,
                     "until": now + self.cfg["ready_s"] + plan["seconds"],
                     "look": {"label": plan["label"], "by": "director", "surface": surface, "position": dict(plan["position"])},
-                    "tour": {"surface": surface, "label": plan["label"], "machines": plan["machines"]}}
+                    "tour": {"surface": surface, "label": plan["label"], "machines": plan["machines"],
+                             "scene": plan["scene"], "seconds": plan["seconds"]}}
         return None
 
     def show_tour(self, t, why, scores, now):
@@ -3648,11 +3884,18 @@ class OneCam(Director):
             m = self.map_target((1208, 1032), now + cfg["ready_s"] + cfg["map_hold"], cfg["view_frac"])
             if m and not self.map_wait(now):  # (batch318) one client: an unchanged map decays
                 views.append(("map", m))
+        train = self.train_target(now)
+        if train:
+            views.append(("train", train))
         if not views:
             return
-        order = ("tour", "platform", "map")
-        kind, t = min(views, key=lambda kv: (self.quiet_shown.get(kv[0], -1e9), order.index(kv[0])))
-        if kind == "tour":
+        order = ("train", "tour", "platform", "map")
+        # Train receipts have only seconds to live; reusable scenery can wait for the next quiet slot.
+        kind, t = min(views, key=lambda kv: (kv[0] != 'train', self.quiet_shown.get(kv[0], -1e9), order.index(kv[0])))
+        if kind == "train":
+            self.urgent(t, f"train: {t['look']['label']} (quiet: {why})", scores, now)
+            self.quiet_log(kind, t["look"]["label"], why, now)
+        elif kind == "tour":
             self.quiet_log(kind, t["tour"]["label"], why, now)
             self.show_tour(t, f"quiet: {why}", scores, now)
         elif kind == "platform":
@@ -3666,6 +3909,44 @@ class OneCam(Director):
             self.last_map = now
             self.maps.append((now, "quiet"))
             self.urgent(t, f"base map (quiet: {why})", scores, now)
+
+    def train_target(self, now):
+        """A bounded quiet follow, ranked by known cargo and route; existing receipt positions only."""
+        import basetour
+        reserve = 8 + (self.cfg['ready_s'] if self.next_slot() else 0)
+        rows = [r for r in self.train_rows if basetour.train_fresh(r, now, reserve=reserve) and
+                now-self.train_shown.get(r.get("id"), -1e9) >= 600]
+        row = max(rows, key=lambda r: (bool(r.get("cargo")), bool(r.get("stop")), r["t"]), default=None)
+        if not row:
+            return None
+        return dict(agents=[], subject="@tour", surface=row["surface"], position=dict(row["position"]),
+                    zoom=.5 if row.get('speed') else .8, exact_zoom=True, until=now+24, train=dict(row),
+                    look=dict(label=row["label"] + ' · live', by="director", surface=row["surface"], position=dict(row["position"])))
+
+    def fresh_train(self, identity, now):
+        import basetour
+        return next((r for r in self.train_rows if r.get("id") == identity and
+                     basetour.train_fresh(r, now)), None)
+
+    def train_step(self, now):
+        """Do not extend a follow's deadline or change its identity/zoom/caption during a shot."""
+        cur = self.state.get(self.onair) or {}
+        train = cur.get("train")
+        if not train or now >= cur.get("until", 0):
+            return
+        row = self.fresh_train(train["id"], now)
+        if row is None:
+            cur["until"] = now
+            return
+        if row["t"] > train["t"] and not self.hosting(now) and not self.hold_layout:
+            updated = {k: v for k, v in cur.items() if k not in ('jump', 'settle')}
+            updated.update(position=dict(row["position"]), train=dict(row), glide=40)
+            self.apply(self.slot(self.onair), updated, "reframe", {}, now, quiet=True)
+
+    def train_retry_ok(self, target, now):
+        """Retry active reframes only; initial shots go through quiet selection again with fresh clocks."""
+        cur = self.state.get(self.onair) or {}
+        return (cur.get('train') or {}).get('id') == target['train']['id'] and now < cur.get('until', 0)
 
     def maybe_tour(self, scores, now, segment=None):
         """A base tour about every tour_every (tour_first after the start), with the base map's guards; one client too."""
@@ -3941,20 +4222,66 @@ class OneCam(Director):
                                     "departure": {"name": d["name"], "label": d["label"], "news": bool(d.get("news")),
                                                   "decision": decision, "why": why}}) + "\n")
 
-    def platform_target(self, name, why, until, agent=None, label=None):
+    def platform_target(self, name, why, until, agent=None, label=None, overview=False):
         from model import platform_shot
         row = self.plat_rows.get(name) or {}
         view = row.get("view")
         if not view or not view.get("surface"):
             return None
-        t = dict(platform_shot(view, travelling=self.travelling(row), frac=self.cfg["view_frac"]),
+        t = dict(platform_shot(view, travelling=self.travelling(row),
+                               frac=self.cfg.get("platform_frac") or self.cfg["view_frac"], overview=overview),
                  agents=[agent] if agent else [], subject="@platform", until=until,
                  platform={"name": name, "why": why, "label": label or self.platform_label(name, why)})
         if t.get("pan"):  # a tall ship: from the bow (pan_step)
             t["position"] = dict(t["position"], y=t["pan"]["y0"])
         if agent:
             t["platform"]["agent"] = agent
+        if overview and why in ('visit', 'featured') and t['zoom'] <= .31:
+            now = getattr(self, 'step_t', None) or self.started
+            cur = self.state.get(self.onair) or {}
+            opening = (cur.get('wide_context') and (cur.get('platform') or {}).get('name') == name and
+                       now-self.onair_since < 8)
+            if now-self.wide_context_shown.get(name, -1e9) < 600 and not opening:
+                detail = self.machinery(name) or dict(position=view.get('hub') or t['position'], zoom=.8)
+                t.pop('pan', None)
+                t.update(position=dict(detail['position']), zoom=max(.7, detail['zoom']), exact_zoom=True, quiet_detail=True)
+                t['platform'].update(label=f'{name} · machinery closeup', framing='machinery closeup')
+                return t
+            # Deliberately wide context is labelled and bounded; it cannot occupy a long automatic survey.
+            t['wide_context'] = True
+            t['platform'].update(label=f'{name} · wide ship overview', framing='wide ship overview')
+        if overview and why in ("visit", "operator", "follow", "featured"):
+            import camerapath
+            # One controller owns overview motion and section details. Selection/priorities remain here.
+            detail = self.machinery(name) or self.bow_defense(name)
+            if not detail or detail["zoom"] <= t["zoom"] + .05:
+                detail = {"position": dict(view.get("hub") or t["position"]),
+                          "zoom": min(3, max(.7, t["zoom"] * 1.6)), "label": f"{name} · hub", "why": "hub"}
+            details = self.tour_memory.details(view["surface"], [detail, self.bow_defense(name)], getattr(self, "step_t", None) or self.started)
+            t["survey"] = camerapath.ship_survey(t, details)
+            visits = sum(v[3] for k, v in self.tour_memory.shown.items() if k.startswith(view["surface"] + ":"))
+            t["survey"]["reverse"] = bool(visits % 2)
+            t["position"] = {k: t["survey"]["bow"][k] for k in ("x", "y")}
         return t
+
+    def wide_context_step(self, now):
+        t = self.state.get(self.onair) or {}
+        if not t.get('wide_context') or now-self.onair_since < 8 or self.hosting(now) or self.hold_layout:
+            return
+        p = t['platform']
+        if p['name'] not in self.wide_context_shown:
+            return  # only a compositor-confirmed view starts the context cooldown
+        # Ask for the same automatic overview policy; its already-shown context now yields to detail.
+        fresh = self.platform_target(p['name'], p['why'], t['until'], overview=True)
+        if not fresh or not fresh.get('quiet_detail'):
+            return
+        target = {k: v for k,v in t.items() if k not in ('survey','survey_key','survey_step','survey_status',
+                                                       'pan','move','move_ok','jump','wide_context')}
+        target.update(fresh)
+        if p['why'] == 'visit':
+            # A hull survey's extended travel budget must not become a long static detail hold.
+            target['until'] = min(target['until'], now + self.cfg['quiet_platform_hold'])
+        self.apply(self.slot(self.onair), target, 'reframe', {}, now, quiet=True)
 
     def platform_following(self, now):
         p = self.platform_follow
@@ -3975,7 +4302,7 @@ class OneCam(Director):
             label = self.platform_label(self.plat)
             if p.get("label"):
                 label += f" · {p['label']}"
-            t = self.platform_target(self.plat, "operator", p["until"], label=label)
+            t = self.platform_target(self.plat, "operator", p["until"], label=label, overview=True)
             if t:
                 t["platform"].update(by=p["by"], requested_label=p.get("label"))
             return t
@@ -3989,7 +4316,7 @@ class OneCam(Director):
             label = f"{a.get('display_name') or self.fol} · aboard {self.platform_label(name)}"
             if f.get("label"):
                 label += f" · {f['label']}"
-            return self.platform_target(name, "follow", f["until"], agent=self.fol, label=label)
+            return self.platform_target(name, "follow", f["until"], agent=self.fol, label=label, overview=True)
         return None
 
     PAN_END_S = 3.0    # a tall ship's pan rests this long at the bow and at the stern
@@ -4026,7 +4353,9 @@ class OneCam(Director):
         the stern over the shot's time (at most PAN_LEG_S, then back), at the stern for PAN_END_S. A detail pan (d20
         batch50 A2: `speed`, `bow_s`) rests bow_s on the bow, then moves at its speed in tiles/s, rests PAN_END_S at the
         stern and comes back the same way: a short shot shows the bow and part of the hull."""
-        p, since = t["pan"], t.get("since") if t.get("since") is not None else now
+        p = t["pan"]
+        since = t.get("pan_since", t.get("since"))
+        since = since if since is not None else now
         rest0 = rest1 = self.PAN_END_S
         if p.get("speed"):
             rest0, leg = p.get("bow_s", rest0), max(1.0, abs(p["y1"] - p["y0"]) / p["speed"])
@@ -4050,6 +4379,7 @@ class OneCam(Director):
 
     def pan_step(self, now):
         """(d19 batch42 C2) Each camera holding a tall ship (a `pan` in its target) moves along it, bow to stern."""
+        self.survey_step(now)
         last = getattr(self, "_pan_at", None)
         if last is not None and 0.3 <= now - last <= 5:
             self._pan_dt = 0.7 * getattr(self, "_pan_dt", self.PAN_DT) + 0.3 * (now - last)
@@ -4057,15 +4387,17 @@ class OneCam(Director):
         ahead = self.PAN_LEAD * getattr(self, "_pan_dt", self.PAN_DT)
         for slot in self.slots:
             t = self.state.get(slot["slot"])
-            if not t or not t.get("pan") or not t.get("position") or now >= t.get("until", now + 1):
+            # refresh_remote releases stale work; its initial attention/hold deadline is not a pan deadline.
+            if not t or t.get("survey") or not t.get("pan") or not t.get("position") or \
+                    (not t.get("remote_work") and now >= t.get("until", now + 1)):
                 continue
             y = self.pan_y(t, now + ahead)
             ends = (t["pan"]["y0"], t["pan"]["y1"])
             if abs(y - t["position"]["y"]) >= self.DETAIL_STEP or (y in ends and y != t["position"]["y"]):
                 target = {k: v for k, v in t.items() if k != "jump"}
                 target["position"] = dict(t["position"], y=y)
-                # cameras.lua moves at this speed: it reaches y as the step after next would come
-                target["glide"] = round(max(0.5, abs(y - t["position"]["y"]) / ahead), 2)
+                # cameras.lua moves at this speed: reach y as the step after next comes (API limit: 60 tiles/s).
+                target["glide"] = round(min(60.0, max(0.5, abs(y - t["position"]["y"]) / ahead)), 2)
                 self.apply(slot, target, "reframe", {}, now, quiet=True)
 
     def work_close(self, w, view, who, name):
@@ -4111,15 +4443,13 @@ class OneCam(Director):
         air the camera glides to the work's close-up, its caption says what and where. A new shot drops it."""
         t = self.state.get(self.onair)
         c = (t or {}).get("closeup")
-        if not c or c.get("done") or now < self.onair_since + self.cfg["work_overview_s"] or now >= t.get("until", now + 1):
+        if not c or c.get("done") or self.ordinary_busy(now) or now < self.onair_since + self.cfg["work_overview_s"] or now >= t.get("until", now + 1):
             return
-        c["done"] = now
-        target = {k: v for k, v in t.items() if k not in ("jump", "pan")}
+        target = {k: copy.deepcopy(v) for k, v in t.items() if k not in ("jump", "pan")}
+        target["closeup"]["done"] = now
         dist = math.hypot(c["position"]["x"] - t["position"]["x"], c["position"]["y"] - t["position"]["y"]) if t.get("position") else 0
         target.update(position=dict(c["position"]), zoom=c["zoom"], solo_zoom=c["zoom"], exact_zoom=True, work=c["caption"],
                       glide=round(max(2.0, dist / 1.5), 2))  # about 1.5 s to the work, the zoom eased in on the way
-        t.pop("pan", None)
-        t.update(position=target["position"], zoom=c["zoom"], solo_zoom=c["zoom"], work=c["caption"])
         self.apply(self.slot(self.onair), target, f"work close-up: {c['caption']}", {}, now, quiet=True)
 
     @staticmethod
@@ -4148,12 +4478,28 @@ class OneCam(Director):
             if slot["slot"] == self.onair:
                 self.onair_since, self.resume = now, None
         else:
+            if t.get("survey") and shot.get("survey") and all(t["survey"][k] == shot["survey"][k]
+                    for k in ("bow", "stern", "bounds", "frac", "surface")):
+                # A refreshed hold must not overwrite the controller's zoom, position or unfinished phase.
+                q = self.surveys.get(t.get("survey_key"))
+                if q:
+                    q.spec["details"] = copy.deepcopy(shot["survey"]["details"])
+                    shot["survey_label"] = shot["platform"]["label"]
+                    shot["platform"]["label"] = self.survey_caption(shot, q)
+                t["survey"] = copy.deepcopy(shot["survey"])
+                shot = {k: v for k, v in shot.items() if k not in ("position", "zoom", "pan")}
             if t.get("pan") and t.get("pan") == shot.get("pan"):  # a tall ship's pan moves the view: not a new frame
                 shot = {k: v for k, v in shot.items() if k != "position"}
-            changed = any(t.get(k) != shot.get(k) for k in ("position", "zoom", "surface", "pan") if k in shot)
-            t.update(shot)
+            changed = any(t.get(k) != shot.get(k) for k in ("position", "zoom", "surface", "pan", "survey") if k in shot)
+            q = self.surveys.get(t.get("survey_key"))
+            changed = changed or bool(t.get("survey") and (q is None or now >= q.expires))
             if changed:
-                self.apply(slot, dict(t, jump=slot["slot"] != self.onair), "reframe", scores, now, quiet=True)
+                target = dict(t, **shot)
+                for key in ("survey_step", "move", "move_ok", "glide"):
+                    target.pop(key, None)
+                self.apply(slot, dict(target, jump=slot["slot"] != self.onair), "reframe", scores, now, quiet=True)
+            else:
+                t.update(shot)
         if slot["slot"] != self.onair and self.ready(slot["slot"], now):
             self.cut(slot["slot"], f"platform {shot['platform']['why']}: {shot['platform']['label']}", now)
             self.resume = None
@@ -4167,9 +4513,34 @@ class OneCam(Director):
     def plat_busy(self, now, segment):
         """An urgent or segment shot holds the camera, or something is being framed: no platform shot now."""
         cur = self.state.get(self.onair)
-        return bool(self.hold_layout or self.pending or self.trio_pending or segment or
+        return bool(self.ordinary_busy(now) or self.hold_layout or self.pending or self.trio_pending or segment or
                     (cur and cur.get("subject") in HOLDS and now < cur.get("until", 0)) or
                     (cur and now < cur.get("hold_until", 0)))  # an agent in the fight an urgent cut went to
+
+    def resume_survey(self, by_name, scores, now, segment=None):
+        """Finish an interrupted visit before another quiet view, within its original hold.
+
+        Host/operator/urgent/segment and fresh active work retain their existing places in the selection order.
+        Featured and operator holds already return through their own selectors.
+        """
+        from director import WORK
+        if self.plat_busy(now, segment) or self.hosting(now) or self.mode != "onecam" or self.builds_waiting:
+            return
+        if any(self.fighting(n, by_name, now) or big_plan(a) or
+               (plan_kind(a) in BUILD | WORK and a.get("activity") == "acting") for n, a in by_name.items()):
+            return
+        waiting = [(k, q) for k, q in self.surveys.items() if q.interrupted and q.template and
+                   (q.template.get("platform") or {}).get("why") == "visit" and
+                   now < min(q.expires, q.template.get("until", q.expires))]
+        if not waiting:
+            return
+        key, survey = min(waiting, key=lambda row: row[1].expires)
+        slot = self.slot(key[0])
+        if slot["slot"] == self.onair:
+            self.retarget(survey.template, "resume ship survey", scores, now)
+        else:
+            self.frame_on(slot, survey.template, "resume ship survey", scores, now)
+            self.pending = {"slot": slot["slot"], "reason": "resume ship survey"}
 
     def maybe_danger(self, scores, now, segment=None):
         """A platform in danger (its card's danger, model.platform_danger) gets the whole-platform view, labelled with the
@@ -4195,7 +4566,7 @@ class OneCam(Director):
         busy = bool(self.hold_layout or self.pending or self.trio_pending or segment or
                     (cur and now < cur.get("hold_until", 0)) or
                     (cur and cur.get("subject") in HOLDS and now < cur.get("until", 0) and
-                     not (cur.get("subject") == "@platform" and cp.get("why") in ("visit", "work", "departure", "cue", "edge", "bow"))))
+                     not (cur.get("subject") == "@platform" and cp.get("why") in ("visit", "work", "departure", "cue", "edge", "bow", "featured"))))
         if busy:
             return
         def live(n):
@@ -4492,24 +4863,27 @@ class OneCam(Director):
             self.show_platform(t, scores, now)
 
     def visit_target(self, name, hold, now):
-        """A visit's shot: the whole ship for `hold` (a long ship: until its pan has gone bow to stern, BI4); with one
-        client (batch318) its framings in turn (visit_beats) for as long as they have something to show."""
+        """A visit allows the outward survey, both end dwells and a section excursion within the hold cap."""
         cfg = self.cfg
-        t = self.platform_target(name, "visit", now + cfg["ready_s"] + hold)
+        t = self.platform_target(name, "visit", now + cfg["ready_s"] + hold, overview=True)
         if not t:
             return None
-        if self.pan_hold(t) > hold:  # (BI4) a long ship: bow to stern within the shot
-            t["until"] = now + cfg["ready_s"] + self.pan_hold(t)
-        if self.n_clients() < 2:
-            beats = self.visit_beats(name)
-            first = max(cfg["visit_overview_s"], self.pan_hold(t))
-            t["until"] = now + cfg["ready_s"] + first + len(beats) * cfg["visit_beat_s"]
-            t["beats"], t["beat_at"] = beats, now + first
-            t["work"] = f"{name} · whole ship"
+        if t.get("survey"):
+            from camerapath import Survey
+            spec = t["survey"]
+            details = self.visit_beats(name) or spec["details"]
+            spec["details"] = details
+            # Allow the full outward leg plus a detail excursion; never change its pace to fit a detail dwell.
+            leg = abs(spec["stern"]["y"] - spec["bow"]["y"]) / spec["speed"]
+            excursion = max((abs(b["position"]["y"] - (spec["bow"]["y"] + spec["stern"]["y"]) / 2)
+                             for b in details), default=0) / 20
+            t["until"] = now + cfg["ready_s"] + min(Survey.MAX_HOLD, max(hold, leg + 2 * Survey.END_S +
+                                                       3 * max(Survey.ZOOM_S, excursion) + Survey.DETAIL_S + 12))
+            return t
         return t
 
     def count_visit(self, t):
-        if t.get("beats") is not None:
+        if t.get("survey"):
             self.visits += 1
 
     def visit_beats(self, name):
@@ -4565,21 +4939,6 @@ class OneCam(Director):
                 "label": f"{name} · machinery: {len(best)} working here, {len(work)} of {len(ms)} on the ship",
                 "why": "machinery"}
 
-    def beat_step(self, now):
-        """(batch318) A one-client visit on air moves to its next framing every visit_beat_s (after the whole ship's
-        visit_overview_s or pan), gliding there; its caption names it. A new shot drops them."""
-        t = self.state.get(self.onair)
-        if not t or not t.get("beats") or now < t.get("beat_at", now + 1) or now >= t.get("until", now + 1):
-            return
-        b = t["beats"].pop(0)
-        target = {k: v for k, v in t.items() if k not in ("jump", "pan")}  # (apply keeps this one: the rest of the beats)
-        dist = math.hypot(b["position"]["x"] - t["position"]["x"], b["position"]["y"] - t["position"]["y"]) \
-            if t.get("position") else 0
-        target.update(position=dict(b["position"]), zoom=b["zoom"], solo_zoom=b["zoom"], exact_zoom=True, work=b["label"],
-                      glide=round(max(2.0, dist / 1.5), 2), beat_at=now + self.cfg["visit_beat_s"],
-                      beats_shown=list(t.get("beats_shown") or []) + [b["why"]])
-        self.apply(self.slot(self.onair), target, f"visit {b['why']}: {b['label']}", {}, now, quiet=True)
-
     def maybe_work(self, snapshot, by_name, scores, now, segment=None):
         """An agent's platform action (snapshot work with a platform view): the platform instead of the character, if
         the agent is on air or scores near the one on air; held while its requests keep coming.
@@ -4621,7 +4980,7 @@ class OneCam(Director):
                 cur["until"] = max(cur["until"], min(now + cfg["work_hold"], cur["since"] + cfg["work_max"]))
             if not any(x["platform"] != cp["name"] for x in builds.values()) or not self.yields_to_build(cur, now):
                 return  # (batch267) another platform's build takes over an inspection once it has been up work_build_min
-        if self.mode != "onecam" or self.hold_layout or self.pending or self.trio_pending or segment or \
+        if self.mode != "onecam" or self.ordinary_busy(now) or self.hold_layout or self.pending or self.trio_pending or segment or \
                 (cur and now < cur.get("hold_until", 0)):
             return
         held = cur and cur.get("subject") in HOLDS and now < cur.get("until", 0)
@@ -4665,7 +5024,7 @@ class OneCam(Director):
                      "zoom": close["zoom"], "solo_zoom": close["zoom"], "exact_zoom": True, "until": until,
                      "platform": {"name": name, "why": "work", "label": label, "agent": agent}, "work": close["caption"]}
             else:
-                t = self.platform_target(name, "work", until, agent=agent, label=label)
+                t = self.platform_target(name, "work", until, agent=agent, label=label, overview=True)
                 if t and close:  # (batch312) a first visit: the whole ship work_overview_s, then the work (closeup_step)
                     t["closeup"] = close
                     t["work"] = close["overview"]
@@ -4674,14 +5033,15 @@ class OneCam(Director):
             t.setdefault("work", f"{who} {verb} on {name}" if build else f"{who} working on {name}")
             if build:
                 t["build"] = True
-                self.work_built[(agent, name)] = w["t"]
             if now - last < cfg["work_repeat"]:
                 t["again"] = True
             if held:
                 cur["until"] = now  # (batch267) the view on air gives way
+            self.show_platform(t, scores, now)
+            if build:
+                self.work_built[(agent, name)] = w["t"]
             self.work_shown[(agent, name)] = now
             self.plat_work_shown[name] = now
-            self.show_platform(t, scores, now)
             if agent != subj:
                 self.resume = {"subject": agent, "since": now}  # then the agent's own character
             return
@@ -4696,7 +5056,11 @@ class OneCam(Director):
         cp = cur.get("platform") or {}
         on = self.story_on
         if on:
+            pend = self.state.get((self.pending or {}).get("slot")) or {}
+            if (pend.get("platform") or {}).get("story") == on["key"]:
+                return
             if cp.get("story") == on["key"] and now < cur.get("until", 0):
+                on.setdefault("aired", now)
                 if not on.get("inset") and not self.inset and on["agent"] in by_name:
                     slot = self.inset_free(self.standbys())
                     if slot:  # the agent who set the watch, beside its ship
@@ -4707,7 +5071,10 @@ class OneCam(Director):
                         self.inset = {"slot": slot["slot"], "until": until, "why": "story", "agent": on["agent"]}
                         on["inset"] = now
                 return
-            self.story_on = None  # its time is up, or an urgent shot took the camera: the beat aired
+            if now < on["until"] and cp.get("story") != on["key"] and now - on.get("aired", now) < 8:
+                self.stories_shown.discard(on["key"])
+                self.last_story = -1e9
+            self.story_on = None
         if not cfg["stories"] or self.mode != "onecam" or self.plat_busy(now, segment) or self.battle:
             return
         if cp.get("why") in ("work", "danger", "operator", "story") and now < cur.get("until", 0):
@@ -4739,9 +5106,9 @@ class OneCam(Director):
                 continue
             t["platform"]["story"] = b["key"]
             t["work"] = b.get("caption") or name
+            self.show_platform(t, scores, now)
             self.stories_shown.add(b["key"])
             self.last_story = now
-            self.show_platform(t, scores, now)
             self.story_on = {"key": b["key"], "agent": agent, "who": who, "until": until}
             return
 
@@ -4916,8 +5283,23 @@ class OneCam(Director):
     def direct(self, by_name, scores, ranked, now):
         """The story on air: keep it (zoom follows the activity), or pick the next subject on a standby and cut."""
         cur = self.state.get(self.onair)
-        if self.pending:
+        if self.ordinary_busy(now) and cur and cur.get("subject") in by_name and not cur.get("remote_work"):
+            if cur.get("fire_fit") or self.fire_zoom(by_name[cur["subject"]]):
+                self.keep(cur, by_name, now)  # keep urgent gun range in frame while ordinary cuts wait
+            else:
+                self.keep_vehicle(cur, by_name, now)
+        if self.pending or self.ordinary_busy(now):
             return  # an urgent shot is being framed; the cut comes within ready_s
+        saved = self.resume or {}
+        if saved.get("shot") and not self.plat_busy(now, None):
+            if now < saved["expires"] and (saved["shot"].get("platform") or {}).get("name") in self.plat_rows:
+                shot = copy.deepcopy(saved["shot"])
+                shot.pop("settle", None)
+                shot["until"] = now + max(18, self.cfg["work_hold"])
+                self.urgent(shot, "resume interrupted work", scores, now)
+                self.resume = None
+                return
+            self.resume = None
         sp = self.speech  # (batch324 SF) the agent a line is about, on air: held while the line plays
         if sp and cur and sp.get("hold") == cur.get("subject") and cur.get("subject") in scores and now < sp["until"]:
             self.keep(cur, by_name, now)
@@ -5220,7 +5602,7 @@ class OneCam(Director):
     def keep(self, cur, by_name, now):
         """Zoom follows the on-air subject's activity once it has lasted zoom_settle (no pairs on air); while a big
         action with bounds runs, the zoom fits them."""
-        if self.keep_vehicle(cur, by_name, now) or self.keep_did(cur, by_name, now):
+        if cur.get("remote_work") or self.keep_vehicle(cur, by_name, now) or self.keep_did(cur, by_name, now):
             return
         subj = cur["subject"]
         # (BC2) its spidertron fires: framed to its farthest target while it does, then back to the activity's zoom
@@ -5297,12 +5679,21 @@ class OneCam(Director):
                 if t.get("cloud"):  # a cloud shot: "Spores on Gleba" (the overlay draws its cells)
                     row["map"] = t["cloud"]["label"]
                     row["cloud"] = t["cloud"]
-            ship = self.ship_facts((t.get("platform") or {}).get("name") or self.surface_platform(t.get("surface")))
+            owner = (t.get("agents") or [None])[0]
+            remote = bool(t.get("remote_work") or t.get("attention") or t.get("work") or
+                          t.get("platform") or t.get("vehicle") or t.get("did") or t.get("map"))
+            row["body_visible"] = bool(t.get("follow") and not remote)
+            if remote and owner and (t.get("platform") or {}).get("why") != "follow":
+                row["owner"] = owner
+            visible_ship = self.surface_platform((fr or {}).get("surface") or t.get("surface"))
+            ship = self.ship_facts(visible_ship)
             if ship:  # (d19 batch42 C1) the overlay's ship card: where it is or its route, progress, speed
                 row["ship"] = ship
             if t.get("platform"):  # {name, why, label, agent?}: a visit and a work shot read the latest row
                 p = dict(t["platform"])
-                if p["why"] == "visit":
+                if visible_ship and p["name"] != visible_ship:
+                    p.update(name=visible_ship, label=self.platform_label(visible_ship))
+                if p["why"] == "visit" and not (t.get('wide_context') or t.get('quiet_detail')):
                     p["label"] = self.platform_label(p["name"])
                 row["platform"] = p
                 if t.get("work"):
@@ -5334,5 +5725,12 @@ class OneCam(Director):
             f = self.follow
             if key == "main" and f and f["label"] and now < f["until"] and f["agent"] in (t.get("agents") or []):
                 row["follow"] = f["label"]  # the on-air card: "Following Sol · Sol vs the Demolisher"
+            if t.get("platform") and (fr or {}).get("surface") and visible_ship != t["platform"].get("name"):
+                if visible_ship:
+                    row["work"] = self.platform_label(visible_ship)
+                else:
+                    row.pop("platform", None)
+                    row.pop("work", None)
+                    row.pop("attention", None)
             out[key] = row
         return out

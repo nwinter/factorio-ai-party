@@ -1378,6 +1378,23 @@ def build_shift_page(s, v, lr):
                 shift_summary(s, mine), path=shift_href(s), og=(card, f"/static/og/shift-{s['n']}.png") if card else None)
 
 
+def build_unplayed_page(s, lr):
+    """(d29 batch350, Nick 12:30: numbered by run) a run that did not play keeps its number: a short page saying so,
+    with the shifts that played around it (its URL showed another run's shift before the site numbered by run)."""
+    done = [x for x in lr["shifts"] if not x.get("empty")]
+    before = [x for x in done if x["n"] < s["n"]]
+    after = [x for x in done if x["n"] > s["n"]]
+    prev_l = f'<a href="{shift_href(before[-1])}">← Shift {before[-1]["n"]}</a>' if before else ""
+    next_l = f'<a href="{shift_href(after[0])}">Shift {after[0]["n"]} →</a>' if after else ""
+    when = f' ({esc(_when(s["started"], s["ended"]))} Pacific)' if s.get("started") else ""
+    went_on = f' The run went on in <a href="{shift_href(after[0])}">Shift {after[0]["n"]}</a>.' if after else ""
+    body = (f'<h1>Shift {s["n"]}</h1><p>This shift did not play: {esc(s.get("note") or "it did not start")}{when}.{went_on} '
+            f'Shifts are numbered by run, so its number stays with no game time, research or video.</p>'
+            f'<p class="shift-nav">{prev_l}<a href="/runs/long/">All shifts</a>{next_l}</p>')
+    return page(f"Shift {s['n']} (not played)", body, "/runs/" if archive() else "/runs/long/",
+                f"Shift {s['n']} of the long run did not play.", path=shift_href(s))
+
+
 def _when(a, b):
     """'Oct 11, 02:52 to 04:53' from two local ISO times (scores.jsonl's `t`)."""
     try:
@@ -1549,7 +1566,10 @@ def build_long_run(lr):
             note = s["note"]
             if ids and s.get("resumed_as"):
                 note = note.rstrip(")") + f'; resumed as {s["resumed_as"]})'
-            rows.append(f'<tr class="empty"><th scope="row">–{rid}</th>'
+            # (d29 batch350) numbered by run: the row keeps its number; a run that did not play says so (no page)
+            label = (f'<a href="{shift_href(s)}">Shift {s["n"]}</a> <span class="muted small">not played</span>' if s.get("not_played")
+                     else f'Shift {s["n"]}')
+            rows.append(f'<tr class="empty"><th scope="row">{label}{rid}</th>'
                         f'<td data-l="When">{esc(_when(s["started"], s["ended"]))}</td><td colspan="9" class="muted">{esc(note)}</td></tr>')
             continue
         firsts = by_shift.get(s["n"], [])
@@ -2015,6 +2035,8 @@ def public_status(st):
 
 
 LIVE_HEAD = ('<script src="/static/avatar.js" defer></script>\n<script src="/static/mapview.js" defer></script>\n'
+             '<script src="/static/shift-phase.js" defer></script>\n'
+             '<script src="/static/target-countdown.js" defer></script>\n'
              '<script src="/static/live.js" defer></script>\n<script src="/static/polls.js" defer></script>')
 
 
@@ -2032,6 +2054,7 @@ def live_app(heading, sample_href, below_player=""):
   <h1>{esc(heading)}</h1>
   <p class="live-head-meta"><span id="live-badge" class="fx-chip fx-chip--grey">Offline</span> <span id="watching" class="small" hidden></span> <span id="updated" class="muted small"></span></p>
 </div>
+<section id="run-target" class="live-target" aria-label="Final push" hidden></section>
 <div class="live-top">
   <div class="player-wrap" id="player">
     <div class="player-placeholder">
@@ -2274,6 +2297,8 @@ def main():
         terrain.publish(out, args.runs_dir, LONG)
         chartpub.publish(out, args.runs_dir, LONG)
         for s in LONG["shifts"]:
+            if s.get("not_played"):  # (batch350) numbered by run: a short page for a run that did not play
+                write(f"runs/long/shift-{s['n']}/index.html", build_unplayed_page(s, LONG))
             if not s.get("empty"):
                 write(f"runs/long/shift-{s['n']}/index.html", build_shift_page(s, shift_video(s), LONG))
                 card = shift_card(s, LONG)
@@ -2368,7 +2393,14 @@ def main():
         write("updates/updates.json", json.dumps(full, ensure_ascii=False))
         write("updates/stamp.json", json.dumps(op_updates.stamp_json(full)))
     shutil.copy(SITE / "live" / "state.example.json", out / "live" / "state.example.json")
-    write("live/status.json", public_status(json.loads((SITE / "live" / "status.json").read_text())))
+    status = json.loads((SITE / "live" / "status.json").read_text())
+    if LONG and LONG.get("shifts"):
+        from shift_phase import facts as shift_facts
+        for shift in reversed(LONG["shifts"]):
+            status["shift"] = shift_facts(Path(args.runs_dir) / shift["id"])
+            if status["shift"]:
+                break
+    write("live/status.json", public_status(status))
     how_pages.build(out, page, markdown, esc)  # after the rest, so its links to the site's pages resolve
     lost = [("/", "The live show"), ("/runs/long/", "The run so far"), ("/videos/", "Every shift on video"),
             ("/search/", "Search"), ("/about/", "About the project")]
@@ -2388,6 +2420,8 @@ def main():
     kit = (ART / "factorio-ui.css").read_text()
     write("static/factorio-ui.css", re.sub(r"^@import url\([^)]*\);\n", "", kit, flags=re.M))
     shutil.copy(ART / "avatar.js", out / "static" / "avatar.js")
+    shutil.copy(ART / "shift-phase.js", out / "static" / "shift-phase.js")
+    shutil.copy(ART / "target-countdown.js", out / "static" / "target-countdown.js")
     for key in AGENTS:
         if archive() or not AGENTS[key].get("earlier"):  # agents of the earlier runs only with the archive
             write(f"static/avatars/{key}.svg", avatar_art.svg(profile_row(key), 96, title=agent(key)["name"]))

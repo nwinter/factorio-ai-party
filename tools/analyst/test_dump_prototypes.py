@@ -146,7 +146,9 @@ prototypes = {entity = {
     fluidbox_prototypes = {box{p = 'input', f = 'fluoroketone-cold', v = 1000, c = {1, 2}}, box{p = 'output', f = 'fusion-plasma', v = 1000, c = {1, 2, 3}}}},
   ['fusion-generator'] = obj{name = 'fusion-generator', type = 'fusion-generator', get_fluid_usage_per_tick = function() return 2 / 60 end, effectivity = 1,
     fluidbox_prototypes = {box{p = 'input', f = 'fusion-plasma', min = 1000000, v = 100, c = {1}}}},
-  ['steam-turbine'] = obj{name = 'steam-turbine', type = 'generator', fluid_usage_per_tick = 1, effectivity = 1, maximum_temperature = 500,
+  ['steam-turbine'] = obj{name = 'steam-turbine', type = 'generator', get_fluid_usage_per_tick = function() return 1 end,
+    get_max_power_output = function() return 100000 end, effectivity = 1, maximum_temperature = 500,
+    fluid_energy_source_prototype = obj{fluid_usage_per_tick = 0.5},
     fluidbox_prototypes = {box{p = 'input-output', f = 'steam', min = 15, v = 200, c = {1, 2}}}},
   ['iron-chest'] = obj{name = 'iron-chest', type = 'container'}}}
 """
@@ -166,6 +168,9 @@ if LUA_BIN:
     check(abs(fg["max_fluid_usage_per_s"] - 2) < 1e-9 and fg["effectivity"] == 1 and fg["fluid_boxes"][0]["minimum_temperature"] == 1000000, fg)
     st = by["steam-turbine"]
     check(st["max_fluid_usage_per_s"] == 60 and st["maximum_temperature"] == 500 and st["fluid_boxes"][0]["production_type"] == "input-output", st)
+    check(st["max_power_output_kw"] == 6000, st)
+    # The entity uses methods common to 2.0/2.1; its energy-source prototype still has the scalar property.
+    check(st["fluid_energy_source"]["fluid_usage_per_s"] == 30, st)
     # the merge: each entity's "fluid", by name; an entity the page did not read has none
     with tempfile.TemporaryDirectory() as d:
         with open(os.path.join(d, "entities.json"), "w") as f:

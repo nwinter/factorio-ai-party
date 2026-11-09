@@ -367,8 +367,15 @@ return function(api)
     local inp = try(function() return e.splitter_input_priority end) or 'none'
     local outp = try(function() return e.splitter_output_priority end) or 'none'
     local f = try(function() return e.splitter_filter end)
-    local filter = item_name(f)
-    if filter and f.comparator and f.comparator ~= '=' then filter = filter .. ' (quality ' .. tostring(f.comparator) .. ')' end
+    local filter = M.filter_text(f)
+    local quality, comparator
+    if filter then
+      quality = type(f) == 'table' and f.quality or type(f) == 'string' and 'normal' or nil
+      if quality and type(quality) ~= 'string' then quality = try(function() return quality.name end) end
+      comparator = quality and (type(f) == 'table' and f.comparator or '=') or 'none'
+      comparator = comparator or '='
+      quality = quality or 'any'
+    end
     local parts = {}
     if inp == 'none' then parts[#parts+1] = 'input priority: none (both inputs alike)'
     else parts[#parts+1] = string.format('input priority: %s (the %s input %s first, the other when it has none)', inp, inp, at(sides(e, inp).input)) end
@@ -380,7 +387,30 @@ return function(api)
       else parts[#parts+1] = string.format('output priority: %s (the %s output %s first, the other when it is full)', outp, outp, at(sides(e, outp).output)) end
       if filter then parts[#parts+1] = 'filter: ' .. filter .. ' (does nothing while output priority is none)' end
     end
-    return {input_priority=inp, output_priority=outp, filter=filter, line=table.concat(parts, '; ')}
+    if filter then parts[#parts+1] = 'filter quality: ' .. quality .. '; comparator: ' .. comparator end
+    return {input_priority=inp, output_priority=outp, filter=filter, filter_quality=quality, filter_comparator=comparator, line=table.concat(parts, '; ')}
+  end
+  -- (d30 batch370 SF) two adjacent output tiles, not a downstream route scan. A packed non-filter outlet can
+  -- hold up items behind its waiting items even when the filter outlet is empty. Report the native lane facts.
+  function M.splitter_outputs(e)
+    if e.type == 'entity-ghost' then return nil end
+    local rows = {}
+    for _, side in ipairs({'left', 'right'}) do
+      local pos = sides(e, side).output
+      local target = try(function() return e.surface.find_entities_filtered{position=pos,
+        type={'transport-belt', 'underground-belt', 'splitter'}, limit=1}[1] end)
+      local row = {side=side, position=pos, name=target and target.name or 'none', direction=target and target.direction}
+      if target and (target.type == 'transport-belt' or target.type == 'underground-belt') then
+        row.lanes = {}
+        for i = 1, 2 do
+          local line = try(function() return target.get_transport_line(i) end)
+          row.lanes[i] = {lane=i, can_insert_at_back=try(function() return line.can_insert_at_back() end),
+            items=try(function() return line.get_contents() end)}
+        end
+      end
+      rows[#rows+1] = row
+    end
+    return rows
   end
   local PRIORITY = {left=true, right=true, none=true}
   -- configure {input_priority?, output_priority?, filter?} on a splitter or its ghost.
@@ -394,11 +424,9 @@ return function(api)
     if a.filter ~= nil then
       if a.filter == false or a.filter == 'none' or a.filter == '' then clear = true
       else
-        local item, quality = a.filter, nil
-        if type(a.filter) == 'table' then item, quality = a.filter.name, a.filter.quality end
-        if not (type(item) == 'string' and prototypes.item[item]) then error('filter: unknown item ' .. tostring(item), 0) end
-        if quality ~= nil and not prototypes.quality[quality] then error('unknown quality ' .. tostring(quality), 0) end
-        filter = {name=item, quality=quality or 'normal'}
+        filter = M.parse_filter(a.filter)
+        -- The game's string form means normal/=; a table without quality means every quality.
+        if type(filter) == 'string' then filter = {name=filter, quality='normal', comparator='='} end
       end
     end
     local before = M.splitter(e)
@@ -411,7 +439,7 @@ return function(api)
     if clear then e.splitter_filter = nil elseif filter then e.splitter_filter = filter end
     local now = M.splitter(e)
     return {name=name, position=e.position, ghost=e.type == 'entity-ghost' or nil, input_priority=now.input_priority, output_priority=now.output_priority,
-      filter=now.filter or 'none', line=now.line, before=before.line}
+      filter=now.filter or 'none', filter_quality=now.filter_quality, filter_comparator=now.filter_comparator, line=now.line, before=before.line}
   end
 
   M.COLLECTOR_NOTE = 'filters are asteroid chunk names (configure {position, filters}); the game has no whitelist/blacklist mode for collectors'
@@ -553,7 +581,7 @@ return function(api)
       local f = filters(e)
       if f then out.filters = f.filters; out.filter_mode = f.filter_mode; out.use_filters = f.use_filters; out.filter_slots = f.filter_slots end
     end
-    if splitter_entity(e) then out.splitter = M.splitter(e) end
+    if splitter_entity(e) then out.splitter = M.splitter(e); out.splitter.outputs = M.splitter_outputs(e) end
     -- A collector: chunks its arms hold on the way in (output is in inventories).
     if e.type == 'asteroid-collector' then
       out.arm = try(function() return e.get_inventory(defines.inventory.asteroid_collector_arm).get_contents() end)
@@ -600,26 +628,33 @@ return function(api)
     end
     return out
   end
-  -- An inserter's wait for a full hand (d22 batch104 BN2, luna #1931: "Add wait_for_full_hand boolean to configure on
-  -- inserters (built and ghosts) and return its live state from inspect"). In 2.0.77 it is InserterPrototype's
-  -- wait_for_full_hand, set at data stage only (Space Age's stack-inserter: true; the default, false, for the other
-  -- five), and there is no runtime key for it: on a copy of world n, LuaEntity (built or ghost), its control behavior
-  -- and LuaEntityPrototype each refuse wait_for_full_hand and inserter_wait_for_full_hand, the GUI's locale has no such
-  -- control, and a stack inserter's blueprint entry holds its name and position only. So it is read by prototype name
-  -- from 2.0.77's data (nil for an inserter not among them), and a stack inserter holds what it took until its hand is
-  -- full: on the copy, 3 plates from a chest held 5 s (status waiting_for_more_items) and 1 science pack bound for a lab
-  -- held 4 s with the lab empty, where a bulk inserter moved them; its hand size override (configure hand_size) is the
-  -- hand it waits for: at 3 it dropped the 3.
+  -- 2.0.77 has no runtime wait_for_full_hand read on LuaEntityPrototype. Try the property once per
+  -- prototype, using the verified 2.0.77 data-stage defaults when unavailable. Inspect and configure share
+  -- this cache; false is a value, not a cache miss. A fresh runtime rebuilds the cache.
   M.WAIT_FOR_FULL_HAND = {['burner-inserter']=false, inserter=false, ['fast-inserter']=false, ['long-handed-inserter']=false,
     ['bulk-inserter']=false, ['stack-inserter']=true}
-  M.WAIT_FOR_FULL_HAND_FACT = '2.0.77 has no per-inserter wait for a full hand: it is the prototype\'s wait_for_full_hand, fixed at data stage (no GUI control, no key on a built inserter, a ghost or a blueprint); of the six inserters only stack-inserter waits'
+  M.WAIT_FOR_FULL_HAND_FACT = '2.0.77 has no per-inserter wait for a full hand: it is the prototype\'s wait_for_full_hand, fixed at data stage (no GUI control, no key on a built inserter, a ghost or a blueprint)'
   local function inserter_kind(e)
     return e.type == 'inserter' or (e.type == 'entity-ghost' and try(function() return e.ghost_type end) == 'inserter')
   end
+  local HAND_PROTO = {}  -- prototype reads cost 40-200 us; shared across entities, ghosts and qualities
+  local function hand_proto(e)
+    local ghost = e.type == 'entity-ghost'
+    local name = ghost and try(function() return e.ghost_name end) or e.name
+    local hp = HAND_PROTO[name]
+    if not hp then
+      local proto = ghost and try(function() return e.ghost_prototype end) or try(function() return e.prototype end)
+      local full = proto and try(function() return proto.wait_for_full_hand end)
+      if type(full) ~= 'boolean' then full = M.WAIT_FOR_FULL_HAND[name] end
+      hp = {own=proto and try(function() return proto.inserter_stack_size_bonus end) or 0, bulk=proto and try(function() return proto.bulk end) == true,
+        uses=not proto or try(function() return proto.uses_inserter_stack_size_bonus end) ~= false, proto=proto, turns={}, full=full}
+      HAND_PROTO[name] = hp
+    end
+    return hp
+  end
   function M.wait_for_full_hand(e)
     if not inserter_kind(e) then return nil end
-    local name = e.type == 'entity-ghost' and try(function() return e.ghost_name end) or e.name
-    return M.WAIT_FOR_FULL_HAND[name]
+    return hand_proto(e).full
   end
   -- A built inserter that holds part of its hand and waits for more (status waiting_for_more_items): one line, or nil.
   function M.hand_wait(e)
@@ -630,7 +665,7 @@ return function(api)
     local hand = try(function() return e.inserter_target_pickup_count end)
     local full = M.wait_for_full_hand(e)
     return string.format('holds %s of a hand of %s and waits for more items%s', held, tostring(hand or '?'),
-      full and ' (stack-inserter waits for a full hand: its prototype\'s wait_for_full_hand, fixed in 2.0.77; its hand size override, configure hand_size, is the hand it waits for)' or '')
+      full and ' (' .. e.name .. ' waits for a full hand: its prototype\'s wait_for_full_hand, fixed in 2.0.77; its hand size override, configure hand_size, is the hand it waits for)' or '')
   end
   -- (d27 batch295 HS, Astra #2646: inspect left the hand size out with no override, and agents read hand 1 from held 1
   -- where research made it 3) An inserter's hand size (built or ghost). On 2.0.77 (the iMac copy of world n, d27 21:20):
@@ -639,23 +674,12 @@ return function(api)
   -- others); quality changes none of it. An override above 0 (the GUI's slider, configure hand_size, or a circuit's set
   -- stack size, which writes it: 1 with no signal, back to 0 when turned off) caps it; one above the most reads as set
   -- and leaves the most. inserter_target_pickup_count reads the result at once, also after a force bonus changes.
-  -- From a belt every inserter waited for a full hand (a compressed turbo belt, 60 s: fast 144 swings/min of 3, its arm
-  -- turns; bulk 86 of 12 and stack 75 of 16 a minute stopped, 78 and 64 moving; one item every 16 ticks: hands of 3
-  -- and 12 filled at the belt, a basic inserter took none from the moving turbo belt).
   -- {effective_hand_size, hand_size_override, hand_size_max, capacity_bonus {name, force, prototype},
   -- hand_size_by_circuit, wait_for_full_hand, held_count, swings_per_min, items_per_min_most, hand_line, short}, or nil.
-  local HAND_PROTO = {}  -- by prototype name: {own, bulk, uses, proto, turns {quality: arm turns a minute}} (a prototype read costs 40-200 us)
   function M.hand(e)
     if not inserter_kind(e) then return nil end
     local ghost = e.type == 'entity-ghost'
-    local name = ghost and try(function() return e.ghost_name end) or e.name
-    local hp = HAND_PROTO[name]
-    if not hp then
-      local proto = ghost and try(function() return e.ghost_prototype end) or try(function() return e.prototype end)
-      hp = {own=proto and try(function() return proto.inserter_stack_size_bonus end) or 0, bulk=proto and try(function() return proto.bulk end) == true,
-        uses=not proto or try(function() return proto.uses_inserter_stack_size_bonus end) ~= false, proto=proto, turns={}}
-      HAND_PROTO[name] = hp
-    end
+    local hp = hand_proto(e)
     local own, bulk, uses = hp.own, hp.bulk, hp.uses
     local kind = bulk and 'bulk_inserter_capacity_bonus' or 'inserter_stack_size_bonus'
     local force = uses and try(function() return e.force[kind] end) or 0
@@ -685,9 +709,10 @@ return function(api)
     if override <= 0 then why = string.format('its most, %s; no override: hand_size_override 0', made)
     elseif override < most then why = string.format('%s; its most without it %s', set, made)
     else why = string.format('its most, %s; %s%s', made, set, override > most and ', above it' or '') end
-    -- (on the copy: from a chest of 1, fast, bulk, long and basic inserters swung with 1, a stack-inserter waited; from a
-    -- belt, sparse or full, moving or stopped, every swing of all five was a full hand, a part hand waiting at the belt)
-    local wait = full == true and 'waits for a full hand' or full == false and 'from a chest or machine swings with what it took; from a belt waits for a full hand' or nil
+    -- Pickup capacity is a maximum, independent of the prototype's requirement to fill the hand.
+    local wait = full == true and 'waits for a full hand (prototype wait_for_full_hand true)'
+      or full == false and 'does not require a full hand (prototype wait_for_full_hand false); hand size is the maximum pickup size'
+      or 'full-hand waiting unknown; hand size is the maximum pickup size'
     return {effective_hand_size=size, hand_size_override=override, hand_size_max=most,
       capacity_bonus={name=uses and kind or nil, force=uses and force or nil, prototype=own}, hand_size_by_circuit=circuit or nil,
       wait_for_full_hand=full, held_count=held, swings_per_min=turns or nil, items_per_min_most=turns and turns * size or nil,
@@ -706,12 +731,12 @@ return function(api)
     end
     if type(want) ~= 'boolean' then error('wait_for_full_hand must be true or false', 0) end
     local fixed = M.wait_for_full_hand(e)
-    if fixed == nil then error(string.format('%s is not one of 2.0.77\'s inserters, whose wait for a full hand is known here; %s', name, M.WAIT_FOR_FULL_HAND_FACT), 0) end
+    if fixed == nil then error(string.format('%s: prototype wait_for_full_hand is unavailable and no verified 2.0.77 value is known; %s', name, M.WAIT_FOR_FULL_HAND_FACT), 0) end
     if want ~= fixed then
       error(string.format('%s%s (%g,%g) %s: %s. %s', ghost and 'ghost of ' or '', name, e.position.x, e.position.y,
         fixed and 'waits for a full hand' or 'does not wait for a full hand', M.WAIT_FOR_FULL_HAND_FACT,
-        fixed and 'A stack inserter waits for its hand size: configure hand_size N (or a circuit set stack size) makes the hand N; a bulk-inserter does not wait'
-          or 'A stack-inserter waits until its hand is full'), 0)
+        fixed and 'Its hand size is the hand it waits for: configure hand_size N (or a circuit set stack size) makes the hand N'
+          or 'Hand size is the maximum pickup size, not a requirement to fill the hand'), 0)
     end
     return {wait_for_full_hand=fixed, wait_for_full_hand_before=fixed, unchanged=true,
       line=string.format('%s%s (%g,%g): wait for a full hand %s, as its prototype has it (%s)', ghost and 'ghost of ' or '', name, e.position.x, e.position.y,

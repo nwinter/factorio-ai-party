@@ -21,6 +21,7 @@ import terrain  # noqa: E402  (site/terrain.py: the map frames the site publishe
 
 AGENT_KEYS = ("name", "kind", "display_name", "color", "glyph", "motto", "profile_set", "model", "harness", "role",
               "alive", "activity", "action", "active", "position", "location", "last_said", "camera", "avatar",
+              "resting_until", "resting_known",
               "combat", "died_at", "job", "job_from", "attention", "wait_line", "wait_reason",  # job_from: focus, plan (its team-plan line) or notes
               "job_label", "job_age_s", "job_tick",  # where the job comes from and its age (d20 batch54 N3)
               "surface", "where", "on_platform", "travel",  # where the body is: the map lists agents off Nauvis at its edge
@@ -173,7 +174,7 @@ def public_vehicles(v):
             if isinstance(p, dict) and all(isinstance(p.get(c), (int, float)) for c in "xy"):
                 row[k] = {"x": round(p["x"], 1), "y": round(p["y"], 1)}
         rows.append(row)
-    return {"rows": rows, "total": v.get("total") or len(rows), "read_age_s": v.get("read_age_s")} if rows else None
+    return {"rows": rows, "total": v.get("total"), "read_age_s": v.get("read_age_s")} if rows else None
 
 
 CLOUD_KEYS = ("surface", "label", "pollutant", "chunks", "max", "total", "age_s")
@@ -736,6 +737,8 @@ def public_library_areas(la):
 
 def public_state(s):
     out = {k: s[k] for k in TOP_KEYS if k in s}
+    target = s.get("run_target")
+    out["run_target"] = {k: target[k] for k in ("goal", "at", "at_epoch") if k in target} if isinstance(target, dict) else None
     planets, planet_map, others = public_planets(s.get("planet_maps"))
     if planets:
         out["planets"], out["planet_map"] = planets, planet_map

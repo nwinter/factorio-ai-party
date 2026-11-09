@@ -58,19 +58,21 @@ print('d29_batch329 1. the return budget: the deep phase rate binds, the turn at
 do
   local reads=0
   local bud={binds={name='railgun-ammo',out_km_max=9012}}
-  local C=require('conditions'){return_budget=function(p,name,t) reads=reads+1; eq(name,'Resolute'); eq(t.km,9500)
+  local pl={name='Resolute',valid=true,space_connection={name='edge-shattered'}}
+  local p={force={platforms={pl}}}
+  local C=require('conditions'){leg=function() return {from='solar-system-edge',to='shattered-planet',back=false} end,return_budget=function(p,name,t) reads=reads+1; eq(name,'Resolute'); eq(t.km,9500)
     return {binds=bud.binds and {name=bud.binds.name,out_km_max=bud.binds.out_km_max}} end}  -- a fresh reading each time
   local c={['until']='budget_below',platform='Resolute',turnaround={km=9500,margin=0.1},km=10000}
   C.validate(c)
-  local met,saw=C.check({},c)
+  local met,saw=C.check(p,c)
   eq(met,true); has(saw,'railgun-ammo binds first, at most 9012 km farther out (met under 10000 km; read at tick 0)')
   game.tick=300
   bud.binds.out_km_max=12000  -- not read again before BUDGET_EVERY: the last reading stands
-  met=C.check({},c); eq(met,true); eq(reads,1)
+  met=C.check(p,c); eq(met,true); eq(reads,1)
   game.tick=600
-  met,saw=C.check({},c); eq(met,false); eq(reads,2); has(saw,'at most 12000 km farther out (met under 10000 km; read at tick 600)')
+  met,saw=C.check(p,c); eq(met,false); eq(reads,2); has(saw,'at most 12000 km farther out (met under 10000 km; read at tick 600)')
   bud.binds=nil; game.tick=1200
-  met,saw=C.check({},c); eq(met,false); has(saw,'no item used faster than it is made')
+  met,saw=C.check(p,c); eq(met,false); has(saw,'no item used faster than it is made')
   fails(function() C.validate({['until']='budget_below',turnaround={km=1},km=5}) end,'budget_below requires platform')
   fails(function() C.validate({['until']='budget_below',platform='Resolute',km=5}) end,'budget_below turnaround')
   fails(function() C.validate({['until']='budget_below',platform='Resolute',turnaround={km=1}}) end,'budget_below km')

@@ -36,11 +36,11 @@ return function(api)
     return n
   end
   local function input_inv(e)
-    local which = e.type == 'furnace' and defines.inventory.furnace_source or defines.inventory.assembling_machine_input
+    local which = e.type == 'furnace' and (defines.inventory.crafter_input or defines.inventory.furnace_source) or defines.inventory.assembling_machine_input
     return try(function() return e.get_inventory(which) end)
   end
   local function output_inv(e)
-    local which = e.type == 'furnace' and defines.inventory.furnace_result or defines.inventory.assembling_machine_output
+    local which = e.type == 'furnace' and (defines.inventory.crafter_output or defines.inventory.furnace_result) or defines.inventory.assembling_machine_output
     return try(function() return e.get_inventory(which) end)
   end
   -- (d20 batch53 M2, Sol #1297: a breeder read 31.2 eggs a minute here, 10.4 crafts x 3, where inspect read 26: the

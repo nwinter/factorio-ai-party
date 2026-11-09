@@ -99,7 +99,7 @@ assert(saw:find('^platform Asterion: 85 rocket aboard %(hub 40, turrets 23, belt
 -- not the platform's 85
 met,saw=check(L)
 eq(met,false)
-assert(saw:find('^platform Asterion, loop from %(1,1%): 40 rocket %(turrets 20, belts 19, hands 1%) as read %ds ago %(ticks 1020%-10%d%d: 34 belts joined to transport%-belt %(1,1%), found %ds ago; 1 ammo turrets, 34 belts, 2 inserters, 0 machines, 0 chests in it%); met below 30$'),saw)
+assert(saw:find('^platform Asterion, loop from %(1,1%): 40 rocket %(turrets 20, belts 19, hands 1%) as read %ds ago %(ticks 1020%-10%d%d: 34 belts joined to transport%-belt %(1,1%), found %ds ago; 1 ammo turrets, 34 belts, 2 inserters, 0 machines, 0 chests in it%); reading_tick 1020; age .-; max_age 2m00s; refresh_pending false; on_stale met; met below 30$'),saw)
 -- the right loop: 2 on its belts, 3 in its turret: 5, met below 30 while the left is full
 met,saw=check(R)
 eq(met,true)
@@ -116,7 +116,7 @@ run(1800)
 eq(st.ammo_reserve.active,nil)
 met,saw=check(R)
 assert(saw:find('^platform Asterion, loop from %(41,1%): 3 rocket %(turrets 3%)'),saw)
-assert(saw:find('; %-2 since the reading before %(30s earlier%): %-4.0/min net %(made or brought in less what left%); met below 30$'),saw)
+assert(saw:find('; %-2 since the reading before %(30s earlier%): %-4.0/min net %(made or brought in less what left%); reading_tick 2820; age .-; max_age 2m00s; refresh_pending false; on_stale met; met below 30$'),saw)
 eq(finds.at,2,'the loops\' belts kept (found again after 5 min)')
 -- no belt at a loop's position: none counted, said
 local N={count=1,loop={9,9}}

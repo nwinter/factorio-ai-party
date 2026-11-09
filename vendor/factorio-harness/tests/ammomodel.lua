@@ -94,6 +94,8 @@ do
   local by={}; for _,x in ipairs(r.resources) do by[x.name]=x end
   local fm=by['firearm-magazine']
   eq(fm.stock,1461); eq(fm.received,100); eq(fm.at_end,299,'1461 + 100 + 138 - 1400')
+  eq(fm.aboard,1461)
+  has(fm.line,'aboard (whole ship) 1461; stock (reachable) 1461')
   eq(fm.ingredient_limited.more,92); eq(fm.ingredient_limited.shared.rocket,0.08)
   has(fm.line,'; 100 more on rockets on their way up, counted')
   has(fm.line,'; at the route\'s end about 299; binds: the ingredients: iron-plate (400 aboard, shared with rocket 8%')
@@ -126,7 +128,10 @@ do
   has(fm,'1461 aboard: hub 1400, turrets 61; 400 of it can reach no turret (stranded), not counted: 1061')
   has(fm,'about 576 at that rate')
   local r=E.read({},{platform='Kestrel IVa',route={'nauvis','gleba','nauvis'}})
-  for _,x in ipairs(r.resources) do if x.name=='firearm-magazine' then eq(x.stock,1061); eq(x.at_end,-101,'1061 + 100 + 138 - 1400') end end
+  for _,x in ipairs(r.resources) do if x.name=='firearm-magazine' then
+    eq(x.stock,1061); eq(x.aboard,1461); eq(x.at_end,-101,'1061 + 100 + 138 - 1400')
+    has(x.line,'aboard (whole ship) 1461; stock (reachable) 1061')
+  end end
   stranded['firearm-magazine']=nil
   -- without the model (an older caller): the rate times the time, as before
   local F3=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return fst end}

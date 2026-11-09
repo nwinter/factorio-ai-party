@@ -236,6 +236,7 @@ PRIORITY = {"headline": 10, "attack": 9, "death": 10, "loss": 8, "segment": 7, "
             "arrival": 6,  # a platform's later arrival (a ferry's round trip): below battles; firsts are "space"
             "viewer_reply": 7,
             "story": 7,  # (d28 batch312 B) an operation story's question or result (stories.py)
+            "mission": 7,  # current voyage progress/recovery; urgent audio still wins
             "power": 6,
             "harness": 5, "plan": 5, "operator_request": 5, "chronicle": 6,
             "analyst": 5,  # (d23 batch130 CM2) an analyst point as its own beat (analyst_event)
@@ -285,6 +286,16 @@ def subjects_of(facts, e=None):
     walk(e or {}, 1)
     walk(facts or {}, 1)
     return out[:4]
+
+
+def mission_deadline(e):
+    """The same sample expiry for direct mission lines and analyst-derived voyage claims."""
+    dates = [e.get("sample_t")] if e.get("kind") == "mission" else []
+    for key in ("point", "_analyst_source"):
+        source = (e.get(key) or {}).get("mission_source") or {}
+        if source.get("sample_t") is not None:
+            dates.append(source["sample_t"])
+    return min(dates) + 45 if dates else None
 
 
 def clip_rank(e):
@@ -370,9 +381,14 @@ class Feed(threading.Thread):
         while True:
             try:
                 with urllib.request.urlopen(self.base + "/events", timeout=60) as r:
+                    event = "message"
                     for raw in r:
-                        line = raw.decode("utf-8", "replace").rstrip("\n")
-                        if line.startswith("data: "):
+                        line = raw.decode("utf-8", "replace").rstrip("\r\n")
+                        if not line:
+                            event = "message"
+                        elif line.startswith("event: "):
+                            event = line[7:]
+                        elif line.startswith("data: ") and event == "message":
                             try:
                                 self.on_snapshot(json.loads(line[6:]))
                             except Exception:
@@ -967,7 +983,8 @@ def checked_facts(e, facts):
 def analyst_facts(f, e, s):
     """The analyst's material for this beat: its point (said in the hosts' words, numbers kept), its corrections
     for what is on screen, and the headline and what comes next on the opener."""
-    an = s.get("analyst") or {}
+    from commentary_freshness import current_analyst
+    an = current_analyst(s.get("analyst"), s)
     if e.get("point"):
         from analyst_board import point_facts
         f["analyst_point"] = point_facts(e["point"])
@@ -1106,6 +1123,8 @@ def loss_count(e):
 
 
 def facts_for(e, s, baseline=None, deadline=None, shift=None, target=None):
+    if e["kind"] == "mission":
+        return {"event": "mission", "mission": e["facts"], "game_time": spoken_time(s.get("game_time"))}
     f = {"event": e["kind"], "game_time": spoken_time(s.get("game_time")), "team_size": len(s.get("agents") or [])}
     if e.get("since_last_report"):  # battle beats held back since the last one: sum them up in one line
         f["since_last_battle_report"] = e["since_last_report"]
@@ -1351,23 +1370,8 @@ DELIVERY_RULE = (
     "emotion, emphasis (which word), pacing, and its arc, in at most 16 words, from what the moment is (a fight, a "
     "loss, a first, a joke, a routine trip). The host keeps their own voice, persona and accent: never ask for another "
     "accent, character or impression. Never put words to say in it. When unsure, write 'Delivery: natural'.")
-DELIVERY_MAX = 160
-NOT_DIRECTION = re.compile(r"\b(?:accents?|impressions?|imitat\w*|impersonat\w*|persona|character voice|another voice|"
-                           r"different voice|british|american|australian|irish|scottish|french|german)\b",
-                           re.I)
-
-
-def clean_direction(text):
-    """A writer's delivery direction as the TTS instruction takes it: one line, at most DELIVERY_MAX characters; None
-    for 'natural', for none, or for one that asks for another accent, persona or words (the voice's own stays)."""
-    d = re.sub(r"\s+", " ", str(text or "")).strip().strip("*\"'").strip()
-    d = re.sub(r"^(?:delivery|direction)\s*[:\-–]\s*", "", d, flags=re.I)
-    if not d or re.fullmatch(r"(?:natural|neutral|normal|plain)\W*(?:delivery\W*)?", d, re.I) or NOT_DIRECTION.search(d):
-        return None
-    if len(d) > DELIVERY_MAX:
-        d = d[:DELIVERY_MAX].rsplit(" ", 1)[0]
-    return d.rstrip(",;:") + ("" if d.endswith(".") else ".")
-
+DELIVERY_MAX = voices.DELIVERY_MAX
+clean_direction = voices.clean_direction
 
 EXCHANGE_RULES = (
     "Write the next moment of the broadcast as a quick back-and-forth between the two hosts: {n} lines, alternating, "
@@ -2373,7 +2377,7 @@ def spoke_by(tts):
     """{provider, voice, cached, mood} of the clip this thread just made (voices.TTS.last_here; `last` on older TTS
     objects)."""
     last = tts.last_here() if hasattr(tts, "last_here") else dict(getattr(tts, "last", None) or {})
-    return {k: last[k] for k in ("provider", "voice", "cached", "mood") if last.get(k) is not None} or {"provider": tts.backend}
+    return {k: last[k] for k in ("provider", "voice", "model", "cached", "mood", "retried") if last.get(k) is not None} or {"provider": tts.backend}
 
 
 # (d22 batch99 BI1, viewer Aurora site:4295: "Routine words like still or broken can trigger frustration. Use a natural
@@ -2505,8 +2509,10 @@ class Caster:
                     if a.writer == "or" and low and low != a.model else None)
         self.watch_reads = deque(maxlen=60)  # (read at, count or None), one per bridge reading
         self.host = self.writer  # the main writer the last line went to; a change is logged
-        self.tts = None if a.dry_run else voices.TTS(a.tts, ai=ai)
-        self.tts_fallback = voices.TTS(a.tts_fallback, ai=ai) if a.tts_fallback and not a.dry_run else None
+        tts_model = voices.configured_openai_model(run_dir=getattr(a, "run_dir", None))
+        self.tts = None if a.dry_run else voices.TTS(a.tts, ai=ai, openai_model=tts_model)
+        self.tts_fallback = (voices.TTS(a.tts_fallback, ai=ai, openai_model=tts_model)
+                             if a.tts_fallback and not a.dry_run else None)
         self.breakers = {k: Breaker(k, cool=a.backoff) for k in ("writer", "classifier", "tts")}
         self.classifier = Classifier(a.classifier, ai=ai)
         self.talk = TalkPicker(a.agent_gap, a.agent_cooldown, a.chat_stale, limit=a.max_chars,
@@ -2528,6 +2534,9 @@ class Caster:
         self.plain = hoststory.PlainPlan(self.plain_writer(ai), os.path.join(run_dir, "host-plain.json") if run_dir else None)
         # (d23 batch130 CM1) a routine docking is a traffic count; the routes flown this shift kept in the run folder
         self.arrivals = hoststory.ArrivalGate(os.path.join(run_dir, "host-arrivals.json") if run_dir else None)
+        from missions import Missions
+        self.missions = Missions(run_dir)
+        self.playback()  # restore heard lines before the feed and speech threads start
 
     def plain_writer(self, ai=None):
         """(CM3) The writer of hoststory.PlainPlan's rewrite: --plain-model, else the low model, else the main one, on
@@ -2552,6 +2561,8 @@ class Caster:
     # -- plumbing
     def on_snapshot(self, s):
         with self.lock:
+            self.source_snap = s  # unrewritten plan revisions, matching the analyst's source
+            self.source_received = time.time()
             self.snap = s
             yt = (s.get("viewers_status") or {}).get("youtube") or {}
             reads = self.__dict__.setdefault("watch_reads", deque(maxlen=60))
@@ -2588,10 +2599,16 @@ class Caster:
                 self.events.extend(gate.poll(s, now))
             if plain:
                 self.events.extend(plain.poll(now))
+            if getattr(self, "missions", None):
+                # Replace, never accumulate: a queued beat always reflects the newest observation.
+                self.events = deque((e for e in self.events if e["kind"] != "mission"), maxlen=60)
+                mission = self.missions.event(s, now)
+                if mission:
+                    self.events.append(mission)
             # (CM2) an analyst point as a beat of its own, one per ANALYST_EVERY seconds
             if "events" in self.__dict__ and now - self.__dict__.get("analyst_t", 0.0) >= ANALYST_EVERY and not any(
                     e["kind"] == "analyst" for e in self.events):
-                ae = analyst_event(s, self.__dict__.get("used_points") or set(),
+                ae = analyst_event(s, (self.__dict__.get("used_points") or set()) | self.playback().held_points(),
                                    self.__dict__.setdefault("analyst_topics", {}), now)
                 if ae:
                     self.events.append(ae)
@@ -2600,7 +2617,7 @@ class Caster:
 
     def status(self):
         try:
-            with urllib.request.urlopen(self.base + "/audio/status", timeout=3) as r:
+            with urllib.request.urlopen(self.base + "/audio/status?receipts_after=" + str(getattr(self, "receipt_after", 0)), timeout=3) as r:
                 return json.load(r)
         except Exception:
             return {"listeners": 0, "playing": []}
@@ -2616,6 +2633,138 @@ class Caster:
         kw["t"] = round(time.time(), 2)
         with open(self.log_path, "a") as f:
             f.write(json.dumps(kw, ensure_ascii=False) + "\n")
+        # Direct mission speech bypasses the writer's console log. Expose delivery, not just generation.
+        if kw.get("type") == "caster" and kw.get("event") == "mission":
+            name = CASTERS.get(kw.get("who"), {}).get("name", kw.get("who"))
+            state = "queued" if kw.get("pushed") else "not queued: " + str(kw.get("reason") or kw.get("error"))
+            log(f"[{name}] (mission, {state}) {kw.get('line', '')}")
+
+    def playback(self):
+        from playback_memory import PlaybackMemory
+        if not hasattr(self, "_playback"):
+            run = getattr(getattr(self, "a", None), "run_dir", None)
+            self._playback = PlaybackMemory(os.path.join(run, "host-playback.json") if run else None)
+            for gid, group in self._playback.groups.items():
+                for i, row in enumerate(group["lines"]):
+                    if row["state"] == "completed":
+                        self.remember_completed(gid, i, restoring=True)
+        return self._playback
+
+    def remember_completed(self, gid, index, restoring=False):
+        group = self._playback.groups[gid]
+        row, e, facts = group["lines"][index], group["event"], group["facts"]
+        who, line = row["who"], row["text"]
+        name = CASTERS.get(who, {}).get("name", who)
+        if e.get("kind") == "mission" and not restoring:
+            log(f"[{name}] (mission, capture completed) {line}")
+        self.recent.append(f"{name}: {line}")
+        self.history.append(f"{e['kind']} at {facts.get('game_time')}: {name} - {line}")
+        self.remember_framings([line], row.get("completed"))
+        self.mark_changes(facts)
+        if e.get("kind") == "mission" and getattr(self, "missions", None):
+            with self.lock:
+                self.missions.completed(e, row.get("completed", time.time()), line, who)
+        if e.get("_digest") is not None:
+            self.last_digest = tuple(e["_digest"])
+        if pollstrip.mentioned([line]):
+            self.poll_said = row.get("completed", time.time())
+        if e.get("point") and group["backend"] != "template" and all(r["state"] == "completed" for r in group["lines"]):
+            if restoring:
+                self.used_points.add(e["point"].get("id"))
+            elif not group.get("topic_heard"):
+                self.point_used(e["point"].get("id"))
+            analyst_aired(self.__dict__.setdefault("analyst_topics", {}), e["point"], row.get("completed", time.time()))
+            group["topic_heard"] = True
+        if not restoring and e.get("reaction"):
+            reaction = e["reaction"]
+            if reaction.get("operator") and self.rng.random() < getattr(self.a, "react", 0.5):
+                self.yielding = {"until": time.time() + getattr(self.a, "yield_s", 30), "event": dict(
+                    reaction, kind="chat", react=True, prio=PRIORITY["chat"], t=time.time())}
+            elif not reaction.get("operator"):
+                self.yield_to(reaction, line, reaction.get("label", "aloud"))
+
+    def playback_receipts(self, status):
+        memory = self.playback()
+        completed = memory.receipts(status)
+        for gid, index in completed:
+            self.remember_completed(gid, index)
+        if completed:
+            memory.save()
+        if status.get("receipt_t") is not None:
+            self.receipt_after = status["receipt_t"]
+        # Keep an interrupted explanation in its original order. Withdraw later, still-unheard lines before
+        # resuming; a line already playing is allowed to finish and will not be replayed.
+        for gid, group in list(memory.groups.items()):
+            if mission_deadline(group["event"]) is not None and any(r["state"] == "queued" for r in group["lines"]):
+                why = self.claim_invalid(group["event"])
+                if why:
+                    for i, row in enumerate(group["lines"]):
+                        if row["state"] == "queued" and self.cancel_audio(row["cid"]):
+                            memory.change(gid, i, "cancelled", reason=why)
+                            if group["event"]["kind"] == "mission":
+                                log(f"[caster] cancelled queued mission: {why}")
+            if group["backend"] == "voice" or not any(r["state"] == "interrupted" for r in group["lines"]):
+                continue
+            for i, row in enumerate(group["lines"]):
+                if row["state"] == "queued" and self.cancel_audio(row["cid"]):
+                    memory.change(gid, i, "skipped", reason="explanation interrupted")
+
+    def cancel_audio(self, cid):
+        req = urllib.request.Request(self.base + "/audio/cancel", data=json.dumps({"id": cid}).encode(), method="POST",
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=3) as r:
+                return bool(json.load(r).get("cancelled"))
+        except Exception:
+            return False
+
+    def claim_invalid(self, e):
+        from commentary_freshness import invalid, fingerprint
+        if e.get("history") and e.get("history_at"):
+            return None
+        current = getattr(self, "source_snap", None) or getattr(self, "snap", None)
+        if current is None:
+            current = getattr(self, "_writing_source", None) or {}
+        if e.get("kind") == "mission":
+            why = self.missions.invalid(e, current, time.time())
+            if why:
+                return why
+        for source in (e.get("_source"), e.get("_analyst_source"), e.get("point")):
+            if source:
+                why = invalid(source, current)
+                if why:
+                    return why
+        an = e.get("_analyst_source")
+        if an and an.get("correction_revision") != fingerprint((current.get("analyst") or {}).get("corrections")):
+            return "analyst diagnosis corrected"
+        point = e.get("point") or {}
+        for newer in (current.get("analyst") or {}).get("talking_points") or []:
+            if (point.get("topic") and newer.get("topic") == point["topic"] and newer.get("id") != point.get("id")
+                    and (newer.get("text"), newer.get("facts")) != (point.get("text"), point.get("facts"))):
+                return "analyst point superseded"
+        since = (e.get("_source") or {}).get("source_t")
+        if since is not None and e.get("prio", 0) < URGENT:
+            # A loss arriving during writing, synthesis OR the queue wait can invalidate the first line too.
+            with getattr(self, "lock", threading.RLock()):
+                if any(x.get("prio", 0) >= URGENT and x.get("t", 0) > since for x in getattr(self, "events", ())):
+                    return "superseded by urgent news"
+        return None
+
+    def resume_explanation(self, status):
+        pending = self.playback().unfinished()
+        if not pending or not status.get("listeners"):
+            return False
+        gid, indices = pending
+        group = self.playback().groups[gid]
+        why = self.claim_invalid(group["event"])
+        if why:
+            for i in indices:
+                self.playback().change(gid, i, "cancelled", reason=why)
+            return False
+        e = dict(group["event"], _playback_group=gid, _playback_indices=indices)
+        lines = [(group["lines"][i]["who"], group["lines"][i]["text"]) for i in indices]
+        self.speak_lines(lines, e, group["facts"], group["backend"], None, 0, time.time())
+        return True
 
     def deadline(self):
         if time.time() - self.deadline_t[0] > 30:
@@ -2708,7 +2857,7 @@ class Caster:
         self.events = deque(fresh, maxlen=60)
         if not fresh:
             return None
-        best = max(fresh, key=lambda e: (e["prio"], e["t"]))
+        best = max(fresh, key=lambda e: (e["prio"], e["kind"] == "mission", e["t"]))
         segs = [e for e in fresh if e["kind"] == "segment"]
         if segs and best["prio"] < 9:
             # what is on screen wins: on stream2's mock the opener and an attack outranked a production segment
@@ -2820,11 +2969,12 @@ class Caster:
         # eng/analyst's talking points (docs/ANALYST-NOTES.md): a fresh priority-3 point gets its own beat, else the
         # best point that fits the angle
         an = s.get("analyst")
-        point = analyst_pick(an, self.used_points, None, min_priority=3)
+        held = self.used_points | self.playback().held_points()
+        point = analyst_pick(an, held, None, min_priority=3)
         if point:
             angle = "analyst"
         else:
-            point = analyst_pick(an, self.used_points, POINT_KINDS.get(angle))
+            point = analyst_pick(an, held, POINT_KINDS.get(angle))
         e = {"kind": "lull", "t": now, "prio": 1, "angle": angle}
         if point:
             e["point"] = point
@@ -2838,7 +2988,7 @@ class Caster:
                 e["agents"] = list(main) if main and self.rng.random() < 0.6 else self.rng.sample(agents, min(2, len(agents)))
         return e
 
-    def mark_changes(self, facts):
+    def mark_changes(self, facts, remember=True):
         """Each agent in the facts gets `since_last_beat`: what changed since the hosts last had it in their facts (a
         new board job, something new said, back from respawn, a new task). HOSTS3 item 6: news, not 'still walking'."""
         seen = self.__dict__.setdefault("agent_seen", {})
@@ -2848,7 +2998,8 @@ class Caster:
                 continue
             now = {k: ag.get(k) for k in ("working_on", "intent", "status", "doing")}
             before = seen.get(ag["name"])
-            seen[ag["name"]] = now
+            if remember:
+                seen[ag["name"]] = now
             if before is None:
                 continue
             ch = []
@@ -2867,6 +3018,14 @@ class Caster:
         return digest(s) != getattr(self, "last_digest", None)
 
     def caster_tick(self, now, st):
+        self.playback_receipts(st)
+        recap = (getattr(self, "snap", None) or {}).get("shift_recap") or {}
+        if st.get("speech_owner") or (recap.get("active") and not recap.get("holding")):
+            # The prepared Rook/Vale audio is owned by the new stream service during startup.
+            self.caster_free = max(self.caster_free, now)
+            return
+        if now >= self.caster_free and self.resume_explanation(st):
+            return
         if self.hush_tick(now):
             return
         with self.lock:
@@ -2920,7 +3079,6 @@ class Caster:
             if self.a.lull and e["kind"] == "lull" and not e.get("point") and not self.news(s):
                 self.caster_free = now  # nothing new: stay quiet another --lull
                 return
-        self.last_digest = digest(s)
         if e["kind"] in ("chat", "camera", "board") and self.rng.random() < self.a.naturalist:
             e["naturalist"] = True
         first = "pbp" if e["prio"] >= PRIORITY["research"] or e["kind"] in (
@@ -2998,13 +3156,43 @@ class Caster:
 
     def say_exchange(self, e, s, first, n):
         t_start = time.time()
+        from commentary_freshness import stamp, fingerprint
+        source = getattr(self, "source_snap", None) or s
+        self._writing_source = source
+        e = dict(e, _source=stamp(source, min(t_start, getattr(self, "source_received", t_start))), _digest=digest(s))
+        if e["kind"] == "mission":
+            # The mission guard validates the ship. Unrelated agent chatter/research cannot retract it.
+            e["_source"]["subject_revision"] = {k: v for k, v in e["_source"]["subject_revision"].items() if k == "plan"}
+            self.missions.attempted = t_start
+            why = self.claim_invalid(e)
+            if why:
+                log(f"[caster] cancelled mission before synthesis: {why}")
+            else:
+                self.last_speaker = "color"
+                self.last_line_t = t_start
+                self.stats["caster_lines"] += len(e["lines"])
+                self.speak_lines(e["lines"], e, facts_for(e, s), "mission-facts", None, 0, t_start)
+            return
+        if e.get("point") and self.claim_invalid(e):
+            return
         if e["kind"] == "analyst":  # (CM2) the next analyst beat waits ANALYST_EVERY from this one, aired or not
             self.analyst_t = t_start
         facts = facts_for(e, s, self.base_for(s), self.deadline(), self.shift(),
                           run_target.fact(getattr(self.a, "run_dir", None)))
+        if any(k in facts for k in ("analyst_point", "analyst_headline", "next_milestone", "corrections")):
+            an = source.get("analyst") or {}
+            e["_analyst_source"] = {k: an[k] for k in ("source_tick", "source_t", "subject_revision", "expires", "news", "mission_source") if k in an}
+            e["_analyst_source"]["correction_revision"] = fingerprint(an.get("corrections"))
+        if e.get("history"):
+            tick = e.get("source_tick", e.get("tick"))
+            if not isinstance(tick, (int, float)):
+                return  # history needs its own date, never today's snapshot date
+            minute = int(tick // 3600)
+            e["history_at"] = spoken_time(f"{minute // 60}h{minute % 60:02d}m")
+            facts["historical_at"] = e["history_at"]
         if self.history:  # callbacks to earlier beats are good casting; give them facts to stand on
             facts["earlier_on_air"] = list(self.history)
-        self.mark_changes(facts)
+        self.mark_changes(facts, remember=False)
         prev = self.previous() if e["kind"] == "open" else None
         if prev:  # HOSTS5 item 1: a resumed shift opens with "previously on"
             facts["previously_on"] = dict(prev, biggest_loss=spoken_alert(prev["biggest_loss"])) \
@@ -3085,25 +3273,24 @@ class Caster:
         if not lines:
             self.caster_free = max(self.caster_free, time.time() + 3)
             return
-        self.remember_framings([line for _, line in lines])
-        if pollstrip.mentioned([line for _, line in lines]):
-            self.poll_said = time.time()
+        from commentary_freshness import scoped
+        point = e.get("point") or {}
+        subject_text = " ".join(line for _, line in lines) + str({k: point.get(k) for k in ("text", "facts", "topic")})
+        subjects = list(point.get("agents") or []) + [e.get("agent"), (facts.get("agent") or {}).get("name")]
+        for key in ("_source", "_analyst_source"):
+            if e.get(key):
+                e[key] = scoped(e[key], subject_text, [s for s in subjects if s])
+        if self.claim_invalid(e):
+            log(f"[caster] cancelled {e['kind']} after writing: {self.claim_invalid(e)}")
+            return
+        if e.get("history_at"):
+            lines = [(who, f"Earlier, at {e['history_at']}: {line}") for who, line in lines]
         for who, line in lines:
-            self.recent.append(f"{CASTERS[who]['name']}: {line}")
             log(f"[{CASTERS[who]['name']}] ({e['kind']}{'/' + e['angle'] if e.get('angle') else ''}"
                 f"{'/naturalist' if e.get('naturalist') else ''}, {backend}, {lat:.1f}s) {line}")
         self.last_speaker = lines[-1][0]
         self.last_line_t = time.time()
-        story = facts.get("text") or facts.get("title") or facts.get("tech")
-        who_ = (facts.get("agent") or {}).get("name")
-        parts = ([who_] if who_ and not (story and who_.lower() in str(story).lower()) else []) + ([story] if story else [])
-        if parts:
-            self.history.append(f"{e['kind']} at {facts.get('game_time')}: " + " - ".join(map(str, parts)))
         self.stats["caster_lines"] += len(lines)
-        if e.get("point") and backend != "template":  # the writer built on the point: never offer it again
-            self.point_used(e["point"].get("id"))
-            # (CM2) nor its topic for a while: the analyst posts the same topic again each cycle under a new id
-            analyst_aired(self.__dict__.setdefault("analyst_topics", {}), e["point"], time.time())
         # (BI2) the writer's deliveries ride on the event (stand-ins for speak_lines take the old arguments)
         self.speak_lines(lines, dict(e, directions=directions) if any(directions) else e, facts, backend, err, lat, t_start)
 
@@ -3126,8 +3313,19 @@ class Caster:
         agent line (agents go first). An urgent event arriving mid-exchange cuts the rest."""
         base = {"type": "caster", "event": e["kind"], "angle": e.get("angle"), "naturalist": bool(e.get("naturalist")),
                 "backend": backend, "write_latency": round(wlat, 2), "rejected": err, "exchange": round(t_start, 2)}
+        memory = self.playback()
+        gid = e.get("_playback_group") or memory.generated(lines, e, facts, backend, t_start)
+        indices = e.get("_playback_indices") or list(range(len(lines)))
+        for index in indices:
+            memory.change(gid, index, "generated")
+
+        def abandon(reason, start=0, state="cancelled"):
+            for index in indices[start:]:
+                memory.change(gid, index, state, reason=reason)
+
         if self.a.dry_run or (not self.a.always and not self.status().get("listeners")):
             reason = "dry run" if self.a.dry_run else "no page listening"
+            abandon(reason, state="skipped")
             self.stats["skipped_no_listener"] += reason != "dry run"
             for i, (who, line) in enumerate(lines):
                 self.record(**base, who=who, line=line, voice=voices.CASTERS[who], pushed=False, reason=reason,
@@ -3137,10 +3335,13 @@ class Caster:
         tts = self.tts if self.breakers["tts"].ok() else self.tts_fallback
         est = sum(len(x) for _, x in lines) / 15.0
         if tts is None:  # no voice right now: still take the time the lines would have, or the loop rewrites at once
+            abandon("tts backing off", state="error")
             self.caster_free = max(self.caster_free, time.time()) + est
             return
 
-        direction = {i: d for i, d in enumerate(e.get("directions") or []) if d}
+        group = memory.groups[gid]
+        line_ids = [group["lines"][index]["id"] for index in indices]
+        direction = {i: group["directions"].get(line_id) for i, line_id in enumerate(line_ids)}
 
         def synth(item):
             i, (who, line) = item
@@ -3158,6 +3359,7 @@ class Caster:
             self.caster_free = max(self.caster_free, time.time()) + est
         for i, ((who, line), clip) in enumerate(zip(lines, clips)):
             if isinstance(clip, Exception):
+                memory.change(gid, indices[i], "error", reason=str(clip)[:200])
                 log(f"[tts:{tts.backend}] {type(clip).__name__}: {clip}")
                 if tts is self.tts:
                     self.breakers["tts"].fail()
@@ -3169,25 +3371,40 @@ class Caster:
             if e["kind"] == "segment":
                 live = self.live_segment(self.snap, margin=1) if self.snap else None
                 if not live or live.get("id") != (e.get("segment") or {}).get("id"):
+                    abandon("segment left the screen", i)
                     self.record(**base, who=who, line=line, pushed=False, reason="segment left the screen")
                     break
             if i > 0 and e["prio"] < URGENT:  # an urgent exchange is not cut by the next urgent event (a siege)
                 with self.lock:
                     urgent = any(x["prio"] >= URGENT and x["t"] > t_start for x in self.events)
                 if urgent:
+                    abandon("cut for an urgent event", i)
                     self.record(**base, who=who, line=line, pushed=False, reason="cut for an urgent event")
                     break
             gap = self.next_gap if i == 0 else 0.25
             stop = time.time() + 15
             while time.time() < min(max(self.agent_free, self.caster_free + gap), stop):
                 time.sleep(0.1)
+            why = self.claim_invalid(e)
+            if why:
+                abandon(why, i)
+                self.record(**base, who=who, line=line, pushed=False, reason=why)
+                break
             # rank and exchange: the page plays one voice at a time, by rank, and keeps an exchange together
-            self.push({"channel": "caster", "speaker": CASTERS[who]["label"], "who": who, "text": line,
-                       "expires_in": 25, "duration": round(dur, 2), "voice": spoke.get("voice"),
-                       "rank": clip_rank(e), "exchange": base.get("exchange"),
+            try:
+                expires = mission_deadline(e)
+                pushed = self.push({"channel": "caster", "speaker": CASTERS[who]["label"], "who": who, "text": line,
+                       "expires_in": min(25, max(0, expires - time.time())) if expires is not None else 25,
+                       "duration": round(dur, 2), "voice": spoke.get("voice"),
+                       "rank": clip_rank(e), "exchange": base.get("exchange"), "line_id": line_ids[i],
                        "subjects": subjects_of(facts, e)}, audio, ctype)  # (batch324 SF) for the camera
+                memory.queued(gid, indices[i], pushed)
+            except Exception as x:
+                memory.change(gid, indices[i], "error", reason=str(x)[:200])
+                self.record(**base, who=who, line=line, pushed=False, error=str(x)[:200])
+                continue
             self.caster_free = time.time() + dur
-            self.record(**base, who=who, line=line, pushed=True, tts=tts.backend, **spoke,
+            self.record(**base, who=who, line=line, line_id=line_ids[i], pushed=True, tts=tts.backend, **spoke,
                         **({"delivery": direction[i]} if direction.get(i) else {}),
                         tts_latency=round(tlat, 2), seconds=round(dur, 2), **({"facts": facts} if i == 0 else {}))
 
@@ -3241,6 +3458,8 @@ class Caster:
             excerpt = {"said": len(text), "of": len(whole)} if len(whole) > len(text.rstrip(".")) + 3 else None
             dur = self.voice(text, vmap.get(m["agent"], "orion"), None,
                              {"channel": "agent", "speaker": names.get(m["agent"], m["agent"]), "agent": m["agent"],
+                              "heard_game_time": spoken_time(s.get("game_time")),
+                              "heard_reaction": dict(m, label=label),
                               "color": ag.get("color"), "glyph": ag.get("glyph"), "text": text, "expires_in": 20,
                               # the line as said and its say look= (the director's cue when it starts playing)
                               "seq": m.get("seq"), "said": m.get("text"), "look": m.get("look"),
@@ -3249,10 +3468,6 @@ class Caster:
                               **({"excerpt": excerpt, "left_out": whole[len(text.rstrip('.')):].strip()[:600]} if excerpt else {})},
                              hold=lambda: self.caster_free, mood=mood)  # only a caster clip already pushed: agents go first
             self.agent_free = time.time() + dur + 0.4
-            if dur:  # the hosts may call back to it: shake4 rejected Grok 19 s after Grok spoke aloud (04:42:22)
-                self.history.append(f"aloud at {spoken_time(s.get('game_time'))}: "
-                                    f"{names.get(m['agent'], m['agent'])} - {text}")
-                self.yield_to(m, text, label)
 
     def yield_to(self, m, text, label):
         """The hosts yield to an agent line that just aired (task-talk-hosts: "the stream sounds like the agents first,
@@ -3268,15 +3483,24 @@ class Caster:
         """TTS + push. Returns the clip length in seconds (an estimate when nothing is pushed). `hold()` gives a time
         to wait for (at most 10 s) between synthesis and push, so the other channel's clip can finish first."""
         est = len(text) / 15.0
+        memory = self.playback()
+        reaction = meta.get("heard_reaction")
+        event = {"kind": "operator" if meta.get("channel") == "operator" else "aloud", "reaction": reaction}
+        gid = memory.generated([(meta.get("speaker", "Voice"), text)], event,
+                               {"game_time": meta.get("heard_game_time")}, "voice")
+        meta = {k: v for k, v in meta.items() if not k.startswith("heard_")}
         if self.a.dry_run:
+            memory.change(gid, 0, "skipped", reason="dry run")
             self.record(**rec, voice=voice_id, pushed=False)
             return est
         if not self.a.always and not self.status().get("listeners"):
+            memory.change(gid, 0, "skipped", reason="no page listening")
             self.stats["skipped_no_listener"] += 1
             self.record(**rec, voice=voice_id, pushed=False, reason="no page listening")
             return est
         tts = self.tts if self.breakers["tts"].ok() else self.tts_fallback
         if tts is None:
+            memory.change(gid, 0, "error", reason="tts backing off")
             self.record(**rec, voice=voice_id, pushed=False, reason="tts backing off")
             return est
         try:
@@ -3288,11 +3512,13 @@ class Caster:
                 stop = time.time() + 10
                 while time.time() < min(hold(), stop):
                     time.sleep(0.2)
-            self.push(meta, audio, ctype)
+            pushed = self.push(meta, audio, ctype)
+            memory.queued(gid, 0, pushed)
             self.record(**rec, pushed=True, tts=tts.backend, **dict({"voice": voice_id}, **spoke),
                         voice_id=voice_id, tts_latency=round(lat, 2), seconds=round(dur, 2))
             return dur
         except Exception as x:
+            memory.change(gid, 0, "error", reason=str(x)[:200])
             log(f"[tts:{tts.backend}] {type(x).__name__}: {x}")
             if tts is self.tts:
                 self.breakers["tts"].fail()
@@ -3373,17 +3599,11 @@ class Caster:
         self.agent_free = time.time() + len(text) / 15.0 + 8.0  # the hosts hold off while it is synthesised
         dur = self.voice(text, voices.OPERATOR_VOICE, None,
                          {"channel": "operator", "speaker": "Operator", "rank": "agent", "text": text,
+                          "heard_game_time": spoken_time(s.get("game_time")),
+                          "heard_reaction": {"operator": True, "text": text, "label": "operator"},
                           "expires_in": 60, **({"part": part, "parts": parts} if parts > 1 else {})},
                          {"type": "operator", "line": text, "chars": len(text)}, hold=lambda: self.caster_free)
         self.agent_free = time.time() + dur + 0.4
-        if dur:
-            self.history.append(f"operator at {spoken_time(s.get('game_time'))}: Operator - {text}")
-            with self.lock:
-                react = self.rng.random() < getattr(self.a, "react", 0.5)
-                self.yielding = {"until": self.agent_free + getattr(self.a, "yield_s", 30),
-                                 "event": {"kind": "chat", "operator": True, "text": text, "label": "operator",
-                                           "react": True, "prio": PRIORITY["chat"], "t": time.time()}
-                                 if react else None}
 
     def chat_loop(self):
         while True:  # --no-chat silences the agents' lines, not the operator's

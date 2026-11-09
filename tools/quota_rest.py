@@ -23,8 +23,9 @@ shift69, was gone in shift70 because ai-usage read its account stale, and it was
 the previous run that has not ended (its resting.json: until ahead, no request of the agent's own since it began; quota
 or pace, by hand or by --at-limit) is written again in the new run, until the same time, whatever ai-usage says. Only a
 fresh reading (quota_check.room: the brief under 30 min old, the profile not stale) that gives the account room ends a
-quota rest there; a pace rest is the operator's or the loop's choice with room, so it is carried anyway. An account at
-its limit rests until the later of its reset and the carried rest.
+non-firm quota rest there; a pace or firm rest is carried anyway. Every carried field is kept, including firm and the
+original since; a firm rest ignores requests and ends at its time or --done. An account at its limit rests until the
+later of its reset and the carried rest: an extension updates until/reason/sleep_s/resets and keeps the other fields.
 
 Exit 1 when a push failed (resting.json is written; the line says why), 2 on a bad argument.
 """
@@ -63,8 +64,8 @@ def when(t):
     return f"{aq.DAYS[time.localtime(t).tm_wday]} {time.strftime('%H:%M', time.localtime(t))}"
 
 
-def mark(d, until, reason, now=None, **extra):
-    """Write and push the rest; (line, ok). extra: more fields for resting.json (carried_from)."""
+def mark(d, until, reason, now=None, carried=None, **extra):
+    """Write and push the rest; (line, ok). A carried record keeps all its fields, including null and false values."""
     now = now or time.time()
     wait = until - now
     name = os.path.basename(d.rstrip(os.sep))
@@ -73,7 +74,17 @@ def mark(d, until, reason, now=None, **extra):
     if wait > MAX_S:
         return f"{name}: {round(wait / 86400, 1)} days ahead; a rest lasts at most 7 days; nothing written", False
     # (d24 batch172) the wait from the clock agy-quota writes with, so the file keeps `until` (a carried rest's own end)
-    err = aq.rest(d, until - time.time(), reason, resets=when(until), **extra)
+    if carried is None:
+        err = aq.rest(d, until - time.time(), reason, resets=when(until), **extra)
+    else:
+        row = dict(carried)
+        # A later quota reset extends the end; retain the original start, firm flag and all other metadata.
+        if until != row["until"]:
+            row.update(until=until, reason=reason, sleep_s=int(wait), resets=when(until))
+        for key, value in extra.items():
+            if value is not None:
+                row.setdefault(key, value)
+        err = aq.write_rest(d, row)
     line = f"{name}: resting until {when(until)} ({reason}), {os.path.join(d, aq.REST)}"
     return (line + ("; pushed" if err is None else f"; not pushed: {err}")), err is None or err.startswith("off")
 
@@ -121,19 +132,22 @@ def at_limit(rd, team, brief_path=None, now=None, dry=False, prev=None):
         if not (h or c):
             continue
         d = os.path.join(rd, name)
-        if c and not h and c.get("reason") == "quota" and name in room:
+        if c and c.get("firm") is not True and not h and c.get("reason") == "quota" and name in room:
             lines.append(f"quota rest: {name}: {pname}'s rest until {when(c['until'])} (quota) not carried: a fresh "
                          f"reading has room ({room[name]})")
             continue
-        if h and (not c or h["reset"] >= c["until"]):
+        if h and (not c or h["reset"] > c["until"]):
             until, reason = h["reset"], "quota"
             what = f"{h['profile']} {h['window']} {h['percent']:.0f}%, resets {when(h['reset'])}"
+            if c:
+                what += f"; extends rest carried from {pname}"
         else:
             until, reason = c["until"], c.get("reason") or "quota"
             what = f"carried from {pname}: its rest from {time.strftime('%a %H:%M', time.localtime(c['since']))}" \
                 if isinstance(c.get("since"), (int, float)) else f"carried from {pname}"
             if h:
-                what += f"; {h['profile']} {h['window']} {h['percent']:.0f}% resets sooner, {when(h['reset'])}"
+                timing = "sooner" if h["reset"] < c["until"] else "at the same time"
+                what += f"; {h['profile']} {h['window']} {h['percent']:.0f}% resets {timing}, {when(h['reset'])}"
             elif name not in room:
                 what += "; no fresh reading of its account" if c.get("reason") == "quota" else "; a pace rest"
         if dry:
@@ -142,7 +156,7 @@ def at_limit(rd, team, brief_path=None, now=None, dry=False, prev=None):
         if not os.path.isdir(d):
             lines.append(f"quota rest: {name} has no workspace {d}; not written ({what})")
             continue
-        line, good = mark(d, until, reason, now, carried_from=pname if until == (c or {}).get("until") else None)
+        line, good = mark(d, until, reason, now, carried=c, carried_from=pname if c else None)
         lines.append(f"quota rest: {line} ({what})")
         ok = ok and good
     return lines, ok

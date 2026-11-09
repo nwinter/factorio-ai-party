@@ -354,6 +354,7 @@
     // census's read every 10 s), on the surface shown; the agents' names as the page shows them
     var vh = data.vehicles && Array.isArray(data.vehicles.rows) ? data.vehicles : null;
     d.vehiclesRead = !!vh;
+    d.vehiclesComplete = !!vh && typeof vh.total === 'number' && vh.total === vh.rows.length && vh.rows.every(function (x) { return x && ok(x.position); });
     d.vehicles = (vh ? vh.rows : []).filter(here);
     d.who = {};
     (data.agents || []).forEach(function (a) { if (a && a.name) d.who[String(a.name).toLowerCase()] = a.display_name || a.name; });
@@ -1312,7 +1313,9 @@
       : 'not read: no chart published yet';
     if (k === 'threats') return 'none: no enemy group on its way and no demolisher near ours on ' + where + ' now (read every 2-10 s)';
     if (k === 'agents') return 'none: no agent on ' + where + ' now';
-    if (k === 'vehicles') return d.vehiclesRead ? 'none: no vehicle of ours on ' + where + ' in the last read (every 10 s)' : 'not read: no vehicle read in the live state yet';
+    if (k === 'vehicles') return !d.vehiclesRead ? 'not read: no vehicle read in the live state yet'
+      : d.vehiclesComplete ? 'none: no vehicle of ours on ' + where + ' in the last read (every 10 s)'
+      : 'none shown: the vehicle read is incomplete; vehicles on ' + where + ' are unknown';
     if (k === 'attention') return 'none: no agent on ' + where + ' has an attention mark now';
     return 'none on ' + where + ' now';
   }

@@ -37,9 +37,17 @@ class FakeOBS:
     def call(self, req, d=None):
         d = d or {}
         self.calls.append(req)
+        if req == "GetCurrentProgramScene":
+            return {"currentProgramSceneName": "stream"}
+        if req == "CallVendorRequest":
+            assert d['requestType'] == 'current_scene'
+            return {"responseData": {"scene": "stream vertical", "success": True}}
         if req == "GetSceneItemList":
             items = self.scenes[self.scene(d)]
-            return {"sceneItems": [{"sourceName": n, "sceneItemId": self.ids[n], "sceneItemIndex": i} for i, n in enumerate(items)]}
+            return {"sceneItems": [{"sourceName": n, "sceneItemId": self.ids[n], "sceneItemIndex": i,
+                    "sceneItemTransform": dict(self.transforms.get((self.scene(d), self.ids[n]), {}),
+                         sourceWidth=self.sizes.get(self.ids[n], (1920, 1080))[0],
+                         sourceHeight=self.sizes.get(self.ids[n], (1920, 1080))[1])} for i, n in enumerate(items)]}
         if req == "GetSceneItemTransform":
             w, h = self.sizes.get(d["sceneItemId"], (1920, 1080))
             return {"sceneItemTransform": {"sourceWidth": w, "sourceHeight": h}}
@@ -56,7 +64,8 @@ class FakeOBS:
             return {"canvases": [{"canvasName": "Main"}] + ([{"canvasName": "Aitum Vertical", "canvasUuid": "cv"}]
                                                            if self.vertical else [])}
         if req == "GetSceneList":
-            return {"scenes": [{"sceneName": "stream vertical", "sceneUuid": "uuid-v"}]}
+            return {"currentProgramSceneName": None, "currentProgramSceneUuid": None,
+                    "scenes": [{"sceneName": "stream vertical", "sceneUuid": "uuid-v"}]}
         raise AssertionError(req)
 
     def tf(self, name, scene="stream"):
@@ -116,7 +125,7 @@ def unhooked():
     o = FakeOBS()
     o.sizes[o.ids["stream cam3"]] = (0, 0)
     c = cuts.Cuts(o, LAYOUT, log=lambda *a: None, start=False, vertical=None)
-    c.set({"onair": "cam1", "inset": None})
+    c.set({"onair": "main", "inset": None})
     c.work()
     t = o.tf("stream cam3")
     assert (t["positionX"], t["boundsWidth"], t["boundsHeight"]) == (24, 1208, 1032) and "cropLeft" not in t, t
@@ -126,7 +135,7 @@ def unhooked():
     c.work()
     assert "cropLeft" not in o.tf("stream cam3")
     o.sizes[o.ids["stream cam3"]] = (2880, 1620)  # hooked: the next apply crops it, and it is kept as placed
-    c.set({"onair": "cam1", "inset": None})
+    c.set({"onair": "main", "inset": None})
     c.work()
     assert o.tf("stream cam3")["cropLeft"] == 492 and c.targets[0]["placed"]["stream cam3"] == "main", o.tf("stream cam3")
     n = len(o.calls)

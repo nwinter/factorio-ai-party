@@ -457,14 +457,57 @@ do
   assert(not ok,'odd direction refused')
   has(err,'railgun-turret is built facing north (0), northeast (2), east (4), southeast (6), south (8), southwest (10), west (12), northwest (14) only; eastnortheast (3) is not one')
   eq(three.valid,true); three.valid=false
-  -- a built railgun turret: the game does not turn it, said so
-  local built={valid=true,name='railgun-turret',type='ammo-turret',prototype=rg,position={x=22.5,y=10.5},direction=4,force=force,surface=surface,unit_number=7900}
+  -- a built railgun turret: the game's rotate does not turn it. (d29 batch352 RR, Astra #2764) In person a player turns
+  -- it with the same turret in hand, a fast replace (a copy of world n, 2.0.77): rotate does that, taking the item the
+  -- build spends (create_entity gives the old one back to the character); without one, or by remote view, refused
+  -- with the facts and the rebuild routes.
+  rg.items_to_place_this={{name='railgun-turret',count=1}}
+  local built={valid=true,name='railgun-turret',type='ammo-turret',prototype=rg,position={x=22.5,y=10.5},direction=4,force=force,surface=surface,
+    unit_number=7900,quality={name='normal'}}
   built.rotate=function() return false end
   ents[#ents+1]=built
+  local main=g.get_main_inventory()
+  main.remove=function(f)
+    for _,sl in ipairs(main) do if sl.valid_for_read and sl.name==f.name and sl.count>=f.count then sl.count=sl.count-f.count; sl.valid_for_read=sl.count>0; return f.count end end
+    return 0
+  end
+  main.insert=function(f) return g.insert(f) end
+  local fastok,swaps=false,{}
+  surface.can_fast_replace=function(args) eq(args.name,'railgun-turret'); return fastok end
+  surface.create_entity=function(args)
+    if args.fast_replace then
+      swaps[#swaps+1]=args
+      built.valid=false
+      args.character.insert{name='railgun-turret',count=1}  -- the game gives the old one back
+      local n={valid=true,name=args.name,type='ammo-turret',prototype=rg,position=args.position,direction=args.direction,force=force,surface=surface,
+        unit_number=7950,quality={name=args.quality}}
+      n.rotate=function() return false end
+      ents[#ents+1]=n
+      return n
+    end
+    return saved_create(args)
+  end
   ok,err=pcall(opus,'rotate',{position={x=22.5,y=10.5},direction=2})
   assert(not ok)
-  has(err,'railgun-turret at (22.5,10.5) faces east: the game does not turn a placed railgun-turret (its rotate, as R, refuses it); it faces another way only as built (build or place_ghosts with direction northeast)')
-  built.valid=false
+  has(err,'railgun-turret at (22.5,10.5) faces east: the game does not turn a placed turret with R or Shift+R. A player turns it in person: a railgun-turret in hand, built over it facing northeast, is a fast replace that keeps its ammo, priority list, ignore setting, wires and circuit settings')
+  has(err,'By remote view only a rebuild: blueprint_place with mode superforced (its dry_run names what it would mark), or deconstruct, then place_ghosts with the direction')
+  has(err,'Facing northeast its 3x5 box turns 45 degrees: side by side in a row it needs 4 tiles to a railgun turret facing north or the same diagonal, 5 to one facing the other diagonal (two facing north fit at 3)')
+  has(err,'. You hold no railgun-turret'); eq(#swaps,0)
+  for _,sl in ipairs(main) do sl.valid_for_read=false; sl.count=0 end  -- room for it
+  eq(g.insert{name='railgun-turret',count=1},1)
+  ok,err=pcall(opus,'rotate',{position={x=22.5,y=10.5},direction=2})  -- the turned footprint meets a neighbour
+  assert(not ok); has(err,'railgun-turret at (22.5,10.5) cannot face northeast here: the game refuses the fast replace, its turned footprint meets an entity beside it')
+  has(err,'; nothing was changed'); eq(main.get_item_count('railgun-turret'),1); eq(#swaps,0)
+  ok,err=pcall(opus,'rotate',{position={x=22.5,y=10.5}})  -- plain R: refused with the facts, nothing turned
+  assert(not ok); has(err,'faces east: the game does not turn a placed turret with R or Shift+R'); eq(built.direction,4)
+  fastok=true
+  local r=opus('rotate',{position={x=22.5,y=10.5},direction=2})
+  eq(r.rotated,true); eq(r.before,'east'); eq(r.after,'northeast'); eq(r.turns,0)
+  has(r.replaced,'turned as a player does in person: built over it facing northeast with the railgun-turret you held, a fast replace (the old one came back to your inventory): unit 7950 now (was 7900)')
+  eq(swaps[1].direction,2); eq(swaps[1].quality,'normal'); eq(swaps[1].spill,false); eq(swaps[1].character,body('opus'))
+  eq(main.get_item_count('railgun-turret'),1,'one spent, the old one back')
+  ents[#ents].valid=false
+  surface.can_fast_replace=nil
   -- the rule by prototype: an inserter (4 ways) asked for 2 is refused; a gun turret has no direction
   ok,err=pcall(runtime.check_direction,ins,2)
   assert(not ok); has(err,'inserter is built facing north (0), east (4), south (8), west (12) only; northeast (2) is not one')
@@ -488,5 +531,8 @@ do
     guard_lines={'guard-1 ammo_below (kept): read at each check'},line='guards edited (revision 5): 1 kept'})
   eq(b.guards[1].edit,'kept'); eq(b.guard_lines[1],'guard-1 ammo_below (kept): read at each check'); eq(b.line,'guards edited (revision 5): 1 kept'); eq(b.guard_ids,nil)
   eq(runtime.queue_brief({revision=1,pending={},history={}}).guard_ids,nil)
+  -- batch361: the normal live submission reply keeps the scheduler's game/wall deadline projections too.
+  local deadlines={{state='if_started_now',tick=17280100,wall_unix_ms=1800288000000}}
+  eq(runtime.queue_brief({revision=1,pending={},history={},wait_deadlines=deadlines}).wait_deadlines,deadlines)
 end
 print('round1520d: ok')

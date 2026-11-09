@@ -71,7 +71,7 @@ do
   met=C.check(p,{['until']='fluid_count',platform='Swift',fluid='thruster-fuel',at_least=12000})
   eq(met,false)
   met,saw=C.check(p,{['until']='circuit_signal',platform='Swift',signal='thruster-fuel',at_least=10000})
-  eq(met,true); has(saw,"thruster-fuel 11000 on Swift's hub (red)")
+  eq(met,true); has(saw,"thruster-fuel 11000 on Swift's hub (red network #?: 11000)")
   assert(not pcall(C.validate,{['until']='fluid_count',platform='Swift',fluid='iron-plate',at_least=1}),'a fluid name')
   assert(not pcall(C.validate,{['until']='circuit_signal',platform='Swift',signal='nonsense',at_least=1}),'a known signal')
   hub.get_circuit_network=function() return nil end

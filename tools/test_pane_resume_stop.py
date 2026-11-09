@@ -266,9 +266,11 @@ def other_clis():
         pane = Pane("codex", SOL_STOP, dialog=True, sticky=True)
         run = Run(tmp, [("sol", pane)])
         run.poll(run.resumer(), T0, T0 + IDLE + 1200 + 60)
-        check(pane.typed == [] and pane.keys == ["esc", "esc"] and [x["action"] for x in run.rows] == ["dialog_up", "cover_alert"]
-              and run.rows[1]["sent"] is False, "a dialog still up after esc: logged once, nothing typed, esc again 20 min "
-              "later; at 20 min the alert finds no cover (none given)")
+        check(pane.typed == [] and pane.keys == ["esc", "esc"]
+              and [x["action"] for x in run.rows] == ["dialog_up", "cover_alert", "cover_alert"]
+              and all(x["sent"] is False for x in run.rows[1:]),
+              "a dialog still up after esc: logged once, nothing typed, esc again 20 min later; "
+              "the alert finds no cover at 20 min, retries at 25 min")
     with tempfile.TemporaryDirectory() as tmp:
         pane = Pane("codex", SOL_STOP, dialog=True)
         run = Run(tmp, [("sol", pane)])

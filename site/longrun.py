@@ -21,6 +21,9 @@ sys.path.append(str(Path(__file__).resolve().parent.parent / "tools" / "stream")
 import viewer_replies  # noqa: E402  (tools/stream/viewer_replies.py: which agent lines answer a viewer; the live page's too)
 
 SCIENCE = re.compile(r"-science-pack$")
+# (d29 batch350, Nick 12:30) the site numbers shifts by run: run shiftN is Shift N, a run that did not play keeps its
+# number (an empty row, not played); a run named otherwise takes the number after the one before it
+RUN_NAME = re.compile(r"^shift0*(\d+)$")
 # every science pack in tech-tree order: (item, label)
 PACKS = [("automation-science-pack", "Red"), ("logistic-science-pack", "Green"), ("military-science-pack", "Military"),
          ("chemical-science-pack", "Blue"), ("production-science-pack", "Purple"), ("utility-science-pack", "Yellow"),
@@ -545,8 +548,9 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
         if held:
             settle(False)
         start_log = log_times(d / "start.log")
-        n += 1 if sc or replay else 0  # only shifts that played are numbered
-        row = {"id": name, "n": n if sc or replay else None, "moments": []}
+        m = RUN_NAME.match(name)
+        n = int(m.group(1)) if m else n + 1  # numbered by run, played or not (RUN_NAME)
+        row = {"id": name, "n": n, "moments": []}
         if replay:
             top = max(r["tick"] for r in replay)
             row["replayed"] = {"rows": len(replay), "x0": round(replay[0]["tick"] / 3600, 1), "x1": round(top / 3600, 1),
@@ -565,7 +569,7 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
             deaths, losses = stream_events(d / "stream-service.log")
             nxt = names[i + 1] if i + 1 < len(names) else None
             row.update(started=start_log[0], ended=start_log[1], empty=True, resumed_as=nxt, deaths=deaths, losses=losses,
-                       note="did not start (stopped while setting up)" if nxt else "no score log yet")
+                       note="did not start (stopped while setting up)" if nxt else "no score log yet", not_played=True)
             shifts.append(row)
             continue
         a, b = sc[0], sc[-1]

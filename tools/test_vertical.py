@@ -16,6 +16,7 @@ class Fake:
                        "stream overlay": "browser_source"}
         self.scenes = {"main-uuid": {"stream": "s-stream"}, "vert-uuid": {}}  # canvas -> scene name -> uuid
         self.items = {}  # scene uuid -> [source names]
+        self.ids = {}
         self.muted = set()
 
     def send(self, req, data, raw=False):
@@ -35,13 +36,22 @@ class Fake:
         if req == "CreateInput":
             self.inputs[data["inputName"]] = data["inputKind"]
             self.items[data["sceneUuid"]].append(data["inputName"])
-            return {"sceneItemId": len(self.items[data["sceneUuid"]])}
+            iid = max(self.ids.values(), default=0) + 1
+            self.ids[(data["sceneUuid"], self.items[data["sceneUuid"]][-1])] = iid
+            return {"sceneItemId": iid}
         if req == "CreateSceneItem":
             assert data["sourceName"] in self.inputs
             self.items[data["sceneUuid"]].append(data["sourceName"])
-            return {"sceneItemId": len(self.items[data["sceneUuid"]])}
+            iid = max(self.ids.values(), default=0) + 1
+            self.ids[(data["sceneUuid"], self.items[data["sceneUuid"]][-1])] = iid
+            return {"sceneItemId": iid}
         if req == "GetSceneItemList":
-            return {"sceneItems": [{"sourceName": n, "sceneItemId": k + 1} for k, n in enumerate(self.items[data["sceneUuid"]])]}
+            return {"sceneItems": [{"sourceName": n, "sceneItemId": self.ids[(data["sceneUuid"], n)], "sceneItemIndex": k} for k, n in enumerate(self.items[data["sceneUuid"]])]}
+        if req == "SetSceneItemIndex":
+            scene = data["sceneUuid"]
+            name = next(n for n in self.items[scene] if self.ids[(scene, n)] == data["sceneItemId"])
+            self.items[scene].remove(name); self.items[scene].insert(data["sceneItemIndex"], name)
+            return {}
         if req == "GetSceneItemTransform":
             return {"sceneItemTransform": {"sourceWidth": 1920, "sourceHeight": 1080}}
         if req == "SetInputMute":
@@ -79,6 +89,11 @@ def main():
     v.build_scene(f, "http://127.0.0.1:8787/portrait")  # again: same items, nothing new
     assert f.items[uuid] == ["vertical background", "stream cam1", "stream cam2", "stream cam3", "vertical overlay"]
     assert not [r for r, _ in f.calls[n:] if r in ("CreateScene", "CreateInput", "CreateSceneItem")]
+
+    f.inputs["extra capture"] = "game_capture"
+    f.send("CreateSceneItem", {"sceneUuid": uuid, "sourceName": "extra capture"})
+    v.build_scene(f, "http://127.0.0.1:8787/portrait")
+    assert f.items[uuid][-1] == "vertical overlay", f.items[uuid]
 
     with tempfile.NamedTemporaryFile("w", suffix=".key", delete=False) as k:
         k.write("abcd-efgh\n")

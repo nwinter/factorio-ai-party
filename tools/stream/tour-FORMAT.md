@@ -4,6 +4,29 @@ A tour script is a JSON file: a list of stops, or `{"stops": [...]}`. The tour p
 shot each, with one narrator reading each stop's narration. Check a script with
 `python3 tools/stream/tour.py dry-run SCRIPT`: it prints the timeline and says which stops cannot air and why.
 
+`prepare` checks each synthesized clip with unprompted English OpenAI `whisper-1` transcription before publishing
+it. `prepared_audio.py` accepts at most 20% normalized word error, no inserted leading/trailing words, and a
+duration between characters/35 and 2 + characters/7 seconds. Each attempt is logged in `audio-checks.jsonl`
+with the transcript, reasons, SHA-256 hashes, measured check time and estimated transcription cost. A failure
+gets one fresh synthesis of the exact script, with no direction, mood tag, respacing, pronunciation rewrite or
+TTS-cache reuse. Another failure (including unavailable transcription) skips the stop. Live host lines are
+not checked. Recaps use the same check for prepared lines and transition speech.
+
+Accepted receipts bind script and audio hashes to the check version. `run` refuses old unchecked assets:
+run `prepare` again to validate/rebuild them. Edited/tampered assets cannot reuse a receipt. A failed stop is
+recorded in the manifest and skipped by both manual and hourly tours; other checked stops can still air.
+The backend needs the existing `openai.key` in `POG_KEY_DIR` (normally `~/.config/pog`). Whisper is $0.006 per
+audio minute, about $0.003 for a 30-second clip; each check has a 45-second request timeout. Backend documentation:
+https://developers.openai.com/api/docs/models/whisper-1
+https://developers.openai.com/api/docs/guides/speech-to-text
+Whisper's documented shutdown is February 26, 2027; replace the backend and bump the check version before then.
+
+Both overlay pages load `playback-clock.js`. Fresh service timestamps correct browser-clock skew; subtitles
+follow the local WebAudio cursor after decoding, including a delayed start or audio-context pause. A page reload
+does not replay an already-started tour clip: its captions disappear until another narration actually plays.
+Pending clips replay against fresh service time, never their stale creation timestamp. Muted previews use the
+same corrected service clock without starting audio.
+
 ## A stop
 
 ```json

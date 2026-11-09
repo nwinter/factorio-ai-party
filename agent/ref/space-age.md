@@ -4,6 +4,9 @@
   sends the platform on sooner). `departure`: the agents' queue steps and standing orders that send a platform on
   beside its schedule. `freshness` gives spoilable science's effective research units now and, when the leg's ETA is
   known, at arrival, as `science` and `preflight` count them. `inspect` of a hub shows the same speed and ETA fields.
+  Current-leg arrival also gives `eta_s`, `eta_basis`, `speed_trend` and `eta_uncertain`: direction-aware distance
+  divided by speed now, assuming that speed is maintained. Acceleration/deceleration or missing fresh speed
+  observations mark it uncertain; a turnback uses the distance back to its current destination.
   With `platform`: one platform with its full hub inventory, `thrust_inputs` (a line per thruster input under half
   full: the pumps, plants, crushers and chunks behind it and why they stop; a platform flying under 5 km/s is an alert
   naming them), `after_pumps` and `thruster_burn` (what the thrusters burn at full thrust and how long the fluid behind
@@ -29,7 +32,12 @@
   thruster fuel and oxidizer used and made, the thrusters' tanks at start and end, the pumps' share of time working).
 - `platform_arrived {platform, location?}` and `platform_left {platform, location?}`: wait conditions, in `./fh wait
   --until`, `./fh sleep --until`, `wait_until`, queue steps and guards, and a standing order's `when`.
-  `platform_arrived` holds while the platform is stopped at `location` (a planet; without one, at any stop).
+  `platform_arrived` holds while stopped at `location` (any stop without one), or latches a logged arrival at or
+  after the wait's start (`since_tick` overrides it), even after departure. `saw` gives the arrival tick,
+  subsequent logged departure and current location/leg. Arrival records come from freight's last 40 events;
+  once matched, a wait keeps the event across reloads, timeout holds and requeues.
+  `queue_submit {dry_run:true}` reports matching schedule stops with no holding wait condition in `world_checks`:
+  the arrival wait does not hold the platform there; a following step or guard may run after departure.
   `platform_left` waits for its next departure from `location` (without one, from any stop): seen stopped there during
   the wait, then gone; one begun in flight waits for the next stop and its departure. In a queue it also counts a
   departure after the step before it began (a `platform_schedule` step that sent it off); `since_tick` counts one from
@@ -65,7 +73,13 @@
   processing units, left once they came); that is said, not failed. `current_note` gives it when an edit's current
   stop is the station it is at. In flight, `leg` gives the leg before the edit and the current stop now (the same
   destination, back the way it came, or new); `keep_leg: true` makes the current stop the stop for the leg's
-  destination (refused when the stops hold none). `next: true` alone calls the game's go to station on the stop after
+  destination (refused when the stops hold none). `current:N` alone succeeds with `changed:false` when that stop is
+  already current and the platform is unpaused and waiting or flying there; records, waits and progress stay intact.
+  Otherwise it calls go to station, which also unpauses (even if `paused:true` accompanies `current`). It returns
+  `current`, `heading_to` (schedule destination), `direction:{from,to}` and `progress` (fraction in that direction)
+  in flight, `distance` (connection fraction), `paused_before`, `paused` and `changed`; `confirmed` prints the current,
+  changed and pause values in compact output too. Missing stops/platforms and persistent no_schedule/no_path still fail.
+  `next: true` alone calls the game's go to station on the stop after
   the current one now, keeping the records and their waits (`sent_to`: from which stop to which, and where it was).
   The call fails (a failed queue step too) when the platform reads paused without `paused: true` after it. A
   `no_schedule` or `no_path` read in the call's tick is read again every 10 ticks for up to 300 (the game updates a
@@ -89,7 +103,7 @@
   reads those too). The game's record then holds a circuit wait that never holds. `waits_run` says which way each
   condition runs, and `harness_waits` (also in `platforms {platform}`) gives the harness's conditions now and its last
   send. `wait_until` with `platform` takes `fluid_count` (`fluid, at_least | below`: the storage tanks) and
-  `circuit_signal` (`signal, at_least | below`: the hub's wires), the remote lane too.
+  `circuit_signal` (`signal, at_least | below`: hub wires, or `position, wire` for an entity's network), the remote lane too.
   Example: `./fh call platform_schedule --args '{"platform":"Sunward","stops":[{"station":"nauvis","wait":[{"type":"time","ticks":216000},{"type":"circuit","condition":"thruster-fuel >= 10000","compare":"and"}]},{"station":"gleba","wait":[{"type":"all_requests_satisfied"}]}]}'`
 - Supply left without a path: a `requests` call that changes a hub's or landing pad's slots or sections, a
   `platform_schedule` call and a `platform_delete` call read the delivery paths of the items involved before and
@@ -148,10 +162,35 @@
   With forecast, `basis` says what the forecast assumes, and `forecast_model` counts asteroids by the hull's box. They
   spawn on a line 72 tiles ahead of the box, across its width + 96, not its height. Per km flown: 0.0100 x (width + 116)
   x each kind's spawn chance; this is fitted on test platforms with no schedule, and ships flying on a schedule met 1.2
-  to 2.5 times that (`on_path`). `design: {width, height | tiles, mass?, speed (km/s), ammo?}` gives the same for a hull
+  to 2.5 times that (`on_path`). `design: {width, height | tiles, mass?, speed (km/s), ammo?, stock?, targets?}` gives the same for a hull
   not built yet, read only, on this platform's route and turrets. `progress: {from, to}` cuts each leg to that part of
   its connection. Each leg gives asteroids by kind, a 600 s window's, and shots per ammunition; `estimated` lists what
-  is not modelled.
+  is not modelled. `design.ammo` is an exclusive list of 1..8 ammunition names; only compatible turrets aboard
+  participate, using their current target settings, ammo quality and researched damage. Unsupported names are refused
+  with the accepted list. `ammo_source: "design.ammo"` identifies the override; `current_targets` separately records
+  all built turrets' settings. `ammo_details` gives selected damage per shot, targets, stock, total shots, shots per
+  item, items required and stock after subtracting that requirement. `design.stock: {ammo: count}` supplies item counts
+  for selected types; omitted counts use stock aboard (`stock_source`, `stock_read` scope and belt/hand reading age).
+  Production, feed reachability and partial magazines are not modelled. With no `design.ammo`, the prior light model
+  uses loaded types and reads no stock. Width affects asteroid counts; speed affects minutes and the 600 s window;
+  height and mass are reported with their non-use stated (spawn count uses width, and speed is given). `tiles` supplies
+  the bounding box; combining it with width or height is refused, as are unknown design fields.
+  `design.targets: {turret-prototype: [asteroid-names] | "any"}` overrides target sets in the model only. Each named
+  prototype must participate in that model; with `design.ammo`, that means compatible selected turrets only. A list
+  has 0..64 names; an empty list targets nothing, `"any"` targets every asteroid. Omitted prototypes keep their native
+  settings. Unsupported turret or asteroid names are refused with accepted lists. `target_source` names the override
+  or platform; `effective_targets` gives each participating turret group and its source, beside unchanged
+  `current_targets`. `ammo_details.targets` uses the effective settings too. This also works with implicit loaded ammo
+  when `design.ammo` is omitted. Piercing through multiple asteroids and interception order between weapons are not
+  modelled: each ammunition independently counts full shots for its targets and their targeted fragments.
+- `platform_endurance`, return allowance: `turnaround.return_allowance {legs, items: {item: count}, label,
+  evidence_ticks?}` is your own count of each item over legs back after the connection's start (`legs`: "from->to" as
+  the reply's legs name them), used there in place of the net rate x time; the turn itself, out and back on the
+  connection, keeps the net rate. The harness takes it as given and does not measure or check it; counts are 0 or more.
+  A leg that is not one of those, or names more than one, is refused. Each such item gives `allowance`,
+  `allowance_replaces` (what the net rate gave over those legs), `costs {turn, legs_at_net, allowance}` and
+  `unadjusted {out_km_max, spare_km, left_at_return}`; `return_budget.allowance` repeats your label, evidence ticks,
+  legs and km, and `binds_unadjusted` is what binds without it. `budget_below` takes it in its `turnaround`.
 - `platform_supply {platform}`: the supply chain from collectors to guns (collectors, crushers, thruster fuel and
   oxidizer makers, thrusters, guns), with the first stop named (`first_stop`); `chunks`: each chunk type with its
   collectors, then the crushers whose recipe takes it and the hub; `chunk_flags`: a GUI filter keeping a chunk from
@@ -237,9 +276,17 @@
   line, as every shot's, says where it was rendered: surface, centre, frame and what of ours stands in it.
 - `platform_production {platform, item?}`: the platform's own production per item (totals, rates over 1m, 10m, 1h):
   what every machine on it made, productivity included. With `item`, `makers`: each crafting machine there whose recipe
-  makes it, at full speed as `inspect` gives it (one machine alone), and their sum.
+  makes it, at full speed as `inspect` gives it (one machine alone), and their sum. Each maker also gives native
+  status and `input`: ingredient counts at recipe quality, names absent from input, input/output inserter and loader
+  counts. Inserter targets count, or their pickup/drop point on the footprint when the native target is unset.
+  Zero arms and missing ingredients are stated beside nominal capacity; these are current facts, not a future rate.
   `leg: true`: since it last departed (and, stopped, the last full leg): fuel, oxidizer, ammo made and used, cargo
   loaded and dropped, totals and a minute.
+  `legs: N` (1..16, with `platform` alone): completed flights, oldest first, retained during the next flight and
+  across reversals. `from/to` are boundary ticks; `from_location/to_location/heading` name directed connection ends;
+  `start_position/end_position` distinguish a mid-leg turn from reaching a station. Ammo/fuel made and used come
+  from native counters at state events or the tick the position watch sees a change. Cargo is rockets launched
+  to it and hub pods sent down, not deliveries. Partial/failed/capped records say `incomplete`. Last 16 kept.
   `wait_until {until: "produced", platform, item, at_least}` waits for it.
   Example: `./fh call platform_production --args '{"platform":"Sunward","item":"space-science-pack"}'`
   `long: true` (with `platform`, or `surface` for a planet): made and used over the game's 1 h, 10 h, 50 h and 250 h
@@ -252,11 +299,27 @@
   projection, not what happened), and its outcome from the game's events (destroyed and by what, hit an entity of
   ours, left the view, still in view); `class_lines`, `platform_hit_lines`. Each turret: hits, kills and damage on
   asteroids by those classes, ammo used; `turret_group_lines` by name and hull region. `trajectories`: every tracked
-  asteroid (the first 3000 seen), 24 a page, the rarest names first by the watch's `by_name` counts: first and last
+  asteroid (the first 3000 matching the start filter), 24 a page, the rarest names first by the watch's `by_name` counts: first and last
   tick and position, outcome, `by` (the turret that destroyed it), `hit_by` (the turrets that hit it), and `points`
   (one a second) for the first 24 tracked only. Reading it: `asteroid_names: ["*promethium*"]` (1..16 names or
   patterns with *), `trajectory_page`, `trajectory_limit` (1..100); `trajectory_untracked` counts a picked name's
-  asteroids past the 3000, which have no record.
+  untracked asteroids, which have no record.
+  Start-only `track_filter: {asteroid_names:["small-promethium-asteroid"], area:[[-20,-80],[20,-40]]}`:
+  optional names (same patterns) and/or rectangle; both must match at first observation, before the 3000 cap.
+  Coordinates are on the platform, north is negative y; left/top included, right/bottom excluded, finite within
+  +/-1000000. A rejected asteroid stays untracked; an admitted one stays tracked after leaving the rectangle.
+  Every start/read names `track_filter` (expanded names, or `all:true`) and `track_scope`. `filtered_out` and
+  `past_cap` split `untracked`. Global `by_name`, turret totals and `platform_hits_all` include excluded asteroids;
+  `platform_hits`, classes and trajectories cover tracked asteroids. Read-only `asteroid_names` still filters pages.
+  `floor_impacts` separately counts witnessed lost foundation tiles, including excluded trajectories. The newest
+  32 `floor_witnesses` give `tick`, `tick_basis` (ghost_seen or hub_rebuild), `tiles`, `after_tick`, `seen_tick` and
+  `rebuilt_tick` when known; `floor_witnesses_dropped` counts older witnesses. These reuse hub rebuild events and
+  ghost finds already made by foundation-loss checks; no extra scan. Without a check, unrepaired losses can remain
+  unseen. The tick is discovery/rebuild, not exact impact time. `cause: "unknown"`: bare-floor destruction emits
+  no causal event. `candidates` gives at most three nearest retained deaths/inferred fragments, each `inferred:true`,
+  with name, unit, position, tick, distance and age_ticks; a fragment's parent is inferred too. Bounds: last 128
+  records, within 32 tiles and 600 ticks before discovery. Proximity is not causal proof; delayed rebuilds may have
+  no candidates. Counts are lost tiles, not distinct asteroids; no reconstruction of losses before instrumentation.
   `by_name` also splits `in_first_sample` (in view at the first read) from `later`: `later_fragments` (first seen
   where an asteroid that breaks into that name died just before: by name, place and time, as no game event links
   them) and `later_other`. Past the cap the line says from what second (`capped_at_s`); `untracked` counts unique
@@ -268,11 +331,35 @@
   and each shot's aimed target, the one it read the tick before the shot: `exact` when that shot hit it (killed or
   survived, by size), else `uncertain` (no target read, or it was not hit: `aimed_not_hit_alive` when it lived on);
   the shot's other hits as collateral by size (a railgun's line hits everything on it at once); `unattributed`: its
-  hits on no seen shot; `recent`: the last 24 shots. Not given: the game's reason for a target choice.
+  hits on no seen shot; `recent`: at most 24 shots, preserving `first_failure` plus the newest 23 other shots
+  (newest 24 until a failure). `first_failure` is the first surviving aimed target or uncertain attribution,
+  not proof of a targeting error; older watches can recover only retained shots. Each railgun's `statistics` covers all detected shots:
+  `intervals` count/min_ticks/max_ticks/mean_ticks and a bounded histogram, `shots_by_second` (entry 1 is the first
+  watch second), `shots_by_target_size` (the previous tick's target, including uncertain; unknown if none).
+  `nominal_cooldown` names the prototype's ticks and source; it excludes force/ammo modifiers, turning and recharge.
+  `samples` gives independent full-buffer, target-present and ammo-present counts/shares, not reasons for delays.
+  Ready-to-fire/remaining cooldown is not exposed. `since_tick`/`prior_shots` mark partial coverage after a runtime
+  update; multiple ammo items lost in one read are marked ambiguous and assigned that tick. Not given: the game's
+  reason for a target choice.
   Turret rows give `range` (the prototype's times its quality's range_multiplier: uncommon 1.1, rare 1.2, epic 1.3,
   legendary 1.5), `min_range`, and `turn_range` with `facing` when under a full turn. An edit on the platform that
-  restarts the watch (`mixed`) keeps the watch before it whole as a segment: `segments` [{segment_start, end_tick,
-  closed_by, line}] (at most 3, 3000 tracked asteroids together); `segment_start: <tick>` reads one in full.
+  restarts the asteroid watch (`mixed`) keeps the watch before it whole as a segment: `segments` [{segment_start, end_tick,
+  closed_by, line}]: first plus newest two, at most 3 and 3000 tracked asteroids together. The second oldest is
+  evicted first; cap pressure can leave only the first. `segment_start: <tick>` reads one in full.
+- `platform_defense {platform, planned_entities:[{name,position:{x,y},direction?}]}` is a standalone read:
+  1..8 proposed entities against up to 64 existing built/ghost railguns of the platform's force. The footprint is
+  the rotated prototype collision box's axis-aligned envelope; nonrotatable prototypes use north. Direction is
+  0..15 or a compass name, default north. Each `entities` row retains its input `index`, name/position/direction,
+  and `railguns` (1-based indices into the returned railgun table with positions/directions/ghost status).
+  Each source's `corridor` gives its quality, targeting `range`, `line_length` and `reach` from the gun centre;
+  both range and line length scale with the gun's quality. Top-level `corridor` is the normal-quality reference.
+  Only intersecting sources appear in `railguns`; `railguns_checked` counts all sources tested. Top-level and row
+  `complete`/`capped` report enumeration completeness: an extra railgun detects truncation, including on rows with
+  no hits. More than 8 entries is an error; 106 entries take fourteen calls. No other options combine with this mode.
+  Geometry reuses the existing expanded-box/wedge rule (17 rays at radial boundaries), including its same-turret
+  and origin-containing-box exclusions. Diagonal envelopes can overstate the footprint. Proposed railguns are
+  targets only; corridor sources are existing railguns. This checks geometry, not placement, ammo, target filters,
+  or damage. No ghosts, entities, watches or hull jobs are created.
 - `platform_defense {platform, feed?, route?, ammo_use?, planned?}`: each asteroid collector's front and each hull side against turret ranges: the
   turrets that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as
   runs. A railgun turret reaches only within its 72-degree arc centred on its facing (`facing`, `arc_degrees`); one in
@@ -288,7 +375,10 @@
   platform loss alert says `27 destroyed by our own railgun-turret at (-0.5,-21.5): 20, ...; 1 by enemies (...)`, and
   the platform's listeners get one tell on the first such loss of an incident. A big metallic asteroid resists physical 2000 flat, so a
   firearm round does almost nothing to it. A railgun's `line of fire` names the entities of ours its shots cross: it aims within 36 degrees of its facing
-  (72 in all), and its ammo's line (1 wide, to 53.6 tiles from its centre) damages ours too; with what it engages. It traces each turret's ammunition back: what can reach it (its inserters, the belts upstream and who loads
+  (72 in all), and its ammo's line damages ours too; with what it engages. `lines_of_fire[].corridor` gives targeting
+  `range` (normal/uncommon/rare/epic/legendary: 40/44/48/52/60), `line_length` (50/55/60/65/75), and `reach`
+  (53.6/58.6/63.6/68.6/78.6 from its centre). Shot start stays 3.6, width 1 and minimum targeting range 3.5.
+  It traces each turret's ammunition back: what can reach it (its inserters, the belts upstream and who loads
   them, the hub) and what stops it; the ammunition that can reach each turret; the ammo stranded on belts no turret's
   way reaches, per group with its belts and the call that recovers it (a belt `pickup` aboard, else `deconstruct` of
   those belts into the hub). A way goes on through inserters moving items from belt to belt (relays, long-handed
@@ -332,7 +422,10 @@
   oxidizer makers, thrusters, empty guns; collectors no turret reaches; hull sides with uncovered edge tiles; machines
   on no power), then the route and arrival, hub slots and the chunks in it, chunks made and where each goes,
   crushers and makers (state, in and out), thrusters, the fuel outlook, tanks and ammunition (stock, made and used, run-out, stranded),
-  turrets and power; `errors` names a read that failed. Each of the four reads gives the detail.
+  turrets and power; `errors` names a read that failed. `turret_counts` uses the whole-ship structured defense counts,
+  before row filters or pages: `status` complete/capped/unknown, `read`, `total` (complete only), `empty`, `armed`,
+  `unarmed`, `unread`, `by_hand`, `capped`. `check {status, incomplete}` marks incomplete reads; they never report a
+  clear stopped/blocked check. Each of the four reads gives the detail.
 - `platform_tiles {platform, positions | area}`: up to 64 tiles at exact coordinates: the tile, marked for removal, a
   tile ghost, what stands on it; for foundation whether the hub takes it away now once marked (`remove {now, why}`: one
   run of empty space beside it, nothing on it, room in the hub), for empty space whether the hub builds foundation
@@ -426,8 +519,19 @@
   container it went to and what that held of it on that tick, before robots take any; the setter hears each.
   `quality` (or item `name@quality`) counts that quality only; none counts every quality (`counts` says which).
   Received, the landed stage (the same pods), arrivals (each with `by_quality`), the stock test and hub reads count by it.
-- `flight_watch {platform, from?: "now" | "departure", minutes?}`: one platform watched once a second from now (or its
-  next departure) to its next arrival or `minutes` (1..480, default 120). Per ammo turret (unit_number, position):
+- `flight_watch {platform, from?: "now" | "departure" | "leg", minutes?}`: one platform watched once a second from now,
+  its next departure, or its next leg change, to its next arrival or `minutes` (1..480, default 120). `departure` means
+  leaving a stop; it does not include a pass-through. `leg` starts when the connection, oriented from/to, or direction
+  changes, including departure from a stop, pass-through and reversal. It records the current leg when armed and
+  checks once a second; arriving at a stop alone does not start it. Both armed modes end unbegun after 24 game hours.
+  A `leg` watch's `start_change` and read line say what started it: `kind` (departure, connection, direction),
+  `before`/`after` (location or connection/from/to/back), and the two observation ticks (`from_tick`, `tick`).
+  Edits on the same tick share one mixed boundary. `mixed.parts` keeps the latest 3 positive-duration intervals
+  (`from_tick`, `to_tick`); a fourth drops the oldest. `mixed.parts_limit` is 3; `parts_dropped` counts real intervals
+  dropped at the cap. Each part keeps damage, losses, empty-turret runs, railgun/laser energy and fire, accumulator
+  lows, fuel, ammunition, repairs and foundation. Parts contain all observed turret rows, without the normal read's
+  24 ammo-turret / 64 powered-turret display limits; sampling caps still apply. Zero-duration parts are not kept.
+  Per ammo turret (unit_number, position):
   `least` ammunition seen, `empty_samples` and `empty_ticks`, `longest_empty_ticks` and when it began, its feed from
   the ammunition trace (maker, hub, chest, preload, none; how much can reach it; what stops it) at the start, after it
   first read empty, and at the end. Also damage taken by entity, entities lost, repair packs used, thruster fuel and
@@ -439,11 +543,14 @@
   `limit` (one watch a platform of the force), `counted` and `counting`: armed, watching, or done and not read; a done
   one stops counting once read, kept 1 h after. A read only counts once the watch is done: one read while it still
   watches is not its result. Your own start on a platform whose watch of yours is done and unread reads it first
-  (`previous_watch`, `previous_line`) and goes on; another agent's unread watch still refuses it. `replace: true` keeps the watch it replaces readable by `{id}`
+  (`previous_watch`, `previous_line`) and goes on. If your watch is still watching but the platform has arrived,
+  the start takes its final sample immediately, preserving the arrival boundary and totals at this tick, then
+  returns its result in `previous_watch` and arms or starts the new watch. A watch that has not arrived and another
+  agent's unread watch still refuse the start. `replace: true` keeps the watch it replaces readable by `{id}`
   (a running one ends there, `ended_by` "replaced by #N"; an armed one is dropped); it stops counting, `replaced_by`
   names the new one, kept 24 h unless read; the reply adds `replaced_watch` (its row) and `replaced_line`. It runs as a
   step in the remote and platform lanes too. A start at the limit is refused, naming the watches that count. The
-  setter hears in team.alerts when it begins at a departure and when it ends; the end line starts with the damage
+  setter hears in team.alerts when it begins at a departure or leg change and when it ends; the end line starts with the damage
   taken and the losses over the whole watch (the same as `{id}`'s `damage` and `lost_count`, a pause and a coast
   included), and its railgun part (`their fire: N hits`) is what the railguns hit, never damage taken. A turret empty under a second between
   two samples can be missed. Every ammo turret aboard is read, up to 1024 a watch: `turrets_total` (aboard at its last
@@ -608,7 +715,11 @@
   for, which would go to the trash slots (the reply says so); with them on, load_silo and preflight name the platforms' open requests a
   rocket may go to. The game has no priority among a silo's automatic requests. `first: ["space-platform-foundation",
   "asteroid-collector"]` (with `platform`): those items alone, each at what the hub lacks of its requests (or
-  `{item: count}`), from what you hold and the chests of the silo's network robots would take from first (or `from`),
+  `{item: count}`), from what you hold and enough eligible storage/active/passive provider chests of the silo's
+  network (up to 16; buffers require explicit `from`). Insufficient normal-quality stock refuses before starting,
+  with excluded sources and reasons. Explicit `from` keeps its existing partial-load semantics. `native_auto_before`
+  reports the visible rocket state, switches, target and payload matches; the engine's idle cause is not exposed.
+  `first_warning` states that a partial load without its launch leaves automatic requests OFF. The selected load is
   walked, launched to the platform with automatic requests paused (`"pause"`); `first` names the counts and chests,
   `first_skipped` items the hub lacks none of. A dry run pauses nothing. `dry_run: true` (and `preflight`): each item's weight, slots and sources, the rocket's room, the
   split, the hub's free slots, cargo aboard that is not in the list (`foreign_cargo`) and automatic requests that are
@@ -654,6 +765,8 @@
   Example: `./fh call drop --args '{"platform":"Sunward","items":[{"item":"iron-plate","count":200}],"dry_run":true}'`
 - `freight_audit {item}`: one item across every planet and platform: stock, spoil times, silo room, unmet lab and
   requester demand.
+- Platform deconstruction returns all item inventories, inserter-held stacks and belt contents through the native mining buffer to the hub, preserving quality and stack data. This includes fuel, burnt results, machine inputs/outputs, ammo, chest/collector contents and modules. `where_is {item,surface}` includes recent platform returns in `deconstructed`: tick, entity, position and full item/quality/count manifest (last 32 entity removals, newest 6 matches). Hub overflow spills onto the platform, marked for native pickup when room is available. This records the mining return, not where those items are now.
+- Platform `deconstruct` checks the entire batch's held items and mined entity items against hub room before any marks. Full/insufficient hub space or an uncovered/unreadable item source refuses the whole batch. Dry run lists `platform_return_lines` and `platform_returns`; unsafe batches have `would_refuse: true, would_mark: 0`. Cargo-bay capacity changes, filtered hub slots, over 128 entities or 8192 source slots refuse because the preflight does not cover them. Native mining still preserves contents if inventory changes after the check.
 - `where_is {item, surface?, limit?, sort?, page?}`: where an item is on a surface: the total by kind (`kinds_line`:
   each kind's count and places) and each place holding it (landed cargo pods as kind `pod`, stacks on the
   ground in sight as kind `ground`; beacons and drills too, and `in_module_slots` where it sits in module slots), the
@@ -733,3 +846,23 @@
   iron-chest cannot be placed on Resolute: needs gravity >= 0.1, this surface has 0`; dry runs say the same, and
   `load_silo` with `platform` lists such items in `unplaceable`. `gamedata/entities.json` has each entity's
   `surface_conditions`, `gamedata/locations.json` each planet's and the platform's `surface_properties`.
+
+Return-budget diagnostics (batch363): every `platform_endurance` turnaround item has `rate_basis`, whole-leg and last 1/3/5-minute `windows` (NET = made minus used), cap conditions as read, and usable-stock extrema observed at reads. Missing departure counters or noncontiguous moving-phase endpoints are explicitly unavailable. These fields do not change the conservative rate or infer future refill from an off gate. `budget_below` says the binding item's windows and retains every budget item in fired evidence, including within `all`/`any`; see the harness usage topic for bucket timing and coverage.
+
+Explicit window budgets (batch364): `platform_endurance {platform,turnaround:{km:25000,windows:[60,300,600],require:"all",missing:"pending"}}` adds `return_budget.window_budgets` and `window_check` against the planned `km`. Any distinct subset of 60/180/300/600 seconds and "leg" is accepted. One same item must bind in all named windows (or the required count). Fixed windows require their full duration on this leg, including the oldest bucket; no prior leg or shorter fallback. Missing data defaults to binding; explicit pending neither binds nor clears and names the eligibility tick, or says unknown for missing baselines. Default `items`/`binds` remain the conservative comparison. `budget_below` accepts the same options and checks its own threshold; see waits-queues.
+
+Budget labels (batch364): `usable_after_reserve_margin` holds the budget usable extrema, `(stock - reserve) / (1 + margin)`, observed at reads; its `measure` and `formula` state this explicitly. It is not raw stock. An item's legacy `window` now follows authoritative `rate_basis.window`; `recent_window` separately labels the recent candidate compared against the phase/leg.
+
+- Ammunition `platform_endurance resources`: `aboard` (whole ship, including turret magazines); `stock` (reachable, excluding stranded). The resource line labels both counts, including in compact output.
+
+`platform_endurance` damage forecasts carry `damage_model`: area/splash and multi-target effects not modelled; independent ammunition estimates. `design.details:true` with `design.ammo` adds `ammo_details[].effects`: cached direct/area prototype damage, radius, friendly-fire filter, nested projectile actions, repeats/falloff and separate quality multiplier. Base values, not total blast damage; native turret settings unchanged.
+
+`platform_supply {collection:true,agent:"opus"}` reads that agent's newest completed collector tally.
+`platform_supply {collection:true,id:"collector_tally@121787697/opus"}` selects a retained completed tally.
+The reply's `tally` names its `id`, `agent`, `platform`, `start_tick` and `end_tick`. An optional `platform`
+filters the selection. Agent names accept any case and `@`/`pog-` prefixes, as uptime does. With both selectors,
+the owner must match; an ownerless id must be unambiguous. Missing, running, or unretained tallies give an error.
+These reads do not start, stop, replace or mark anyone's watch read; `seconds`, `reason` and `fuel` are refused.
+Completed results survive resting. Starting another watch retains four previous completed tallies, oldest dropped
+first; a running watch replaced by a new start is not a completed tally. Without selectors, the caller's usual
+`platform_supply {platform,collection:true}` behavior is unchanged.

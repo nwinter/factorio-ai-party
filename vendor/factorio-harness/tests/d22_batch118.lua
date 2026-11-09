@@ -317,13 +317,13 @@ do
   local C=dofile('mod/agent-harness_0.1.0/conditions.lua'){}
   local function check(c) c['until']='circuit_signal'; c.platform='Asterion'; C.validate(c); return C.check(p,c) end
   local met,saw=check({signal='rocket',below=4850})
-  eq(met,true); eq(saw,"Asterion's hub has no red or green wire: rocket reads 0 there, as the game's own circuit conditions read an unwired hub (met)")
+  eq(met,true); eq(saw,"Asterion's hub has no red or green wire: rocket reads 0 there, as the game's own circuit conditions read an unwired hub (met); read tick 100")
   met,saw=check({signal='rocket',at_least=100})
-  eq(met,false); eq(saw,"Asterion's hub has no red or green wire: rocket reads 0 there, as the game's own circuit conditions read an unwired hub (never met while it has none)")
+  eq(met,false); eq(saw,"Asterion's hub has no red or green wire: rocket reads 0 there, as the game's own circuit conditions read an unwired hub (never met while it has none); read tick 100")
   eq(check({signal='rocket',at_least=0}),true,'at_least 0: 0 meets it')
   -- wired: the signal, absent reads 0 as before
   nets[2]={get_signal=function(sg) return sg.name=='rocket' and 5000 or 0 end}
-  met,saw=check({signal='rocket',below=4850}); eq(met,false); eq(saw,"rocket 5000 on Asterion's hub (green)")
+  met,saw=check({signal='rocket',below=4850}); eq(met,false); eq(saw,"rocket 5000 on Asterion's hub (green network #?: 5000); read tick 100")
   met=check({signal='signal-A',below=1}); eq(met,true,'a wire without that signal: 0')
   eq(C.guard_refusal(p,{['until']='circuit_signal',platform='Asterion',signal='rocket',at_least=100}),nil,'wired')
   nets[2]=nil

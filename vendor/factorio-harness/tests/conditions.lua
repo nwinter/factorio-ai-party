@@ -1,6 +1,7 @@
 -- Run from repository root: lua tests/conditions.lua
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path   -- (d24 batch152) modules require qflow
 local function eq(a,b) assert(a==b,tostring(a)..' ~= '..tostring(b)) end
+game={tick=0}
 defines={inventory={turret_ammo=7}}
 prototypes={item={['firearm-magazine']={}}}
 local mine={name='player',technologies={turrets={researched=true}}}
@@ -254,6 +255,6 @@ do
   eq(select(2,qc({['until']='item_count',platform='Petrel',item='quality-module-3',quality='any',at_least=1})):match('(%d+) in Petrel'),'17')
   assert(not pcall(C.validate,{['until']='item_count',platform='Petrel',item='quality-module-3',quality='shiny',at_least=1}),'unknown quality refused')
   local ok,err=pcall(C.validate,{['until']='ammo_below',count=5,quality='rare'})
-  assert(not ok and tostring(err):find('quality applies to item_count, platform_ammo_below and pod_landed only',1,true),tostring(err))
+  assert(not ok and tostring(err):find('quality applies to entity_quality, item_count, platform_ammo_below and pod_landed only',1,true),tostring(err))
 end
 print('conditions: ok')

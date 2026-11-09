@@ -15,6 +15,8 @@
 -- - what happens: the watch's read up to the edit is kept (mixed.parts: from, to, its line and lines; an asteroid_watch
 --   and an uptime watch keep the whole closed watch as a segment, read by segment_start; a window begun on the edit's
 --   own tick keeps no part), and the watch
+--   (flight_watch keeps the complete observation read, all observed turret rows, in its latest 3 positive-duration
+--   parts; a fourth drops the oldest; same-tick edits refresh the baseline without keeping another part)
 --   starts again from the edit tick with the same arguments to its end tick (flight_watch: its counts begun again, to
 --   its arrival or limit); when that start is refused (too few seconds left, the call refused), or an entity it
 --   measures was mined or destroyed, the watch ends at the edit and its final is that part. mixed.edits names each
@@ -23,6 +25,7 @@
 -- running watches is compared; the index of what they measure is made again when it changes).
 return function(api)
   local M = {}
+  local belt_watches = require('beltwatches')
   M.KINDS = {'uptime', 'turret_tally', 'belt_flow', 'collector_tally', 'asteroid_watch'}
   M.EDITS, M.PARTS, M.LINES, M.PART_LINES = 6, 3, 3, 64
   -- the fewest seconds a kind's start takes (its handler's own lower bound)
@@ -60,8 +63,10 @@ return function(api)
   local function signature()
     local s, parts = api.state(), {}
     for _, k in ipairs(M.KINDS) do
-      for idx, job in pairs(s[k] or {}) do
-        if type(job) == 'table' and not job.result and job.until_tick and game.tick <= job.until_tick then parts[#parts+1] = k .. idx .. ':' .. job.start end
+      for idx in pairs(s[k] or {}) do
+        for _, job in ipairs(belt_watches.list(s, k, idx)) do
+          if type(job) == 'table' and not job.result and job.until_tick and game.tick <= job.until_tick then parts[#parts+1] = (job.id or k .. idx) .. ':' .. job.start end
+        end
       end
     end
     for _, w in ipairs(s.flightwatch and s.flightwatch.list or {}) do
@@ -87,30 +92,32 @@ return function(api)
   local function build()
     local s, list = api.state(), {}
     for _, k in ipairs(M.KINDS) do
-      for idx, job in pairs(s[k] or {}) do
-        if type(job) == 'table' and not job.result and job.until_tick and game.tick <= job.until_tick then
-          local entry = {kind=k, index=idx, job=job}
-          if k == 'uptime' then
-            local ents = {}
-            for _, m in ipairs(job.machines or {}) do ents[#ents+1] = m.e end
-            units_of(entry, ents); entry.types = FEED
-          elseif k == 'turret_tally' then
-            local ents = {}
-            for _, t in ipairs(job.turrets or {}) do ents[#ents+1] = t.e end
-            units_of(entry, ents); entry.types = FEED
-          elseif k == 'belt_flow' then
-            local ents = {}
-            for _, pt in ipairs(job.points or {}) do ents[#ents+1] = pt.entity end
-            units_of(entry, ents); entry.types, entry.line = BELT, true
-            local f, t = job.path_from, job.path_to
-            if f and t and entry.box then
-              local b = entry.box
-              entry.box = {math.min(b[1], f.x, t.x) - 1, math.min(b[2], f.y, t.y) - 1, math.max(b[3], f.x, t.x) + 1, math.max(b[4], f.y, t.y) + 1}
+      for idx in pairs(s[k] or {}) do
+        for _, job in ipairs(belt_watches.list(s, k, idx)) do
+          if type(job) == 'table' and not job.result and job.until_tick and game.tick <= job.until_tick then
+            local entry = {kind=k, index=idx, job=job}
+            if k == 'uptime' then
+              local ents = {}
+              for _, m in ipairs(job.machines or {}) do ents[#ents+1] = m.e end
+              units_of(entry, ents); entry.types = FEED
+            elseif k == 'turret_tally' then
+              local ents = {}
+              for _, t in ipairs(job.turrets or {}) do ents[#ents+1] = t.e end
+              units_of(entry, ents); entry.types = FEED
+            elseif k == 'belt_flow' then
+              local ents = {}
+              for _, pt in ipairs(job.points or {}) do ents[#ents+1] = pt.entity end
+              units_of(entry, ents); entry.types, entry.line = BELT, true
+              local f, t = job.path_from, job.path_to
+              if f and t and entry.box then
+                local b = entry.box
+                entry.box = {math.min(b[1], f.x, t.x) - 1, math.min(b[2], f.y, t.y) - 1, math.max(b[3], f.x, t.x) + 1, math.max(b[4], f.y, t.y) + 1}
+              end
+            else
+              entry.surface, entry.whole, entry.types = job.surface, true, PLATFORM
             end
-          else
-            entry.surface, entry.whole, entry.types = job.surface, true, PLATFORM
-          end
-          if entry.surface then list[#list+1] = entry end
+            if entry.surface then list[#list+1] = entry end
+        end
         end
       end
     end
@@ -173,7 +180,8 @@ return function(api)
         or string.format('the read up to tick %d is kept apart (mixed.parts); this window runs from tick %d', mx.parts[#mx.parts].to_tick, mx.from_tick))
   end
   local function merged(old, rec)
-    local mx = old and old.mixed and {edits=copy(old.mixed.edits), parts=copy(old.mixed.parts)} or {edits={}, parts={}}
+    local mx = old and old.mixed and {edits=copy(old.mixed.edits), parts=copy(old.mixed.parts),
+      parts_dropped=old.mixed.parts_dropped} or {edits={}, parts={}}
     mx.edits[#mx.edits+1] = rec
     while #mx.edits > M.EDITS do table.remove(mx.edits, 1) end
     return mx
@@ -183,13 +191,27 @@ return function(api)
     if entry.kind == 'flight_watch' then
       local w = entry.w
       local mx = merged(w, rec)
+      local from = w.start
       local ok, before = pcall(api.flight_rebase, w, tick)
       if ok and before then
-        mx.parts[#mx.parts+1] = part(before, before.start_tick or w.start, tick)
-        while #mx.parts > M.PARTS do table.remove(mx.parts, 1) end
+        -- A positions batch can visit several entities on this tick. Refresh its baseline after each edit,
+        -- but keep only positive-duration intervals; zero-duration parts never displace real observations.
+        for i = #mx.parts, 1, -1 do
+          if mx.parts[i].from_tick == mx.parts[i].to_tick then table.remove(mx.parts, i) end
+        end
+        if from < tick then
+          before.from_tick, before.to_tick = from, tick
+          mx.parts[#mx.parts+1] = before
+        end
+        while #mx.parts > M.PARTS do
+          table.remove(mx.parts, 1)
+          mx.parts_dropped = (mx.parts_dropped or 0) + 1
+        end
         mx.from_tick = tick
       else mx.ended = 'its counts could not begin again: ' .. tostring(before) end
-      mx.line = summary(mx)
+      mx.parts_limit = M.PARTS
+      mx.line = summary(mx) .. string.format('; up to %d nonzero-duration parts kept, oldest dropped at the cap (%d dropped)',
+        M.PARTS, mx.parts_dropped or 0)
       w.mixed = mx
       tell(w.setter, string.format('your flight watch #%d on %s: %s', w.id, w.platform, mx.line))
       return
@@ -207,6 +229,7 @@ return function(api)
     if not why then
       local args = copy(job.call.args)
       args.seconds, args.reason = left, job.reason
+      if kind == 'belt_flow' then args.id = job.id end
       -- (d26 batch225 QR) a split's new start keeps no copy of this watch (uptime.keep): it carries the kept ones on
       job.splitting = true
       local ok, err = pcall(api.call, p, job.call.action, args)
@@ -324,7 +347,8 @@ return function(api)
     if not mx then return nil end
     local edits = {}
     for k, e in ipairs(mx.edits) do edits[k] = string.format('tick %d: %s (%s)', e.tick, e.text, e.how) end
-    return {line=mx.line, edits=edits, parts=mx.parts, from_tick=mx.from_tick, ended=mx.ended}
+    return {line=mx.line, edits=edits, parts=mx.parts, from_tick=mx.from_tick, ended=mx.ended,
+      parts_limit=mx.parts_limit, parts_dropped=mx.parts_dropped}
   end
   -- The owner's lines (team.alerts), once.
   function M.lines(p, h)

@@ -76,13 +76,12 @@ do
   met,saw=C.check(who,{['until']='platform_left',platform='Meridian-V',location='nauvis',since_tick=5000},nil,{})
   eq(met,true); has(saw,'(since_tick 5000)')
   eq((C.check(who,{['until']='platform_left',platform='Meridian-V',since_tick=5041},nil,{})),false)
-  -- since_tick is checked: a tick up to now, and platform_left's only
+  -- since_tick is checked: a tick up to now, for departures and (batch407) arrivals.
   game.tick=5100
   assert(pcall(C.validate,{['until']='platform_left',platform='Meridian-V',since_tick=5000}))
   local ok,err=pcall(C.validate,{['until']='platform_left',platform='Meridian-V',since_tick=9999})
   assert(not ok and tostring(err):find('platform_left since_tick is a game tick up to now',1,true),tostring(err))
-  ok,err=pcall(C.validate,{['until']='platform_arrived',platform='Meridian-V',since_tick=5000})
-  assert(not ok and tostring(err):find('platform_arrived takes no since_tick',1,true),tostring(err))
+  assert(pcall(C.validate,{['until']='platform_arrived',platform='Meridian-V',since_tick=5000}))
 end
 
 -- 3. the scheduler gives a wait step the step before it in the same plan (after_step), not one of another plan

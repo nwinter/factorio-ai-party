@@ -10,6 +10,7 @@
   var POLL = Math.max(5, parseInt(cfg.poll, 10) || 10) * 1000;
   var LIVE_MAX_AGE = 60; // seconds: older state means the run (or the pusher) has stopped
   var $ = function (sel) { return app.querySelector(sel); };
+  var targetCountdown = window.PogTargetCountdown && window.PogTargetCountdown.create($('#run-target'));
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -1296,11 +1297,45 @@
       var line = who + ': acknowledged ' + ago(x.acked_ago_s) + by + open;
       return x.result ? longText('rem' + j.id + ':latest:' + x.name, x.result, line + ':') : '<span class="lt-short">' + esc(line + (remOmitted(x) || ', no result given')) + '</span>';
     }).join('');
-    var backup = j.backup ? '<span class="fx-muted small">Backup: ' + esc((byName[j.backup] || {}).display_name || j.backup) + '</span>' : '';
-    return out || backup ? '<div class="rem-latest">' + backup + out + '</div>' : '';
+    return out ? '<div class="rem-latest">' + out + '</div>' : '';
+  }
+  function remAvailability(who) {
+    var until = who.resting_until, now = lastState && lastState.now;
+    if (typeof until === 'number' && until > (now == null ? Date.now() / 1000 : now)) {
+      var date = new Date(until * 1000);
+      var clock = date.toLocaleTimeString('en-GB', { timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit', hour12: false });
+      return 'resting until ' + clock + ' PT (' + date.toLocaleDateString('en-GB', { timeZone: 'America/Los_Angeles', weekday: 'short' }) + ')';
+    }
+    var activity = ACT_REM_ACTIVITY[who.activity];
+    return (who.resting_known ? 'not resting' : 'rest state unknown') + (activity ? ', ' + activity : '');
+  }
+  var ACT_REM_ACTIVITY = { acting: 'acting', thinking: 'thinking', idle: 'idle', dead: 'dead', offline: 'offline' };
+  function remCoverHtml(j, byName) {
+    function name(n) { return (byName[n] || {}).display_name || n; }
+    var ctx = j.board_context, lines = [];
+    if (j.backup) lines.push('Configured backup: ' + name(j.backup));
+    if (ctx && ctx.kind === 'claim' && (ctx.covers || []).length) {
+      lines.push('Recorded cover on claim #' + ctx.id + ': ' + ctx.covers.map(name).join(', '));
+    } else lines.push('Recorded cover: unknown');
+    if (ctx && ctx.kind === 'request') {
+      lines.push('Linked request #' + ctx.id + ': ' + (ctx.owner ? name(ctx.owner) : 'unowned') + ' (' + ctx.status + '; not recorded cover)');
+    }
+    return '<span class="lt-short fx-muted small rem-cover">' + esc(lines.join(' · ')) + '</span>';
+  }
+  function remCapacityHtml(cap, byName) {
+    if (!cap) return '<p class="fx-muted small rem-capacity">Reminder capacity unavailable.</p>';
+    var lim = cap.limits || {};
+    function counts(row, limit) {
+      return row.held + ' held / ' + (limit == null ? 'unknown limit' : limit + ' slots') + ' · ' + row.active + ' active';
+    }
+    var owners = Object.keys(cap.owners || {}).sort().map(function (n) {
+      return '<span class="lt-short">' + esc(((byName[n] || {}).display_name || n) + ': ' + counts(cap.owners[n], lim.MAX_OWN)) + '</span>';
+    }).join('');
+    return '<div class="rem-capacity small"><b>' + esc('Team: ' + counts(cap, lim.MAX_JOBS)) + '</b>' + owners +
+      '<span class="lt-short fx-muted">Held includes disabled and finished reminders; active means enabled. Limits apply to held slots by owner.</span></div>';
   }
   function remindersHtml(rem, byName) {
-    if (!rem || !(rem.jobs || []).length) return '';
+    if (!rem || (!(rem.jobs || []).length && !rem.capacity)) return '';
     // (d22 batch94 BD1) done: acknowledged with a result; open (no result, or a gap named) and deferred stay open
     var STATE = { pending: 'fx-chip--orange', overdue: 'fx-chip--red', acknowledged: 'fx-chip--green', done: 'fx-chip--green', open: 'fx-chip--orange', deferred: 'fx-chip--orange' };
     var jobs = rem.jobs, total = Math.max(rem.total || 0, jobs.length), opened = remAll && total > REM_SHOWN;
@@ -1318,12 +1353,16 @@
       var o = byName[j.agent] || {};
       var states = remStates(j).map(function (x) {
         var who = byName[x.who] || {};
-        return '<span class="fx-chip ' + (STATE[x.state] || 'fx-chip--grey') + '">' + esc((who.display_name || x.who || '') + ' ' + (x.state || '') + (x.rest || '')) + '</span>';
+        return '<span class="fx-chip ' + (STATE[x.state] || 'fx-chip--grey') + '">' + esc((who.display_name || x.who || '') + ' ' + (x.state || '') + (x.rest || '') +
+          (x.state === 'overdue' ? ' · ' + remAvailability(who) : '')) + '</span>';
       }).join(' ');
+      var resultAge = j.result_age_s != null ? ago(j.result_age_s).replace(/ ago$/, '') + ' (game time)' : j.last_result ? 'unknown' : 'no result recorded';
       return '<li>' + avatar(o.name ? o : { name: j.agent || j.owner || '?' }, 24) + '<span><b>' + esc(o.display_name || j.owner || '?') + '</b> ' +
         esc(j.name ? j.name + ': ' : '') + esc(j.message) + ' <span class="fx-muted rem-schedule">' + esc(remScheduleText(j)) + '</span>' +
-        (j.last_result ? longText('rem' + j.id + ':result', j.last_result, 'last result' + (j.result_age_s != null ? ' ' + ago(j.result_age_s) : '') + ':') : '') +
+        '<span class="lt-short fx-muted small rem-result-age">' + esc('Result age: ' + resultAge) + '</span>' +
+        (j.last_result ? longText('rem' + j.id + ':result', j.last_result, 'last result:') : '') +
         evidenceHtml('rem' + j.id, j) + (states ? '<br><span class="fx-muted small rem-run">' + esc(remRunLabel(j, tick)) + '</span> ' + states : '') +
+        remCoverHtml(j, byName) +
         remLatestHtml(j, byName) + '</span></li>';
     }).join('');
     var filters = !opened ? '' : '<div class="rem-filters" role="group" aria-label="Show reminders">' + REM_FILTERS.map(function (f) {
@@ -1335,7 +1374,8 @@
     var unsent = opened && total > jobs.length ? '<p class="fx-muted small">+' + esc(total - jobs.length) + (demo || !API ? ' more not sent (the page\'s size limit)' : boardDoc === null && boardDocAt && !boardDocBusy ? ' more: the full list is not available right now' : ' more, loading the full list…') + '</p>' : '';
     var toggle = total > REM_SHOWN ? '<button type="button" class="fx-btn fx-btn--small rem-all" data-action="reminders-all" aria-expanded="' + opened + '">' +
       (opened ? 'Show the first ' + REM_SHOWN : 'Show all ' + total + ' reminders (+' + (total - Math.min(REM_SHOWN, jobs.length)) + ' more)') + '</button>' : '';
-    return '<div class="board-rem"><h4>Reminders</h4>' + filters + (rows ? '<ul class="board-claims board-reminders">' + rows + '</ul>' : '') + none + pagerRem + unsent + toggle + '</div>';
+    return '<div class="board-rem"><h4>Reminders</h4>' + remCapacityHtml(full ? boardDoc.reminders_capacity : rem.capacity, byName) + filters +
+      (rows ? '<ul class="board-claims board-reminders">' + rows + '</ul>' : '') + none + pagerRem + unsent + toggle + '</div>';
   }
   // (d22 batch99 BI3, viewer Aurora site:4316: "Could the board show all tasks and reminders, with paging if needed?
   // Hidden jobs and the nine omitted reminders make it hard to check what's actually finished.") The state carries the
@@ -1563,24 +1603,44 @@
     if (ev.key === 'Escape') hideTip();
   });
 
-  // When this shift ends, or when the next starts (state.shift from start-team.sh: start, end, next, next_exact), in
-  // the visitor's own time zone. Between shifts the line says when to come back.
+  // Scheduled times never confirm a stop/start. Status supplies file receipts
+  // between services; authenticated Operator chat supplies change/failure notices.
   function clock(t) { return new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+  function currentShift(sh) {
+    var st = offlineStatus && offlineStatus.shift;
+    if (!st || (sh && sh.start > st.start)) return sh;
+    if (!sh || st.start > sh.start) return st;
+    var merged = Object.assign({}, st, sh);
+    if (st.stopped || st.save_state === 'failed') {
+      merged.stopped = st.stopped; merged.save_state = st.save_state;
+      // The final plan may have been corrected after the last live snapshot.
+      merged.next = st.next; merged.end = st.end;
+    }
+    return merged;
+  }
   function shiftText(sh, live, nowS) {
-    if (!sh || !isFinite(sh.end)) return '';
-    nowS = Date.now() / 1000;
-    if (live && sh.end > nowS) return 'This shift runs until ' + clock(sh.end) + ' (' + ago(sh.end - nowS).replace(' ago', '') + ' left).';
-    if (sh.next == null) return 'The last shift ended at ' + clock(sh.end) + '. No next shift is scheduled yet.';
-    if (sh.next > nowS + 60) return 'Next shift ' + (sh.next_exact ? 'starts at ' : 'expected around ') + clock(sh.next) +
-      ' (in ' + ago(sh.next - nowS).replace(' ago', '') + '). The last one ended at ' + clock(Math.min(sh.end, nowS)) + '.';
-    return 'The next shift should start any minute now; the page goes live by itself.';
+    if (!window.PogShiftPhase) return '';
+    nowS = nowS == null ? Date.now() / 1000 : nowS;
+    var p = window.PogShiftPhase.resolve(sh, nowS, chatMsgs);
+    if (!p) return '';
+    var text = window.PogShiftPhase.label(p) + (p.phase === 'live' ? '' : ' · ' + p.save) + '.';
+    if (!live && p.phase === 'live') text += ' Live data unavailable; last confirmed phase.';
+    if (!p.same) return text + ' Waiting for the new shift’s data.';
+    text += ' Planned end ' + clock(sh.end);
+    if (nowS < sh.end) text += ' (in ' + ago(sh.end - nowS).replace(' ago', '') + ')';
+    text += sh.next == null ? '; no next shift scheduled.' : '; next planned start ' + clock(sh.next) + '.';
+    return text;
   }
   function renderShift(sh, live) {
     var p = $('#next-shift');
     if (!p) return;
+    sh = currentShift(sh);
     var t = shiftText(sh, live);
     p.textContent = t;
     p.hidden = !t;
+    var phase = window.PogShiftPhase && window.PogShiftPhase.resolve(sh, Date.now() / 1000, chatMsgs);
+    if (!demo && phase) setBadge(live && phase.phase === 'live' ? 'live' : 'offline',
+      phase.phase === 'live' && !live ? 'Live data unavailable' : window.PogShiftPhase.label(phase));
   }
 
   // ------------------------------------------------------------------ state polling and offline status
@@ -1615,7 +1675,7 @@
   function renderOffline(st) {
     var h = '';
     if (st && st.message) h += '<p>' + esc(st.message) + '</p>';
-    if (st && st.next && st.next.title) h += '<p><strong>Next:</strong> ' + esc(st.next.title) + (st.next.when ? ' · ' + esc(new Date(st.next.when).toLocaleString()) : '') + '</p>';
+    if (st && st.next && st.next.title) h += '<p><strong>Next (planned):</strong> ' + esc(st.next.title) + (st.next.when ? ' · ' + esc(new Date(st.next.when).toLocaleString()) : '') + '</p>';
     if (st && st.last_run && /^\/[\w\/-]*$/.test(st.last_run.url || '')) h += '<p>Latest run: <a href="' + st.last_run.url + '">' + esc(st.last_run.title) + '</a></p>';
     h += '<p class="fx-muted small"><a href="?demo=1">See the dashboard with sample data</a>.</p>';
     $('#offline').innerHTML = h;
@@ -1626,8 +1686,10 @@
       offlineStatus = st;
       if (st.stream) embedPlayer(st.stream.youtube_video_id, st.stream.youtube_channel_id);
       renderOffline(st);
+      renderShift(lastState && lastState.shift, serviceLive);
     }).catch(function () { renderOffline(null); });
   }
+  if (!demo) { loadStatus(); setInterval(loadStatus, 60000); }
 
   // The homepage's run summary (#run-summary, built at shift changes): right under the heading while no shift is live,
   // after the live show while one is.
@@ -1643,6 +1705,8 @@
     getJSON(url).then(function (d) {
       var s = demo ? d : d.state, age = demo ? 0 : d.age_s;
       var live = s && age != null && age <= LIVE_MAX_AGE;
+      if (targetCountdown) targetCountdown.update(live ? s.run_target : null, age);
+      serviceLive = !!live;
       if (demo) setBadge('sample', 'Sample'); else if (live) setBadge('live', 'Live'); else setBadge('offline', 'Offline');
       setWatching(watchingText(s, demo ? null : d.site_watching, live || demo));
       app.classList.toggle('has-state', !!s);
@@ -1650,12 +1714,16 @@
       $('#updated').textContent = demo ? 'Sample data from the stream service\'s mock session.' : (d.received ? 'Updated ' + ago(age) : '');
       if (!live && !offlineStatus) loadStatus();
       if (s && (s.now !== lastNow || !live)) { lastNow = s.now; renderState(s, age); }
+      renderShift(s && s.shift, live);
       placeSummary(live || demo);
     }).catch(function () {
+      serviceLive = false;
+      if (targetCountdown) targetCountdown.update(null);
       placeSummary(false);
       setBadge('offline', 'Offline');
       setWatching('');
       $('#updated').textContent = 'Live data is unavailable right now.';
+      renderShift(lastState && lastState.shift, false);
       if (!offlineStatus) loadStatus();
     }).then(function () { if (!demo) setTimeout(tick, document.hidden ? POLL * 4 : POLL); });
   }

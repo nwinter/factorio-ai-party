@@ -1089,6 +1089,24 @@ eq(call('transfer',{position={x=3,y=0}}).direction,'to_player')
 fails(function() call('transfer',{position={x=3,y=0},item='iron-plate'}) end,'holds 0 iron-plate and the target holds 0')
 fails(function() call('transfer',{position={x=3,y=0},item='coal',direction='sideways'}) end,'direction must be to_entity or to_player')
 main=kept_main; main[1].count=12; f1.slots[2][1].count,f1.slots[2][1].valid_for_read=0,false
+-- batch353: the engine can expose only crafter_* IDs. Legacy agent names and inferred transfers still work.
+do
+  local saved_defs,saved_main,saved_find=defines.inventory,main,p.surface.find_entities_filtered
+  defines.inventory={chest=1,fuel=2,crafter_input=3,crafter_output=4,crafter_modules=5}
+  for _,kind in ipairs{'furnace','assembling-machine','rocket-silo'} do
+    local f=furnace(3,stack('iron-plate',5)); f.type=kind
+    main=inv(stack('iron-ore',10),stack(nil,0))
+    p.surface.find_entities_filtered=function() return {f} end
+    local legacy=kind=='furnace' and 'furnace_source' or 'assembling_machine_input'
+    eq(call('transfer',{position={x=3,y=0},item='iron-ore',count=2,direction='to_entity',inventory=legacy}).transferred,2)
+    eq(call('transfer',{position={x=3,y=0},item='iron-ore',count=1,direction='to_entity',inventory='crafter_input'}).transferred,1)
+    eq(f.slots[3][1].count,3)
+    eq(call('transfer',{position={x=3,y=0},item='iron-plate',count=2,direction='to_player',inventory='crafter_output'}).transferred,2)
+    eq(f.slots[4][1].count,3)
+    eq(runtime.slots.inventory_of(f),f.slots[3],'fullness reads the common input ID')
+  end
+  defines.inventory,main,p.surface.find_entities_filtered=saved_defs,saved_main,saved_find
+end
 -- Courier tools (shift08: Grok, Luna, Sonnet, Muse). up_to=true moves what there is and says how short it fell; a
 -- short or empty source is never an error.
 do
@@ -1454,6 +1472,61 @@ do
   eq(runtime.remote(nobody,'configure',{platform='Sunward',position=am.position,modules={'productivity-module'}}),true)
 end
 
+-- batch375: platform recipe refusals describe hub room, and ingredient hand-move errors name deliver without
+-- offering an example that silently drops the requested platform.
+do
+  local before=defines.inventory.hub_main
+  defines.inventory.hub_main=71
+  local free=0
+  local hub_inv={count_empty_stacks=function(bar,filters) eq(bar,true); eq(filters,false); return free end}
+  local input={{valid_for_read=true,name='metallic-asteroid-chunk',count=1,quality={name='normal'}}}
+  local output={{valid_for_read=true,name='iron-ore',count=20,quality={name='uncommon'}}}
+  input.valid=true; output.valid=true
+  input.is_empty=function() return false end; output.is_empty=function() return false end
+  local cur={name='iron-gear-wheel',ingredients={{type='item',name='metallic-asteroid-chunk'},{type='fluid',name='water'}}}
+  local e={name='crusher',type='assembling-machine',position={x=5,y=-7.5},crafting_progress=0,
+    prototype={crafting_categories={crafting=true}},get_recipe=function() return cur end,
+    get_inventory=function(i) return i==5 and input or i==6 and output or nil end,
+    surface={name='platform-test',platform={hub={valid=true,get_inventory=function(i) eq(i,71); return hub_inv end}}}}
+  for _,n in ipairs({0,1}) do
+    free=n
+    local why=runtime.configure_check(p,{recipe='copper-cable'},e,false)
+    assert(why:find('the hub has '..n..' empty slots under its bar',1,true),why)
+    assert(why:find('reserves 2 empty slots',1,true),why)
+    assert(why:find('input 1 metallic-asteroid-chunk (1 slot)',1,true),why)
+    assert(why:find('output 20 iron-ore@uncommon (1 slot)',1,true),why)
+    assert(why:find('each asteroid chunk takes one hub slot',1,true),why)
+    assert(why:find('the recipe and held items are unchanged',1,true),why)
+    assert(not why:find('character in reach',1,true),why)
+    eq(runtime.with_example('configure',{platform='platform-test'},why),why)
+    eq(input[1].count,1); eq(output[1].count,20); eq(cur.name,'iron-gear-wheel')
+  end
+  free=2; eq(runtime.configure_check(p,{recipe='copper-cable'},e,false),nil)
+  free=0; eq(runtime.configure_check(p,{recipe='iron-gear-wheel'},e,false),nil,'same recipe needs no return space')
+  e.crafting_progress=0.5
+  local why=runtime.recipe_hub_why(e)
+  assert(why:find('reserves 3 empty slots',1,true),why)
+  assert(why:find('in-progress metallic-asteroid-chunk (1 reserved slot)',1,true),why)
+  assert(not why:find('in-progress water',1,true),why)
+  defines.inventory.hub_main=before
+  for _,action in ipairs({'transfer','pickup'}) do
+    for _,scope in ipairs({'platform','surface'}) do
+      local ok,err=pcall(call,action,{[scope]='platform-test',position={x=5,y=-7.5},item='metallic-asteroid-chunk'})
+      eq(ok,false); local text=tostring(err)
+      assert(text:find('remote view has no hands',1,true),text)
+      assert(text:find('deliver {platform, position, items}',1,true),text)
+      assert(text:find('actual configure recipe change',1,true),text)
+      assert(not text:find('dropped',1,true),text)
+      assert(not text:find('for this call',1,true),text)
+    end
+  end
+  local docs=call('describe',{}).actions
+  local note=require('argforms').PLATFORM_ITEMS
+  eq(runtime.surface_hint('transfer',{surface='platform-test'},note),note)
+  assert(docs.configure.position:find('platform recipe changes return held items',1,true))
+  assert(docs.configure.recipe:find('same recipe and quality leave them in place',1,true))
+  assert(docs.deliver.returns:find('platform recipe ingredients: the hub fills the request',1,true))
+end
 -- A turret's priority targets and Ignore unprioritised targets (Astra, shift12 15:02: Sunward's rocket turrets on big
 -- asteroids only), built and ghost. The fake keeps slots as 2.0.77 does: a set past the end appends; a cleared slot
 -- leaves a gap that get_priority_target reads as nil and priority_targets skips; trailing gaps shrink the list.
@@ -1547,7 +1620,7 @@ do
       splitter_input_priority='none',splitter_output_priority='none',get_fluid_contents=function() return {} end,
       get_max_transport_line_index=function() return 0 end}
     local filter
-    return setmetatable(sp,{__index=function(_,k) if k=='splitter_filter' then return filter and {name=filter.name,quality=filter.quality or 'normal',comparator='='} or nil end end,
+    return setmetatable(sp,{__index=function(_,k) if k=='splitter_filter' then return filter and {name=filter.name,quality=filter.quality,comparator=filter.quality and (filter.comparator or '=') or nil} or nil end end,
       __newindex=function(t,k,v) if k=='splitter_filter' then filter=v else rawset(t,k,v) end end})
   end
   local store,gstore,provider=chest({x=20.5,y=0.5}),chest({x=22.5,y=0.5},true),chest({x=24.5,y=0.5},false,'active-provider')
@@ -1583,22 +1656,29 @@ do
   eq(sp.splitter_output_priority,'none')
   r=call('configure',{position={x=27,y=0.5},output_priority='left',filter='iron-plate'})
   eq(r.output_priority,'left'); eq(r.filter,'iron-plate'); eq(r.input_priority,'none')
-  eq(r.line,'input priority: none (both inputs alike); output priority: left; filter: iron-plate to the left output (26.5,-0.5) only, other items to the right output (27.5,-0.5)')
+  eq(r.line,'input priority: none (both inputs alike); output priority: left; filter: iron-plate to the left output (26.5,-0.5) only, other items to the right output (27.5,-0.5); filter quality: normal; comparator: =')
   eq(r.before,'input priority: none (both inputs alike); output priority: none (items split evenly)')
   r=call('configure',{position={x=27,y=0.5},input_priority='right'})
-  eq(r.line,'input priority: right (the right input (27.5,1.5) first, the other when it has none); output priority: left; filter: iron-plate to the left output (26.5,-0.5) only, other items to the right output (27.5,-0.5)')
+  eq(r.line,'input priority: right (the right input (27.5,1.5) first, the other when it has none); output priority: left; filter: iron-plate to the left output (26.5,-0.5) only, other items to the right output (27.5,-0.5); filter quality: normal; comparator: =')
   local seen=call('inspect',{position={x=27,y=0.5}})
   eq(seen.splitter.input_priority,'right'); eq(seen.splitter.filter,'iron-plate'); eq(seen.filters,nil)
+  r=call('configure',{position={x=27,y=0.5},filter={name='iron-plate'}})
+  eq(r.filter,'iron-plate@any'); eq(r.filter_quality,'any'); eq(r.filter_comparator,'none')
+  eq(call('inspect',{position={x=27,y=0.5}}).splitter.filter_quality,'any')
+  r=call('configure',{position={x=27,y=0.5},filters={'iron-plate@>=normal'}})
+  eq(r.filter_quality,'normal'); eq(r.filter_comparator,'>='); eq(sp.splitter_filter.comparator,'>=')
+  fails(function() call('configure',{position={x=27,y=0.5},input_priority='left',filter={name='iron-plate',quality='normal',comparator='~'}}) end,'unknown comparator')
+  eq(sp.splitter_input_priority,'right'); eq(sp.splitter_filter.comparator,'>=')
   r=call('configure',{position={x=27,y=0.5},filter=false,output_priority='right'})
   eq(r.filter,'none'); eq(r.line,'input priority: right (the right input (27.5,1.5) first, the other when it has none); output priority: right (the right output (27.5,-0.5) first, the other when it is full)')
   -- A filter set some other way while output priority is none: inspect says it does nothing.
   sp.splitter_output_priority='none'; sp.splitter_filter={name='coal'}
-  eq(call('inspect',{position={x=27,y=0.5}}).splitter.line,'input priority: right (the right input (27.5,1.5) first, the other when it has none); output priority: none (items split evenly); filter: coal (does nothing while output priority is none)')
+  eq(call('inspect',{position={x=27,y=0.5}}).splitter.line,'input priority: right (the right input (27.5,1.5) first, the other when it has none); output priority: none (items split evenly); filter: coal@any (does nothing while output priority is none); filter quality: any; comparator: none')
   fails(function() call('configure',{position={x=27,y=0.5},output_priority='middle'}) end,'output_priority is left, right or none')
   fails(function() call('configure',{position={x=20.5,y=0.5},output_priority='left'}) end,"input_priority, output_priority and filter are a splitter's settings; storage-chest (20.5,0.5) is a logistic-container")
   -- A ghost facing east: left is north; filters with one name is its filter.
   r=call('configure',{position={x=31.5,y=1},output_priority='right',filters={'coal'},input_priority='left'})
-  eq(r.ghost,true); eq(r.line,'input priority: left (the left input (30.5,0.5) first, the other when it has none); output priority: right; filter: coal to the right output (32.5,1.5) only, other items to the left output (32.5,0.5)')
+  eq(r.ghost,true); eq(r.line,'input priority: left (the left input (30.5,0.5) first, the other when it has none); output priority: right; filter: coal to the right output (32.5,1.5) only, other items to the left output (32.5,0.5); filter quality: normal; comparator: =')
   p.surface.find_entities_filtered,game.create_inventory,prototypes.item,prototypes.quality=saved_find,saved_inv,saved_item,saved_quality
 end
 -- A refused configure stops nothing (Astra 11:01, twice: configure with surface=nauvis, her own surface, failed and
@@ -1797,7 +1877,7 @@ assert(nothing.nothing_moved:find('2 burners hold fuel (coal 5-6): fuel is added
 -- item: one name, as transfer takes it (Grok); count is the target each machine holds.
 local one=call('feed',{item='iron-ore',count=25})
 eq(one.transferred,5); eq(one.items['iron-ore'],5); eq(one.items.coal,nil); eq(f1.slots[3][1].count,25); eq(one.held['iron-ore'],5)
-fails(function() call('feed',{item='nope'}) end,'unknown item nope')
+fails(function() call('feed',{item='nope'}) end,'item: nope is not an item (unknown item name)')
 -- No coal carried: the reply says so and what the furnaces hold (agent-minds
 -- study: Haiku's 35 empty feeds); the third identical one in 7 min says so too.
 main=inv(stack('iron-ore',10),stack(nil,0),stack(nil,0))
@@ -1806,7 +1886,7 @@ eq(nocoal.transferred,0); eq(nocoal.nothing_moved,'nothing given: you carry 0 co
 eq(nocoal.repeated,nil); eq(call('feed',{items={'coal'}}).repeated,nil)
 eq(call('feed',{items={'coal'}}).repeated,'feed 3 times in 7 min with nothing moved (same target and item)')
 fails(function() call('feed',{fuel='iron-ore'}) end,'fuel must be')
-fails(function() call('feed',{items={'nope'}}) end,'unknown item nope')
+fails(function() call('feed',{items={'nope'}}) end,'items[1]: nope is not an item (unknown item name)')
 -- With a radius, feed walks a tour through the machines that want something
 -- held, and ends early once nothing wanted is left.
 main=inv(stack('iron-ore',5))
@@ -2158,6 +2238,79 @@ local qs=call('queue_status'); local h=qs.history[#qs.history]
 eq(qs.active.action,'wait_ticks'); eq(h.action,'rearm'); eq(h.ok,true); eq(h.result.outcome,'fed'); eq(mag_slot.count,10)
 call('queue_cancel',{})
 p.get_inventory=nil
+-- #2888: a chest pickup is only the first stage of rearm, including across a runtime reload.
+;(function()
+  local find,reach,pos,held_main=p.surface.find_entities_filtered,p.can_reach_entity,p.position,main
+  local old_proto,filtered=turret.prototype,prototypes.get_item_filtered
+  turret.prototype={type='ammo-turret',attack_parameters={ammo_categories={'bullet'}}}
+  local ammo=prototypes.item['firearm-magazine']; ammo.ammo_category={name='bullet'}
+  prototypes.get_item_filtered=function() return {['firearm-magazine']=ammo} end
+  local chest_slot=stack('firearm-magazine',40)
+  local chest_inv=inv(chest_slot)
+  local source={valid=true,name='wooden-chest',type='container',position={x=30,y=0},force=p.force,surface=p.surface}
+  source.get_inventory=function() return chest_inv end
+  p.surface.find_entities_filtered=function(f)
+    if f.position and f.position.x==30 then return {source} end
+    return {turret}
+  end
+  local stage=0
+  p.can_reach_entity=function(e) return e==source and stage>=1 or e==turret and stage>=2 end
+  local function reset(n)
+    call('stop',{}); stage=0; p.position={x=0,y=0}; main=inv(stack(nil,0),stack(nil,0))
+    chest_slot.name,chest_slot.count,chest_slot.valid_for_read='firearm-magazine',n,true
+    mag_slot.name,mag_slot.count,mag_slot.valid_for_read=nil,0,false
+  end
+  local function args(form)
+    local a={ammo='firearm-magazine',count=20,walk=true,from={position=source.position,count=40}}
+    if form=='area' then a.area={left_top={x=0,y=-2},right_bottom={x=10,y=2}}
+    else a.positions={{x=5,y=0}} end
+    return a
+  end
+  for _,form in ipairs({'area','positions'}) do
+    reset(40)
+    local a=args(form); local out=call('rearm',a)
+    assert(out.then_rearm); local pending=storage.agent_harness.active[1].then_call
+    eq(pending.args.from,nil); eq(pending.args[form],a[form])
+    -- Save/load keeps plain continuation data in storage, not a closure in the old runtime.
+    local function plain(t)
+      if type(t)~='table' then assert(type(t)~='function'); return t end
+      local copy={} for k,v in pairs(t) do copy[k]=plain(v) end return copy
+    end
+    storage.agent_harness.active[1].then_call=plain(pending)
+    runtime=dofile('mod/agent-harness_0.1.0/runtime.lua')
+    stage=1; p.position={x=30,y=0}; advance(1)
+    local last=storage.agent_harness.last[1]
+    eq(last.transferred,40); eq(last.not_made,nil)
+    local tour=storage.agent_harness.active[1]
+    assert(tour and tour.op=='rearm','turret tour must follow pickup')
+    eq(tour.targets[1].entity,turret)
+    stage=2; p.position={x=5,y=0}; advance(2)
+    eq(mag_slot.count,20); eq(storage.agent_harness.last[1].outcome,'topped_up')
+    -- The same destination without from gives the same turret result.
+    mag_slot.count=0; a.from=nil; call('rearm',a); advance(2); eq(mag_slot.count,20)
+  end
+  -- The chest is emptied while walking. No tour, even with ammo already carried.
+  reset(40); call('rearm',args('area')); chest_slot.count=0; chest_slot.valid_for_read=false
+  main=inv(stack('firearm-magazine',40)); stage=1; advance(2)
+  local last=storage.agent_harness.last[1]
+  eq(storage.agent_harness.active[1],nil); eq(last.outcome,'failed'); eq(last.not_made,nil)
+  assert(last.error:find('no ammo taken',1,true),last.error); eq(mag_slot.count,0)
+  -- Sol's actual failure: pickup succeeded, but the area needs more ammo than was taken.
+  reset(5); call('rearm',args('area')); stage=1; advance(2)
+  last=storage.agent_harness.last[1]
+  eq(storage.agent_harness.active[1],nil); eq(last.outcome,'failed'); eq(last.pickup_outcome,'transferred')
+  eq(last.transferred,5); eq(last.not_made,nil); assert(last.error:find('need',1,true),last.error)
+  -- An in-reach pickup returning zero must also leave the turret alone.
+  local transfer_now=runtime.transfer_now
+  reset(0); main=inv(stack('firearm-magazine',40)); stage=2
+  runtime.transfer_now=function() return {transferred=0} end
+  fails(function() call('rearm',args('positions')) end,'no ammo taken from the chest')
+  eq(mag_slot.count,0); eq(storage.agent_harness.active[1],nil)
+  runtime.transfer_now=transfer_now
+  p.surface.find_entities_filtered,p.can_reach_entity,p.position,main=find,reach,pos,held_main
+  turret.prototype=old_proto; prototypes.get_item_filtered=filtered
+  mag_slot.name,mag_slot.count,mag_slot.valid_for_read='firearm-magazine',10,true
+end)()
 call('walk',{direction='west',ticks=10}); runtime.stop_all()
 eq(call('status').active,false); eq(call('status').last.outcome,'interrupted')
 -- Explicit offline attachment is required; combat remains active during movement.
@@ -3850,7 +4003,8 @@ end
 -- underground ends typed; dry_run only plans; missing items are counted.
 prototypes.entity['transport-belt']={name='transport-belt',type='transport-belt',items_to_place_this={{name='transport-belt',count=1}},
   related_underground_belt={name='underground-belt',type='underground-belt',max_underground_distance=5}}
-prototypes.entity['underground-belt']={name='underground-belt',type='underground-belt',items_to_place_this={{name='underground-belt',count=1}}}
+prototypes.entity['underground-belt']={name='underground-belt',type='underground-belt',max_underground_distance=5,items_to_place_this={{name='underground-belt',count=1}}}
+p.surface.get_tile=function() return {name='grass-1',prototype={collision_mask={layers={}}}} end
 local made={ghosts={}}
 p.surface.find_entities_filtered=function(f)
   -- (the search for belts and belt ghosts around the last belt ghost placed: last_belt)
@@ -3871,6 +4025,19 @@ p.surface.create_entity=function(a)
   return made.ghosts[#made.ghosts]
 end
 p.get_main_inventory=function() return {get_item_count=function(n) return n=='transport-belt' and 1 or 0 end} end
+-- The detailed dry-run list is accepted unchanged by both place_ghosts paths.
+do
+  local detail=call('belt_route',{from={x=0,y=0},to={x=6,y=0},dry_run=true,details=true})
+  eq(#detail.entity_checks,#detail.entities)
+  local preview=call('place_ghosts',{entities=detail.entities,dry_run=true})
+  eq(preview.undergrounds.paired,2); eq(preview.undergrounds.unpaired,0)
+  local copied=call('place_ghosts',{entities=detail.entities})
+  eq(copied.placed,#detail.entities)
+  local ends={}
+  for _,a in ipairs(made) do if a.type then ends[#ends+1]=a.type..'@'..a.position.x end end
+  eq(table.concat(ends,','),'input@2.5,output@5.5')
+  made={ghosts={}}
+end
 local plan=call('belt_route',{from={x=0,y=0},to={x=6,y=0},dry_run=true})
 eq(plan.dry_run,true); eq(#made,0); eq(plan.missing['underground-belt'],2); eq(plan.entities,nil)
 local routed=call('belt_route',{from={x=0,y=0},to={x=6,y=0}})
@@ -4508,6 +4675,58 @@ end)()
   for i=#made,1,-1 do made[i]=nil end
   local rt=call('place_ghosts',{check_inserters=true,dry_run=true,entities={{name='inserter',position={x=6.5,y=0.5}}}})
   eq(rt.dry_run,true); eq(#made,0)
+  -- SC (#2838): a blocked planned chest was still a valid drop target to check_inserters.
+  do
+    local sf=p.surface
+    local valid,index,platform,getprop=sf.valid,sf.index,sf.platform,sf.get_property
+    sf.valid=true; sf.index=399; sf.platform={name='SC platform'}
+    prototypes.entity.inserter.name='inserter'
+    local gravity,pressure=0,0
+    sf.get_property=function(n) return n=='gravity' and gravity or pressure end
+    local reads=0
+    local box={left_top={x=-0.35,y=-0.35},right_bottom={x=0.35,y=0.35}}
+    prototypes.entity['steel-chest']=setmetatable({name='steel-chest',type='container',collision_box=box},
+      {__index=function(_,k) if k=='surface_conditions' then reads=reads+1; return {{property='gravity',min=0.1}} end end})
+    prototypes.entity['pressure-chest']={name='pressure-chest',type='container',collision_box=box,
+      surface_conditions={{property='gravity',min=0},{property='pressure',min=1,max=1000}}}
+    local batch={{name='inserter',position={x=6.5,y=4.5}},
+      {name='steel-chest',position={x=6.5,y=5.5}}}
+    chest(6.5,3.5)
+    local dry=call('place_ghosts',{dry_run=true,entities=batch})
+    eq(dry.inserters[1].missing,'no drop target')
+    assert(dry.inserters[1].drop:find('planned #2 steel-chest',1,true),dry.inserters[1].drop)
+    assert(dry.surface_conditions[1]:find('needs gravity >= 0.1, this surface has 0',1,true))
+    fails(function() call('place_ghosts',{check_inserters=true,entities=batch}) end,
+      'check_inserters: nothing placed: #2 (6.5,5.5): steel-chest cannot be placed on SC platform: needs gravity >= 0.1, this surface has 0')
+    eq(#made,0,'the earlier valid inserter was not placed'); eq(reads,1,'conditions cached per prototype')
+    local long_batch={}
+    for i=1,255 do long_batch[i]={name='inserter',position={x=6.5,y=4.5}} end
+    long_batch[256]=batch[2]
+    fails(function() call('place_ghosts',{check_inserters=true,entities=long_batch}) end,
+      '#256 (6.5,5.5): steel-chest cannot be placed on SC platform')
+    eq(#made,0,'surface failures past the displayed row limit also refuse the batch')
+    -- A failing second property and a batch with no inserters still refuse before placing anything.
+    fails(function() call('place_ghosts',{check_inserters=true,entities={{name='pressure-chest',position={x=12.5,y=5.5}}}}) end,
+      'needs pressure between 1 and 1000, this surface has 0')
+    eq(#made,0)
+    gravity=0.1; pressure=1
+    local allowed=call('place_ghosts',{dry_run=true,entities=batch})
+    eq(allowed.surface_conditions,nil,'fresh surface properties on the next check at the same tick')
+    eq(allowed.inserters[1].missing,nil,'condition met: planned drop is usable')
+    eq(allowed.inserters[1].drop,'planned steel-chest (6.5,5.5)')
+    local can_place=sf.can_place_entity
+    sf.can_place_entity=function(a) return a.name~='steel-chest' end
+    fails(function() call('place_ghosts',{check_inserters=true,entities=batch}) end,'no drop target')
+    eq(#made,0,'a planned target blocked for another reason also refuses the batch')
+    sf.can_place_entity=can_place
+    -- Conditions absent on the inserter; the checked call still places it with built targets.
+    eq(call('place_ghosts',{check_inserters=true,entities={{name='inserter',position={x=6.5,y=0.5}}}}).placed,1)
+    for i=#made,1,-1 do made[i]=nil end
+    sf.valid,sf.index,sf.platform,sf.get_property=valid,index,platform,getprop
+    prototypes.entity.inserter.name=nil
+    prototypes.entity['steel-chest']=nil; prototypes.entity['pressure-chest']=nil
+    chests[#chests]=nil
+  end
   for _,v in ipairs({false,true}) do
     local rd=call('dry_run',{action='place_ghosts',args={dry_run=v,entities={{name='inserter',position={x=6.5,y=0.5}}}}})
     eq(rd.dry_run,true); eq(#made,0)
@@ -5205,12 +5424,12 @@ end)()
   -- give there): a move between the two, which pick makes.
   fails(function() call('transfer',{position={x=15.5,y=59.5},item='rocket-fuel',count=50,direction='to_entity',to={x=30.5,y=60.5},inventory='rocket_silo_rocket'}) end,
     [[to goes with pick (pick + positions + item or items + to: take at the first listed place holding it, give at to); for this call: fh call transfer --args '{"count":50,"item":"rocket-fuel","pick":"first_with_stock","positions":[{"x":15.5,"y":59.5}],"to":{"x":30.5,"y":60.5}}']])
-  -- items: one item a call.
+  -- items accepts a map; these names are absent from the fake game's prototypes.
   fails(function() call('transfer',{position={x=35.5,y=35.5},direction='to_player',items={pipe=16,['small-electric-pole']=8}}) end,
-    [[for this call: fh call transfer --args '{"count":16,"direction":"to_player","item":"pipe","position":{"x":35.5,"y":35.5}}' (transfer moves one item a call: 2 named, one call each; or pick with items, the first a place holds)]])
+    'is not an item (unknown item name)')
   -- Another action's unknown argument: its example.
   fails(function() call('technologies',{pack='electromagnetic-science-pack'}) end,
-    [[unknown argument pack for technologies; valid: available, from, limit, name, prefix; accepted: available (boolean), from (optional), limit (1..32), name (optional), prefix (optional); e.g. fh call technologies --args '{"prefix":"automation"}']])
+    [[unknown argument pack for technologies; valid: available, from, level, limit, name, prefix; accepted: available (boolean), from (optional), level (optional integer with one exact name), limit (1..32), name (optional), prefix (optional); e.g. fh call technologies --args '{"prefix":"automation"}']])
   -- batch25 A3 (Luna): the call itself corrected: an argument the action takes no form of dropped, a plural for a
   -- singular renamed with its one entry; each change said.
   fails(function() call('technologies',{prefix='automation',surface='gleba'}) end,

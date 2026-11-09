@@ -398,7 +398,7 @@ do
 end
 -- A transfer on another surface (Grok, shift17 10:50): no hands there; the refusal says what moves items instead.
 fails(function() luna('transfer',{surface='vulcanus',position={x=1.5,y=1.5},direction='to_player',item='processing-unit'}) end,
-  'transfer has no surface: items move by hand only where your character stands')
+  'transfer has no surface: it moves items by hand where the character stands')
 fails(function() luna('collect',{surface='vulcanus',position={x=1.5,y=1.5}}) end,'robots carry items between chests of a logistic network there')
 -- items as {name: count} with pick and to (Luna, shift17 10:50: {"items":{"bioflux":5}} was refused, and items:["bioflux"]
 -- then moved all 24): the picked item's count caps the take; what reaches the destination is that count.

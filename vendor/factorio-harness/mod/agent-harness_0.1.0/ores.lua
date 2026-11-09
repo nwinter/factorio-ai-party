@@ -110,10 +110,22 @@ return function(api)
     end
     return units
   end
+  -- (d29 batch334 cp4, item 4) A chunk record's cells kept positional once its ore is read: {cx, cy, n, amount, sx, sy,
+  -- l, t, r, b, name} (an 11-field keyed record cost about 984 B in storage, this about 230 B; 8.4k cells on world n).
+  -- While a chunk is read they stay keyed (read_ore adds to them); records from before this runtime are packed when a
+  -- reader comes to them (packed), the same values.
+  local CX, CY, N, AMT, SX, SY, L, T, R, B, NAME = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
+  local function pack(c) return {c.cx, c.cy, c.n, c.amount, c.sx, c.sy, c.l, c.t, c.r, c.b, c.name} end
+  local function packed(rec)
+    local list = rec and rec.cells
+    if list and list[1] and list[1][CX] == nil then for i, c in ipairs(list) do list[i] = pack(c) end end
+    return list
+  end
+  M.packed = packed
   -- A record when its ore is all read.
   local function finish(rec)
     rec.by = nil
-    if not rec.cells[1] then rec.cells = nil end
+    if not rec.cells[1] then rec.cells = nil else packed(rec) end
     return rec
   end
   -- What one chunk holds, as a record {t, cells, buildings, drills, enemies}
@@ -184,12 +196,12 @@ return function(api)
     local by, order = {}, {}
     local drills, enemies, buildings = {}, {}, {}
     for _, rec in pairs(chunks) do
-      local list = rec.cells
+      local list = packed(rec)
       if list then
         for _, cell in ipairs(list) do
-          local cells = by[cell.name]
-          if not cells then cells = {}; by[cell.name] = cells; order[#order+1] = cell.name end
-          cells[(cell.cx+524288)*1048576+cell.cy+524288] = cell; cells[#cells+1] = cell
+          local cells = by[cell[NAME]]
+          if not cells then cells = {}; by[cell[NAME]] = cells; order[#order+1] = cell[NAME] end
+          cells[(cell[CX]+524288)*1048576+cell[CY]+524288] = cell; cells[#cells+1] = cell
         end
       end
       list = rec.drills
@@ -205,29 +217,30 @@ return function(api)
       local cells, k = by[name], kind_of(name)
       local seen = {}
       for _, start in ipairs(cells) do
-        local sk = (start.cx+524288)*1048576+start.cy+524288
+        local sk = (start[CX]+524288)*1048576+start[CY]+524288
         if not seen[sk] then
           seen[sk] = true
-          local p = {name=name, fluid=k.fluid or nil, tiles=0, amount=0, sx=0, sy=0, l=start.l, t=start.t, r=start.r, b=start.b, cells={}, boxes={}}
+          local p = {name=name, fluid=k.fluid or nil, tiles=0, amount=0, sx=0, sy=0, l=start[L], t=start[T], r=start[R], b=start[B], cells={}, boxes={}}
           local stack, top = {start}, 1
           local pc, bx = p.cells, p.boxes
           while top > 0 do
             local q = stack[top]; stack[top] = nil; top = top-1
-            p.tiles = p.tiles+q.n; p.amount = p.amount+q.amount; p.sx = p.sx+q.sx; p.sy = p.sy+q.sy
-            if q.l < p.l then p.l = q.l end
-            if q.t < p.t then p.t = q.t end
-            if q.r > p.r then p.r = q.r end
-            if q.b > p.b then p.b = q.b end
-            local qk = (q.cx+524288)*1048576+q.cy+524288
+            local ql, qt, qr, qb = q[L], q[T], q[R], q[B]
+            p.tiles = p.tiles+q[N]; p.amount = p.amount+q[AMT]; p.sx = p.sx+q[SX]; p.sy = p.sy+q[SY]
+            if ql < p.l then p.l = ql end
+            if qt < p.t then p.t = qt end
+            if qr > p.r then p.r = qr end
+            if qb > p.b then p.b = qb end
+            local qk = (q[CX]+524288)*1048576+q[CY]+524288
             pc[#pc+1] = qk
             local nb = #bx
-            bx[nb+1] = q.l; bx[nb+2] = q.t; bx[nb+3] = q.r; bx[nb+4] = q.b
+            bx[nb+1] = ql; bx[nb+2] = qt; bx[nb+3] = qr; bx[nb+4] = qb
             -- Ore on a chunk's edge with an uncharted chunk beyond: the patch
             -- may go on past the charted map.
             if charted and not p.chart_edge then
-              local chx, chy = math.floor(q.l/32), math.floor(q.t/32)
-              if (q.l == chx*32 and not charted(chx-1, chy)) or (q.r == chx*32+32 and not charted(chx+1, chy))
-                or (q.t == chy*32 and not charted(chx, chy-1)) or (q.b == chy*32+32 and not charted(chx, chy+1)) then
+              local chx, chy = math.floor(ql/32), math.floor(qt/32)
+              if (ql == chx*32 and not charted(chx-1, chy)) or (qr == chx*32+32 and not charted(chx+1, chy))
+                or (qt == chy*32 and not charted(chx, chy-1)) or (qb == chy*32+32 and not charted(chx, chy+1)) then
                 p.chart_edge = true
               end
             end
@@ -535,9 +548,9 @@ return function(api)
     for cx = math.floor(q.l/32), math.floor((q.r-1)/32) do
       for cy = math.floor(q.t/32), math.floor((q.b-1)/32) do
         local rec = entry.data[ckey(cx, cy)]
-        for _, c in ipairs(rec and rec.cells or {}) do
-          if c.name == q.name and c.l >= q.l and c.r <= q.r and c.t >= q.t and c.b <= q.b then
-            tiles, amount = tiles+c.n, amount+c.amount
+        for _, c in ipairs(packed(rec) or {}) do
+          if c[NAME] == q.name and c[L] >= q.l and c[R] <= q.r and c[T] >= q.t and c[B] <= q.b then
+            tiles, amount = tiles+c[N], amount+c[AMT]
           end
         end
       end

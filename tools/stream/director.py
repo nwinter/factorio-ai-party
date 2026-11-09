@@ -5,7 +5,7 @@ cameras on the next two; when another agent is within ~40 tiles of a camera's su
 zoomed out). Zoom follows the subject's activity (close for fights and building, wide for walks that last), and
 fights, base attacks and deaths cut the main camera straight away. Every decision is appended to a JSONL log so the weights can be tuned after a stream.
 """
-import json, math, time
+import copy, json, math, time
 
 DEFAULTS = {
     "main_dwell": 20.0,      # seconds before the main camera may cut
@@ -74,6 +74,11 @@ def surface_of(agent):
 
 
 CLIENT = (1920, 1080)  # a camera client's screen; Factorio draws 32 px a tile at zoom 1 (60 x 33.75 tiles)
+# Actual game zoom, after every framing and panel scale. Private 2.0.77 GUI cameras switch from map blocks to
+# sprites between .0384 and .0385; .06 leaves margin. Full clients use the camera API's rendered .3 minimum.
+# See zoom-floor.md for dimensions, capture evidence and the distinction between GUI and main cameras.
+WORLD_ZOOM_MIN = 0.3
+PANEL_ZOOM_MIN = 0.06
 
 
 def frame_of(target, frac=1.0):
@@ -119,6 +124,14 @@ class Director:
         self.cfg = dict(DEFAULTS, **{k: v for k, v in tuning.items() if v is not None})
         self.log_path = log_path
         self.state = {s["slot"]: None for s in slots}  # slot -> current assignment dict
+        self.requested = dict(self.state)
+        self.acknowledged = self.state
+        self.on_air = dict(self.state)  # confirmed by the compositor, never by a send attempt
+        self.send_pending = {}
+        import basetour
+        self.tour_memory = basetour.Memory()
+        self.train_rows, self.train_shown = [], {}
+        self.surveys = {}  # (slot, surface, purpose): interrupted phases survive the original hold
         self.last_on_air = {}
         self.started = time.time()
         self.last_cut = 0.0
@@ -237,7 +250,7 @@ class Director:
             self.work_seen.add(w["id"])
             if now - w["t"] > self.cfg["work_fresh"]:
                 continue
-            shot = platform_shot(w["view"]) if w.get("view") else \
+            shot = platform_shot(w["view"], frac=self.cfg.get("platform_frac") or self.cfg.get("view_frac", 1.0)) if w.get("view") else \
                 {"position": w["position"], "surface": w.get("surface") or "nauvis", "zoom": self.cfg["work_zoom"]}
             # `work`, not `label`: public() reads a label as an attack banner
             return dict(shot, agents=[w["agent"]], subject="@work", until=now + self.cfg["work_hold"], work=w["label"])
@@ -294,6 +307,10 @@ class Director:
                 self.last_attack_cut = now
         cur = self.state.get(main) if main else None
         if segment and not attack and not (cur and cur["subject"] == "@attack" and now < cur["until"]):
+            if cur and segment.get("recap") and (segment.get("hold_current") or cur.get("seg") == segment["id"]):
+                if cur.get("subject") == "@segment":
+                    cur["until"] = segment["until"]
+                return self.public(now)
             if not cur or cur.get("seg") != segment["id"]:
                 follow = segment.get("follow")
                 if follow and follow not in by_name:
@@ -333,7 +350,7 @@ class Director:
                         self.last_on_air[n] = now
                     continue  # holding on a base attack nobody is near, or a segment's shot
                 cur = None
-            elif attack and i == 0 and attack[0]:
+            elif attack and i == 0 and attack[0] and cur:
                 taken.update(cur["agents"])  # just cut to the attacked agent; secondaries take the rest
                 for n in cur["agents"]:
                     self.last_on_air[n] = now
@@ -396,6 +413,7 @@ class Director:
                            f"zoom {target['zoom']} ({act or by_name[subject].get('activity') or 'idle'})", scores, now)
             for n in self.state[name]["agents"] if self.state.get(name) else []:
                 self.last_on_air[n] = now
+        self.retry_sends(now)
         return self.public(now)
 
     def choose(self, cur, free, scores, now, dwell, on_air=(), released=()):
@@ -428,6 +446,24 @@ class Director:
 
     def apply(self, slot, target, reason, scores, now, quiet=False):
         name = slot["slot"]
+        target = dict(target) if target is not None else None
+        survey_candidate, survey_from = None, None
+        if target and target.get("survey") and not target.get("survey_step"):
+            from camerapath import Survey
+            key = (name, target["surface"], (target.get("platform") or {}).get("why"))
+            survey = self.surveys.get(key)
+            spec = target["survey"]
+            if survey is None:
+                old_key = next((k for k, q in self.surveys.items() if k[1:] == key[1:] and q.interrupted and
+                                not q.active and now < q.expires and all(q.spec[f] == spec[f] for f in ("bow", "stern", "bounds", "frac"))), None)
+                if old_key is not None:
+                    survey, survey_from = self.surveys[old_key], old_key
+            if survey is None or now >= survey.expires or any(survey.spec[k] != spec[k] for k in ("bow", "stern", "bounds", "frac")):
+                survey = Survey(spec, now, target.get("until", now + Survey.MAX_HOLD))
+            survey_candidate = survey
+            target.update(position={k: survey.pose[k] for k in ("x", "y")}, zoom=survey.pose["zoom"],
+                          survey_key=key, exact_zoom=True)
+        self.requested[name] = copy.deepcopy(target)
         if target is None:
             body = {"player": slot["player"], "release": True}
         elif "position" in target:
@@ -462,23 +498,72 @@ class Director:
             body.pop("move", None)
             if body.get("zoom") is not None:  # the panel's share of the window (cams.py scale), within cameras.lua's
                 body["zoom"] = round(min(4.0, max(0.05, body["zoom"] * slot.get("scale", 1))), 2)  # panel range
+        if target is not None and not target.get("map"):
+            # Whole-ship fits, pairs, fights and inset scaling all meet this final bound. Oversized ships keep
+            # their existing pan or a partial frame; only an explicitly intended map can zoom further out.
+            floor = PANEL_ZOOM_MIN if slot.get("panel") else WORLD_ZOOM_MIN
+            body["zoom"] = max(floor, body["zoom"])
+            if body.get("move"):
+                body["move"] = copy.deepcopy(body["move"])
+                for segment in body["move"]["segments"]:
+                    for point in segment["pts"]:
+                        # Native exp(log(z)) can round below z: recorded .3 surveys returned
+                        # .29999999999999993. Keep interpolation off the rendering boundary.
+                        point["zoom"] = max(floor + .001, point["zoom"])
+                target["move"] = body["move"]  # local path evaluation agrees with what the game plays
+        pending = self.send_pending.get(name)
+        if pending and pending["body"] == body and now < pending["retry_at"]:
+            return False
         try:
             result = self.sender(body)
         except Exception as e:  # keep directing even if the harness call fails; the log shows it
             result = {"ok": False, "error": str(e)}
-        if target is not None:
+        inner = result.get("result", result) if isinstance(result, dict) else None
+        ok = (isinstance(result, dict) and result.get("ok") is True and
+              isinstance(inner, dict) and inner.get("ok", True) is not False)
+        # Explicit offline simulation is useful; a disabled live sender is not an acknowledgement.
+        ok = ok or bool(isinstance(result, dict) and result.get("mock"))
+        if not ok:
+            attempts = pending["attempts"] + 1 if pending and pending["body"] == body else 1
+            self.send_pending[name] = dict(body=body, target=target, reason=reason, scores=scores,
+                                           attempts=attempts, retry_at=now + min(8.0, 0.5 * 2 ** min(attempts - 1, 5)))
+        else:
+            self.send_pending.pop(name, None)
+        if ok and target is not None:
             target["sent"] = now
+            if pending and pending["body"] == body and "framed" in target:
+                target["framed"] = now  # readiness dwell starts at the successful send, including a retry
+            if pending and pending["body"] == body:
+                if target.get("settle"):
+                    target["settle"] = dict(sent=now, arrived=None)
+                if "destination_since" in target:
+                    target["destination_since"] = now
+                if (target.get("closeup") or {}).get("done"):
+                    target["closeup"]["done"] = now
             target["game_zoom"] = body.get("zoom")  # frame_of: what the client shows
             if body.get("move"):  # the game plays it (its camera says move), else the director steps it
                 r = result.get("result", result) if isinstance(result, dict) else {}
                 target["move_ok"] = bool(isinstance(r, dict) and (r.get("camera") or {}).get("move"))
-        if reason not in ("reframe", "pair", "unpair") and not reason.startswith("zoom "):
+        if ok and reason not in ("reframe", "pair", "unpair") and not reason.startswith("zoom "):
             self.last_cut = now
-        self.state[name] = target
+        if ok:
+            if survey_candidate:
+                if survey_from is not None:
+                    self.surveys.pop(survey_from, None)
+                self.surveys[target["survey_key"]] = survey_candidate
+                survey_candidate.spec["details"] = copy.deepcopy(target["survey"]["details"])
+            self.state[name] = target
+            if target and target.get("survey_key") in self.surveys:
+                survey = self.surveys[target["survey_key"]]
+                survey.template = {k: copy.deepcopy(v) for k, v in target.items()
+                                   if k not in ("move", "move_ok", "survey_step", "jump", "glide", "survey_status")}
+            for key, survey in self.surveys.items():
+                if key[0] == name and (not target or key != target.get("survey_key")):
+                    survey.suspend()
         top = sorted(scores.items(), key=lambda kv: -kv[1])[:5]
         entry = {"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)), "slot": name,
-                 "reason": reason, "target": target and {k: target[k] for k in ("agents", "zoom", "vehicle", "did") if k in target},
-                 "cmd": body, "result": result, "scores": dict(top)}
+                 "reason": reason, "target": target and {k: target[k] for k in ("agents", "zoom", "vehicle", "did", "platform_frame", "seg", "tour", "train") if k in target},
+                 "cmd": body, "result": result, "acknowledged": bool(ok), "scores": dict(top)}
         if getattr(self, "surface_log", None):  # onecam's surface balance: shares, targets and the factors applied
             entry["surface"] = dict(self.surface_log, terms={n: f for n, f in self.surface_terms.items() if f != 1.0})
         if self.log_path:
@@ -487,8 +572,138 @@ class Director:
         if not quiet:
             who = "+".join(target["agents"]) if target else "-"
             stub = " (stub)" if isinstance(result, dict) and result.get("stub") else ""
-            print(f"[director] {entry['time']} {name}: {who} zoom {target and target['zoom']}  <- {reason}{stub}",
+            status = "acknowledged" if ok else "pending send"
+            print(f"[director] {entry['time']} {name}: {who} zoom {target and target['zoom']}  <- {reason}{stub} [{status}]",
                   flush=True)
+        return bool(ok)
+
+    @staticmethod
+    def survey_caption(target, survey):
+        base = target.get("survey_label") or target["platform"]["label"]
+        beat = survey.active_detail
+        if not beat:
+            return base
+        name = target["platform"]["name"]
+        label = beat.get("label") or beat.get("why") or "ship detail"
+        if label.startswith(name + " · "):
+            label = label[len(name) + 3:]
+        return ("Featured: " if target.get("featured") else "") + f"{name} · {label}"
+
+    def survey_step(self, now):
+        """Observe one camera, then drive its survey only while the compositor confirms it is visible.
+
+        Native moves run once per phase; panels/older runtimes follow the identical camerapath using smooth
+        updates. Game slowdown and unsuccessful moves cannot finish a phase or earn coverage.
+        """
+        import camerapath
+        live = set()
+        for slot in self.slots:
+            name = slot["slot"]
+            target = self.state.get(name) or {}
+            key = target.get("survey_key")
+            if not key or key not in self.surveys:
+                continue
+            survey = self.surveys[key]
+            aired = self.on_air.get(name) or {}
+            visible = aired.get("survey_key") == key and now < target.get("until", now + 1) and \
+                not getattr(self, "hold_layout", False) and not (hasattr(self, "hosting") and self.hosting(now))
+            if not visible:
+                if survey.active:
+                    survey.suspend()
+                    frozen = {k: v for k, v in target.items() if k not in ("move", "glide")}
+                    Director.apply(self, slot, dict(frozen, position={k: survey.pose[k] for k in ("x", "y")},
+                                          zoom=survey.pose["zoom"], jump=True, survey_step=True),
+                               "reframe", {}, now, quiet=True)
+                continue
+            live.add(key)
+            if survey.interrupted and not survey.active:
+                # A hidden native move may have kept running after a failed freeze. Restore the last
+                # visible point before taking new receipts; after the hold deadline start at the bow.
+                resumed = {k: v for k, v in target.items() if k not in ("move", "glide", "survey_step")}
+                if Director.apply(self, slot, dict(resumed, jump=True), "reframe", {}, now, quiet=True):
+                    survey = self.surveys[key]
+                    survey.active, survey.interrupted = True, False
+                continue
+            try:
+                receipt = self.sender(dict(player=slot["player"], panel=slot.get("panel", 0), observe=True))
+            except Exception:
+                receipt = {}
+            logical = dict(receipt) if isinstance(receipt, dict) else {}
+            if slot.get("panel") and isinstance(logical.get("zoom"), (float, int)):
+                scale = slot.get("scale", 1)
+                logical["coverage_zoom"] = logical["zoom"] / scale
+                logical["zoom"] = (survey.goal["zoom"] if logical["zoom"] <= PANEL_ZOOM_MIN + .002 and
+                                   survey.goal["zoom"] * scale <= PANEL_ZOOM_MIN + .002 else logical["zoom"] / scale)
+            if not survey.observe(logical, now, visible):
+                continue
+            survey.active = True
+            survey.interrupted = False
+            if survey.phase in ("survey", "bow_dwell", "stern_dwell") and not survey.detailed:
+                # Refresh candidates between scenes, preserving an in-progress detail's goal, caption and dwell.
+                survey.spec["details"] = self.tour_memory.details(survey.spec["surface"], survey.spec["details"], now)
+                survey.detail_index = 0
+            survey.advance()
+            beat = survey.active_detail
+            if target.get("platform"):
+                target.setdefault("survey_label", target["platform"]["label"])
+                target["platform"]["label"] = self.survey_caption(target, survey)
+            if beat and survey.phase == "detail_dwell" and survey.dwell >= 2 and not beat.get("credited"):
+                self.tour_memory.seen(beat, now)
+                beat["credited"] = True
+            target.update(position={k: survey.pose[k] for k in ("x", "y")}, zoom=survey.pose["zoom"],
+                          game_zoom=receipt["zoom"], survey_status=survey.public())
+            if self.log_path:
+                with open(self.log_path, "a") as f:
+                    f.write(json.dumps(dict(t=round(now, 3), slot=name, reason="reframe", event="survey_receipt", receipt=receipt,
+                                            visible=True, survey=survey.public())) + "\n")
+            if survey.arrived() and survey.phase.endswith("dwell"):
+                continue
+            clean = {k: v for k, v in target.items() if k not in ("move", "jump", "glide", "pan")}
+            clean["survey_step"] = True
+            if survey.motion is None:
+                path = survey.path()
+                # Native time is game seconds. Scale for configured speed; arrival handles low UPS/stalls.
+                speed = max(.01, float(logical.get("speed", 1)))
+                native_path = copy.deepcopy(path)
+                for seg in native_path["segments"]:
+                    seg["t1"] = min(600, seg["t1"] * speed)
+                proposed = dict(clean, position={k: survey.pose[k] for k in ("x", "y")}, zoom=survey.pose["zoom"],
+                                move=native_path)
+                if Director.apply(self, slot, proposed, "reframe", {}, now, quiet=True):
+                    survey.motion, survey.sent_at = path, now
+                    survey.native = bool((self.state.get(name) or {}).get("move_ok")) and not slot.get("panel")
+            elif not survey.native:
+                x, y, z = camerapath.at(survey.motion, now - survey.sent_at + .8)
+                distance = math.hypot(x - survey.pose["x"], y - survey.pose["y"])
+                Director.apply(self, slot, dict(clean, position=dict(x=x, y=y), zoom=z,
+                                      glide=min(60, max(.5, distance / .8))), "reframe", {}, now, quiet=True)
+        for key, survey in list(self.surveys.items()):
+            if key not in live:
+                survey.suspend()
+                if now >= survey.expires:
+                    del self.surveys[key]
+
+    def retry_sends(self, now):
+        for slot in self.slots:
+            p = self.send_pending.get(slot["slot"])
+            if p and now >= p["retry_at"]:
+                train = (p["target"] or {}).get("train")
+                import basetour
+                if train and (not basetour.train_fresh(train, now) or
+                              not getattr(self, 'train_retry_ok', lambda t, n: True)(p['target'], now) or
+                              getattr(self, "hosting", lambda t: False)(now) or getattr(self, "hold_layout", False)):
+                    self.send_pending.pop(slot["slot"], None)
+                    continue  # an old train position must not become a delayed camera command
+                if p["target"] and p["target"].get("until", now + 1) <= now:
+                    self.send_pending.pop(slot["slot"], None)
+                    continue
+                # Bypass subclass policy: this is the exact request still awaiting acknowledgement.
+                Director.apply(self, slot, p["target"], p["reason"], p["scores"], now)
+
+    def camera_states(self):
+        return copy.deepcopy({s["slot"]: {"requested": self.requested[s["slot"]],
+                              "acknowledged": self.state[s["slot"]], "on_air": self.on_air[s["slot"]]}
+                              for s in self.slots})
 
     def public(self, now=None):
         now = now or time.time()

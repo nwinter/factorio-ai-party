@@ -241,7 +241,7 @@ hargs=(--team "$team" --since "$started" --window "$(( $(date +%s) - started + 1
 [ -n "$stream" ] && hargs+=(--stream)
 [ "${POG_OBS:-1}" != 0 ] && hargs+=(--obs "${obs[*]}")
 health=$(python3 tools/shift_change.py health "$next_dir" "${hargs[@]}"); healthy=$?
-echo "$health"
+echo "$health" | tee -a "$next_dir/start.log"
 # 15:06: the health line said "OBS NOT streaming" and nothing acted on it (the stream was down 14 min): one recovery
 # (tools/obs-recover.sh: a plain retry of the outputs, else an OBS restart and the shift's OBS steps), then the
 # health line again. POG_OBS_RECOVER=0 skips it.
@@ -249,13 +249,21 @@ if [ -n "$stream" ] && [ "${POG_OBS_RECOVER:-1}" != 0 ] && grep -q "OBS NOT stre
   echo "OBS is not streaming: ${obs_recover[*]}"
   "${obs_recover[@]}" 2>&1 | tee "$next_dir/obs-recover.log" | sed 's/^/  /'
   hargs2=("${hargs[@]}"); hargs2[5]=$(( $(date +%s) - started + 1 ))  # (the --window value: from the start until now)
-  python3 tools/shift_change.py health "$next_dir" "${hargs2[@]}"; healthy=$?
+  health=$(python3 tools/shift_change.py health "$next_dir" "${hargs2[@]}"); healthy=$?
+  echo "$health" | tee -a "$next_dir/start.log"
 fi
 if [ -f "$prev_dir/console-audit.json" ]; then
   echo "console audit of $prev:"
   python3 tools/console_audit.py --file "$prev_dir/console-audit.json" | sed 's/^/  /'
 else
   echo "console audit of $prev: none saved (stop-team writes $prev_dir/console-audit.json)"
+fi
+if [ "$healthy" = 0 ] && [[ "$health" == "health: DEGRADED"* ]]; then
+  echo "change $next DEGRADED: overlay/service unavailable; agents and outputs continue; autopilot may start watchdog"
+  announce change-degraded "$next"
+elif [ "$healthy" != 0 ]; then
+  echo "change $next FAILED: required startup health check failed"
+  announce change-failed "$next"
 fi
 site_result
 exit $healthy

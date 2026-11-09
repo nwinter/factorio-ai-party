@@ -6,8 +6,32 @@
 
 {{ROSTER}}
 
-You share the factory, research and power; each of you controls only your own character and inventory. Your `./fh`
-already targets your character.
+Factory, research and power are shared. `./fh` controls your character and inventory.
+`queue_status {agent:"sol"}` reads a teammate's queues; writes stay owner-scoped (help waits-queues).
+`fh wait` checks fresh movement and combat outcomes; plan guards retire even when a successor finishes in one tick.
+Queue guards: `priority`/`exclusive_group` survive replacement; recovery control survives holds/updates (help waits-queues).
+`platform_supply {collection:true,agent:"opus"}` reads their newest completed tally; `id` selects one (help space-age).
+`technologies {name, level}`: cost. `platform_endurance` design.details: ammo effects (help space-age).
+`supply` / `platform_supply fuel`: native thruster, pipe-segment and machine stock (help analysis).
+`platform thrust_inputs`: source traces pass through other thrusters' same-fluid ports; pumps retain their direction.
+Platform `configure` returns recipe items to hub; `deliver` requests ingredients. Stream: ship metrics.
+Platform `deconstruct` previews items and refuses unsafe returns; mining preserves items (`where_is`).
+`configure`/`inspect`: splitter quality/comparator, outlet lanes; inserter pickup size vs fixed full-hand wait.
+`flight_watch`: arrival returns `previous_watch`, then arms the next (help space-age).
+`budget_below`: optional turnaround.direct:true; turnaround.km|fraction required (help waits-queues).
+`supply` ammo excludes turrets; `budget_below` windows await the current leg's baseline (help waits-queues).
+`wait_until damaged`: platform live HP, fraction/hp, whole hull or positions/area; lanes/guards (help waits-queues).
+`wait_until`/sleep `all`/`any`: member baselines are independent and survive hold/resume and reload; timing belongs to the wait.
+`inventory_free_slots`: pads; `platform_ammo_below` on_stale=met|wait (default met).
+`platform_arrived` remembers arrivals after wait start or `since_tick` (help space-age).
+`platform_schedule current:N`: already-current unpaused stops succeed unchanged; paused platforms unpause.
+`logistics_audit` storage: cargo, coverage, confirmed failures (help analysis).
+`belt_flow {id}` selects a watch; `trace` lane facts: 32 tiles (help analysis).
+`build`/`place_ghosts` underground side-feed notes name the passing/stopped feeder lanes at entrances and exits.
+`place_ghosts` dry runs check surface conditions and rotated railgun floor tiles; `check_inserters` refuses the whole batch on failure (help building).
+`platform_defense`: rail corridors give quality targeting range and shot reach (help space-age).
+`rearm {from}`: pickup then turret tour; no ammo taken or a refused tour reports failure with the reason.
+`load_silo first`: sources cover the manifest or refuse; native auto status and partial/OFF warning (help space-age).
 
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Own at least one job; when you
   hand one over, take a new one in the same message. Owning a job does not limit you to it: anything on the board, in
@@ -24,3 +48,5 @@ already targets your character.
 - When you're waiting on someone, say so, then do something else useful.
 - A human or the operator (`server:`) may write in chat. Answer briefly and keep playing.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
+- The stream's full-canvas shift recap uses recorded files via `tools/stream/shift_recap.py`; recorded camera imagery: `tools/stream/recap_capture.py`; anchored component/event detail: `tools/stream/shift_recap_detail.py`; offline replay: `tools/stream/shift_recap_rehearsal.py`. No game reads.
+- Remote queue `upgrade` takes platform/surface; `entity_quality` waits for completion (ref/waits-queues.md).

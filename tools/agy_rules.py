@@ -9,9 +9,9 @@ each turn started with no memory of the last).
 
 rules: the brief's core (tools/brief.py) stays under 20 KB, so agy gets the same AGENTS.md and ref/ topic files as
 every agent; this warns at launch when it has grown past the 24000 bytes agy reads. digest: notes.md as the agent last
-wrote it (its "## Now" first, the file cut to 4000 characters) and how its last turn ended (the last 800 characters agy
-printed, .agy-last.txt). digest-rules (d20 batch50 E2): a fresh conversation (.agy-loop.sh past compact_at) starts with no
-shift block, so the team's ground rules fh filed (.ground_rules.json, as the shift start gave them) come first.
+wrote it, through context.py's 3000-byte recovery brief, and how its last turn ended (the last 800 bytes agy
+printed, .agy-last.txt). Both digest and digest-rules carry the ground rules, deadline, ownership, work and checks;
+digest-rules remains a compatible name for the fresh-conversation loop branch.
 """
 import json, os, sys, time
 
@@ -44,29 +44,20 @@ def ground_rules(dirpath):
 
 
 def digest(dirpath, now=None, with_rules=False):
-    now = now or time.time()
-    parts = []
-    rules_ = ground_rules(dirpath) if with_rules else []
-    if rules_:
-        parts.append("The team's ground rules (as the shift start gave them):\n" + "\n".join(f"- {l}" for l in rules_))
-    notes_path = os.path.join(dirpath, "notes.md")
+    # Every turn may have lost context; the same bounded recovery fields apply to fresh
+    # conversations, continuations, and shift starts. Rules cannot crowd out the deadline.
+    from context import brief
+    body = brief(dirpath, "Recovery brief from your local files.")
     try:
-        notes = open(notes_path, errors="replace").read()
-        age = int((now - os.path.getmtime(notes_path)) // 60)
-        now_part = section(notes, "Now")
-        body = (now_part + "\n\n" + notes.replace(now_part, "").strip()) if now_part else notes.strip()
-        if len(body) > 4000:
-            body = body[:4000].rsplit("\n", 1)[0] + "\n(cut; the rest is in notes.md)"
-        parts.append(f"Your notes.md, as you last wrote it ({age} min ago):\n{body}")
-    except OSError:
-        parts.append("You have no notes.md yet.")
-    try:
-        last = open(os.path.join(dirpath, ".agy-last.txt"), errors="replace").read().strip()
+        with open(os.path.join(dirpath, ".agy-last.txt"), "rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - 800))
+            last = f.read().decode("utf-8", "replace").strip()
         if last:
-            parts.append("Your last turn ended with:\n" + last[-800:])
+            body += "\n\nYour last turn ended with:\n" + last
     except OSError:
         pass
-    return "\n\n".join(parts).replace("\x00", "")
+    return body.replace("\x00", "")
 
 
 def main(argv):

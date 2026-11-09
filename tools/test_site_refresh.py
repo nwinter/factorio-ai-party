@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """tools/site-refresh.sh with a stub wrangler and a made-up runs folder: python3 tools/test_site_refresh.py
 
-- a refresh updates status.json's last run ("Shift 2 of the long run"), builds the long run page, runs the checks and
+- a refresh updates status.json's last run ("Shift 3 of the long run": numbered by run, s2 did not play), builds the long run page, runs the checks and
   deploys to preview, then production;
 - a failed preview deploy leaves production alone; a failed production deploy says the preview has the new build;
 - --no-deploy builds and checks only;
@@ -57,7 +57,7 @@ def main():
         assert calls == [f"pages deploy {tmp / 'dist'} --project-name player-of-games --branch preview --commit-dirty=true",
                          f"pages deploy {tmp / 'dist'} --project-name player-of-games --branch main --commit-dirty=true"], calls
         st = json.loads((tmp / "status.json").read_text())
-        assert st["last_run"] == {"id": "s3", "title": "Shift 2 of the long run", "url": "/runs/long/"} and st["message"] == "Between shifts."
+        assert st["last_run"] == {"id": "s3", "title": "Shift 3 of the long run", "url": "/runs/long/"} and st["message"] == "Between shifts."
         assert json.loads((tmp / "dist" / "live" / "status.json").read_text())["last_run"]["id"] == "s3"  # deployed with it
         assert (tmp / "dist" / "runs" / "long" / "index.html").exists()
         assert "site-refresh: done" in r.stdout.splitlines()[-1], r.stdout
@@ -88,7 +88,7 @@ def main():
         assert r.returncode == 0 and "done (--no-deploy)" in r.stdout, "a lock whose pid is gone is taken over: " + r.stdout
         assert (tmp / "dist.last-deploy").is_file(), "the last production deploy stays through a --no-deploy build"
         # (d28 batch315) the YouTube list the follower writes outside any checkout reaches the build
-        (tmp / "videos-site.json").write_text(json.dumps({"s3": {"id": "VIDs3abcdef", "shift": 2, "title": "Shift 2",
+        (tmp / "videos-site.json").write_text(json.dumps({"s3": {"id": "VIDs3abcdef", "shift": 3, "title": "Shift 3",
                                                                   "description": "d", "chapters": [], "privacy": "public"}}))
         r, calls = run(tmp, "--no-deploy", POG_SITE_VIDEOS="1", POG_SITE_R2_REFRESH="0",
                        POG_SITE_YT_VIDEOS=str(tmp / "videos-site.json"))

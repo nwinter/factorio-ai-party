@@ -25,8 +25,17 @@ $alerts = if ($Human) { 'false' } else { 'true' }
 # Factorio 2.0's graphics-quality takes only high or medium (sprite resolution); the old 'low'/'normal' were not valid,
 # so every client fell back to high ("[Graphics quality: high]" in shake5's cam3 log). Directors get medium-resolution
 # sprites (a quarter of the pixels) to cut the ~5.2 GB each Space Age client committed; see docs/STREAM-NOTES.md.
-$quality = 'medium'   # a person too: high took 6 GB next to the stream's three cameras (2026-10-11)
-$vram = if ($Human) { 'all' } else { 'low' }
+function Get-ClientGraphics {
+  param([string]$PlayerName, [switch]$Human)
+  $vram = if ($Human) { 'all' } else { 'low' }
+  $lines = @('full-screen=false', 'graphics-quality=medium', "video-memory-usage=$vram", 'texture-streaming=true')
+  # batch374: Resolute copy, particles + smoke off reduced frame work. These are client visual effects;
+  # real asteroids and simulation are unchanged. Keep dust and resolution: neither justified a live change.
+  if (-not $Human -and $PlayerName -match '^pog-(cam|director)') {
+    $lines += 'show-particles=false', 'show-smoke=false'
+  }
+  $lines -join "`r`n"
+}
 # Camera clients (pog-cam*, pog-director*) draw no game chat: the overlay shows chat, and lines the engine broadcasts to
 # every client (the operator typing as `server`, joins) printed on the on-air picture, cut off by the crop (shift01
 # 16:39). [interface] output-console-delay is how long a console line stays on screen, in ticks (default 1200, the
@@ -45,10 +54,7 @@ master-muted=$muted
 music-volume=$music
 alerts-muted=$alerts
 [graphics]
-full-screen=false
-graphics-quality=$quality
-video-memory-usage=$vram
-texture-streaming=true$console
+$(Get-ClientGraphics -PlayerName $PlayerName -Human:$Human)$console
 "@
 if (-not (Test-Path "$dir\player-data.json")) {
   (@{'service-username'=$PlayerName} | ConvertTo-Json) | Set-Content -Encoding ascii "$dir\player-data.json"

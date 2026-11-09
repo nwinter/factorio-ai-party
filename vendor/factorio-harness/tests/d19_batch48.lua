@@ -44,8 +44,8 @@ do
   sch.go_to_station=function(i) pl.schedule.current=i; if pl.state==4 then pl.state=3; pl.space_location=nil end end
   pl.schedule.records={{station='nauvis'},{station='fulgora'},{station='gleba'},{station='aquilo'}}
   pl.schedule.current=1
-  -- current on the stop it waits at: refused, saying what changes it
-  fails(function() space.platform_schedule(sol,{platform='Swiftlet',current=1}) end,'nothing changed: stop 1 (nauvis) is already the current stop (it waits there); current 2 sends it to stop 2 now')
+  -- current on the stop it waits at: idempotent, preserving wait progress
+  eq(space.platform_schedule(sol,{platform='Swiftlet',current=1}).changed,false)
   eq(pl.state,4,'still waiting')
   -- current 4 alone: go to station 4, the records kept, the departure recorded
   game.tick=5000
@@ -55,7 +55,7 @@ do
   has(r.departed,'left nauvis at tick 5000')
   eq(st.schedule_departures.Swiftlet.from,'nauvis'); eq(st.schedule_departures.Swiftlet.by,'sol')
   -- in flight to stop 4, current 4 again changes nothing
-  fails(function() space.platform_schedule(sol,{platform='Swiftlet',current=4}) end,'(it flies there)')
+  eq(space.platform_schedule(sol,{platform='Swiftlet',current=4}).changed,false)
   -- a schedule edit that leaves it where it is records no departure
   pl.state=4; pl.space_location={name='aquilo'}; pl.schedule.current=4
   st.schedule_departures=nil

@@ -107,7 +107,7 @@ return function(api)
       end
       return cycles * amount * yield * (1 + (try(function() return e.productivity_bonus end) or 0)), cycles
     elseif g.kind == 'pump' then
-      local sp = try(function() return e.prototype.pumping_speed end)
+      local sp = try(function() return e.prototype.get_pumping_speed(e.quality) end)
       return sp and sp * 3600 or nil, nil
     end
   end
