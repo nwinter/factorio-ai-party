@@ -178,6 +178,23 @@ class PublicTest(unittest.TestCase):
         self.assertEqual(sleep.call_count, 2)
         self.assertTrue(receipt['record_started'])
 
+    def test_record_stop_is_asynchronous(self):
+        class DelayedOBS(FakeOBS):
+            stopping = 0
+            def call(self, name, body=None):
+                result = super().call(name, body)
+                if name == 'StopRecord': self.stopping = 2
+                if name == 'GetRecordStatus' and self.stopping:
+                    self.stopping -= 1
+                    return {'outputActive': True}
+                return result
+        obs = DelayedOBS(recording=True)
+        receipt = {'record_started': True, 'previous_scene': 'stream'}
+        with mock.patch.object(stream.time, 'sleep') as sleep:
+            stream.restore_obs(obs, receipt)
+        self.assertEqual(sleep.call_count, 2)
+        self.assertFalse(receipt['recording_active'])
+
     def test_viewer_chat_is_display_only_even_with_relay_env(self):
         import types
         service = overlay.PublicOverlay.__new__(overlay.PublicOverlay)

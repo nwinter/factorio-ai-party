@@ -59,6 +59,9 @@ One pogwin client: `pog-director2`, executable `factorio-mtcam.exe`, task
 `pog-mt-stream-camera`, write data `D:/pog/mt-stream/client`. It uses medium
 sprites, low video memory, no audio. It refuses to start while another Factorio
 process is running on pogwin. World n's `n-client-cam1` and settings are untouched.
+It uses the installed **Space Age** build at `D:/pog/factorio-2.0.77-expansion`;
+the base-only alpha build cannot join this world. The server's on-disk mods are
+copied into the dedicated client directory before joining.
 The iMac's `pog-cam1` remains the agents' screenshot renderer; public staging does
 not replace the `POG_MT_CAM` shot sync.
 
@@ -92,11 +95,15 @@ The `mt-stream` scene contains only `mt background`, `mt camera`, `mt overlay`.
 The main camera occupies 1440×810 at (0,72), with team cards on the right and
 team/viewer chat below. The canvas is 1920×1080. The camera is silent in this
 checkpoint; music and caster pipelines are not started.
+Team scorecards are canvas-rendered: live OBS testing exposed disappearing HTML
+scorecard text after about a minute. The final layout was checked across repeated
+camera rotations and with four teams of three agents.
 
 Setup refuses if OBS is streaming, saves the prior program scene, selects
 `mt-stream`, starts recording if needed, and waits for recording to become active.
 Stop restores the prior scene if `mt-stream` is still selected and stops recording
 only if this supervisor started it. It leaves the scene available for later runs.
+Both recording start and stop wait for OBS's asynchronous state change.
 World n's sources, scenes, streaming credentials, profiles and collections are
 not edited.
 

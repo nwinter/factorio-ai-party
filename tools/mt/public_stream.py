@@ -121,6 +121,12 @@ def restore_obs(obs, receipt):
     if receipt.get('record_started') and obs.call('GetRecordStatus')['outputActive']:
         result = obs.call('StopRecord')
         receipt['recording'] = result.get('outputPath')
+        for _ in range(30):
+            if not obs.call('GetRecordStatus')['outputActive']:
+                break
+            time.sleep(.5)
+        else:
+            raise RuntimeError('OBS recording did not finish stopping within 15s')
     receipt['recording_active'] = obs.call('GetRecordStatus')['outputActive']
     if receipt.get('previous_scene') and obs.call('GetCurrentProgramScene')['currentProgramSceneName'] == SCENE:
         obs.call('SetCurrentProgramScene', {'sceneName': receipt['previous_scene']})

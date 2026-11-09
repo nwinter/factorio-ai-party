@@ -6,7 +6,8 @@ $dir = 'D:\pog\mt-stream\client'
 $config = "$dir\config\config.ini"
 $pidfile = 'D:\pog\mt-stream\camera.pid'
 $task = 'pog-mt-stream-camera'
-$exe = 'D:\pog\factorio-2.0.77-alpha\bin\x64\factorio-mtcam.exe'
+$build = 'D:\pog\factorio-2.0.77-expansion'
+$exe = "$build\bin\x64\factorio-mtcam.exe"
 function Owned {
   if (Test-Path $pidfile) {
     $savedPid = [int](Get-Content $pidfile)
@@ -29,10 +30,11 @@ if ($Action -eq 'stop') {
 if (Owned) { throw 'mt camera already running; stop its owning run first' }
 $others = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -like 'factorio*.exe' })
 if ($others.Count) { throw 'Factorio is already running on pogwin; one camera only. Inspect and stop its owning run first.' }
+if (-not (Test-Path "$build\data\space-age")) { throw 'The public camera requires the installed 2.0.77 Space Age build' }
 New-Item -ItemType Directory -Force "$dir\config" | Out-Null
 Set-Content -Encoding ascii $config @"
 [path]
-read-data=D:/pog/factorio-2.0.77-alpha/data
+read-data=D:/pog/factorio-2.0.77-expansion/data
 write-data=D:/pog/mt-stream/client
 [other]
 check-updates=false
@@ -50,7 +52,7 @@ texture-streaming=true
 output-console-delay=1
 "@
 Set-Content -Encoding ascii "$dir\player-data.json" '{"service-username":"pog-director2"}'
-if (-not (Test-Path $exe)) { Copy-Item 'D:\pog\factorio-2.0.77-alpha\bin\x64\factorio.exe' $exe }
+if (-not (Test-Path $exe)) { Copy-Item "$build\bin\x64\factorio.exe" $exe }
 $args = "--config `"$config`" --mp-connect 127.0.0.1:$Port --disable-audio"
 $actionSpec = New-ScheduledTaskAction -Execute $exe -Argument $args
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive

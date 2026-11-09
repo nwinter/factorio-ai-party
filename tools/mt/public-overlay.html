@@ -3,19 +3,113 @@
 <style>
 *{box-sizing:border-box}body{margin:0;width:1920px;height:1080px;overflow:hidden;color:#eef3fa;font:23px system-ui;background:transparent}
 header{height:72px;background:#111b2b;display:flex;align-items:center;justify-content:space-between;padding:0 28px;border-bottom:3px solid #7bb5f1}
-h1{font-size:29px;margin:0}#camera{font-size:27px;font-weight:700}#cards{position:absolute;left:1440px;top:72px;width:480px;height:810px;background:#111b2b;padding:14px;display:flex;flex-direction:column;gap:12px}
-.team{flex:1;min-height:0;background:#1d2c40;border-left:7px solid var(--team);border-radius:8px;padding:12px 15px;overflow:hidden}.team.on{outline:2px solid #fff}.name{font-size:26px;font-weight:800;text-transform:capitalize}.badge{float:right;font-size:17px;background:#0d1726;padding:5px 9px;border-radius:4px}.badge:empty{display:none}.agents{font-size:20px;margin:6px 0;color:#d3deef}.agent{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.compact .team{padding:9px 12px}.compact .name{font-size:22px}.compact .agents{font-size:17px;line-height:1.2;margin:4px 0}.compact .research,.compact .space{font-size:16px}.research,.space{font-size:19px;margin-top:5px}.track{height:5px;background:#101b2b;margin-top:6px}.fill{height:5px;background:var(--team)}
+h1{font-size:29px;margin:0}#camera{font-size:27px;font-weight:700}#cards{position:absolute;left:1440px;top:72px;width:480px;height:810px;background:#111b2b}
 footer{position:absolute;top:882px;height:198px;width:1920px;background:#111b2b;display:flex;border-top:2px solid #35516e;padding:14px 24px;gap:32px}section{width:50%;overflow:hidden}h2{font-size:18px;color:#a9bdd7;text-transform:uppercase;letter-spacing:1px;margin:0 0 9px}.line{font-size:21px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.who{font-weight:700}.muted{color:#a9bdd7}.stale{opacity:.55}#offline{display:none;position:absolute;top:82px;left:24px;background:#142238;padding:10px 20px}
 </style>
 <header><h1>Factorio: Space Age · Team tests</h1><div id="camera">Waiting for camera</div><div id="clock"></div></header>
-<div id="offline">Overlay connection lost</div><aside id="cards"></aside>
+<div id="offline">Overlay connection lost</div><canvas id="cards" width="480" height="810" aria-label="Team rosters and progress"></canvas>
 <footer><section><h2>Team chat · <span id="chat-team">waiting</span></h2><div id="chat"></div></section><section><h2>Viewer chat · display only</h2><div id="viewers" class="muted">Viewer chat is off</div></section></footer>
 <script>
-const colors={red:'#ff7676',blue:'#79afff',green:'#77d69a',yellow:'#f2ce6d',white:'#eee'};
-const node=(tag,cls,text)=>{let n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n};
-function lines(el,rows){el.replaceChildren();for(const m of rows.slice(-4)){let row=node('div','line');row.append(node('span','who',(m.name||'')+': '),node('span','',m.text||''));el.append(row)}}
-function render(s){let cards=document.getElementById('cards');cards.replaceChildren();cards.classList.toggle('compact',s.teams.length>=4);let on=s.camera?.team;document.getElementById('camera').textContent=on?'On camera: '+on+' · '+s.camera.surface:'Waiting for camera';document.getElementById('clock').textContent=s.teams.find(t=>t.team===on)?.game_time||'';
-for(const t of s.teams){let card=node('article','team'+(on===t.team?' on':'')+(t.stale?' stale':''));card.style.setProperty('--team',colors[t.team]||'#a2b3cb');let name=node('div','name',t.team);name.append(node('span','badge',t.stale?'STALE':t.paused?'PAUSED':on===t.team?'ON CAMERA':''));card.append(name);let agents=node('div','agents');for(const a of t.agents)agents.append(node('div','agent',a.display_name+' · '+a.model));card.append(agents);let r=t.research||{},p=Math.max(0,Math.min(1,Number(r.progress)||0));card.append(node('div','research',(r.label||r.current||'No active research')+(r.current?' · '+Math.round(p*100)+'%':'')));let track=node('div','track'),fill=node('div','fill');fill.style.width=p*100+'%';track.append(fill);card.append(track);card.append(node('div','space',(r.done_count??0)+' technologies · '+(t.space?.rockets??0)+' rockets · '+(t.science?.stage_label||'Starting')));cards.append(card)}
-let t=s.teams.find(t=>t.team===on)||s.teams[0];document.getElementById('chat-team').textContent=t?.team||'waiting';lines(document.getElementById('chat'),t?.chat||[]);let v=document.getElementById('viewers');if(s.viewers.length)lines(v,s.viewers);else v.textContent=s.viewer_status==='off'?'Viewer chat is off':'Waiting for viewer chat';document.getElementById('offline').style.display=Date.now()/1000-s.now>25?'block':'none'}
-async function poll(){try{let r=await fetch('/state.json',{cache:'no-store'});if(!r.ok)throw Error();render(await r.json())}catch(e){document.getElementById('offline').style.display='block'}}poll();setInterval(poll,2000);
+const colors = {red:'#ff7676', blue:'#79afff', green:'#77d69a', yellow:'#f2ce6d', white:'#eee'};
+const cards = document.getElementById('cards');
+const ctx = cards.getContext('2d');
+function node(tag, cls, text) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (text != null) el.textContent = text;
+  return el;
+}
+function text(el, value) {
+  value = String(value ?? '');
+  if (el.textContent !== value) el.textContent = value;
+}
+function lines(el, rows) {
+  const key = JSON.stringify(rows.slice(-4));
+  if (el.dataset.lines === key) return;
+  el.dataset.lines = key;
+  el.replaceChildren();
+  for (const m of rows.slice(-4)) {
+    const row = node('div', 'line');
+    row.append(node('span', 'who', (m.name || '') + ': '), node('span', '', m.text || ''));
+    el.append(row);
+  }
+}
+function label(value, x, y, width, font, color='#eef3fa') {
+  ctx.font = font;
+  ctx.fillStyle = color;
+  let out = String(value ?? '');
+  if (ctx.measureText(out).width > width) {
+    while (out.length && ctx.measureText(out + '…').width > width) out = out.slice(0, -1);
+    out += '…';
+  }
+  ctx.fillText(out, x, y);
+}
+function drawTeams(s) {
+  // OBS browser capture lost DOM card text after ~60s; redraw the canvas each poll.
+  ctx.clearRect(0, 0, 480, 810);
+  ctx.fillStyle = '#111b2b';
+  ctx.fillRect(0, 0, 480, 810);
+  const count = s.teams.length;
+  if (!count) return;
+  const compact = count >= 4;
+  const height = (810 - 28 - (count - 1) * 12) / count;
+  s.teams.forEach((t, i) => {
+    const x = 14, y = 14 + i * (height + 12), w = 452;
+    const color = colors[t.team] || '#a2b3cb';
+    const on = s.camera?.team === t.team;
+    ctx.save();
+    ctx.globalAlpha = t.stale ? 0.55 : 1;
+    ctx.fillStyle = '#1d2c40'; ctx.fillRect(x, y, w, height);
+    ctx.fillStyle = color; ctx.fillRect(x, y, 7, height);
+    if (on) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.strokeRect(x+1, y+1, w-2, height-2); }
+    const badge = t.stale ? 'STALE' : t.paused ? 'PAUSED' : on ? 'ON CAMERA' : '';
+    label(t.team[0].toUpperCase() + t.team.slice(1), x+22, y+31, badge ? 270 : 410,
+          'bold ' + (compact ? 22 : 26) + 'px "Segoe UI"');
+    if (badge) {
+      ctx.font = 'bold 16px "Segoe UI"';
+      const bw = ctx.measureText(badge).width + 18;
+      ctx.fillStyle = '#0d1726'; ctx.fillRect(x+w-bw-10, y+10, bw, 28);
+      label(badge, x+w-bw-1, y+30, bw, 'bold 16px "Segoe UI"');
+    }
+    let cy = y + (compact ? 53 : 65);
+    for (const a of t.agents) {
+      label(a.display_name + ' · ' + a.model, x+22, cy, 410,
+            (compact ? 17 : 20) + 'px "Segoe UI"', '#d3deef');
+      cy += compact ? 20 : 25;
+    }
+    const r = t.research || {};
+    const p = Math.max(0, Math.min(1, Number(r.progress) || 0));
+    cy += 5;
+    label((r.label || r.current || 'No active research') + (r.current ? ' · ' + Math.round(p*100) + '%' : ''),
+          x+22, cy, 410, (compact ? 16 : 19) + 'px "Segoe UI"');
+    cy += 10;
+    ctx.fillStyle = '#101b2b'; ctx.fillRect(x+22, cy, 410, 5);
+    ctx.fillStyle = color; ctx.fillRect(x+22, cy, 410*p, 5);
+    label((r.done_count ?? 0) + ' technologies · ' + (t.space?.rockets ?? 0) + ' rockets · ' +
+          (t.science?.stage_label || 'Starting'), x+22, cy+26, 410, (compact ? 16 : 19) + 'px "Segoe UI"');
+    ctx.restore();
+  });
+}
+function render(s) {
+  const on = s.camera?.team;
+  text(document.getElementById('camera'), on ? 'On camera: ' + on + ' · ' + s.camera.surface : 'Waiting for camera');
+  text(document.getElementById('clock'), s.teams.find(t => t.team === on)?.game_time || '');
+  drawTeams(s);
+  const team = s.teams.find(t => t.team === on) || s.teams[0];
+  text(document.getElementById('chat-team'), team?.team || 'waiting');
+  lines(document.getElementById('chat'), team?.chat || []);
+  const viewers = document.getElementById('viewers');
+  if (s.viewers.length) lines(viewers, s.viewers);
+  else { viewers.dataset.lines = ''; text(viewers, s.viewer_status === 'off' ? 'Viewer chat is off' : 'Waiting for viewer chat'); }
+  document.getElementById('offline').style.display = Date.now() / 1000 - s.now > 25 ? 'block' : 'none';
+}
+async function poll() {
+  try {
+    const response = await fetch('/state.json', {cache:'no-store'});
+    if (!response.ok) throw Error('feed unavailable');
+    render(await response.json());
+  } catch (error) { document.getElementById('offline').style.display = 'block'; }
+}
+poll();
+setInterval(poll, 2000);
 </script></html>
