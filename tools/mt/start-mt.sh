@@ -113,6 +113,11 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   exit 0
 fi
 
+# Refuse a fresh reset before updating any launch files an existing run may still use.
+if [ "${POG_MT_FRESH:-0}" = 1 ] && tools/mt/imac_mt.sh status | grep -q '^running'; then
+  echo "refusing: POG_MT_FRESH needs a stopped server (stop the prior run first)" >&2
+  exit 1
+fi
 op=$root/runs/$run/op
 mkdir -p "$op"
 log() { printf '%s %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$op/start.log"; }
