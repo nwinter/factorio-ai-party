@@ -57,6 +57,17 @@ do
   local inc={}
   for _,i in ipairs(storage.agent_harness.losses) do inc[i.force or 'player']=i.total end
   eq(inc.player,1); eq(inc.red,2)
+  -- A stream's new platform metric resolver uses the requesting team's force, including duplicate platform names.
+  local original_platform=runtime.space.platform
+  local requested_force
+  runtime.space.platform=function(p,name) requested_force=p.force; error('metric lookup reached') end
+  for _,f in ipairs({red,player}) do
+    fails(function() runtime.as_team(f.name,function() runtime.platformmetrics.read{platform='same-name'} end) end,
+      'metric lookup reached')
+    eq(requested_force,f,'platform metrics resolve only the current force')
+    eq(runtime.team_now(),'player','a failed read restores team context')
+  end
+  runtime.space.platform=original_platform
   print('mt276 bot_create {force}, team_names, agent_force, loss incidents: ok')
 end
 

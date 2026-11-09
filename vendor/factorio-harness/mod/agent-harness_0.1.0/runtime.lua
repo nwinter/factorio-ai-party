@@ -20976,7 +20976,7 @@ space=space_module{made=function(t) return M.made.mark(t) end,floor_read=functio
   -- A platform's defence: hub health, turrets and their ammo against the hub's, repair packs (platalerts.lua).
   defense=function(pl) return M.platalerts.defense(pl) end}
 M.space=space  -- tests reach its limits (GHOST_CAP)
-M.platformmetrics=require('platformmetrics'){state=state,platform=function(name) return space.platform({force=game.forces.player},name) end,
+M.platformmetrics=require('platformmetrics'){state=state,platform=function(name) return space.platform({force=game.forces[M.team_now()]},name) end,
   leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,
   hits=function(pl) return M.platalerts.hits(pl) end,
   losses=function(f,s,t) return M.lostlog.since(f,s,t,nil,0) end}
