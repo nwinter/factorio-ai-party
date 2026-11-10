@@ -16,6 +16,13 @@ return function(api)
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function store()
     local st = api.state()
+    local version=script and script.active_mods and script.active_mods.base
+    if version and version:match('^2%.1%.') and st.engine_engine~=version then
+      st.engine_history=st.engine_history or {}
+      st.engine_history[st.engine_engine or '2.0-unversioned']=st.engine
+      st.engine={};st.engine_engine=version
+      st.port21_started_tick=st.port21_started_tick or game.tick
+    end
     st.engine = st.engine or {}
     return st.engine
   end
@@ -182,7 +189,7 @@ return function(api)
   function M.read(pl)
     local rec = store()[pl.index]
     if not rec or #rec.samples < 2 then return nil end
-    local out = {lines={}, windows={}}
+    local out = {engine_version=script and script.active_mods and script.active_mods.base,lines={}, windows={}}
     for _, w in ipairs(WINDOWS) do
       local r = window(rec, w)
       out.windows[#out.windows+1] = r

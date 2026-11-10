@@ -170,6 +170,13 @@ return function(api)
   -- Counting -----------------------------------------------------------------
   local function store()
     local st = api.state()
+    local version=script and script.active_mods and script.active_mods.base
+    if version and version:match('^2%.1%.') and st.freight_engine~=version then
+      st.freight_history=st.freight_history or {}
+      st.freight_history[st.freight_engine or '2.0-unversioned']=st.freight
+      st.freight={};st.freight_engine=version
+      st.port21_started_tick=st.port21_started_tick or game.tick
+    end
     st.freight = st.freight or {}
     return st.freight
   end
@@ -1028,7 +1035,7 @@ return function(api)
     return out
   end
   local function open(rec, pl, w, counts, tick, first)
-    local seg = {start=tick, first=copy(counts), spoiled={}, partial=first or nil, ammo0=ammo_counts(pl), fuel0=fluid_counts(pl), places0=M.places_snapshot(pl)}
+    local seg = {engine_version=script and script.active_mods and script.active_mods.base,start=tick, first=copy(counts), spoiled={}, partial=first or nil, ammo0=ammo_counts(pl), fuel0=fluid_counts(pl), places0=M.places_snapshot(pl)}
     if w.stopped then
       seg.kind, seg.at = 'stop', w.at
       -- (QK1) read once, by quality; ask and hold by name are their sums

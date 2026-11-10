@@ -1610,8 +1610,8 @@ return function(api)
           local q=sig.quality
           if type(q)~='string' then q=q and try(function() return q.name end) or 'normal' end
           local key=sig.name..'@'..q
-          local keep=(after[planet] or {})[key]
-          local was=(before[planet] or {})[key]
+          local keep=kept_at(after,planet,key)
+          local was=kept_at(before,planet,key)
           local cmp=({['≥']='>=',['≤']='<=',['≠']='!='})[c.comparator] or c.comparator or '<'
           local need=(cmp=='>=' or cmp=='=') and c.constant or cmp=='>' and c.constant+1 or nil
           if need and keep and keep~=math.huge and keep<need and keep~=was then
@@ -1648,6 +1648,12 @@ return function(api)
     table.sort(rows,function(x,y) return x.min-x.n>y.min-y.n end)
     return rows,total
   end
+  local function deliveries_pending(pl)
+    if not PORT21 then return false end
+    local point=try(function() return pl.hub.get_logistic_point(defines.logistic_member_index.space_platform_hub_requester) end)
+    local incoming=point and try(function() return point.targeted_items_deliver end)
+    return incoming and next(incoming)~=nil or false
+  end
   -- One wait condition in words; at the stop where the platform waits, how far it is.
   local function wait_text(pl,w,here,arrived)
     local t=w.type or '?'
@@ -1661,6 +1667,7 @@ return function(api)
     elseif t=='inactivity' and w.ticks then
       local last=try(function() return pl.get_schedule().tick_of_last_activity end) or 0
       local since=game.tick-math.max(last,arrived.tick or arrived.first or 0)
+      if deliveries_pending(pl) then since=0;text=text..' (deliveries in flight reset inactivity)' end
       text=text..string.format(': %s without activity, %s left',secs(since),secs(w.ticks-since))
     elseif t=='item_count' and w.condition and w.condition.first_signal and not w.condition.second_signal then
       local c=w.condition
@@ -1708,6 +1715,7 @@ return function(api)
       if not arrived.tick then return nil end
       return (w.ticks or 0)-(game.tick-arrived.tick)<=0
     elseif t=='inactivity' then
+      if deliveries_pending(pl) then return false end
       local last=try(function() return pl.get_schedule().tick_of_last_activity end) or 0
       return game.tick-math.max(last,arrived.tick or arrived.first or 0)>=(w.ticks or 0)
     elseif t=='item_count' and c and c.first_signal and not c.second_signal then
@@ -1778,7 +1786,9 @@ return function(api)
       line=line..(met==false and '; the game reads no_schedule while it waits there and leaves when they hold (Solstice at Nauvis, shift52)'
         or '; the game reads no_schedule')
     end
-    return {stop=cur,station=here,game_state=st,met=met,conditions=conds,line=line}
+    local blocked=api.platwait and api.platwait().departure_blocked and api.platwait().departure_blocked(pl)
+    if blocked then line=line..'; '..blocked end
+    return {stop=cur,station=here,game_state=st,met=met,departure_blocked=blocked,conditions=conds,line=line}
   end
   function M.waiting_line(pl) local w=M.waiting_now(pl); return w and w.line or nil end
   -- the state note of a platform reading no_schedule while it waits at its current stop on conditions false now

@@ -882,3 +882,9 @@ where applicable and omit finite free-slot capacities. Stack counts still descri
 rocket and unloading its shrinking inventory preserve item quality, spoilage and other stack metadata. The
 `load_silo` manifest accepts up to 64 item/quality entries on 2.1 (20 on 2.0). The 2.0.77 rocket retains its slot
 limit; platform hub and cargo-pod capacity remain separate from rocket lift.
+
+Factorio 2.1 automatic silos expose `native_batch`: the engine's selected platform and mixed item requests.
+A full rocket of each requested item is no longer a launch prerequisite. Orbital trash must clear before departure;
+incoming deliveries reset inactivity. Flight/fuel histories from 2.0 are archived on migration and new forecasts use
+2.1 samples. The 2.1 geometric asteroid estimate is provisional: measured on Nauvis–Vulcanus only; its reply gives
+hull widths, speed, sample counts, and the unmeasured scope. It does not predict collision damage to the foundation.
