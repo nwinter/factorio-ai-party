@@ -20,13 +20,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from yt_upload import Api, API
 
 
-def broadcast_body(title, start):
+def broadcast_body(title, start, privacy='unlisted'):
     instant = datetime.datetime.fromisoformat(start.replace('Z', '+00:00'))
     if instant.utcoffset() is None:
         raise ValueError('--start requires a timezone (for example Z)')
     return {'snippet': {'title': title, 'scheduledStartTime': instant.isoformat(),
-                        'description': 'Public test runs: AI teams play Factorio: Space Age. Viewer chat is display-only.'},
-            'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False},
+                        'description': 'Test runs: AI teams play Factorio: Space Age. Viewer chat is display-only.'},
+            'status': {'privacyStatus': privacy, 'selfDeclaredMadeForKids': False},
             'contentDetails': {'enableAutoStart': False, 'enableAutoStop': False,
                                'enableDvr': True, 'recordFromStart': True,
                                'monitorStream': {'enableMonitorStream': True, 'broadcastStreamDelayMs': 0}}}
@@ -67,6 +67,8 @@ def main():
     p.add_argument('--stream-id', required=True)
     p.add_argument('--receipt', type=Path, required=True)
     p.add_argument('--execute', action='store_true')
+    # Nick d39: test videos are unlisted so they stay out of the channel feed
+    p.add_argument('--privacy', choices=('unlisted', 'public', 'private'), default='unlisted')
     args = ap.parse_args()
     if args.command == 'streams':
         api, token = Api(False), ''
@@ -79,7 +81,7 @@ def main():
             if not token:
                 break
     else:
-        create(Api(not args.execute), broadcast_body(args.title, args.start), args.stream_id, args.receipt)
+        create(Api(not args.execute), broadcast_body(args.title, args.start, args.privacy), args.stream_id, args.receipt)
 
 
 if __name__ == '__main__':
