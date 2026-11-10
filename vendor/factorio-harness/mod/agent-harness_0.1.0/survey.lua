@@ -387,7 +387,8 @@ return function(api)
             local inv=e.get_inventory(defines.inventory.lab_input)
             local count=inv and inv.get_item_count  -- (BT1: the method read once a lab, not once a pack)
             for _,ingredient in ipairs(tech.research_unit_ingredients) do
-              if count and count(ingredient.name)==0 then missing[ingredient.name]=(missing[ingredient.name] or 0)+1 end
+              local ok, stored=pcall(function() return e.get_stored_durability(ingredient.name).durability end)
+              if count and count(ingredient.name)==0 and (not ok or stored<=0) then missing[ingredient.name]=(missing[ingredient.name] or 0)+1 end
             end
             a.labs=a.labs+1
           end
@@ -493,7 +494,8 @@ return function(api)
     local names={}
     for name in pairs(stats.output_counts) do
       local item=prototypes.item[name]
-      if item and item.type=='tool' then names[#names+1]=name end
+      local ok, capacity = pcall(function() return item.science_capacity end)
+      if item and ((ok and capacity or 0)>0 or item.type=='tool') then names[#names+1]=name end
     end
     table.sort(names)
     for _,name in ipairs(names) do

@@ -3156,7 +3156,7 @@ return function(api)
       for _,c in ipairs(try(function() return silo.surface.find_entities_filtered{position=silo.position,radius=EMPTY_LOOK,type={'container','logistic-container'},force=silo.force,limit=64} end) or {}) do
         local inv=c.valid and try(function() return c.get_inventory(defines.inventory.chest) end)
         for _,s in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
-          if try(function() return prototypes.item[s.name].type end)=='tool' and #near<6 then
+          if ((try(function() return prototypes.item[s.name].science_capacity end) or 0)>0 or try(function() return prototypes.item[s.name].type end)=='tool') and #near<6 then
             near[#near+1]=string.format('%s (%g,%g) %s*%d',c.name,c.position.x,c.position.y,s.name,s.count)
           end
         end

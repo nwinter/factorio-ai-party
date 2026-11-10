@@ -17,6 +17,18 @@
 --     works while the dump still holds items, and returns none of them.
 return function(api)
   local M = {}
+  -- 2.1 recipes have a category list; 2.0 has a primary and additional categories.
+  local function recipe_categories(recipe)
+    local ok, list = pcall(function() return recipe.categories end)
+    if ok and list then return list end
+    local out = {recipe.category or 'crafting'}
+    for _, name in ipairs(recipe.additional_categories or {}) do out[#out+1] = name end
+    return out
+  end
+  local function takes(categories, recipe)
+    for _, name in ipairs(recipe_categories(recipe)) do if categories[name] then return true end end
+    return false
+  end
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function qname(q) return type(q) == 'string' and q or q and try(function() return q.name end) or 'normal' end
   local function qlevel(q) return try(function() return prototypes.quality[q].level end) or 0 end
@@ -49,7 +61,7 @@ return function(api)
     local r = try(function() return e.force.recipes[name] end)
     if not r then return nil, 'no such recipe' end
     if not r.enabled then return nil, 'not researched' end
-    if not try(function() return e.prototype.crafting_categories[r.category] end) then return nil, 'not one ' .. e.name .. ' makes' end
+    if not try(function() return takes(e.prototype.crafting_categories, r) end) then return nil, 'not one ' .. e.name .. ' makes' end
     return r
   end
   local function before(a, b)

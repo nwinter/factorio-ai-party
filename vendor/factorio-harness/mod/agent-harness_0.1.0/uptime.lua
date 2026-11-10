@@ -32,6 +32,20 @@
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n = p.independent_probability
+    if n == nil then return p.probability or 1 end
+    local shared = p.shared_probability
+    return n * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
   -- (d20 batch58 T2, Astra #1461: a 20-furnace bank took two 16-machine windows) up to 64 machines, or the crafting
   -- machines in an area (up to AREA_SIDE tiles a side, optionally of one recipe), with per-recipe totals beside the rows.
   -- A reply's numbers are what its encoding pays for (the private copy: helpers.table_to_json took 23 ms for 64 rows of
@@ -108,7 +122,7 @@ return function(api)
     local out = {}
     for _, pr in ipairs(r and try(function() return r.products end) or {}) do
       if pr.type ~= 'fluid' then
-        if not pr.amount or (pr.probability or 1) ~= 1 or (pr.extra_count_fraction or 0) ~= 0 or (pr.ignored_by_productivity or 0) ~= 0 then return nil end
+        if not pr.amount or product_chance(pr) ~= 1 or (pr.extra_count_fraction or 0) ~= 0 or (pr.ignored_by_productivity or 0) ~= 0 then return nil end
         out[#out+1] = {name=pr.name, amount=pr.amount}
       end
     end
@@ -193,7 +207,7 @@ return function(api)
   -- Labs. The packs a lab holds: {name: {n, d (durability held, in packs' durability), q (any above normal quality)}}.
   local durability = {}
   local function max_of(name)
-    if durability[name] == nil then durability[name] = try(function() return prototypes.item[name].get_durability() end) or 1 end
+    if durability[name] == nil then durability[name] = try(function() return prototypes.item[name].science_capacity end) or try(function() return prototypes.item[name].get_durability() end) or 1 end
     return durability[name]
   end
   local function lab_packs(e)
@@ -207,9 +221,22 @@ return function(api)
         local q = try(function() return st.quality.name end) or 'normal'
         local max = max_of(st.name)
         o.n = o.n + st.count
-        o.d = o.d + (st.count - 1) * max + (try(function() return st.durability end) or max)
+        if (try(function() return prototypes.item[st.name].science_capacity end) or 0) > 0 then
+          o.d = o.d + st.count * max
+        else o.d = o.d + (st.count - 1) * max + (try(function() return st.durability end) or max) end
         if q ~= 'normal' then o.q = true end
         out[st.name] = o
+      end
+    end
+    -- 2.1 consumes an item into lab-held capacity; no inventory slot contains its remaining fraction.
+    for _, name in ipairs(try(function() return e.prototype.lab_inputs end) or {}) do
+      local stored = try(function() return e.get_stored_durability(name) end)
+      if stored and stored.durability > 0 then
+        local o = out[name]
+        if not o then o = {n=0, d=0}; out[name]=o; order[#order+1]=name end
+        o.n, o.d = o.n + 1, o.d + stored.durability
+        local q = type(stored.quality)=='string' and stored.quality or stored.quality and stored.quality.name
+        if q and q~='normal' then o.q=true end
       end
     end
     return out, order
@@ -464,7 +491,7 @@ return function(api)
   -- whole; used: the ingredient past its ignored_by_stats). Measured on a private copy of world n's shift70 save, Gleba's
   -- six breeders at +50% over 66 s: 109 crafts and 54 productivity completions, 272 eggs out, 109 back in, 163 net; the
   -- statistics counted 163 made, and used 166 = 138 agricultural science crafts + 28 eggs a heating tower burned.
-  local function mean(p) return (p.amount or (((p.amount_min or 0) + (p.amount_max or 0)) / 2)) * (p.probability or 1) + (p.extra_count_fraction or 0) end
+  local function mean(p) return (p.amount or (((p.amount_min or 0) + (p.amount_max or 0)) / 2)) * product_chance(p) + (p.extra_count_fraction or 0) end
   local function num(n) return math.floor(n * 10 + 0.5) / 10 end
   local plain = {}   -- recipe names with no ignored_by_stats item (a prototype read is 40-200 us)
   function M.returned(recipe_name, crafts, bonus)
@@ -484,10 +511,10 @@ return function(api)
       if (i.ignored_by_stats or 0) > 0 then any[i.name] = true end
     end
     if not next(any) then plain[recipe_name] = true; return nil end
-    for _, p in ipairs(r.products or {}) do
+    for index, p in ipairs(r.products or {}) do
       if any[p.name] then
-        local x, a = row(p.name), mean(p)
-        local extra = math.max(0, a - (p.ignored_by_productivity or 0))
+        local x, a = row(p.name), native_amount(r, index) or mean(p)
+        local extra = (native_amount(r, index, 1) or (a + math.max(0, a - (p.ignored_by_productivity or 0)))) - a
         x.per_craft_out, x.per_bonus_out, x.ignored_out = x.per_craft_out + a, x.per_bonus_out + extra, x.ignored_out + (p.ignored_by_stats or 0)
         x.out = x.out + crafts * a + bonus * extra
         x.made = x.made + crafts * math.max(0, a - (p.ignored_by_stats or 0)) + bonus * extra

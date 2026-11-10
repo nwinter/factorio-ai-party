@@ -18980,3 +18980,11 @@ This distinguishes the growing line from a fixed 50-tile line and from multiplyi
 The existing conservative box/wedge geometry, 17 boundary rays, result caps and read-only behavior remain.
 Tests: `tests/d37_batch458.lua` covers all five qualities, built and ghost sources, proposed footprints,
 platform rows, preview quality, mixed sources, radial hit/miss boundaries and unchanged angular limits.
+
+## Factorio 2.1.24 recipe and science reads
+
+On the private 2.1 line, recipes may have several categories. Recipe output means come from the engine,
+including shared probability rolls and products exempt from productivity. Quality chances use 2.1's fractional
+scale. `science` keeps whole inventory packs in `labs` and reports consumed packs' remaining capacity separately
+as `lab_stored_capacity`; a lab with remaining capacity is not missing that pack. `uptime` includes that capacity
+when sampling lab consumption. Product freshness flags apply to each product separately.

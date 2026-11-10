@@ -21,6 +21,18 @@
 -- The factory is pure so the same module can be bundled into a hot reload.
 return function(api)
   local M = {}
+  -- 2.1 recipes have a category list; 2.0 has a primary and additional categories.
+  local function recipe_categories(recipe)
+    local ok, list = pcall(function() return recipe.categories end)
+    if ok and list then return list end
+    local out = {recipe.category or 'crafting'}
+    for _, name in ipairs(recipe.additional_categories or {}) do out[#out+1] = name end
+    return out
+  end
+  local function takes(categories, recipe)
+    for _, name in ipairs(recipe_categories(recipe)) do if categories[name] then return true end end
+    return false
+  end
   local NAME = {[0]='north', [4]='east', [8]='south', [12]='west'}
   local function fluids_of(list)
     local out = {}
@@ -86,11 +98,11 @@ return function(api)
     assert(type(r) ~= 'string' and r ~= nil, 'unknown recipe '..tostring(name))
     local cats = proto.crafting_categories
     assert(cats, proto.name..' takes no recipe')
-    if not cats[r.category] then
+    if not takes(cats, r) then
       local list = {}
       for c in pairs(cats) do list[#list+1] = c end
       table.sort(list)
-      error(string.format('%s cannot make %s (category %s; it makes %s)', proto.name, r.name, r.category, table.concat(list, ', ')), 0)
+      error(string.format('%s cannot make %s (category %s; it makes %s)', proto.name, r.name, table.concat(recipe_categories(r), ', '), table.concat(list, ', ')), 0)
     end
     return r
   end

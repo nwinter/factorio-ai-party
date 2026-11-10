@@ -17,6 +17,20 @@
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n = p.independent_probability
+    if n == nil then return p.probability or 1 end
+    local shared = p.shared_probability
+    return n * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function round(x, d) local m = 10 ^ (d or 0); return math.floor(x * m + 0.5) / m end
   local function mins(m)
@@ -39,8 +53,8 @@ return function(api)
     local made = name and PRODUCTS[name]
     if made then return made end
     made = {}
-    for _, pr in ipairs(try(function() return r.products end) or {}) do
-      made[pr.name] = (pr.amount or ((pr.amount_min or 0) + (pr.amount_max or 0)) / 2) * (pr.probability or 1)
+    for index, pr in ipairs(try(function() return r.products end) or {}) do
+      made[pr.name] = (made[pr.name] or 0) + (native_amount(r, index) or ((pr.amount or ((pr.amount_min or 0) + (pr.amount_max or 0)) / 2) * product_chance(pr) + (pr.extra_count_fraction or 0)))
     end
     if name then PRODUCTS[name] = made end
     return made

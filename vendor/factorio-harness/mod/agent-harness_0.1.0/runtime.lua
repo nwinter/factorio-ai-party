@@ -6218,11 +6218,16 @@ end
 -- Why a hand craft started fewer than asked: the raw items it runs out of,
 -- following hand-craftable intermediates (gears, cables) down like the
 -- engine does, with where our factory holds each.
--- Whether a crafter with these categories takes the recipe: its own category
--- or one of its additional ones (Space Age: pressing, electronics, ...).
-local function takes(categories,recipe)
-  if categories[recipe.category or 'crafting'] then return true end
-  for _,extra in ipairs(recipe.additional_categories or {}) do if categories[extra] then return true end end
+-- 2.1 recipes have a category list; 2.0 has a primary and additional categories.
+local function recipe_categories(recipe)
+  local ok, list = pcall(function() return recipe.categories end)
+  if ok and list then return list end
+  local out = {recipe.category or 'crafting'}
+  for _, name in ipairs(recipe.additional_categories or {}) do out[#out+1] = name end
+  return out
+end
+local function takes(categories, recipe)
+  for _, name in ipairs(recipe_categories(recipe)) do if categories[name] then return true end end
   return false
 end
 local function hand_recipe(p,item)
@@ -6352,7 +6357,7 @@ local function begin_craft(p,recipe,count,force,notes,shorts,fromq)
   -- "not hand-craftable now" with force and the ingredients held).
   local r,categories=p.force.recipes[recipe],p.character and p.character.prototype.crafting_categories
   if categories and not takes(categories,r) then
-    error(string.format('%s (category %s) cannot be hand-crafted by a character; an assembling machine can make it (configure recipe=%s, then feed it)',recipe,r.category or 'crafting',recipe),0)
+    error(string.format('%s (category %s) cannot be hand-crafted by a character; an assembling machine can make it (configure recipe=%s, then feed it)',recipe,table.concat(recipe_categories(r), ', '),recipe),0)
   end
   count=integer(count,1,1,1000,'count')
   craft_stock(p,recipe,count,force,notes)
@@ -7174,11 +7179,11 @@ function M.recipe_for(p,proto,name)
   end
   local recipe=p.force.recipes[name]
   if not (recipe and recipe.enabled) then error('recipe '..name..' is unavailable',0) end
-  if not (proto.crafting_categories or {})[recipe.category] then
+  if not takes(proto.crafting_categories or {}, recipe) then
     local cats={}
     for c in pairs(proto.crafting_categories or {}) do cats[#cats+1]=c end
     table.sort(cats)
-    error(string.format('recipe %s (category %s) is not one %s makes (its categories: %s)',name,tostring(recipe.category),proto.name,table.concat(cats,', ')),0)
+    error(string.format('recipe %s (category %s) is not one %s makes (its categories: %s)',name,table.concat(recipe_categories(recipe), ', '),proto.name,table.concat(cats,', ')),0)
   end
   return recipe
 end
@@ -8986,7 +8991,7 @@ local function configure_check(p,a,e,near)
   assert((ghost and e.ghost_type or e.type)=='assembling-machine','only assembling machines (and their ghosts) support recipe configuration')
   local recipe=type(a.recipe)=='string' and p.force.recipes[a.recipe]
   if not (recipe and recipe.enabled) then error(M.recipe_refusal(p,a.recipe,'configure'),0) end
-  assert((ghost and e.ghost_prototype or e.prototype).crafting_categories[recipe.category],'recipe incompatible with machine')
+  assert(takes((ghost and e.ghost_prototype or e.prototype).crafting_categories, recipe),'recipe incompatible with machine')
   if ghost then return end
   local current,current_quality=e.get_recipe()
   if current and current.name==recipe.name and (a.quality or 'normal')==((current_quality and current_quality.name) or 'normal') then return end
@@ -9912,8 +9917,12 @@ local function configure_branch(p,a)
   -- box) and keeps one it takes. So drain flushes (for a box that does have a segment), changes the recipe, and the
   -- reply says how much of each fluid left the machine (fluid_flushed) and what stays, measured after the change.
   local fluid_note,fluid_after
+  local ok_empty,empty=pcall(function() return e.fluids_count==0 end)
   if not ghost then
     assert(a.fluid==nil or a.fluid=='keep' or a.fluid=='drain','fluid: "drain" (change the recipe and let a fluid it takes none of go) or "keep" (the same change; the reply says what stayed)')
+  end
+  -- Solid-only machines have no fluid state to preserve; fluids_count exists on both engine lines.
+  if not ghost and not (ok_empty and empty) then
     local fluid_mode=a.fluid or (a.force==true and 'keep') or nil
     local takes={}
     for _,list in ipairs({recipe.ingredients or {},recipe.products or {}}) do
@@ -12076,7 +12085,7 @@ function feeding.smelts(e,item)
     local ok,cats=pcall(function() return e.prototype.crafting_categories end)
     local found=false
     for _,r in pairs(ok and cats and prototypes.recipe or {}) do
-      if cats[r.category] then
+      if takes(cats,r) then
         for _,ing in ipairs(r.ingredients or {}) do if ing.type=='item' and ing.name==item then found=true; break end end
       end
       if found then break end
@@ -16993,7 +17002,7 @@ function M.accepts_text(e,a)
       local okc2,cats=pcall(function() return e.prototype.crafting_categories end)
       local okr,list=pcall(function() return prototypes.get_recipe_filtered{{filter='has-ingredient-item',elem_filters={{filter='name',name=a.item}}}} end)
       local smelts=false
-      for _,r in pairs(okr and list or {}) do if okc2 and cats and cats[r.category] then smelts=true end end
+      for _,r in pairs(okr and list or {}) do if okc2 and cats and takes(cats,r) then smelts=true end end
       if okr and not smelts then return string.format('no: %s makes nothing from %s (no recipe of its crafting categories takes it)',where,a.item) end
     end
     local fr=name=='furnace_source' and select(2,pcall(function() return e.get_recipe() or e.previous_recipe end)) or nil

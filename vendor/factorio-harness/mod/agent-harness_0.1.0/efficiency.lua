@@ -15,6 +15,20 @@
 -- line for the agent's 2-hour review. Facts only.
 return function(api)
   local M = {}
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n = p.independent_probability
+    if n == nil then return p.probability or 1 end
+    local shared = p.shared_probability
+    return n * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
   local BLOCK, BLOCK_EVERY, PER_TICK = 128, 2, 48
   local START_EXTENT, PLATFORM_EXTENT, MAX_EXTENT = 8, 2, 32   -- blocks from (0,0) each way
   local MAX_KEYS, TOP_ITEMS = 40000, 5
@@ -133,10 +147,10 @@ return function(api)
     local c = per_craft[recipe]
     if c == nil then
       local n, main = 0, nil
-      for _, p in ipairs(try(function() return prototypes.recipe[recipe].products end) or {}) do
+      for index, p in ipairs(try(function() return prototypes.recipe[recipe].products end) or {}) do
         if p.type == 'item' then
           local amount = p.amount or (((p.amount_min or 0) + (p.amount_max or 0)) / 2)
-          n = n + amount * (p.probability or 1) + (p.extra_count_fraction or 0)
+          n = n + (native_amount(prototypes.recipe[recipe], index) or (amount * product_chance(p) + (p.extra_count_fraction or 0)))
           main = main or p.name
         end
       end

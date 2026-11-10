@@ -4,6 +4,20 @@
 -- radius walks the stock back.
 return function(api)
   local M={}
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n = p.independent_probability
+    if n == nil then return p.probability or 1 end
+    local shared = p.shared_probability
+    return n * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
   -- temporary-container: a cargo pod landed with no pad (a player opens it; freight_audit counted 45 solar panels in one
   -- that stock left out, Sol 15:22).
   local TYPES={'assembling-machine','furnace','agricultural-tower','container','logistic-container','cargo-landing-pad','temporary-container'}
@@ -490,10 +504,10 @@ return function(api)
     local ok,recipe=pcall(e.get_recipe)
     if not (ok and recipe) and e.type=='furnace' then ok,recipe=pcall(function() return prototypes.recipe[recipe_name(e.previous_recipe)] end) end
     local out={}
-    for _,pr in ipairs(ok and recipe and recipe.products or {}) do
+    for index,pr in ipairs(ok and recipe and recipe.products or {}) do
       if pr.type=='item' then
         local amount=pr.amount or ((pr.amount_min or 0)+(pr.amount_max or 0))/2
-        out[pr.name]=(out[pr.name] or 0)+amount*(pr.probability or 1)
+        out[pr.name]=(out[pr.name] or 0)+(native_amount(recipe,index) or (amount*product_chance(pr)+(pr.extra_count_fraction or 0)))
       end
     end
     return out
@@ -785,9 +799,9 @@ return function(api)
     local chance,odds={},{}
     local ok,recipe=pcall(function() return e.get_recipe() or (e.type=='furnace' and prototypes.recipe[recipe_name(e.previous_recipe)]) end)
     for _,pr in ipairs(ok and recipe and recipe.products or {}) do
-      if pr.type=='item' and pr.probability and pr.probability<1 then
-        odds[pr.name]=pr.probability
-        chance[#chance+1]=string.format('%s comes from %g%% of crafts',pr.name,pr.probability*100)
+      if pr.type=='item' and product_chance(pr) and product_chance(pr)<1 then
+        odds[pr.name]=product_chance(pr)
+        chance[#chance+1]=string.format('%s comes from %g%% of crafts',pr.name,product_chance(pr)*100)
       end
     end
     out.chance=#chance>0 and table.concat(chance,'; ') or nil

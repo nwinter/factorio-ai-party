@@ -10,6 +10,21 @@
 -- belt tier capacity against the area's outside needs.
 return function(api)
   local M={}
+  local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n = p.independent_probability
+    if n == nil then return p.probability or 1 end
+    local shared = p.shared_probability
+    return n * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
   -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
   M.POSITIONS=64
   local MAX_INT53=2^53
@@ -121,13 +136,13 @@ return function(api)
       add(set,'input',ingredient.type,ingredient.name,ingredient.type=='item' and q or 'normal',ingredient.amount/duration,e.name)
     end
     local productivity=1+math.min(e.productivity_bonus+recipe.productivity_bonus,recipe.prototype.maximum_productivity)
-    for _,product in pairs(recipe.products) do
+    for index,product in ipairs(recipe.products) do
       if product.type~='research-progress' then
         local high,low=product.amount_max or product.amount,product.amount_min or product.amount
-        local expected=(product.probability or 1)*0.5*(high+low)+(product.extra_count_fraction or 0)
+        local expected=product_chance(product)*0.5*(high+low)+(product.extra_count_fraction or 0)
         local fixed=math.min(expected,product.ignored_by_productivity or 0)
         add(set,'output',product.type,product.name,product.type=='item' and q or 'normal',
-          (fixed+(expected-fixed)*productivity)/duration,e.name,product.temperature)
+          (native_amount(recipe,index,productivity-1) or (fixed+(expected-fixed)*productivity))/duration,e.name,product.temperature)
       end
     end
   end
@@ -161,7 +176,7 @@ return function(api)
     local speed=e.prototype.get_researching_speed(e.quality)*(e.speed_bonus+1-research.speed_modifier)*(research.speed_modifier+1)
     local units=research.units_per_second*speed*e.prototype.science_pack_drain_rate_percent/100
     for _,ingredient in ipairs(research.ingredients) do
-      add(set,'input','item',ingredient.name,'normal',ingredient.amount*units/prototypes.item[ingredient.name].get_durability(),e.name)
+      add(set,'input','item',ingredient.name,'normal',ingredient.amount*units/(try(function() return prototypes.item[ingredient.name].science_capacity end) or prototypes.item[ingredient.name].get_durability()),e.name)
     end
   end
 
@@ -196,7 +211,7 @@ return function(api)
       if data.fluid then add(set,'input','fluid',data.fluid,'normal',data.fluid_amount/10*cycles,e.name) end
       for _,product in pairs(data.products or {}) do
         local amount=product.amount or (product.amount_min+product.amount_max)/2
-        add(set,'output',product.type,product.name,'normal',amount*(product.probability or 1)*cycles*productivity,e.name,product.temperature)
+        add(set,'output',product.type,product.name,'normal',amount*product_chance(product)*cycles*productivity,e.name,product.temperature)
       end
     end
   end
@@ -402,8 +417,8 @@ return function(api)
         if ingredient.type=='item' then m.demand=m.demand+ingredient.amount/duration end
       end
       local productivity=1+math.min(e.productivity_bonus+recipe.productivity_bonus,recipe.prototype.maximum_productivity)
-      for _,product in pairs(recipe.products) do
-        if product.type=='item' then m.output=m.output+(product.amount or ((product.amount_min+product.amount_max)/2))*(product.probability or 1)*productivity/duration end
+      for index,product in ipairs(recipe.products) do
+        if product.type=='item' then m.output=m.output+(native_amount(recipe,index,productivity-1) or (product.amount or ((product.amount_min+product.amount_max)/2))*product_chance(product)*productivity)/duration end
       end
       local pos=string.format('(%s,%s)',e.position.x,e.position.y)
       if m.supply>0 and m.supply<m.demand*0.99 then

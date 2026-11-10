@@ -9,6 +9,20 @@
 -- crafting speed 1, or at a machine prototype's speed and base effect.
 return function(api)
   local M = {}
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n = p.independent_probability
+    if n == nil then return p.probability or 1 end
+    local shared = p.shared_probability
+    return n * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function r1(v) return math.floor(v * 10 + 0.5) / 10 end
   local function num(v) return string.format('%g', r1(v)) end
@@ -17,8 +31,8 @@ return function(api)
   -- One product's average yield per craft, and the part productivity applies to.
   local function yield(p)
     local amount = p.amount or (((p.amount_min or 0) + (p.amount_max or p.amount_min or 0)) / 2)
-    local base = amount * (p.probability or 1) + (p.extra_count_fraction or 0)
-    local ignored = math.min(base, (p.ignored_by_productivity or 0) * (p.probability or 1))
+    local base = amount * product_chance(p) + (p.extra_count_fraction or 0)
+    local ignored = math.min(base, (p.ignored_by_productivity or 0) * product_chance(p))
     return base, math.max(0, base - ignored), p.ignored_by_productivity
   end
   -- The rates: {crafts_per_min, seconds_per_craft, speed, productivity, products [{name, per_craft, per_min, net_per_min,
@@ -36,12 +50,12 @@ return function(api)
       ings[#ings+1] = {name=ing.name, per_min=r1(n)}
     end
     local prods, words = {}, {}
-    for _, p in ipairs(try(function() return recipe.products end) or {}) do
+    for index, p in ipairs(try(function() return recipe.products end) or {}) do
       local base, productive, ignored = yield(p)
-      local per_craft = base + productive * prod
+      local per_craft = native_amount(recipe, index, prod) or (base + productive * prod)
       local per_min = per_craft * cpm
       local net = per_min - (used[p.name] or 0)
-      prods[#prods+1] = {name=p.name, per_craft=r1(per_craft), per_min=r1(per_min), net_per_min=used[p.name] and r1(net) or nil,
+      prods[#prods+1] = {name=p.name, per_craft=math.floor(per_craft * 1000000 + 0.5) / 1000000, per_min=r1(per_min), net_per_min=used[p.name] and r1(net) or nil,
         ignored_by_productivity=ignored and ignored > 0 and ignored or nil}
       words[#words+1] = string.format('%s %s/min%s%s', p.name, num(per_min), used[p.name] and string.format(' (net %s/min: %s/min goes back in)', num(net), num(used[p.name])) or '',
         ignored and ignored > 0 and string.format(', %s a craft exempt from productivity', num(ignored)) or '')
@@ -111,9 +125,9 @@ return function(api)
     -- (d24 batch171 QN1, Sol 15:09: three plants' rates summed against the platform's statistics, which count every maker)
     out.line = out.line .. ' (this machine alone, at full speed all the time; status, input and output decide what it makes)'
     local q = try(function() return e.effects.quality end)
-    -- The quality effect is stored as 0.1 per 1% the GUI shows (2.0.77: five rare quality-module-1 read 0.8, the GUI 8%;
-    -- Astra 05:43 saw "80%").
-    if q and q > 0 then out.quality_chance = string.format('%g%%', math.floor(q * 100 + 0.5) / 10) end
+    -- 2.1 effects are fractions matching the GUI; 2.0 quality effects were ten times larger.
+    local scale = try(function() return recipe.categories end) and 100 or 10
+    if q and q > 0 then out.quality_chance = string.format('%g%%', math.floor(q * scale * 10 + 0.5) / 10) end
     if out.recipe_quality ~= 'normal' then
       out.line = string.format('%s recipe (takes %s ingredients, makes %s products%s): %s', out.recipe_quality, out.recipe_quality,
         out.recipe_quality, out.quality_chance and ' or better at its quality chance' or '', out.line)

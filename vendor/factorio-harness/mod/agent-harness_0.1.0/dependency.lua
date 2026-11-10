@@ -14,6 +14,20 @@
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n = p.independent_probability
+    if n == nil then return p.probability or 1 end
+    local shared = p.shared_probability
+    return n * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function r1(v) return math.floor(v * 10 + 0.5) / 10 end
   local function recipe_for(surface, force, item)
@@ -31,10 +45,10 @@ return function(api)
     return best or own or try(function() return prototypes.recipe[item] end)
   end
   local function per_craft(recipe, name)
-    for _, p in ipairs(try(function() return recipe.products end) or {}) do
+    for index, p in ipairs(try(function() return recipe.products end) or {}) do
       if p.name == name then
         local amount = p.amount or (((p.amount_min or 0) + (p.amount_max or 0)) / 2)
-        return amount * (p.probability or 1) + (p.extra_count_fraction or 0)
+        return native_amount(recipe, index) or (amount * product_chance(p) + (p.extra_count_fraction or 0))
       end
     end
     return 0
@@ -44,10 +58,12 @@ return function(api)
   -- 2 a craft, 1 of them the egg put in; at +50% the statistics count 1.5 a craft)
   local function stats_per_craft(recipe, name, bonus)
     local n = 0
-    for _, p in ipairs(try(function() return recipe.products end) or {}) do
+    for index, p in ipairs(try(function() return recipe.products end) or {}) do
       if p.name == name then
-        local mean = (p.amount or (((p.amount_min or 0) + (p.amount_max or 0)) / 2)) * (p.probability or 1) + (p.extra_count_fraction or 0)
-        n = n + math.max(0, mean - (p.ignored_by_stats or 0)) + bonus * math.max(0, mean - (p.ignored_by_productivity or 0))
+        local mean = (p.amount or (((p.amount_min or 0) + (p.amount_max or 0)) / 2)) * product_chance(p) + (p.extra_count_fraction or 0)
+        local base = native_amount(recipe, index) or mean
+        local total = native_amount(recipe, index, bonus) or (mean + bonus * math.max(0, mean - (p.ignored_by_productivity or 0)))
+        n = n + math.max(0, base - (p.ignored_by_stats or 0)) + total - base
       end
     end
     return n

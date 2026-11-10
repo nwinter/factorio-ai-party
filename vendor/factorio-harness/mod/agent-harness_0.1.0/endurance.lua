@@ -14,6 +14,28 @@ local turnaround = require('turnaround')
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n = p.independent_probability
+    if n == nil then return p.probability or 1 end
+    local shared = p.shared_probability
+    return n * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
+  -- 2.1 recipes have a category list; 2.0 has a primary and additional categories.
+  local function recipe_categories(recipe)
+    local ok, list = pcall(function() return recipe.categories end)
+    if ok and list then return list end
+    local out = {recipe.category or 'crafting'}
+    for _, name in ipairs(recipe.additional_categories or {}) do out[#out+1] = name end
+    return out
+  end
   -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
   M.ROUTE_MAX = 12
   local STARTUP_S = 60  -- (d29 batch339) a leg's first minute: what the return budget's window leaves out
@@ -201,7 +223,7 @@ return function(api)
   local FUELS, PARTS_KEEP, LOW_MIN = {['thruster-fuel']=true, ['thruster-oxidizer']=true}, 3600, 2
   local function product_amount(p)
     local n = p.amount or ((p.amount_min or 0) + (p.amount_max or 0)) / 2
-    return n * (p.probability or 1)
+    return n * product_chance(p)
   end
   -- The machines that can craft a recipe making either fluid (chemical plants in 2.0.77), by the recipes' categories,
   -- and the pumps, for one find by name; nil (found by type) when the prototypes cannot say. (EC) in_scan: all of them
@@ -212,7 +234,9 @@ return function(api)
     maker_names_ = try(function()
       local cats, names = {}, {}
       for name in pairs(FUELS) do
-        for _, r in pairs(prototypes.get_recipe_filtered{{filter='has-product-fluid', elem_filters={{filter='name', name=name}}}}) do cats[r.category] = true end
+        for _, r in pairs(prototypes.get_recipe_filtered{{filter='has-product-fluid', elem_filters={{filter='name', name=name}}}}) do
+          for _, cat in ipairs(recipe_categories(r)) do cats[cat] = true end
+        end
       end
       for cat in pairs(cats) do
         for n in pairs(prototypes.get_entity_filtered{{filter='crafting-category', crafting_category=cat}}) do names[#names+1] = n end
@@ -257,9 +281,9 @@ return function(api)
     for _, e in ipairs(found) do
       if e.type == 'pump' then rec.pumps[#rec.pumps+1] = e end
       local r = e.type ~= 'pump' and try(function() return e.get_recipe() end)
-      for _, p in ipairs(r and try(function() return r.products end) or {}) do
+      for index, p in ipairs(r and try(function() return r.products end) or {}) do
         if p.type == 'fluid' and FUELS[p.name] then
-          rec.makers[#rec.makers+1] = {entity=e, fluid=p.name, recipe=r.name, batch=product_amount(p), energy=r.energy}
+          rec.makers[#rec.makers+1] = {entity=e, fluid=p.name, recipe=r.name, batch=native_amount(r, index) or product_amount(p), energy=r.energy}
         end
       end
     end
