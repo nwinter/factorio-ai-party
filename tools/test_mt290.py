@@ -64,7 +64,7 @@ class TestAudience(unittest.TestCase):
 
     def test_internal_tell_only_own_recipients_and_receipts(self):
         roster=[{'name':'gemini'},{'name':'gemini2'}]
-        state={'now':100,'chat':[{'lane':'tell','agent':'gemini','to':['gemini2'],'text':'Supply the lab'},
+        state={'now':100,'chat':[{'lane':'tell','agent':'gemini','to':['gemini2'],'body':'Supply the lab','text':'Ignored presentation text'},
                                {'lane':'tell','agent':'gemini','to':['grok'],'text':'FOREIGN'},
                                {'lane':'talk','agent':'grok','text':'FOREIGN'},
                                {'lane':'operator','agent':'gemini','text':'OPERATOR'}]}

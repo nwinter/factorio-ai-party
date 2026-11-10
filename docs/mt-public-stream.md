@@ -11,7 +11,11 @@ transitions a YouTube broadcast to live.
 
 ## Start and stop
 
-Use the checked-out `mt/batch289` (or the operator's merged mt checkpoint). The
+Use the checked-out `mt/batch290` (or the operator's merged mt checkpoint).
+All new tests use 2.1.24. Before the general-launcher commands below, export the
+2.1 server/app/mod-list/KB/launch-tree pins from docs/PORT21.md; do not use the
+general launcher's 2.0 defaults. The closed `port21.sh` wrapper still refuses
+public staging; it now permits local team stream services and viewer fixtures. The
 normal launch tree remains the agents' tree; public operator files stay outside
 it. Use the project's Python environment, or the existing Homebrew Python used
 by the launch scripts (`PATH=/opt/homebrew/bin:$PATH`).
@@ -20,7 +24,7 @@ by the launch scripts (`PATH=/opt/homebrew/bin:$PATH`).
 # Normal new test; public staging implies POG_MT_STREAM=1.
 POG_MT_PUBLIC=1 POG_MT_FRESH=1 tools/mt/start-mt.sh RUN 25
 
-# With viewer chat from the operator-created broadcast (display only).
+# With moderated viewer chat from the site and operator-created broadcast.
 POG_MT_PUBLIC=1 POG_MT_YOUTUBE=VIDEO_ID POG_MT_FRESH=1 tools/mt/start-mt.sh RUN 25
 
 # Add public staging to an already-running test whose team services are up.
@@ -39,7 +43,14 @@ forward); `POG_MT_PUBLIC_DWELL` defaults to a 30-second ordinary dwell (10–300
 cut earlier, after a 15-second minimum at the default; see the director below.
 `POG_MT_YOUTUBE` is optional and must be the intended broadcast ID, never an old
 channel stream chosen by accident. `POG_MT_STREAM=1` alone keeps its existing
-private/local behavior. No site push, caster, viewer relay, or highlight runs.
+private/local behavior unless POG_MT_VIEWERS=1 is supplied. Public staging defaults
+POG_MT_VIEWERS=1: each team's serve.py reads site/YouTube chat through the existing
+Filter, Clef and Relay. Every accepted line reaches both agents in every team;
+a viewer may name a team as a conversational cue. Operator-only and viewers-only
+channels retain their existing rules. No automatic site push, caster or highlight runs.
+The overlay reads these filtered lanes; it never starts another reader or relay.
+Manual hidden-viewers rules and deletions apply before display and delivery.
+Removing TREE/runs/RUN/TEAM/viewer-relay pauses that team's relay.
 
 The public page is http://127.0.0.1:8790/ on this Mac and pogwin; `/state.json`
 is its public projection. The only other routes are `/health`, the fixed `/mapview.js` renderer, and

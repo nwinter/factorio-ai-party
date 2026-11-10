@@ -19,7 +19,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / 'stream'))
 from harness import Harness
 import lookcam
-from public_race import project, Race, Director, read_views, icons, speech, rows as list_rows, obj
+from public_race import project, Race, Director, read_views, icons, speech, project_viewers, rows as list_rows, obj
 
 CAMERA = 'pog-director2'
 
@@ -98,12 +98,11 @@ def audience(states, teams, now):
     for team, state in states.items():
         for m in list_rows(state.get('viewers')):
             m = obj(m)
-            text = speech(m.get('text'), ('Nick', 'Winter'))
+            projected = project_viewers([m], now, teams)
             ident, stamp = m.get('id'), m.get('t')
-            if (text and isinstance(ident, str) and re.fullmatch(r'[A-Za-z0-9_.:=-]{1,120}', ident)
+            if (projected and isinstance(ident, str) and re.fullmatch(r'[A-Za-z0-9_.:=-]{1,120}', ident)
                     and type(stamp) in (int, float) and math.isfinite(stamp) and 0 <= now - stamp <= 180):
-                lines[ident] = {'id': ident, 'name': 'Viewer', 'text': text, 't': stamp,
-                               'source': m.get('source') if m.get('source') in ('site', 'youtube') else 'site'}
+                lines[ident] = dict(projected[0], id=ident)
         status = obj(state.get('viewers_status'))
         cursor = obj(status.get('site')).get('after')
         if type(cursor) is int:
@@ -114,7 +113,7 @@ def audience(states, teams, now):
                 deliveries.setdefault(ident[5:], {})[team] = r
     receipts = {}
     for seq, by_team in deliveries.items():
-        statuses = [obj(by_team.get(t)).get('status') for t in teams]
+        statuses = [v if isinstance(v := obj(by_team.get(t)).get('status'), str) else None for t in teams]
         kind = statuses[0] if len(set(statuses)) == 1 and statuses[0] in ('relayed', 'operator', 'expired', 'not_relayed') else 'held'
         receipts[seq] = {'s': kind, 'teams': [t for t in teams if obj(by_team.get(t)).get('status') == 'relayed'], 't': now}
     out = {'viewers': sorted(lines.values(), key=lambda m: m['t'])[-30:],
