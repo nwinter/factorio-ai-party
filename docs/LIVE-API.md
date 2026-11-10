@@ -852,3 +852,33 @@ new object took 12 MB of 1 MB rows. Its tables were copied to a new object, "mai
 /v1/debug/import?do=main-NAME {table, rows}` into the new one (only a probe-NAME or main-NAME object takes an import), then
 `LIVE_OBJECT` set and the Worker deployed. Both need the publish token; `?do=NAME` on any /v1/debug path reads another
 object (main, probe-NAME, main-NAME).
+
+## Team tests on the live page
+
+The operator may publish a team test using the same authenticated `POST /v1/state`
+and the same `site/push_live.py` single-publisher lock. No Worker schema change or
+new endpoint is required. The static site does not connect to game servers or
+operator services.
+
+`python3 site/push_live.py --team-tests --source SOURCE_URL --youtube VIDEO_ID`
+projects the supplied display snapshot through `site/team_tests.py`. The resulting
+state has `mode: "team-tests"`, `active`, `now`, `teams`, an optional YouTube video
+ID, filtered YouTube chat, and per-site-line delivery receipts. Each team has a
+fixed colour, roster/activity, research, science rate, rockets, board titles and
+team chat. Arbitrary fields, paths, credentials and non-roster speakers are omitted.
+The existing site chat endpoint, moderation and limits remain unchanged. The
+operator's relay determines delivery; a receipt says delivered only after every
+participating team confirms it. Naming a team in viewer chat is a conversational
+cue; accepted audience messages are visible to every team. "Viewers only" remains
+outside the game relay and stream overlay.
+
+`POG_YOUTUBE` supplies the video ID when `--youtube` is omitted. Keep the exact
+broadcast ID for an unlisted test; channel discovery is not required. Only the
+operator can push state; unlisted broadcasts use the ordinary YouTube embed.
+
+Stop the running pusher before `python3 site/push_live.py --team-tests-off`.
+This posts one inactive state under the same lock. It leaves `/live/status.json`
+and its last-run link unchanged; the live page returns to "Run is over". A lost
+pusher also expires after 60 seconds, and a source snapshot over 30 seconds old
+is published inactive. A static site refresh deploys the renderer through the
+normal main-branch workflow; enabling/disabling a test does not rebuild the site.

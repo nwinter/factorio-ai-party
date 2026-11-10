@@ -868,7 +868,7 @@
     if (window.PogMap) mapView = window.PogMap.create($('#mm'), { storeKey: 'pog-live-map', label: 'The base and agent positions' });
   }
   function fill(sel, html) { var el = $(sel); if (el) el.innerHTML = html; }
-  var testMode = false;
+  var testMode = false, testState = false;
   function renderTeamTests(s) {
     var box = $('#team-tests');
     if (!box) return;
@@ -1660,6 +1660,7 @@
   function renderShift(sh, live) {
     var p = $('#next-shift');
     if (!p || testMode) return;
+    if (testState) { p.hidden = true; setBadge('offline', 'Run is over'); return; }
     sh = currentShift(sh);
     var t = shiftText(sh, live);
     p.textContent = t;
@@ -1731,6 +1732,7 @@
     getJSON(url).then(function (d) {
       var s = demo ? d : d.state, age = demo ? 0 : d.age_s;
       var isTest = s && s.mode === 'team-tests';
+      testState = !!isTest;
       var live = s && age != null && age <= LIVE_MAX_AGE && (!isTest || (s.active === true && Date.now() / 1000 - s.now <= LIVE_MAX_AGE));
       var wasTest = testMode;
       showTestMode(!!(isTest && live));
