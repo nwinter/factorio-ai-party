@@ -10,6 +10,7 @@
 -- - what requester chests still lack (asked, less held and on the way), by item, largest first.
 -- Kept 10 s (supply.lua reuse). Read only; facts, no advice.
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   local CRAFTERS, REQUESTERS, LINES = 4096, 2048, 8
   -- the short machines whose feeders a read checks (a find and up to 8 inserters each), and the held ones it words
@@ -24,8 +25,8 @@ return function(api)
     local input = try(function() return e.get_inventory((defines.inventory.crafter_input or defines.inventory.assembling_machine_input)) end)
       or try(function() return e.get_inventory((defines.inventory.crafter_input or defines.inventory.furnace_source)) end)
     local fluids = {}
-    for i = 1, try(function() return #e.fluidbox end) or 0 do
-      local f = try(function() return e.fluidbox[i] end)
+    for i = 1, try(function() return #fluid_boxes(e) end) or 0 do
+      local f = try(function() return fluid_boxes(e)[i] end)
       if f then fluids[f.name] = (fluids[f.name] or 0) + f.amount end
     end
     local out, items = {}, {}

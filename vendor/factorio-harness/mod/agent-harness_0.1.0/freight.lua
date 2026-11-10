@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 local arrival_eta=require('arrivaleta')
 -- freight: what a space platform carried, stop by stop and leg by leg (Luna,
 -- shift12 12:47: of 995 agricultural science packs Sunward took from Gleba,
@@ -559,7 +562,7 @@ return function(api)
     for _, e in ipairs(list) do
       local lines = try(function() return e.get_max_transport_line_index() end) or 0
       local partner = e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'output'
-        and try(function() local n = e.neighbours; return n and n.valid and n or nil end)
+        and try(function() local n = e[UNDERGROUND_NEIGHBOUR]; return n and n.valid and n or nil end)
       for i = 1, lines do
         local line = try(function() return e.get_transport_line(i) end)
         local same = partner and i > 2 and try(function() return line.line_equals(partner.get_transport_line(i)) end)

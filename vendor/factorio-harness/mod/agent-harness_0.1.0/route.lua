@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- Belt routing: the cheapest belt line from one tile to another around
 -- obstacles, hopping them with underground pairs, and arriving either on an
 -- empty tile or into an existing belt straight, as a curve, or by side-load
@@ -628,7 +631,7 @@ return function(api)
         seen[key(fx,fy)]=true
         if stop and stop(fx,fy) then return {existing=existing,seen=seen,x=fx,y=fy,din=start_din,extends=extends,reached=true} end
         if input then
-          local ok,exit=pcall(function() return first.neighbours end)
+          local ok,exit=pcall(function() return first[UNDERGROUND_NEIGHBOUR] end)
           assert(ok and exit and exit.valid and exit.force==p.force and underground_kind(exit)=='output',
             what..' blocked at '..fmt(fx,fy)..': underground entrance has no paired exit of ours')
           local ex,ey=tile(exit.position)

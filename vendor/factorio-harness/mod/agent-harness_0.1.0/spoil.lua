@@ -92,7 +92,11 @@ return function(api)
     local key = name .. '@' .. (quality or 'normal')
     if durability[key] == nil then
       local proto = prototypes.item[name]
-      durability[key] = proto and proto.type == 'tool' and try(function() return proto.get_durability(quality) end) or false
+      local capacity = proto and try(function() return proto.science_capacity end)
+      if capacity and capacity > 0 then
+        local drain = try(function() return prototypes.quality[quality or 'normal'].science_pack_drain_multiplier end) or 1
+        durability[key] = drain > 0 and capacity / drain or false
+      else durability[key] = proto and proto.type == 'tool' and try(function() return proto.get_durability(quality) end) or false end
     end
     return durability[key] or nil
   end
@@ -129,7 +133,8 @@ return function(api)
     local tick, pct = stack_spoil(s)
     if not tick then return end
     local q = try(function() return s.quality.name end)
-    local remaining = pack_durability(s.name, q) and try(function() return s.durability end)
+    local capacity = try(function() return prototypes.item[s.name].science_capacity end)
+    local remaining = capacity and capacity > 0 and pack_durability(s.name, q) or (pack_durability(s.name, q) and try(function() return s.durability end))
     M.add_count(acc, s.name, q, s.count, pct, tick, where, remaining, eta)
   end
   -- n items of a stack spoiled pct that spoils at tick (a moved part of a stack: transfer's batch).
@@ -142,7 +147,9 @@ return function(api)
     end
     -- A moved batch may carry count/spoil data without remaining tool durability.
     -- Only an actual stack read supplies enough information for research value.
-    if remaining_durability ~= nil then add_research(r, name, q, n, pct, tick, remaining_durability, eta) end
+    if remaining_durability ~= nil or (try(function() return prototypes.item[name].science_capacity end) or 0) > 0 then
+      add_research(r, name, q, n, pct, tick, remaining_durability, eta)
+    end
     local s = {count=n}
     r.count = r.count + s.count
     if tick - game.tick <= M.WARN_TICKS then r.soon = r.soon + s.count end
@@ -254,16 +261,26 @@ return function(api)
   function M.recipe_output(e, recipe, input)
     recipe = recipe or try(function() return e.get_recipe() end)
     if not recipe then return nil end
-    local spoiling = {}
+    local spoiling, fixed = {}, {}
     for _, pr in ipairs(recipe.products or {}) do
-      if pr.type == 'item' and M.spoils(pr.name) then spoiling[#spoiling+1] = pr.name end
+      if pr.type == 'item' and M.spoils(pr.name) then
+        if pr.always_fresh or pr.reset_freshness_on_craft then
+          fixed[#fixed+1] = string.format('%s start fresh (recipe %s resets freshness)', pr.name, recipe.name)
+        elseif pr.percent_spoiled ~= nil then
+          fixed[#fixed+1] = string.format('%s start %g%% spoiled (recipe %s)', pr.name, pr.percent_spoiled*100, recipe.name)
+        else spoiling[#spoiling+1] = pr.name end
+      end
     end
-    if #spoiling == 0 then return nil end
+    local function finish(line)
+      if line then fixed[#fixed+1]=line end
+      return #fixed>0 and table.concat(fixed, '; ') or nil
+    end
+    if #spoiling == 0 then return finish() end
     local what = table.concat(spoiling, ', ')
     -- The flags are the prototype's (a machine's get_recipe is a LuaRecipe).
     local proto = try(function() return recipe.prototype end) or recipe
     if try(function() return proto.result_is_always_fresh end) or try(function() return proto.reset_freshness_on_craft end) then
-      return string.format('%s start fresh (recipe %s resets freshness)', what, recipe.name)
+      return finish(string.format('%s start fresh (recipe %s resets freshness)', what, recipe.name))
     end
     input = input or try(function() return e.get_inventory((defines.inventory.crafter_input or defines.inventory.assembling_machine_input)) end)
     local sum, n, parts, missing = 0, 0, {}, {}
@@ -281,11 +298,11 @@ return function(api)
       end
     end
     if n == 0 then
-      return #missing > 0 and string.format('%s start at the count-weighted spoilage of the spoilable ingredients of recipe %s (none in the input: %s)',
-        what, recipe.name, table.concat(missing, ', ')) or string.format('%s start fresh (recipe %s has no spoilable ingredient)', what, recipe.name)
+      return finish(#missing > 0 and string.format('%s start at the count-weighted spoilage of the spoilable ingredients of recipe %s (none in the input: %s)',
+        what, recipe.name, table.concat(missing, ', ')) or string.format('%s start fresh (recipe %s has no spoilable ingredient)', what, recipe.name))
     end
-    return string.format('%s start about %d%% spoiled (recipe %s: the count-weighted spoilage of %s%s)', what, math.floor(sum / n * 100 + 0.5), recipe.name,
-      table.concat(parts, ', '), #missing > 0 and '; not in the input: ' .. table.concat(missing, ', ') or '')
+    return finish(string.format('%s start about %d%% spoiled (recipe %s: the count-weighted spoilage of %s%s)', what, math.floor(sum / n * 100 + 0.5), recipe.name,
+      table.concat(parts, ', '), #missing > 0 and '; not in the input: ' .. table.concat(missing, ', ') or ''))
   end
 
   -- The egg watch ------------------------------------------------------------

@@ -1,3 +1,12 @@
+-- A specific silo may override the default rocket lift on Factorio 2.1.
+local function rocket_lift(silo)
+  local ok, v = pcall(function() return silo.prototype.lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.default_rocket_lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.rocket_lift_weight end)
+  if ok then return v end
+end
 -- Rocket cargo weighed before it is staged (Sol rebuilt three kits into two
 -- after working out the weights offline): each item's weight from the 2.0
 -- prototypes, the total against a rocket's lift (utility constant
@@ -14,7 +23,7 @@ return function(api)
   -- The rocket's lift (grams) and cargo slots: a silo entity's own rocket
   -- inventory when given, else the rocket silo prototype's.
   function M.limits(silo)
-    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+    local lift = rocket_lift(silo) or 1000000
     local slots
     if silo then
       slots = try(function() return #silo.get_inventory(defines.inventory.rocket_silo_rocket) end)

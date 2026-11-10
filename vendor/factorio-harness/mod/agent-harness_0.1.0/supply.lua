@@ -14,7 +14,22 @@
 -- inserters, 4096 robots (counted says when a scan stopped).
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n = p.independent_probability
+    if n == nil then return p.probability or 1 end
+    local shared = p.shared_probability
+    return n * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
   local MAX_MACHINES, MAX_LABS, MAX_CHESTS, MAX_BELTS, MAX_INSERTERS, MAX_ROBOTS, MAX_FOUND = 2048, 1024, 5000, 10000, 8192, 4096, 40000
   local MAX_SPOTS, TOP_CHESTS, TOP_UNMET, WORST = 4096, 5, 5, 3
   local CRAFTERS = {'assembling-machine', 'furnace', 'rocket-silo'}
@@ -272,7 +287,7 @@ return function(api)
       end
     end
     local any_pack = false
-    for name in pairs(names) do if packs[name] or (prototypes.item[name] and try(function() return prototypes.item[name].type end) == 'tool') then any_pack = true end end
+    for name in pairs(names) do if packs[name] or (prototypes.item[name] and ((try(function() return prototypes.item[name].science_capacity end) or 0) > 0 or try(function() return prototypes.item[name].type end) == 'tool')) then any_pack = true end end
     local types = {}
     -- (d20 batch122 CE2) burners only for a fuel
     local fuels = {}
@@ -392,9 +407,11 @@ return function(api)
         for name, t in pairs(T) do
           local n = count(inv, name, e)
           t.labs = t.labs + n
+          local stored = try(function() return e.get_stored_durability(name).durability end) or 0
+          if stored > 0 then t.lab_stored_capacity = (t.lab_stored_capacity or 0) + stored end
           if n > 0 then spoil_at(t, e, 'lab', function(acc) sp.inventory(inv, acc) end) end
           if packs[name] then
-            local u = {e=e, lab=true, has=n, feeders={}}
+            local u = {e=e, lab=true, has=n, stored_capacity=stored, feeders={}}
             t.user_of[e.unit_number] = u; t.users[#t.users+1] = u
           end
         end
@@ -1072,7 +1089,10 @@ return function(api)
     local out = {}
     if u.lab then
       local inv = inventory(e, 'lab_input')
-      for name in pairs(packs or {}) do if count(inv, name) == 0 then out[#out+1] = name end end
+      for name in pairs(packs or {}) do
+        local stored = try(function() return e.get_stored_durability(name).durability end) or 0
+        if count(inv, name) == 0 and stored <= 0 then out[#out+1] = name end
+      end
       table.sort(out)
       return out
     end
@@ -1521,8 +1541,8 @@ return function(api)
   local function miner_products(e)
     local names, fluid = {}, nil
     if e.type == 'offshore-pump' then
-      local name = try(function() local f = e.fluidbox[1]; return f and f.name end)
-        or try(function() local f = e.fluidbox.get_filter(1); return f and f.name end)
+      local name = try(function() local f = fluid_boxes(e)[1]; return f and f.name end)
+        or try(function() local f = fluid_boxes(e).get_filter(1); return f and f.name end)
         or try(function() return e.prototype.fluid.name end)
       if name then names[1] = name end
     else
@@ -1872,7 +1892,7 @@ return function(api)
   -- machines' input boxes of it are on (fluidbox.get_fluid_segment_id) and, per segment, the machines whose recipe
   -- makes it with their output on that segment.
   local function fluid_box_segments(e, fluid, out)
-    local fb = try(function() return e.fluidbox end)
+    local fb = try(function() return fluid_boxes(e) end)
     for i = 1, fb and (try(function() return #fb end) or 0) or 0 do
       local f = try(function() return fb[i] end)
       local filter = try(function() return fb.get_filter(i) end)
@@ -2419,15 +2439,16 @@ return function(api)
   -- crafts and 54 productivity completions, 272 eggs out and 109 back in; the statistics counted 163 made (the net) and
   -- 166 used = 138 agricultural science crafts + 28 eggs a heating tower burned (fuel burned counts as used). A heating
   -- tower burns max_energy_usage / effectivity (40 MW / 2.5 = 16 MW: 192 eggs a minute at full power).
-  local function mean(p) return (p.amount or (((p.amount_min or 0) + (p.amount_max or 0)) / 2)) * (p.probability or 1) + (p.extra_count_fraction or 0) end
+  local function mean(p) return (p.amount or (((p.amount_min or 0) + (p.amount_max or 0)) / 2)) * product_chance(p) + (p.extra_count_fraction or 0) end
   local function num(n) return math.floor(n * 10 + 0.5) / 10 end
   -- One recipe's terms for item: out a craft, out a productivity completion, in a craft, and each side's ignored_by_stats.
   local function terms(recipe, item)
     local x = {out=0, extra=0, ['in']=0, ignored_out=0, ignored_in=0}
-    for _, p in ipairs(try(function() return recipe.products end) or {}) do
+    for index, p in ipairs(try(function() return recipe.products end) or {}) do
       if p.name == item then
-        local a = mean(p)
-        x.out, x.extra, x.ignored_out = x.out + a, x.extra + math.max(0, a - (p.ignored_by_productivity or 0)), x.ignored_out + (p.ignored_by_stats or 0)
+        local a = native_amount(recipe, index) or mean(p)
+        local extra = (native_amount(recipe, index, 1) or (a + math.max(0, a - (p.ignored_by_productivity or 0)))) - a
+        x.out, x.extra, x.ignored_out = x.out + a, x.extra + extra, x.ignored_out + (p.ignored_by_stats or 0)
       end
     end
     for _, i in ipairs(try(function() return recipe.ingredients end) or {}) do
@@ -2700,7 +2721,7 @@ return function(api)
   -- The fluid GUI shows the whole connected segment. Count it once even when
   -- several pipes, tanks or machine ports in the search belong to that segment.
   function M.fluid_supply(surface,force,fluid,area)
-    local accounting=require('fluidstock').read(surface,force,area)
+    local accounting=require('fluidstock').read(surface,force,area,fluid_boxes)
     local stock=accounting.stock(fluid)
     local makers,users={count=0,states={},examples={}},{count=0,states={},examples={}}
     local function add(role,e)

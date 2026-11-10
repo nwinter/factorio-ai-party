@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- platform_lanes {platform, all?} (d19 batch45, batch40 D1, Sol: several hours on Wayfarer's fuel and ammunition
 -- starvation): each belt line's end on a platform, lane by lane, as a player sees the belts. A line ends where a belt
 -- has no belt after it. For each lane holding items at an end: whether it has stopped (MIN_FULL or more on the end
@@ -94,7 +97,7 @@ return function(api)
     local rows, lines, ends, flagged = {}, {}, 0, 0
     for _, e in ipairs(belts) do
       local outs = try(function() return e.belt_neighbours.outputs end) or {}
-      local paired = e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'input' and try(function() return e.neighbours end)
+      local paired = e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'input' and try(function() return e[UNDERGROUND_NEIGHBOUR] end)
       if #outs == 0 and not paired and ends < MAX_ENDS then
         ends = ends + 1
         -- the run back from the end: belts with one input, up to RUN tiles; the inserters picking there
@@ -106,7 +109,7 @@ return function(api)
           local inputs = try(function() return b.belt_neighbours.inputs end) or {}
           -- an underground's exit: back through its entrance
           if #inputs == 0 and b.type == 'underground-belt' and try(function() return b.belt_to_ground_type end) == 'output' then
-            local entry = try(function() return b.neighbours end)
+            local entry = try(function() return b[UNDERGROUND_NEIGHBOUR] end)
             inputs = entry and entry.valid and {entry} or {}
           end
           b = #inputs == 1 and inputs[1] or nil
@@ -124,7 +127,7 @@ return function(api)
               if ok then any = true elseif #why_not < 3 then why_not[#why_not+1] = string.format('%s %s %s', i.name, at(i.position), why) end
             end
             local beyond = past(s, e)
-            if e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'output' and not try(function() return e.neighbours end) then
+            if e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'output' and not try(function() return e[UNDERGROUND_NEIGHBOUR] end) then
               beyond = beyond .. '; an underground exit with no entrance paired'
             end
             local flag

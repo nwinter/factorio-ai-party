@@ -10,7 +10,7 @@ do
   local ok=os.execute('luac -v >/dev/null 2>&1')
   if not ok then print('d20_batch53 L2 globals: skipped (no luac)') else
     local KNOWN={}
-    for n in ('math ipairs string table type assert pairs game pcall tostring defines prototypes error require next tonumber rawget select '
+    for n in ('math ipairs string table type assert pairs game pcall tostring defines prototypes error require next tonumber rawget rawset select '
       ..'rendering helpers storage setmetatable script log remote table_size collectgarbage load data BUNDLE_ID serpent print bit32'):gmatch('%S+') do KNOWN[n]=true end
     local dir='mod/agent-harness_0.1.0/'
     local list=io.popen('ls '..dir..'*.lua'):read('a')

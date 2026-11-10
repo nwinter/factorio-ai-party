@@ -103,3 +103,10 @@ do
   has(space.KEEP_RULE,'small-lamp 0..60 from nauvis in two sections, kept all 100 with the pad asking 1000; with one cleared, 40 went down to the pad asking 0')
 end
 print('d27_batch260 ok')
+
+-- 2.1 per-silo lift overrides the utility default in this silo-backed forecast.
+silo.prototype.lift_weight=500000
+prototypes.utility_constants=setmetatable({default_rocket_lift_weight=2000000},{__index=function(_,k) assert(k~='rocket_lift_weight','removed rocket lift constant') end})
+local lifted=B.read(sol,{surface='aquilo',manifest={['processing-unit@rare']=100}})
+eq(lifted.lift_weight,500000);eq(lifted.silos[1].lift_weight,500000)
+eq(lifted.candidate.pods,2);has(lifted.candidate.rows[1],'payload 50 (full rocket by weight)')

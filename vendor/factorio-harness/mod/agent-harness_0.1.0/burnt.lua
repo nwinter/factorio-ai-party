@@ -1,3 +1,15 @@
+-- Items may burn in several fuel categories on 2.1.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local function item_fuel_categories(item)
+  if not item then return {} end
+  if PORT21 then return item.fuel_categories or {} end
+  local c = item.fuel_category
+  return c and {c} or {}
+end
+local function burns_item(cats, item)
+  for _, c in ipairs(item_fuel_categories(item)) do if cats[c] then return true end end
+  return false
+end
 -- A burner stopped by its full burnt-result slot (Sol, shift14 03:54: two agricultural science biochambers on Gleba
 -- read working through repeated checks and made nothing; each held spoilage*200 in its burnt-result slot and spoilage
 -- in its one fuel slot). 2.0.77 on a copy of world n's save from then: nutrients that spoil in a biochamber's fuel slot
@@ -57,8 +69,7 @@ return function(api)
     for i = 1, fuel and #fuel or 0 do
       local st = fuel[i]
       if st.valid_for_read then
-        local c = try(function() return st.prototype.fuel_category end)
-        if not (c and cats[c]) then foreign[#foreign+1] = st.name end
+        if not burns_item(cats, st.prototype) then foreign[#foreign+1] = st.name end
       end
     end
     out.foreign = #foreign > 0 and table.concat(foreign, ', ') or nil
@@ -77,8 +88,7 @@ return function(api)
     for i = 1, #fuel do
       local st = fuel[i]
       if st.valid_for_read then
-        local c = try(function() return st.prototype.fuel_category end)
-        if c and cats[c] then return nil end
+        if burns_item(cats, st.prototype) then return nil end
         foreign[#foreign+1] = st.name
       end
     end

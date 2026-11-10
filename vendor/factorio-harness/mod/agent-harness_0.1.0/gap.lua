@@ -6,6 +6,7 @@
 -- how many. As the machine's GUI and the map show them. Read only; bounded: 32 machines, 64 tiles round each, donors
 -- for 8 short items.
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   -- (d19 batch45) PER machines a call: 32 machines' reply was 26 KB, 9 ms to encode on the private copy
   local MAX, PER, NEAR, SOON, MAX_DONORS = 32, 16, 64, 5 * 3600, 8
@@ -31,7 +32,7 @@ return function(api)
     if not recipe then return {position=e.position, name=e.name, line=string.format('%s %s: no recipe', e.name, at(e.position))}, false end
     local q = qname(rq) or 'normal'
     local function key(name) return q == 'normal' and name or name .. '@' .. q end
-    local inv = try(function() return e.get_inventory(e.type == 'furnace' and (defines.inventory.crafter_input or defines.inventory.furnace_source) or defines.inventory.assembling_machine_input) end)
+    local inv = try(function() return e.get_inventory((defines.inventory.crafter_input or (e.type == 'furnace' and defines.inventory.furnace_source or defines.inventory.assembling_machine_input))) end)
     local rows, short, parts = {}, false, {}
     local sp = api.spoil and api.spoil()
     local acc = sp and inv and sp.inventory(inv, {}, 'input') or {}
@@ -61,8 +62,8 @@ return function(api)
       else
         -- a fluid ingredient: what its box holds
         local amount = 0
-        for i = 1, try(function() return #e.fluidbox end) or 0 do
-          local f = try(function() return e.fluidbox[i] end)
+        for i = 1, try(function() return #fluid_boxes(e) end) or 0 do
+          local f = try(function() return fluid_boxes(e)[i] end)
           if f and f.name == ing.name then amount = amount + f.amount end
         end
         local gap = math.max(0, ing.amount - amount)

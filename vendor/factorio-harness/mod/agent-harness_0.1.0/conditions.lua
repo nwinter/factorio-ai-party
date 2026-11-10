@@ -8,6 +8,20 @@ local member_record = require('conditionrecord')
 local qflow=require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M={}
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n = p.independent_probability
+    if n == nil then return p.probability or 1 end
+    local shared = p.shared_probability
+    return n * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
   local function try(fn) local ok,v=pcall(fn); if ok then return v end end
   local ENEMY_STRUCTURES={'unit-spawner','turret'}
   local OUR_TURRETS={'ammo-turret','electric-turret','fluid-turret','artillery-turret'}
@@ -698,8 +712,8 @@ return function(api)
             crafts=crafts+made
             if c.item then
               local per=0
-              for _,prod in ipairs(recipe and recipe.products or {}) do
-                if prod.name==c.item then per=per+(prod.amount or ((prod.amount_min or 0)+(prod.amount_max or 0))/2)*(prod.probability or 1) end
+              for index,prod in ipairs(recipe and recipe.products or {}) do
+                if prod.name==c.item then per=per+(native_amount(recipe,index) or ((prod.amount or ((prod.amount_min or 0)+(prod.amount_max or 0))/2)*product_chance(prod)+(prod.extra_count_fraction or 0))) end
               end
               items=items+made*per
             end
@@ -1235,7 +1249,7 @@ return function(api)
         if x.valid and (x.type=='assembling-machine' or x.type=='furnace') then e=x; break end
       end
       if not e then return false,string.format('no assembler or furnace of ours at (%g,%g)',pos.x,pos.y) end
-      local ok,inv=pcall(function() return e.get_inventory(e.type=='furnace' and (defines.inventory.crafter_input or defines.inventory.furnace_source) or defines.inventory.assembling_machine_input) end)
+      local ok,inv=pcall(function() return e.get_inventory((defines.inventory.crafter_input or (e.type=='furnace' and defines.inventory.furnace_source or defines.inventory.assembling_machine_input))) end)
       local best,item
       for i=1,ok and inv and #inv or 0 do
         local st=inv[i]

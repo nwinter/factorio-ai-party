@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- Factory awareness for status: science and plate rates, research ETA, machine
 -- states, fuel and power starvation, the character's inventory, and how much
 -- of the factory still runs through the character's hands. Numbers only: what
@@ -225,7 +228,7 @@ return function(api)
   local function belt_one(b,surface,force,e,kind,p)
     if e.valid==false then return end  -- gone since the job's find (a slice a tick)
     if kind=='underground-belt' then
-      if not e.neighbours then b.unpaired[#b.unpaired+1]=e.belt_to_ground_type..' '..at_pos(p or e.position) end
+      if not e[UNDERGROUND_NEIGHBOUR] then b.unpaired[#b.unpaired+1]=e.belt_to_ground_type..' '..at_pos(p or e.position) end
     elseif #e.belt_neighbours.outputs==0 then
       local s=STEP[e.direction]
       p=p or e.position
@@ -394,7 +397,8 @@ return function(api)
             local inv=e.get_inventory(defines.inventory.lab_input)
             local count=inv and inv.get_item_count  -- (BT1: the method read once a lab, not once a pack)
             for _,ingredient in ipairs(tech.research_unit_ingredients) do
-              if count and count(ingredient.name)==0 then missing[ingredient.name]=(missing[ingredient.name] or 0)+1 end
+              local ok, stored=pcall(function() return e.get_stored_durability(ingredient.name).durability end)
+              if count and count(ingredient.name)==0 and (not ok or stored<=0) then missing[ingredient.name]=(missing[ingredient.name] or 0)+1 end
             end
             a.labs=a.labs+1
           end
@@ -500,7 +504,8 @@ return function(api)
     local names={}
     for name in pairs(stats.output_counts) do
       local item=prototypes.item[name]
-      if item and item.type=='tool' then names[#names+1]=name end
+      local ok, capacity = pcall(function() return item.science_capacity end)
+      if item and ((ok and capacity or 0)>0 or item.type=='tool') then names[#names+1]=name end
     end
     table.sort(names)
     for _,name in ipairs(names) do

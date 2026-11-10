@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- fuel_budget {boilers: true} (D7, Opus 00:20, about 6 times: slow brownouts seen late, the coal reconciled by hand):
 -- the boilers on the surface in groups (boilers within GAP tiles of each other), and per group:
 -- - what they burn a minute at full use (each working boiler's energy use over its fuel's value) and what they hold in
@@ -95,7 +98,7 @@ return function(api)
       local bn = try(function() return b.belt_neighbours end)
       for _, x in ipairs(bn and bn.inputs or {}) do nexts[#nexts+1] = x end
       if b.type == 'underground-belt' and try(function() return b.belt_to_ground_type end) == 'output' then
-        local nb = try(function() return b.neighbours end)
+        local nb = try(function() return b[UNDERGROUND_NEIGHBOUR] end)
         if nb then nexts[#nexts+1] = nb end
       end
       for _, x in ipairs(nexts) do

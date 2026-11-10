@@ -1,3 +1,12 @@
+-- A specific silo may override the default rocket lift on Factorio 2.1.
+local function rocket_lift(silo)
+  local ok, v = pcall(function() return silo.prototype.lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.default_rocket_lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.rocket_lift_weight end)
+  if ok then return v end
+end
 -- platform_endurance (d15 trajectory analysis: Wayfarer was lost at Aquilo at 11:02 after its rockets, fuel and repair
 -- packs ran out; nothing projected the trip before it left): for a planned route, each leg's length and time at the
 -- platform's speed, and what its ammunition, repair packs, thruster fuel and oxidizer, power and hub space come to over
@@ -13,7 +22,30 @@ local budgetwindows = require('budgetwindows')
 local turnaround = require('turnaround')
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n = p.independent_probability
+    if n == nil then return p.probability or 1 end
+    local shared = p.shared_probability
+    return n * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
+  -- 2.1 recipes have a category list; 2.0 has a primary and additional categories.
+  local function recipe_categories(recipe)
+    local ok, list = pcall(function() return recipe.categories end)
+    if ok and list then return list end
+    local out = {recipe.category or 'crafting'}
+    for _, name in ipairs(recipe.additional_categories or {}) do out[#out+1] = name end
+    return out
+  end
   -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
   M.ROUTE_MAX = 12
   local STARTUP_S = 60  -- (d29 batch339) a leg's first minute: what the return budget's window leaves out
@@ -179,8 +211,8 @@ return function(api)
       all = {amount={}, tanks={}, list=list}
       for _, e in ipairs(list) do
         local tank = e.type == 'storage-tank'
-        for i = 1, try(function() return #e.fluidbox end) or 0 do
-          local f = try(function() return e.fluidbox[i] end)
+        for i = 1, try(function() return #fluid_boxes(e) end) or 0 do
+          local f = try(function() return fluid_boxes(e)[i] end)
           if f then
             all.amount[f.name] = (all.amount[f.name] or 0) + f.amount
             if tank then all.tanks[f.name] = (all.tanks[f.name] or 0) + f.amount end
@@ -201,7 +233,7 @@ return function(api)
   local FUELS, PARTS_KEEP, LOW_MIN = {['thruster-fuel']=true, ['thruster-oxidizer']=true}, 3600, 2
   local function product_amount(p)
     local n = p.amount or ((p.amount_min or 0) + (p.amount_max or 0)) / 2
-    return n * (p.probability or 1)
+    return n * product_chance(p)
   end
   -- The machines that can craft a recipe making either fluid (chemical plants in 2.0.77), by the recipes' categories,
   -- and the pumps, for one find by name; nil (found by type) when the prototypes cannot say. (EC) in_scan: all of them
@@ -212,7 +244,9 @@ return function(api)
     maker_names_ = try(function()
       local cats, names = {}, {}
       for name in pairs(FUELS) do
-        for _, r in pairs(prototypes.get_recipe_filtered{{filter='has-product-fluid', elem_filters={{filter='name', name=name}}}}) do cats[r.category] = true end
+        for _, r in pairs(prototypes.get_recipe_filtered{{filter='has-product-fluid', elem_filters={{filter='name', name=name}}}}) do
+          for _, cat in ipairs(recipe_categories(r)) do cats[cat] = true end
+        end
       end
       for cat in pairs(cats) do
         for n in pairs(prototypes.get_entity_filtered{{filter='crafting-category', crafting_category=cat}}) do names[#names+1] = n end
@@ -257,9 +291,9 @@ return function(api)
     for _, e in ipairs(found) do
       if e.type == 'pump' then rec.pumps[#rec.pumps+1] = e end
       local r = e.type ~= 'pump' and try(function() return e.get_recipe() end)
-      for _, p in ipairs(r and try(function() return r.products end) or {}) do
+      for index, p in ipairs(r and try(function() return r.products end) or {}) do
         if p.type == 'fluid' and FUELS[p.name] then
-          rec.makers[#rec.makers+1] = {entity=e, fluid=p.name, recipe=r.name, batch=product_amount(p), energy=r.energy}
+          rec.makers[#rec.makers+1] = {entity=e, fluid=p.name, recipe=r.name, batch=native_amount(r, index) or product_amount(p), energy=r.energy}
         end
       end
     end
@@ -288,11 +322,11 @@ return function(api)
       return true
     end
     local function own_and_beside(e)
-      local fb = e.fluidbox
+      local fb = fluid_boxes(e)
       for i = 1, try(function() return #fb end) or 0 do
         local f = try(function() return fb[i] end)
-        if f and FUELS[f.name] then
-          add(f)
+        if fb.object_name=='HarnessFluidStorage' or (f and FUELS[f.name]) then
+          if fb.object_name~='HarnessFluidStorage' or not segment(fb,i) then add(f) end
           for _, pc in ipairs(try(function() return fb.get_pipe_connections(i) end) or {}) do
             if pc.target then segment(pc.target, pc.target_fluidbox_index or 1) end
           end
@@ -300,16 +334,19 @@ return function(api)
       end
     end
     for _, e in ipairs(list) do
-      local fb = e.valid and e.fluidbox
+      local fb = e.valid and fluid_boxes(e)
       for i = 1, fb and try(function() return #fb end) or 0 do
         local f = try(function() return fb[i] end)
-        if f and FUELS[f.name] and (not segment(fb, i) or e.type ~= 'storage-tank') then add(f) end
+        if fb.object_name=='HarnessFluidStorage' then
+          if not segment(fb,i) then add(f) end
+        elseif f and FUELS[f.name] and (not segment(fb, i) or e.type ~= 'storage-tank') then add(f) end
       end
     end
     for _, e in ipairs(parts.pumps) do if e.valid then own_and_beside(e) end end
     for _, m in ipairs(parts.makers) do if m.entity.valid then own_and_beside(m.entity) end end
     return out
   end
+  M.fuel_aboard=fuel_aboard
   -- A fluid's makers: {makers, batch (the largest), recipes, craft_s (the quickest at full speed), full_per_min (all of
   -- them crafting without a pause), step (a batch a maker: what a window's count can differ from their steady output by,
   -- each counted at the end of its craft)}.
@@ -478,7 +515,7 @@ return function(api)
   end
   local routeammo, ammomodel_
   local function ammomodel()
-    ammomodel_ = ammomodel_ or api.ammomodel or require('ammomodel'){stock_places=api.stock_places, ammofeed=api.ammofeed, incoming=api.incoming}
+    ammomodel_ = ammomodel_ or api.ammomodel or require('ammomodel'){fluid_boxes=fluid_boxes,stock_places=api.stock_places, ammofeed=api.ammofeed, incoming=api.incoming}
     return ammomodel_
   end
   -- (d24 batch183 QZ1, Sol #2055) design {width, height | tiles, mass?, speed, ammo?} and progress {from, to}.
@@ -1024,7 +1061,7 @@ return function(api)
     -- The departure check (Sol 13:50: Swift left with too little ammunition, repeatedly): for each ammunition used over
     -- the route at the rates above, what it needs, what is aboard and made on the way, and a rocket's lift of it.
     local departure = {}
-    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+    local lift = rocket_lift() or 1000000
     for _, row in ipairs(rows) do
       local item = prototypes.item[row.name]
       if total_min and total_min > 0 and row.used_per_min > 0 and item and item.type == 'ammo' then

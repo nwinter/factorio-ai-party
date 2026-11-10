@@ -9,7 +9,24 @@
 -- status by recipe, missing ingredients, inserter feed/output capacity, and
 -- belt tier capacity against the area's outside needs.
 return function(api)
+  local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M={}
+  local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n = p.independent_probability
+    if n == nil then return p.probability or 1 end
+    local shared = p.shared_probability
+    return n * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
   -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
   M.POSITIONS=64
   local MAX_INT53=2^53
@@ -90,7 +107,7 @@ return function(api)
   local function fluid_source(set,e)
     local proto=e.prototype
     local source=proto.fluid_energy_source_prototype
-    local fluidbox=e.fluidbox
+    local fluidbox=fluid_boxes(e)
     local fluid=fluid_of(fluidbox,e.type=='boiler' and #fluidbox or 1)
     if not fluid then err(set,'no_input_fluid'); return end
     local usage=proto.get_max_energy_usage(e.quality)*(e.consumption_bonus+1)
@@ -121,28 +138,30 @@ return function(api)
       add(set,'input',ingredient.type,ingredient.name,ingredient.type=='item' and q or 'normal',ingredient.amount/duration,e.name)
     end
     local productivity=1+math.min(e.productivity_bonus+recipe.productivity_bonus,recipe.prototype.maximum_productivity)
-    for _,product in pairs(recipe.products) do
+    for index,product in ipairs(recipe.products) do
       if product.type~='research-progress' then
         local high,low=product.amount_max or product.amount,product.amount_min or product.amount
-        local expected=(product.probability or 1)*0.5*(high+low)+(product.extra_count_fraction or 0)
+        local expected=product_chance(product)*0.5*(high+low)+(product.extra_count_fraction or 0)
         local fixed=math.min(expected,product.ignored_by_productivity or 0)
         add(set,'output',product.type,product.name,product.type=='item' and q or 'normal',
-          (fixed+(expected-fixed)*productivity)/duration,e.name,product.temperature)
+          (native_amount(recipe,index,productivity-1) or (fixed+(expected-fixed)*productivity))/duration,e.name,product.temperature)
       end
     end
   end
 
   local function boiler(set,e)
-    local proto,fluidbox=e.prototype,e.fluidbox
+    local proto,fluidbox=e.prototype,fluid_boxes(e)
     local input=fluid_of(fluidbox,1)
     if not input then err(set,'no_input_fluid'); return end
     local function usage(fluid,index)
-      local minimum=fluidbox.get_prototype(index).minimum_temperature or fluid.default_temperature
+      local minimum
+      if PORT21 then minimum=proto.minimum_input_temperature or fluid.default_temperature
+      else minimum=fluidbox.get_prototype(index).minimum_temperature or fluid.default_temperature end
       return proto.get_max_energy_usage(e.quality)/((proto.target_temperature-minimum)*fluid.heat_capacity)*60
     end
     add(set,'input','fluid',input.name,'normal',usage(input,1),e.name)
-    if proto.boiler_mode=='heat-water-inside' then
-      add(set,'output','fluid',input.name,'normal',usage(input,1),e.name,input.max_temperature); return
+    if proto.boiler_mode=='heat-water-inside' or proto.boiler_mode=='heat-fluid-inside' then
+      add(set,'output','fluid',input.name,'normal',usage(input,1),e.name,PORT21 and proto.target_temperature or input.max_temperature); return
     end
     local output=fluid_of(fluidbox,2)
     if output then add(set,'output','fluid',output.name,'normal',usage(output,2),e.name) end
@@ -161,7 +180,7 @@ return function(api)
     local speed=e.prototype.get_researching_speed(e.quality)*(e.speed_bonus+1-research.speed_modifier)*(research.speed_modifier+1)
     local units=research.units_per_second*speed*e.prototype.science_pack_drain_rate_percent/100
     for _,ingredient in ipairs(research.ingredients) do
-      add(set,'input','item',ingredient.name,'normal',ingredient.amount*units/prototypes.item[ingredient.name].get_durability(),e.name)
+      add(set,'input','item',ingredient.name,'normal',ingredient.amount*units/(try(function() return prototypes.item[ingredient.name].science_capacity end) or prototypes.item[ingredient.name].get_durability()),e.name)
     end
   end
 
@@ -196,7 +215,7 @@ return function(api)
       if data.fluid then add(set,'input','fluid',data.fluid,'normal',data.fluid_amount/10*cycles,e.name) end
       for _,product in pairs(data.products or {}) do
         local amount=product.amount or (product.amount_min+product.amount_max)/2
-        add(set,'output',product.type,product.name,'normal',amount*(product.probability or 1)*cycles*productivity,e.name,product.temperature)
+        add(set,'output',product.type,product.name,'normal',amount*product_chance(product)*cycles*productivity,e.name,product.temperature)
       end
     end
   end
@@ -215,12 +234,12 @@ return function(api)
     elseif t=='boiler' then boiler(set,e)
     elseif t=='lab' then lab(set,e)
     elseif t=='generator' then
-      local fluid=fluid_of(e.fluidbox,1)
+      local fluid=fluid_of(fluid_boxes(e),1)
       if fluid then add(set,'input','fluid',fluid.name,'normal',proto.get_fluid_usage_per_tick(e.quality)*60,e.name)
       else err(set,'no_input_fluid') end
     elseif t=='mining-drill' then drill(set,e)
     elseif t=='offshore-pump' then
-      local fluid=e.fluidbox[1]
+      local fluid=fluid_boxes(e)[1]
       if fluid then add(set,'output','fluid',fluid.name,'normal',proto.get_pumping_speed(e.quality)*60,e.name) end
     elseif t=='reactor' then
       add(set,'output','item','heat','normal',proto.get_max_energy_usage(e.quality)*(1+e.neighbour_bonus)*(1+e.consumption_bonus)*60,e.name)
@@ -364,7 +383,7 @@ return function(api)
         by_machine[e.unit_number]={entity=e,recipe=recipe,demand=0,supply=0,output=0,take=0,group=g}
         -- Missing ingredients read from the machine's input slots, as its GUI shows.
         if status=='item_ingredient_shortage' or status=='fluid_ingredient_shortage' then
-          local inv=e.get_inventory(e.type=='furnace' and (defines.inventory.crafter_input or defines.inventory.furnace_source) or defines.inventory.assembling_machine_input)
+          local inv=e.get_inventory((defines.inventory.crafter_input or (e.type=='furnace' and defines.inventory.furnace_source or defines.inventory.assembling_machine_input)))
           for _,ingredient in pairs(recipe.ingredients) do
             local have=ingredient.type=='item' and inv and inv.get_item_count({name=ingredient.name,quality=rq}) or nil
             if have and have<ingredient.amount then g.short=g.short or {}; g.short[ingredient.name]=(g.short[ingredient.name] or 0)+1 end
@@ -402,8 +421,8 @@ return function(api)
         if ingredient.type=='item' then m.demand=m.demand+ingredient.amount/duration end
       end
       local productivity=1+math.min(e.productivity_bonus+recipe.productivity_bonus,recipe.prototype.maximum_productivity)
-      for _,product in pairs(recipe.products) do
-        if product.type=='item' then m.output=m.output+(product.amount or ((product.amount_min+product.amount_max)/2))*(product.probability or 1)*productivity/duration end
+      for index,product in ipairs(recipe.products) do
+        if product.type=='item' then m.output=m.output+(native_amount(recipe,index,productivity-1) or (product.amount or ((product.amount_min+product.amount_max)/2))*product_chance(product)*productivity)/duration end
       end
       local pos=string.format('(%s,%s)',e.position.x,e.position.y)
       if m.supply>0 and m.supply<m.demand*0.99 then

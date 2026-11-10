@@ -565,3 +565,6 @@
   `rebuild {area}` builds the ghosts robots will not.
 - Remote reads: `inspect`, `belt_flow`, `trace` where we see now; `scan`,
   `observe`, `nearest` at a charted centre; `surface=`, `platform=` elsewhere.
+
+On Factorio 2.1, `science` reports whole lab inventory packs in `labs` and remaining consumed capacity in
+`lab_stored_capacity`. `uptime` includes the lab-held fraction when measuring consumption.

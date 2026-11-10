@@ -11,6 +11,8 @@
 -- Read only, bounded: at most 512 tiles, one area query a straight leg, each entity's connections read once, in sight
 -- or by remote view; tiles in chunks our force does not see now are not used.
 return function(api)
+  local fluid_neighbours = api.fluid_neighbours or function(e) return e.neighbours end
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
   M.VIA = 16
@@ -41,7 +43,7 @@ return function(api)
     return tiles, boxes
   end
   local function has_fluidbox(e)
-    return (try(function() return #e.fluidbox end) or 0) > 0
+    return (try(function() return #fluid_boxes(e) end) or 0) > 0
   end
   local function at(t) return string.format('(%g,%g)', t.x + 0.5, t.y + 0.5) end
   local function label(e) return string.format('%s (%g,%g)', e.name, e.position.x, e.position.y) end
@@ -132,11 +134,11 @@ return function(api)
         end
         if not continues then
           close()
-          local sid = try(function() return e.fluidbox.get_fluid_segment_id(1) end)
-          local contents = try(function() return e.fluidbox.get_fluid_segment_contents(1) end)
+          local sid = try(function() return fluid_boxes(e).get_fluid_segment_id(1) end)
+          local contents = try(function() return fluid_boxes(e).get_fluid_segment_contents(1) end)
           local fluid, amount
           for name, n in pairs(contents or {}) do if not amount or n > amount then fluid, amount = name, n end end
-          if not fluid then local fb = try(function() return e.fluidbox[1] end); fluid, amount = fb and fb.name, fb and fb.amount end
+          if not fluid then local fb = try(function() return fluid_boxes(e)[1] end); fluid, amount = fb and fb.name, fb and fb.amount end
           local box = api.segment_box and api.segment_box(e, 1)
           seg = {from=at(t), to=at(t), tiles=1, first=label(e), segment_id=sid, fluid=fluid or 'empty',
             amount=amount and math.floor(amount + 0.5) or nil,
@@ -189,7 +191,7 @@ return function(api)
     while #queue > 0 and n < NET_MAX do
       local e = table.remove(queue, 1)
       n = n + 1
-      local fb = e.fluidbox
+      local fb = fluid_boxes(e)
       for i = 1, #fb do
         local id = try(function() return fb.get_fluid_segment_id(i) end) or (k(e) .. '#' .. i)
         local g = segs[id]
@@ -209,7 +211,7 @@ return function(api)
         g.x0, g.y0 = math.min(g.x0, e.position.x), math.min(g.y0, e.position.y)
         g.x1, g.y1 = math.max(g.x1, e.position.x), math.max(g.y1, e.position.y)
       end
-      for _, group in ipairs(try(function() return e.neighbours end) or {}) do
+      for _, group in ipairs(try(function() return fluid_neighbours(e) end) or {}) do
         for _, o in ipairs(type(group) == 'table' and group or {}) do
           if try(function() return o.valid end) and o.force == p.force and not seen[k(o)] then
             seen[k(o)] = true

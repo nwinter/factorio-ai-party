@@ -2,6 +2,13 @@
 -- requested placements, before any items recovered by mining or replacements.
 return function(api)
   local M={}
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n = p.independent_probability
+    if n == nil then return p.probability or 1 end
+    local shared = p.shared_probability
+    return n * (shared and (shared.max - shared.min) or 1)
+  end
   local function add(by,item,quality,count,maximum)
     if not item then return end
     local key=item..'@'..quality
@@ -19,7 +26,7 @@ return function(api)
       local recipe=r.quality=='normal' and p.force.recipes and api.recipe(p,r.item)
       if recipe then
         local amount=0
-        for _,pr in ipairs(recipe.products or {}) do if pr.name==r.item and (pr.probability or 1)==1 then amount=pr.amount or pr.amount_min or 0 end end
+        for _,pr in ipairs(recipe.products or {}) do if pr.name==r.item and product_chance(pr)==1 then amount=pr.amount or pr.amount_min or 0 end end
         r.hand_craftable=p.get_craftable_count(recipe.name or r.item)*amount
       end
       rows[#rows+1]=r

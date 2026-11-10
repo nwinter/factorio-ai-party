@@ -26,7 +26,7 @@ from pathlib import Path
 from PIL import Image
 
 REPO = Path(__file__).resolve().parent.parent
-MODS = ("base", "space-age", "quality", "elevated-rails")
+MODS = ("base", "space-age", "quality", "elevated-rails", "recycler")
 # item-like prototypes: their icon is the item's
 ITEM_TYPES = {"item", "tool", "ammo", "capsule", "module", "gun", "armor", "repair-tool", "item-with-entity-data",
               "rail-planner", "space-platform-starter-pack", "fluid"}

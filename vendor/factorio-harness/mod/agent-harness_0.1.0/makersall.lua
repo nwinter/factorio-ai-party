@@ -7,6 +7,20 @@
 -- one craft takes (A3); and what its output inserters drop into. Facts only; read only.
 return function(api)
   local M = {}
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n = p.independent_probability
+    if n == nil then return p.probability or 1 end
+    local shared = p.shared_probability
+    return n * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
   M.PAGE, M.NEAR = 24, 2.5
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
@@ -27,20 +41,20 @@ return function(api)
   end
   local function per_craft(r, item)
     local n = 0
-    for _, pr in ipairs(try(function() return r.products end) or {}) do
+    for index, pr in ipairs(try(function() return r.products end) or {}) do
       if pr.name == item then
         local amt = pr.amount or ((pr.amount_min or 0) + (pr.amount_max or 0)) / 2
-        n = n + amt * (pr.probability or 1)
+        n = n + (native_amount(r, index) or (amt * product_chance(pr) + (pr.extra_count_fraction or 0)))
       end
     end
     return n
   end
   local function input_inv(e)
-    local which = e.type == 'furnace' and (defines.inventory.crafter_input or defines.inventory.furnace_source) or defines.inventory.assembling_machine_input
+    local which = (defines.inventory.crafter_input or (e.type == 'furnace' and defines.inventory.furnace_source or defines.inventory.assembling_machine_input))
     return try(function() return e.get_inventory(which) end)
   end
   local function output_inv(e)
-    local which = e.type == 'furnace' and (defines.inventory.crafter_output or defines.inventory.furnace_result) or defines.inventory.assembling_machine_output
+    local which = (defines.inventory.crafter_output or (e.type == 'furnace' and defines.inventory.furnace_result or defines.inventory.assembling_machine_output))
     return try(function() return e.get_inventory(which) end)
   end
   -- (d20 batch53 M2, Sol #1297: a breeder read 31.2 eggs a minute here, 10.4 crafts x 3, where inspect read 26: the

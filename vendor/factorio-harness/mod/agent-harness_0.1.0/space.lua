@@ -1,3 +1,12 @@
+-- A specific silo may override the default rocket lift on Factorio 2.1.
+local function rocket_lift(silo)
+  local ok, v = pcall(function() return silo.prototype.lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.default_rocket_lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.rocket_lift_weight end)
+  if ok then return v end
+end
 -- Space Age logistics through the same GUIs a player has: logistic request
 -- slots (character, chests, landing pads, platform hubs), the space platform
 -- list (create, schedule, pause), and the rocket silo launch button. Platforms
@@ -5,6 +14,7 @@
 local arrival_eta=require('arrivaleta')
 local qflow=require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M={}
   -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
   M.KEEP_MAX,M.SET_MAX,M.NAME_MAX,M.STOPS_MAX,M.DROP_ITEMS=50,100,64,32,20
@@ -348,7 +358,7 @@ return function(api)
         -- (batch28 A3, Sol: a railgun turret min 4 silently stopped construction) heavier than a rocket lifts: refused
         if type(mp)=='number' then
           local w=try(function() return prototypes.item[name].weight end)
-          local lift=try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+          local lift=rocket_lift() or 1000000
           if w and w>0 and mp*w>lift then
             error(string.format('min_payload %s %d: %d weigh %g kg, a rocket lifts %g kg: at most %d fit%s (min_payload %d)',name,mp,mp,mp*w/1000,lift/1000,
               math.floor(lift/w),math.floor(lift/w)==1 and 's' or '',math.floor(lift/w)),0)
@@ -1250,9 +1260,9 @@ return function(api)
         local low=1
         for _,t in ipairs(thrusters) do
           for i=1,2 do
-            local f=try(function() return t.fluidbox[i] end)
+            local f=try(function() return fluid_boxes(t)[i] end)
             -- the thruster's own tank, not a connected segment's capacity
-            local cap=try(function() return t.prototype.fluidbox_prototypes[i].volume end) or try(function() return t.fluidbox.get_capacity(i) end)
+            local cap=try(function() return t.prototype.fluidbox_prototypes[i].volume end) or try(function() return fluid_boxes(t).get_capacity(i) end)
             low=math.min(low,f and cap and cap>0 and f.amount/cap or 0)
           end
         end
@@ -1842,8 +1852,8 @@ return function(api)
     local list=lists and lists.tanks
       or try(function() return pl.surface.find_entities_filtered{type={'thruster','storage-tank'},force=pl.force} end) or {}
     for _,e in ipairs(list) do
-      for i=1,try(function() return #e.fluidbox end) or 0 do
-        local f=try(function() return e.fluidbox[i] end)
+      for i=1,try(function() return #fluid_boxes(e) end) or 0 do
+        local f=try(function() return fluid_boxes(e)[i] end)
         if f and f.name=='thruster-fuel' then fuel=fuel+f.amount end
       end
     end
@@ -2996,7 +3006,7 @@ return function(api)
       w=w+each*s.count; items[#items+1]={name=s.name,count=s.count,each=each}
     end
     table.sort(items,function(x,y) local wx,wy=x.each*x.count,y.each*y.count; if wx~=wy then return wx>wy end return x.name<y.name end)
-    return w,try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000,items
+    return w,rocket_lift(silo) or 1000000,items
   end
   function M.rocket_weight(silo) local w,lift=M.rocket_load(silo); return kg(w)..'/'..kg(lift)..' kg' end
   -- How many of an item still fit under the lift, and the load it joins.
@@ -3156,7 +3166,7 @@ return function(api)
       for _,c in ipairs(try(function() return silo.surface.find_entities_filtered{position=silo.position,radius=EMPTY_LOOK,type={'container','logistic-container'},force=silo.force,limit=64} end) or {}) do
         local inv=c.valid and try(function() return c.get_inventory(defines.inventory.chest) end)
         for _,s in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
-          if try(function() return prototypes.item[s.name].type end)=='tool' and #near<6 then
+          if ((try(function() return prototypes.item[s.name].science_capacity end) or 0)>0 or try(function() return prototypes.item[s.name].type end)=='tool') and #near<6 then
             near[#near+1]=string.format('%s (%g,%g) %s*%d',c.name,c.position.x,c.position.y,s.name,s.count)
           end
         end

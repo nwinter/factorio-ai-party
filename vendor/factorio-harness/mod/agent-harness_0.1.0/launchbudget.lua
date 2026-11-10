@@ -1,3 +1,12 @@
+-- A specific silo may override the default rocket lift on Factorio 2.1.
+local function rocket_lift(silo)
+  local ok, v = pcall(function() return silo.prototype.lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.default_rocket_lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.rocket_lift_weight end)
+  if ok then return v end
+end
 -- launch_budget {surface, platform?, manifest?, reserve?, network?}: what the rockets our platforms' requests from a
 -- planet ask for would take from the networks of its silos, against what those networks hold now (d27 batch260 LB, Sol
 -- #2491: the K2 cargo staging audit pieced it together from repeated requests, platform, silo, inspect and recipe reads
@@ -30,8 +39,7 @@ return function(api)
     return math.min(b, recipe and try(function() return recipe.prototype.maximum_productivity end) or 3), recipe
   end
   -- A rocket's payload of an item: the request's min payload, else a full rocket by weight; and the full rocket.
-  local function payload_of(name, mp)
-    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end)
+  local function payload_of(name, mp, lift)
     local w = try(function() return prototypes.item[name].weight end)
     local full = lift and w and w > 0 and math.floor(lift / w) or nil
     local p = mp and mp > 0 and mp or full
@@ -105,7 +113,7 @@ return function(api)
     local silos = api.census_typed and try(function() return api.census_typed(force, surface, 'rocket-silo') end)
     if not silos or #silos == 0 then silos = surface.find_entities_filtered{type='rocket-silo', force=force, limit=MAX_SILOS} end
     local nets, net_list, silo_rows, ings = {}, {}, {}, {}
-    local per_launch, per_launch_min
+    local per_launch, per_launch_min, lift_min, lift_max
     for _, e in ipairs(silos) do
       if e.valid and #silo_rows < MAX_SILOS then
         local ln = try(function() return surface.find_logistic_network_by_position(e.position, force) end)
@@ -113,6 +121,8 @@ return function(api)
         if a.network == nil or a.network == id then
           if ln and not nets[id] then nets[id] = {ln=ln, silos=0}; net_list[#net_list+1] = id end
           if ln then nets[id].silos = nets[id].silos + 1 end
+          local lift = rocket_lift(e)
+          if lift then lift_min = math.min(lift_min or lift, lift); lift_max = math.max(lift_max or lift, lift) end
           local prod, recipe = productivity(e)
           local req = try(function() return e.prototype.rocket_parts_required end) or 50
           local each = req / (1 + prod)
@@ -126,7 +136,7 @@ return function(api)
           local ready = st ~= nil and st == try(function() return defines.rocket_silo_status.rocket_ready end)
           local target = try(function() local t = e.transitional_request_target; return t and t.valid and t.name or nil end)
           silo_rows[#silo_rows+1] = {position=at(e.position), network=id, productivity=string.format('+%d%%', math.floor(prod * 100 + 0.5)),
-            parts_per_rocket=req, ingredients_per_launch=math.floor(each * 100 + 0.5) / 100, parts_built=built, rocket_ready=ready or nil,
+            lift_weight=lift, parts_per_rocket=req, ingredients_per_launch=math.floor(each * 100 + 0.5) / 100, parts_built=built, rocket_ready=ready or nil,
             filling_for=target, auto_requests=try(function() return e.use_transitional_requests end)}
         end
       end
@@ -137,7 +147,7 @@ return function(api)
     -- Each request importing from this planet that its hub lacks, by platform; the candidate's manifest items in its place.
     local rows, cand_rows, n_pl = {}, {}, 0
     local function add(list, r)
-      local pay, full = payload_of((split(r.item)), r.min_payload)
+      local pay, full = payload_of((split(r.item)), r.min_payload, lift_min)
       r.payload, r.full_rocket = pay, full
       r.unlaunched = math.max(0, r.asks - r.holds - r.on_the_way)
       r.pods = pay and math.ceil(r.unlaunched / pay) or nil
@@ -316,6 +326,8 @@ return function(api)
         return t
       end)(),
       silos=silo_rows,
+      lift_weight=lift_min,
+      lift_note=lift_min and lift_max ~= lift_min and 'payload estimates use the smallest selected silo lift; the game chooses which silo fills a request' or nil,
       per_launch=string.format('%s of each of %s a rocket (the silos\' least productivity%s)', per, ing_names,
         per_launch_min and per_launch_min < per_launch and string.format('; the most productive takes %g', math.floor(per_launch_min * 100 + 0.5) / 100) or ''),
       candidate=#cand_lines > 0 and {platform=cand and cand.name or nil, rows=cand_lines, pods=cand_t.pods} or nil,

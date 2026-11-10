@@ -23,6 +23,7 @@ local snapfail = require('snapfail')
 -- (d24 batch152 PX1) statistics read at every quality
 local qflow = require('qflow')
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   local SAMPLE, WATCH_TICKS, WINDOW = 300, 1800, 18000
   local HIGH, HIGH_TICKS = 0.85, 7200
@@ -662,7 +663,7 @@ return function(api)
     return j * eff
   end
   local function segment_of(fb, i) return fb.get_fluid_segment_id(i) end
-  local function segment(e, i) return tfn(segment_of, tget(e, 'fluidbox'), i) end
+  local function segment(e, i) return tfn(segment_of, tfn(fluid_boxes, e), i) end
 
   -- One surface's electric networks: rows with the numbers and the line.
   -- A surface's electric networks in four steps (one a tick in the background
@@ -737,7 +738,7 @@ return function(api)
         local ready = true
         if t == 'generator' or t == 'fusion-generator' then
           -- (an empty fluidbox slot reads nil; one not read at all counts as ready)
-          local box = tget(e, 'fluidbox')
+          local box = tfn(fluid_boxes, e)
           local slots = box and tlen(box)
           if slots and slots > 0 then
             local fb = tget(box, 1)
@@ -795,7 +796,7 @@ return function(api)
   local function e_boiler(ctx, e)
     local j = e.valid and fuel_energy(e)
     if j then
-      local box = tget(e, 'fluidbox')
+      local box = tfn(fluid_boxes, e)
       local sid = tfn(segment_of, box, box and tlen(box) or 2)
       local to = sid and ctx.seg_net[sid]
       if not to then
@@ -2588,9 +2589,9 @@ return function(api)
     return #parts > 0 and table.concat(parts, ' ') or 'empty'
   end
   local function fluid_text(e, i)
-    local box = try(function() return e.fluidbox[i] end)
+    local box = try(function() return fluid_boxes(e)[i] end)
     if not box then return 'empty' end
-    local cap = try(function() return e.fluidbox.get_capacity(i) end)
+    local cap = try(function() return fluid_boxes(e).get_capacity(i) end)
     return string.format('%s %d%s', box.name, math.floor(box.amount + 0.5), cap and '/' .. math.floor(cap + 0.5) or '')
   end
   -- Minutes of a boiler's own fuel at full burn (d17 batch16 B1, Haiku ~10x a shift: whether to walk out and refuel):
@@ -2643,7 +2644,7 @@ return function(api)
       if e.valid then
         local status = status_name(e)
         local burner = try(function() return e.burner end)
-        local sid = segment(e, try(function() return #e.fluidbox end) or 2)
+        local sid = segment(e, try(function() return #fluid_boxes(e) end) or 2)
         local to = sid and ctx.seg_net[sid]
         if not to then
           local best = NEAR_BOILER * NEAR_BOILER
@@ -2656,7 +2657,7 @@ return function(api)
         rows[#rows+1] = {position={x=e.position.x, y=e.position.y}, name=e.name, status=status,
           state=STATE[status or ''] or (status and status:gsub('_', ' ')) or 'unknown', working=status == 'working',
           fuel=burner and stacks(try(function() return burner.inventory end)) or nil, burning=burning,
-          water=fluid_text(e, 1), steam=fluid_text(e, try(function() return #e.fluidbox end) or 2),
+          water=fluid_text(e, 1), steam=fluid_text(e, try(function() return #fluid_boxes(e) end) or 2),
           network=to and to.id or nil, _e=burner and e or nil, own_fuel_min=M.own_fuel_minutes(e)}
       end
     end

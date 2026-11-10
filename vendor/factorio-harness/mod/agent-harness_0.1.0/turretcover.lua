@@ -8,6 +8,7 @@
 -- engine's path between two points in coverage (round buildings it may stray a few tiles). Bounded: 2000 turrets,
 -- 90000 cells (a larger box takes 8-tile cells), 15 via points.
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   M.CELL, M.MARGIN, M.PAD, M.MAX_TURRETS, M.MAX_CELLS, M.MAX_VIA = 4, 2, 48, 2000, 90000, 15
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -21,7 +22,7 @@ return function(api)
     elseif t.type == 'electric-turret' then
       return (try(function() return t.energy end) or 0) > 0
     end
-    local fb = try(function() return t.fluidbox[1] end)
+    local fb = try(function() return fluid_boxes(t)[1] end)
     return fb ~= nil and (fb.amount or 0) > 0
   end
   -- One plan over the box round from and goal grown by pad; ok, via, line or nil, refusal text.

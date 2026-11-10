@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- Where a belt moves items (Grok, shift11: a belt facing south read as
 -- feeding the tile at lower y; south is +y). line(e) for a transport belt,
 -- underground belt or splitter, built or a ghost:
@@ -62,7 +65,7 @@ return function(api)
   local function moves(e, d, ours, under, outputs)
     local head = 'moves items ' .. NAMES[d]
     if under == 'input' then
-      local partner = try(function() return e.neighbours end)
+      local partner = try(function() return e[UNDERGROUND_NEIGHBOUR] end)
       if partner and partner.valid then return head .. ' underground to ' .. pt(partner.position) end
       return head .. ' underground (no exit end paired)'
     end
@@ -122,7 +125,7 @@ return function(api)
     for _, n in pairs(nb.outputs or {}) do if n.valid then outputs[#outputs+1] = n end end
     local text = moves(e, d, ours, under, outputs)
     if under == 'output' then
-      local partner = try(function() return e.neighbours end)
+      local partner = try(function() return e[UNDERGROUND_NEIGHBOUR] end)
       local from = partner and partner.valid and 'fed underground from ' .. pt(partner.position) or 'no entrance end paired'
       local sides = {}
       for _, i in ipairs(inputs) do sides[#sides+1] = i.from end

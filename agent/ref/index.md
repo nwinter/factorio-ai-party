@@ -4,8 +4,8 @@
 
 - `moving-items`, by hand: `transfer`, `collect`, `feed`, `refuel`, `pickup`, `mine`, `rotate`, `repair`,
   `inventory`, `craft`, `cancel_craft`, `deliver`.
-- `building`, placing, removing, landfill: `build`, `place_ghosts`, `construct`, `ghosts`/`remove_ghosts`,
-  `deconstruct`, `upgrade`, `paste`, `placements`, `nearest_water`, `conflicts`, `build_path`, `grid`, `pole_route`,
+- `building`, builds/landfill: `build`, `place_ghosts`, `construct`, `ghosts`/`remove_ghosts`,
+  `deconstruct`, `flush`, `upgrade`, `paste`, `placements`, `nearest_water`, `conflicts`, `build_path`, `grid`, `pole_route`,
   `belt_route`, `belt_upgrade`, `rail_route`, `train_stop`, `train`, `clear_cliffs`, `heat_budget`, `outpost`, `rebuild`, `blueprint_save`, `blueprint_status`,
   `blueprint_capture`, `blueprint_list`, `blueprint_place`, `blueprint_rename`, `blueprint_delete`, `blueprint_retire`.
 - `circuits-settings`, I/O: `circuit_set`, `wire`, `circuit_gate`, `gates`, `circuit_audit`, `signal_watch`,

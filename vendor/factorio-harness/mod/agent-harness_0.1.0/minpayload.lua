@@ -1,3 +1,12 @@
+-- A specific silo may override the default rocket lift on Factorio 2.1.
+local function rocket_lift(silo)
+  local ok, v = pcall(function() return silo.prototype.lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.default_rocket_lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.rocket_lift_weight end)
+  if ok then return v end
+end
 -- min_payload {platforms?, set?} (E8, Gemini 19:50: automatic silos launched rockets for 1-2 small items and spent
 -- scarce low density structures; setting each platform's requests by hand took many calls): the custom minimum payload
 -- of platform hub requests (the request GUI's "custom minimum payload", LogisticFilter minimum_delivery_count), read
@@ -29,14 +38,14 @@ return function(api)
   local function payload_fits(item, n, what)
     if type(n) ~= 'number' or n <= 0 then return end
     local w = try(function() return prototypes.item[item].weight end)
-    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+    local lift = rocket_lift() or 1000000
     if w and w > 0 and n * w > lift then
       error(string.format('%s %s %d: %d weigh %g kg, a rocket lifts %g kg: at most %d fit%s (%s %d)', what, item, n, n, n * w / 1000, lift / 1000,
         math.floor(lift / w), math.floor(lift / w) == 1 and 's' or '', what, math.floor(lift / w)), 0)
     end
   end
   function M.handler(p, a)
-    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end)
+    local lift = rocket_lift()
     local set = a.set
     if set ~= nil then
       assert(type(set) == 'table' and next(set) ~= nil and set[1] == nil, 'set is {item: N, ...} (0 or false clears the custom minimum payload)')

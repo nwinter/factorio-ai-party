@@ -8,6 +8,7 @@
 -- supply area covers after, and whether one covers the new entity. A read: nothing changes.
 -- The factory is pure so the same module can be bundled into a hot reload.
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(pos) return string.format('(%g,%g)', pos.x, pos.y) end
@@ -39,7 +40,7 @@ return function(api)
   local function in_segment(seg)
     return function(e)
       local out = {}
-      local fb = try(function() return e.fluidbox end)
+      local fb = try(function() return fluid_boxes(e) end)
       for i = 1, fb and #fb or 0 do
         if seg_of(fb, i) == seg then
           for _, c in ipairs(try(function() return fb.get_connections(i) end) or {}) do
@@ -156,7 +157,7 @@ return function(api)
   local function fluid_lines(removed_list, removed)
     local segments, order, lines = {}, {}, {}
     for _, e in ipairs(removed_list) do
-      local fb = try(function() return e.fluidbox end)
+      local fb = try(function() return fluid_boxes(e) end)
       local ports = {}
       for i = 1, fb and #fb or 0 do
         local seg = seg_of(fb, i)
@@ -186,7 +187,7 @@ return function(api)
       local sg = segments[seg]
       local next_of = in_segment(seg)
       local function member(o)
-        local fb = try(function() return o.fluidbox end)
+        local fb = try(function() return fluid_boxes(o) end)
         for i = 1, fb and #fb or 0 do if seg_of(fb, i) == seg then return true end end
         return false
       end
@@ -203,7 +204,7 @@ return function(api)
             if member(o) then start(o)
             else
               local via
-              local fb = try(function() return o.fluidbox end)
+              local fb = try(function() return fluid_boxes(o) end)
               for j = 1, fb and #fb or 0 do
                 for _, c in ipairs(try(function() return fb.get_connections(j) end) or {}) do
                   local q = try(function() return c.owner end)
@@ -316,7 +317,7 @@ return function(api)
     out.resource = #res > 0 and table.concat(res, '; ') or nil
     -- Fluid segments of our fluid entities in the way.
     local fluids = {}
-    for _, o in ipairs(ours) do if (try(function() return #o.fluidbox end) or 0) > 0 then fluids[#fluids+1] = o end end
+    for _, o in ipairs(ours) do if (try(function() return #fluid_boxes(o) end) or 0) > 0 then fluids[#fluids+1] = o end end
     if #fluids > 0 then out.fluid = fluid_lines(fluids, removed) end
     -- Poles in the way: the wires that go, whether the poles left split, and supply.
     if #poles > 0 then

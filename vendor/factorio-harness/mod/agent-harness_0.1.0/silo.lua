@@ -1,3 +1,12 @@
+-- A specific silo may override the default rocket lift on Factorio 2.1.
+local function rocket_lift(silo)
+  local ok, v = pcall(function() return silo.prototype.lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.default_rocket_lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.rocket_lift_weight end)
+  if ok then return v end
+end
 -- A rocket silo as its GUI and the entities around it show it (Gemini, shift09
 -- 00:20: "A dedicated silo status command (parts X/50, loaded cargo weight,
 -- missing ingredients)"). One read for the nearest silo or every silo on a
@@ -687,7 +696,7 @@ return function(api)
         for _, qn in ipairs(M.qualities(q, cmp)) do held = held + (have[name .. '@' .. qn] or 0) end
         local label = M.label(name, q, cmp)
         local w = try(function() return prototypes.item[name].weight end)
-        local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end)
+        local lift = rocket_lift(e)
         local full = w and lift and w > 0 and math.floor(lift / w) or nil
         local short = f.count - held
         parts[#parts+1] = string.format('%s %d of %d aboard%s; its network holds %d more%s', label, held, f.count,
@@ -730,7 +739,7 @@ return function(api)
     ln = ln or try(function() return e.surface.find_logistic_network_by_position(e.position, force) end)
     local planet = try(function() return e.surface.planet.name end)
     local target = try(function() local t = e.transitional_request_target; return t and t.valid and t.name or nil end)
-    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end)
+    local lift = rocket_lift(e)
     local rows = {}
     for _, pl in pairs(try(function() return force.platforms end) or {}) do
       local loc = pl.valid and try(function() return pl.space_location.name end)

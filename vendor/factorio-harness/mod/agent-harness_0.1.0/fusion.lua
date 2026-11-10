@@ -30,6 +30,7 @@
 -- holds (burning plus cells) gives fuel burnt per second, measured; coolant in and plasma out follow from it at 25 MJ
 -- a unit (derived), and the bonus at full from the prototype and the connected reactors (formula).
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   local SAMPLE, KEEP, WATCH, MAX_WATCH = 60, 31, 36000, 64
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -154,7 +155,7 @@ return function(api)
       end
     end
     local gens, seen = 0, {}
-    for _, c in ipairs(try(function() return e.fluidbox.get_connections(2) end) or {}) do
+    for _, c in ipairs(try(function() return fluid_boxes(e).get_connections(2) end) or {}) do
       local o = c.owner
       if o and o.valid and o.type == 'fusion-generator' and not seen[o.unit_number or o] then seen[o.unit_number or o] = true; gens = gens + 1 end
     end
@@ -190,8 +191,8 @@ return function(api)
     out.neighbour_bonus = {per_neighbour=per, connected=#reactors, at_full=per * #reactors,
       source='prototype neighbour_bonus x the reactors whose neighbour points meet its own, plasma or coolant side (formula); the game gives no bonus read for a fusion reactor'}
     local b = try(function() return e.burner end)
-    local pl = try(function() return e.fluidbox[2] end)
-    local co = try(function() return e.fluidbox[1] end)
+    local pl = try(function() return fluid_boxes(e)[2] end)
+    local co = try(function() return fluid_boxes(e)[1] end)
     local cells = b and try(function() return b.inventory.get_item_count() end) or 0
     out.now = {status=e.status, plasma=pl and {amount=math.floor(pl.amount * 100 + 0.5) / 100, temperature=math.floor(pl.temperature + 0.5)} or nil,
       coolant=co and {name=co.name, amount=math.floor(co.amount * 10 + 0.5) / 10} or nil,

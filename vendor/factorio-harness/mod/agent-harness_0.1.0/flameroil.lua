@@ -1,3 +1,4 @@
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
 -- A flamethrower turret's oil (Astra, shift11 16:36: status and the flamers
 -- read said all 12 flamers were dry while inspect showed crude-oil 87.2, and
 -- that flamer burnt a reactor; Haiku nearly walked past it). A 2.0 fluid
@@ -54,9 +55,12 @@ function M.read(e)
     if type(v) == 'number' then held[name] = v end
   end
   local boxes = {}
-  local fb = try(function() return e.fluidbox end)
-  for i = 1, (fb and #fb or 0) do
-    local f = try(function() return fb[i] end)
+  local fb = not PORT21 and try(function() return e.fluidbox end)
+  local count = PORT21 and e.fluids_count or (fb and #fb or 0)
+  local capacity = 0
+  for i = 1, count do
+    local f = try(function() if PORT21 then return e.get_fluid(i) end; return fb[i] end)
+    if PORT21 then capacity = capacity + e.get_fluid_capacity(i) end
     if f then local n = f.name or '?'; boxes[n] = (boxes[n] or 0) + (f.amount or 0) end
   end
   for name, v in pairs(boxes) do held[name] = math.max(held[name] or 0, v) end
@@ -68,7 +72,8 @@ function M.read(e)
       if v > most then top, most = name, v end
     end
   end
-  return amount, proto and capacity_of(proto), top, fluids
+  if not PORT21 then capacity = proto and capacity_of(proto) end
+  return amount, capacity, top, fluids
 end
 
 local function at(pos) return string.format('(%g,%g)', pos.x, pos.y) end
