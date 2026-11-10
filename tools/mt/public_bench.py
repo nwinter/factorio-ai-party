@@ -4,7 +4,7 @@ import json
 import statistics
 import time
 from public_race import project, Race, Director
-from public_replay import synthetic, ROSTER
+from public_replay import synthetic, PAIR_ROSTER as ROSTER
 
 
 def measure(dense=False):
@@ -13,7 +13,7 @@ def measure(dense=False):
          'space':{'rockets':0},'science':{'spm':18,'series':list(range(30))},
          'basemap':{'tick':6000,'x0':0,'y0':0,'w':width,'h':width,'cell':1,
                     'rows':['.'*width if y%3 else 'A'*width for y in range(width)]}}
-    raw['agents']=[{'name':r[0]['name'],'activity':'acting','active':'build:lab'} for r in ROSTER.values()]
+    raw['agents']=[{'name':a['name'],'activity':'acting','active':'build:lab'} for roster in ROSTER.values() for a in roster]
     durations=[]
     for _ in range(300):
         start=time.perf_counter()

@@ -222,6 +222,7 @@ class PublicOverlay:
                         self.director.failed(team, time.time())
                 self.stop.wait(5)
 
+
     def close(self):
         self.stop.set()
         self.http.shutdown()

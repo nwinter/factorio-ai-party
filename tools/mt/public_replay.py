@@ -15,12 +15,14 @@ from pathlib import Path
 import time
 import urllib.parse
 
-from public_race import project, Race, Director, icons, clock
+from public_race import project, project_viewers, Race, Director, icons, clock
 
 HERE = Path(__file__).resolve().parent
 ROSTER = {'green': [{'name': 'gemini', 'model': 'Gemini 3.8 Flash'}],
           'yellow': [{'name': 'grok', 'model': 'Grok 4.7'}],
           'blue': [{'name': 'muse', 'model': 'Muse Spark 1.3'}]}
+PAIR_ROSTER = {team: [dict(roster[0], name=roster[0]['name'] + suffix) for suffix in ('', '2')]
+               for team, roster in ROSTER.items()}
 
 
 def synthetic():
@@ -28,7 +30,7 @@ def synthetic():
     for step in range(25):
         now, tick = 1000 + step * 5, 180000 + step * 300
         teams = []
-        for i, (team, roster) in enumerate(ROSTER.items()):
+        for i, (team, roster) in enumerate(PAIR_ROSTER.items()):
             lead = team == 'yellow' and step >= 12
             count = [16, 13, 9][i] + (5 if lead else 0) + (1 if step >= 6 else 0)
             tech = ['chemical-science-pack', 'advanced-circuit', 'logistic-science-pack'][i]
@@ -55,6 +57,15 @@ def synthetic():
                           'More labs are running. Scaling circuits to catch the leader.',
                           'Green science is next. Feeding the labs while I add inserters.'][i]}],
                       'chronicle': {'events': [{'kind':'research','name':['steel-processing','logistics','automation'][i],'tick':177600-i*1200}]}}
+            stream['agents'].append({'name': roster[1]['name'], 'activity': 'acting' if step%3 else 'thinking',
+                                     'active': ['insert:lab', 'build:assembling-machine-1', 'craft:inserter'][i],
+                                     'position': {'x':24-step%4,'y':18}, 'surface':'nauvis'})
+            replies = ['I will feed the labs. You can keep building the chemical plants.',
+                       'I have the copper line. Keep the circuit assemblers supplied.',
+                       'I will add inserters and belts. You handle the science packs.']
+            stream['chat'].append({'agent':roster[1]['name'],'from':roster[1]['name'],'lane':'tell','tell':True,
+                                   'to':[roster[0]['name']],'body':replies[i], 'text':'ignored presentation text',
+                                   'tick':tick-900})
             teams.append(project(team, stream, roster, now, {'entities':entities,'tick':tick}))
         data = race.update(teams, now)
         if step in (5,11,17):
@@ -63,9 +74,15 @@ def synthetic():
         choice = director.choose(teams, data['events'], now)
         if choice:
             director.success(choice[0],now)
+        viewers = [{'id':'site:104','source':'site','text':'Green, can one of you handle oil while the other feeds the labs?',
+                    't':now-8},
+                   {'source':'youtube','text':'Yellow is closing the gap. Can they keep the labs fed?',
+                    't':now-3}]
         data.update(now=now, camera={'team':director.current,'reason':choice[1] if choice else 'Following the action','surface':'nauvis'},
-                    viewers=[{'text':'Yellow is closing the gap. Can they keep the labs fed?','t':now}] if step>=18 else [],
-                    fixture='SYNTHETIC REPLAY')
+                    viewers=project_viewers(viewers,now,PAIR_ROSTER), viewer_status='on',
+                    viewer_delivery={'104':{'s':'held' if step<18 else 'relayed',
+                                            'teams':['green'] if step<18 else list(PAIR_ROSTER),'t':now}},
+                    fixture='SYNTHETIC PAIR REPLAY')
         frames.append(copy.deepcopy(data))
     return frames
 

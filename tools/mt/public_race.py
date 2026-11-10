@@ -68,6 +68,74 @@ def speech(value, private_names=()):
     return re.sub(r'\s+', ' ', re.sub(r'\[/?[a-z-]+(?:=[^\]]*)?\]', '', value)).strip()[:300]
 
 
+def team_chat(team, messages, names, private_names=()):
+    """Team talk and internal tells only. Never a global feed or relay input.
+
+    Main stream tells use {agent, from, lane: tell, to: [...], body, text};
+    text/to_shown contain presentation names and are deliberately ignored.
+    """
+    aliases = {alias: n for n in names for alias in (n, 'pog-' + n)}
+    out = []
+    for m in map(obj, rows(messages)[-60:]):
+        if any(m.get(k) for k in ('operator', 'confess', 'notice', 'viewer', 'source')):
+            continue
+        if any(m.get(k) not in (None, team) for k in ('team', 'force')):
+            continue
+        speakers = [m[k] for k in ('agent', 'from', 'name') if m.get(k) is not None]
+        if not speakers or any(not isinstance(n, str) or n not in aliases for n in speakers):
+            continue
+        sender = aliases[speakers[0]]
+        if any(aliases[n] != sender for n in speakers):
+            continue
+        lane = m.get('lane')
+        if lane == 'tell' or m.get('tell'):
+            if lane not in (None, 'tell'):
+                continue
+            recipients = [m['to']] if isinstance(m.get('to'), str) else rows(m.get('to'))
+            if not recipients or any(not isinstance(n, str) or n not in aliases and n != 'team' for n in recipients):
+                continue
+            to = sorted({aliases.get(n, 'team') for n in recipients})
+            text = speech(m.get('body'), private_names)
+            kind = 'tell'
+        elif lane in (None, 'talk') and not m.get('to'):
+            to, text, kind = [], speech(m.get('text'), private_names), 'talk'
+        else:
+            continue
+        if text:
+            out.append({'team': team, 'name': sender, 'to': to, 'kind': kind, 'text': text,
+                        'tick': number(m.get('tick')), 't': number(m.get('t'))})
+    return out[-6:]
+
+
+def project_viewers(messages, now, teams=()):
+    """Already-moderated viewer rows, never team chat or raw delivery explanations.
+
+    The relay owns moderation/routing. An explicit source and recent timestamp are
+    required; targets and delivery are receipts, not inferred from the message text.
+    Replacement semantics let the producer remove moderated/deleted messages.
+    """
+    out = []
+    for m in map(obj, rows(messages)[-32:]):
+        source = m.get('source')
+        if source not in ('site', 'youtube') or m.get('lane') not in (None, 'viewer') or m.get('kind') not in (None, 'viewer'):
+            continue
+        if any(m.get(k) for k in ('agent', 'from', 'tell', 'operator', 'confess', 'team', 'force')):
+            continue
+        stamp, text = number(m.get('t')), speech(m.get('text'), ('Nick', 'Winter'))
+        if not text or stamp is None or stamp != m.get('t') or not -5 <= now - stamp <= 600:
+            continue
+        targets = rows(m.get('targets'))
+        # Reject an invalid target set as a whole; never turn a partial receipt
+        # into a false claim that every team received the message.
+        targets = list(dict.fromkeys(targets)) if targets and all(isinstance(t, str) and t in (*teams, 'all') for t in targets) else []
+        delivery = m.get('delivery') if m.get('delivery') in ('sent', 'held', 'not_relayed') else None
+        out.append({'name': 'Viewer', 'source': source, 'text': text, 't': stamp,
+                    'targets': targets, 'delivery': delivery})
+        if source == 'site' and isinstance(m.get('id'), str) and re.fullmatch(r'site:[0-9]{1,20}', m['id']):
+            out[-1]['id'] = m['id']  # public site sequence, for mt290's separate receipt map
+    return out[-8:]
+
+
 def grid(raw):
     """Basemap category grid only, never terrain URLs, pins, custom labels or paths."""
     raw = obj(raw)
@@ -128,26 +196,14 @@ def project(team, state, agents, now, score=None):
         out_agents.append({'name': a['name'], 'display_name': a['name'].capitalize(),
                            'model': speech(a.get('model'))[:60], 'activity': activity, 'action': action,
                            'position': pos if all(v is not None for v in pos.values()) and live.get('surface', 'nauvis') == 'nauvis' else None})
-    chat = []
-    for m in rows(state.get('chat'))[-12:]:
-        m = obj(m)
-        if m.get('lane') not in (None, 'talk', 'tell') or m.get('confess') or m.get('notice') or m.get('viewer') or m.get('operator'):
-            continue
-        recipients = m.get('to') or []
-        if m.get('lane') == 'tell' and not recipients:
-            continue
-        if recipients and (not isinstance(recipients, list) or any(n not in public_names | {'team'} for n in recipients)):
-            continue
-        name = m.get('name') or m.get('agent') or m.get('from')
-        text = speech(m.get('text'), private_names)
-        if isinstance(name, str) and name in public_names and text:
-            chat.append({'name': name, 'text': text, 'tick': number(m.get('tick')), 't': number(m.get('t'))})
+    chat = team_chat(team, state.get('chat'), public_names, private_names)
     board = []
     b = obj(state.get('board'))
     for m in map(obj, rows(b.get('open_items')) + rows(b.get('doing_items')) + rows(b.get('claims'))):
         owner, title_text = m.get('owner'), speech(m.get('title'), private_names)
         if title_text and (owner is None or owner == '' or isinstance(owner, str) and owner in public_names):
             board.append({'title': title_text, 'owner': owner or '', 'id': number(m.get('id'))})
+
     entities = {k: int(number(obj(score.get('entities')).get(k), 0)) for k in BUILDINGS} if score else None
     bm = obj(state.get('basemap'))
     mini = grid(bm.get('core')) or grid(bm)
@@ -189,7 +245,7 @@ def project(team, state, agents, now, score=None):
                                                        for m in rows(obj(science.get('made')).get('packs')))]},
             'space': {'rockets': number(space.get('rockets'), number(score.get('rockets')))},
             'entities': entities, 'score_tick': number(score.get('tick')), 'map': mini,
-            'chat': chat[-8:], 'board': board[:12], 'events': events}
+            'chat': chat, 'board': board[:12], 'events': events}
 
 
 def rank(rows_):
