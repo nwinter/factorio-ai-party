@@ -70,6 +70,7 @@ class TestAudience(unittest.TestCase):
                                {'lane':'operator','agent':'gemini','text':'OPERATOR'}]}
         out=public_race.project('green',state,roster,100)
         self.assertEqual([m['text'] for m in out['chat']],['Supply the lab'])
+        self.assertEqual(public_race.speech('This is multi-team mode'), '')
         states={t:{'viewers_status':{'delivery':[{'id':'site:701','status':'relayed'}]}} for t in ['green','yellow','blue']}
         self.assertEqual(public_overlay.audience(states,states,100)['viewer_delivery']['701']['s'],'relayed')
         del states['blue']

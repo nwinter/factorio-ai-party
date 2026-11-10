@@ -30,7 +30,7 @@ PACKS = ('automation-science-pack', 'logistic-science-pack', 'chemical-science-p
          'production-science-pack', 'utility-science-pack', 'space-science-pack')
 # Free-form public chat remains public speech, never notes, jobs, confessions or errors.
 PRIVATE = re.compile(r'(?:https?://|(?:^|\s)(?:/|~/|[A-Za-z]:[\\/])|[\w.+-]+@[\w.-]+\.[a-z]{2,}|'
-                     r'\b(?:token|password|secret|api[_ -]?key|operator|traceback|exception)\b|\bsk-[\w-]+)', re.I)
+                     r'\b(?:token|password|secret|api[_ -]?key|operator|traceback|exception|multi-?teams?)\b|\bsk-[\w-]+)', re.I)
 
 
 def obj(v):
