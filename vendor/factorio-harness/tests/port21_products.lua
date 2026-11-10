@@ -37,3 +37,11 @@ assert(calls>=9)
 -- A legacy recipe still uses its 2.0 product fields; fractional recycling remains fractional.
 near(C.rates({energy=1,products={{name='plate',amount=0,extra_count_fraction=.5}}},1,0).products[1].per_craft,.5)
 print('port21 products: strict API, native prototype/force recipe means, zero, productivity, statistics and quality passed')
+
+-- Core 2.1 util.product_amount rolls the fractional remainder with the whole count.
+local fractional=product('native-fraction',.2,.6,4,.5); fractional.independent_probability=.2
+near(C.rates({energy=1,products={fractional}},1,0).products[1].per_craft,.36)
+near(A.products({name='native-fraction-recipe',products={fractional}})['native-fraction'],.36)
+fractional.independent_probability=nil
+near(C.rates({energy=1,products={fractional}},1,0).products[1].per_craft,1.8)
+near(C.rates({energy=1,products={{name='legacy-fraction',amount=4,probability=.2,extra_count_fraction=.5}}},1,0).products[1].per_craft,1.3)

@@ -17,10 +17,14 @@ return function(api)
   local M = {}
   -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
   local function product_chance(p)
-    local n = p.independent_probability
-    if n == nil then return p.probability or 1 end
-    local shared = p.shared_probability
-    return n * (shared and (shared.max - shared.min) or 1)
+    local n, shared = p.independent_probability, p.shared_probability
+    if n == nil and shared == nil then return p.probability or 1 end
+    return (n or 1) * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Native rolls include the fractional count; legacy recycling kept its remainder separately.
+  local function product_fraction(p)
+    local extra = p.extra_count_fraction or 0
+    return extra * ((p.independent_probability ~= nil or p.shared_probability ~= nil) and product_chance(p) or 1)
   end
   -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
   local function native_amount(recipe, index, productivity)
@@ -150,7 +154,7 @@ return function(api)
       for index, p in ipairs(try(function() return prototypes.recipe[recipe].products end) or {}) do
         if p.type == 'item' then
           local amount = p.amount or (((p.amount_min or 0) + (p.amount_max or 0)) / 2)
-          n = n + (native_amount(prototypes.recipe[recipe], index) or (amount * product_chance(p) + (p.extra_count_fraction or 0)))
+          n = n + (native_amount(prototypes.recipe[recipe], index) or (amount * product_chance(p) + product_fraction(p)))
           main = main or p.name
         end
       end

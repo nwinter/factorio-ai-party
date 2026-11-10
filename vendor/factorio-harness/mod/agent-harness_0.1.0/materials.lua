@@ -4,10 +4,9 @@ return function(api)
   local M={}
   -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
   local function product_chance(p)
-    local n = p.independent_probability
-    if n == nil then return p.probability or 1 end
-    local shared = p.shared_probability
-    return n * (shared and (shared.max - shared.min) or 1)
+    local n, shared = p.independent_probability, p.shared_probability
+    if n == nil and shared == nil then return p.probability or 1 end
+    return (n or 1) * (shared and (shared.max - shared.min) or 1)
   end
   local function add(by,item,quality,count,maximum)
     if not item then return end

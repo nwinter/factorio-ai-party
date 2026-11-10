@@ -9,6 +9,7 @@ def main():
     assert kb.product_mean({'amount':1,'probability':0})==0
     assert abs(kb.product_mean({'amount':1,'independent_probability':.5,'shared_probability':{'min':.2,'max':.6}})-.2)<1e-9
     assert kb.product_mean({'amount':99,'expected_amount':0})==0
+    assert abs(kb.product_mean({'amount':4,'extra_count_fraction':.5,'independent_probability':.2,'shared_probability':{'min':.2,'max':.6}})-.36)<1e-9
     code=dp.command('recipes',1).removeprefix('/silent-command ')
     pre="""
 local r={name='test',categories={'secondary','primary'},energy=1,enabled=true,hidden=false,ingredients={},products={{name='ore',type='item',amount=1,independent_probability=1,shared_probability={min=0,max=.007}}},get_product_amount=function(i,p) assert(i==1 and p==0);return .007 end}

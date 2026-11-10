@@ -24,7 +24,8 @@ def product_mean(p):
         return p["expected_amount"]
     amount = p.get("amount")
     if amount is None:
-        amount = (p.get("amount_min", 0) + p.get("amount_max", 0)) / 2 + p.get("extra_count_fraction", 0)
+        amount = (p.get("amount_min", 0) + p.get("amount_max", 0)) / 2
+    amount += p.get("extra_count_fraction", 0)
     chance = p.get("independent_probability", p.get("probability", 1))
     shared = p.get("shared_probability")
     if shared:

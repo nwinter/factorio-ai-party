@@ -34,10 +34,14 @@ return function(api)
   local M = {}
   -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
   local function product_chance(p)
-    local n = p.independent_probability
-    if n == nil then return p.probability or 1 end
-    local shared = p.shared_probability
-    return n * (shared and (shared.max - shared.min) or 1)
+    local n, shared = p.independent_probability, p.shared_probability
+    if n == nil and shared == nil then return p.probability or 1 end
+    return (n or 1) * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Native rolls include the fractional count; legacy recycling kept its remainder separately.
+  local function product_fraction(p)
+    local extra = p.extra_count_fraction or 0
+    return extra * ((p.independent_probability ~= nil or p.shared_probability ~= nil) and product_chance(p) or 1)
   end
   -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
   local function native_amount(recipe, index, productivity)
@@ -122,7 +126,7 @@ return function(api)
     local out = {}
     for _, pr in ipairs(r and try(function() return r.products end) or {}) do
       if pr.type ~= 'fluid' then
-        if not pr.amount or product_chance(pr) ~= 1 or (pr.extra_count_fraction or 0) ~= 0 or (pr.ignored_by_productivity or 0) ~= 0 then return nil end
+        if not pr.amount or product_chance(pr) ~= 1 or product_fraction(pr) ~= 0 or (pr.ignored_by_productivity or 0) ~= 0 then return nil end
         out[#out+1] = {name=pr.name, amount=pr.amount}
       end
     end
@@ -491,7 +495,7 @@ return function(api)
   -- whole; used: the ingredient past its ignored_by_stats). Measured on a private copy of world n's shift70 save, Gleba's
   -- six breeders at +50% over 66 s: 109 crafts and 54 productivity completions, 272 eggs out, 109 back in, 163 net; the
   -- statistics counted 163 made, and used 166 = 138 agricultural science crafts + 28 eggs a heating tower burned.
-  local function mean(p) return (p.amount or (((p.amount_min or 0) + (p.amount_max or 0)) / 2)) * product_chance(p) + (p.extra_count_fraction or 0) end
+  local function mean(p) return (p.amount or (((p.amount_min or 0) + (p.amount_max or 0)) / 2)) * product_chance(p) + product_fraction(p) end
   local function num(n) return math.floor(n * 10 + 0.5) / 10 end
   local plain = {}   -- recipe names with no ignored_by_stats item (a prototype read is 40-200 us)
   function M.returned(recipe_name, crafts, bonus)
