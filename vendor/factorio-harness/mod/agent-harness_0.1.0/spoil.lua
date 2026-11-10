@@ -87,13 +87,25 @@ return function(api)
   -- Measured in 2.0.77 Space Age: a pack contributes its remaining tool
   -- durability times (1 - spoil_percent). Normal labs, before productivity
   -- and lab-specific drain bonuses. Quality is already in get_durability.
+  local science_items
+  function M.is_pack(name)
+    local proto=prototypes.item[name]
+    if proto and proto.type=='tool' then return true end
+    if not science_items then
+      science_items={}
+      for _,lab in pairs(try(function() return prototypes.get_entity_filtered{{filter='type',type='lab'}} end) or {}) do
+        for _,item in ipairs(lab.lab_inputs or {}) do science_items[item]=true end
+      end
+    end
+    return science_items[name]==true
+  end
   local durability = {}
   local function pack_durability(name, quality)
     local key = name .. '@' .. (quality or 'normal')
     if durability[key] == nil then
       local proto = prototypes.item[name]
       local capacity = proto and try(function() return proto.science_capacity end)
-      if capacity and capacity > 0 then
+      if capacity and capacity > 0 and M.is_pack(name) then
         local drain = try(function() return prototypes.quality[quality or 'normal'].science_pack_drain_multiplier end) or 1
         durability[key] = drain > 0 and capacity / drain or false
       else durability[key] = proto and proto.type == 'tool' and try(function() return proto.get_durability(quality) end) or false end

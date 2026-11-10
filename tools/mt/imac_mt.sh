@@ -10,9 +10,12 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 host=${IMAC_HOST:-imac.local}
 dir=${MT_DIR:-/Users/owner/pog-mt}
-bin=/Users/owner/code/factorio-mac-2.0.77/factorio.app/Contents/MacOS/factorio
+app=${MT_FACTORIO_APP:-/Users/owner/code/factorio-mac-2.0.77/factorio.app}
+bin=$app/Contents/MacOS/factorio
+expected=${MT_EXPECT_VERSION:-2.0.77}
+mods_file=${MT_MODS_FILE:-$root/agent/mt/mods.tsv}
 rcon_port=${MT_RCON_PORT:-27475} game_port=${MT_GAME_PORT:-34475}
-pwfile=$HOME/.config/pog/rcon-imac-mt.pw
+pwfile=${MT_PASSWORD_FILE:-$HOME/.config/pog/rcon-imac-mt.pw}
 mod=$root/vendor/factorio-harness/mod/agent-harness_0.1.0
 remote() { ssh -o ConnectTimeout=10 -o BatchMode=yes "$host" "$@"; }
 ready() {
@@ -20,12 +23,25 @@ ready() {
 import sys; sys.path.insert(0, '$root/tools')
 from pog import Rcon
 r = Rcon('$host', $rcon_port, open('$pwfile').read().strip(), timeout=10)
-print(r.command(\"/silent-command rcon.print('tick ' .. game.tick .. (game.tick_paused and ' (paused)' or ''))\"))"
+out=r.command(\"/silent-command assert(script.active_mods.base=='$expected','wrong engine'); rcon.print('tick ' .. game.tick .. (game.tick_paused and ' (paused)' or ''))\"); assert out.strip().startswith('tick '), out; print(out)"
 }
 case ${1:-status} in
 start)
   save=${2:?usage: imac_mt.sh start SAVE.zip}
   if remote "[ -s '$dir/server.pid' ] && kill -0 \$(cat '$dir/server.pid') 2>/dev/null"; then echo "already running (pid $(remote "cat '$dir/server.pid'"))" >&2; exit 3; fi
+  remote "mkdir -p '$dir' && mkdir '$dir/launch.lock'" || { echo 'mt launch lock held; inspect the owner before retrying' >&2; exit 3; }
+  unlock() { remote "rmdir '$dir/launch.lock'" >/dev/null 2>&1 || true; }; trap unlock EXIT
+  remote "codesign --verify --deep --strict '$app'" || exit 1
+  actual=$(remote "cat '$app/Contents/data/base/info.json'" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')
+  [ "$actual" = "$expected" ] || { echo "expected $expected, installed $actual" >&2; exit 1; }
+  python3 - "$mod/info.json" "$expected" <<'PIN'
+import json, sys
+info = json.load(open(sys.argv[1]))
+assert info['factorio_version'] == '.'.join(sys.argv[2].split('.')[:2]), 'harness/engine version mismatch'
+PIN
+  if remote "lsof -nP -iTCP:$rcon_port -sTCP:LISTEN -t; lsof -nP -iUDP:$game_port -t" 2>/dev/null | grep -q '[0-9]'; then
+    echo 'mt ports occupied; refusing to replace another instance' >&2; exit 3
+  fi
   mkdir -p "$(dirname "$pwfile")"
   [ -s "$pwfile" ] || { python3 -c 'import secrets; print(secrets.token_hex(16))' > "$pwfile"; chmod 600 "$pwfile"; }
   [ -e "$(dirname "$pwfile")/rcon-imac2.pw" ] || ln -s "$(basename "$pwfile")" "$(dirname "$pwfile")/rcon-imac2.pw"
@@ -43,7 +59,7 @@ start)
   # the mod list: ours, and each of agent/mt/mods.tsv's mods enabled when its zip is in the mods folder (none is
   # downloaded: Nick puts the zips there)
   have=$(remote "ls '$dir/mods'" 2>/dev/null | tr '\n' ' ')
-  python3 - "$root/tools/imac-mod-list.json" "$root/agent/mt/mods.tsv" "$have" <<'PY2' | remote "cat > '$dir/mods/mod-list.json'"
+  python3 - "$root/tools/imac-mod-list.json" "$mods_file" "$have" <<'PY2' | remote "cat > '$dir/mods/mod-list.json'"
 import json, sys
 ml = json.load(open(sys.argv[1]))
 have = sys.argv[3].split()

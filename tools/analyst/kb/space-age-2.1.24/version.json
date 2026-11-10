@@ -1,0 +1,11 @@
+{
+  "base": "2.1.24",
+  "mods": {
+    "base": "2.1.24",
+    "agent-harness": "0.1.0",
+    "elevated-rails": "2.1.24",
+    "recycler": "2.1.24",
+    "quality": "2.1.24",
+    "space-age": "2.1.24"
+  }
+}

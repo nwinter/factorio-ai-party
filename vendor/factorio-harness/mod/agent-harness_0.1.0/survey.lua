@@ -504,8 +504,7 @@ return function(api)
     local names={}
     for name in pairs(stats.output_counts) do
       local item=prototypes.item[name]
-      local ok, capacity = pcall(function() return item.science_capacity end)
-      if item and ((ok and capacity or 0)>0 or item.type=='tool') then names[#names+1]=name end
+      if item and ((api.is_science and api.is_science(name)) or item.type=='tool') then names[#names+1]=name end
     end
     table.sort(names)
     for _,name in ipairs(names) do

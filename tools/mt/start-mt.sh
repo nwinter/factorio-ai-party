@@ -148,7 +148,7 @@ if tools/mt/imac_mt.sh status | grep -q '^running'; then
   log "server: $(tools/mt/imac_mt.sh status)"
 else
   save=${POG_MT_SAVE:-}
-  [ -n "$save" ] || [ -z "$resume" ] || save=imac:/Users/owner/pog-mt/saves/mt.zip
+  [ -n "$save" ] || [ -z "$resume" ] || save=imac:${MT_DIR:-/Users/owner/pog-mt}/saves/mt.zip
   [ -n "$save" ] || { log "refusing: the mt server is not running and POG_MT_SAVE is not set"; exit 1; }
   tools/mt/imac_mt.sh start "$save" 2>&1 | while read -r line; do log "server: $line"; done
   tools/mt/imac_mt.sh status | grep -q '^running' || { log "refusing: the mt server did not start"; exit 1; }

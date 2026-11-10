@@ -26,7 +26,7 @@ git -C "$root" archive HEAD | tar -x -C "$tmp"
 rm -rf "$tmp/tools/mt" "$tmp/agent/mt" "$tmp"/tools/test_*.py "$tmp"/tools/stream/test_*.py "$tmp"/site/test_*.py \
   "$tmp/vendor/factorio-harness/mod" "$tmp"/vendor/factorio-harness/tests/mt2*.lua \
   "$tmp"/tools/public_export.py "$tmp"/tools/public_sync.py "$tmp"/tools/public-push.sh "$tmp"/tools/public-start.sh \
-  "$tmp"/tools/imac-copy.sh "$tmp"/docs/DISCLOSURE.md "$tmp"/docs/mt-*.md
+  "$tmp"/tools/imac-copy.sh "$tmp"/docs/DISCLOSURE.md "$tmp"/docs/mt-*.md "$tmp"/docs/PORT21*.md "$tmp"/tools/port21-copy.sh
 (cd "$root/vendor/factorio-harness" && npm run build >/dev/null)
 mkdir -p "$tmp/vendor/factorio-harness/dist"
 cp -R "$root/vendor/factorio-harness/dist/." "$tmp/vendor/factorio-harness/dist/"

@@ -287,7 +287,7 @@ return function(api)
       end
     end
     local any_pack = false
-    for name in pairs(names) do if packs[name] or (prototypes.item[name] and ((try(function() return prototypes.item[name].science_capacity end) or 0) > 0 or try(function() return prototypes.item[name].type end) == 'tool')) then any_pack = true end end
+    for name in pairs(names) do if packs[name] or (prototypes.item[name] and ((sp and sp.is_pack and sp.is_pack(name)) or try(function() return prototypes.item[name].type end) == 'tool')) then any_pack = true end end
     local types = {}
     -- (d20 batch122 CE2) burners only for a fuel
     local fuels = {}

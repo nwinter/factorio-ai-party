@@ -4,10 +4,14 @@ local pack='agricultural-science-pack'
 local function removed(_,k) assert(k~='durability' and k~='get_durability','removed science API '..k) end
 prototypes={item={[pack]=setmetatable({name=pack,type='item',science_capacity=1,get_spoil_ticks=function() return 216000 end},{__index=removed})},
  quality={normal={science_pack_drain_multiplier=1},rare={science_pack_drain_multiplier=.98}}}
+prototypes.get_entity_filtered=function() return {lab={lab_inputs={pack}}} end
+prototypes.item.nutrients={type='item',science_capacity=1,get_spoil_ticks=function() return 18000 end}
 local S=dofile('mod/agent-harness_0.1.0/spoil.lua'){}
 game={tick=1000}; defines={inventory={lab_input=1,lab_trash=2},entity_status={working=1},flow_precision_index={ten_minutes=1}}
 local st=setmetatable({name=pack,valid_for_read=true,count=2,quality={name='rare'},spoil_tick=100000,spoil_percent=.5},{__index=removed})
 local inv={st};inv.valid=true;inv.get_contents=function() return {{name=pack,count=st.count,quality='rare'}} end
+assert(S.is_pack(pack) and not S.is_pack('nutrients'))
+local food={};S.add_count(food,'nutrients','normal',5,.5,100000);assert(food[1].research_units==nil)
 local v=S.inventory(inv,{})
 near(v[1].research_units,1/.98)
 local moved={}; S.add_count(moved,pack,'normal',2,.5,100000);near(moved[1].research_units,1)

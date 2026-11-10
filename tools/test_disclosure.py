@@ -214,3 +214,8 @@ if __name__ == "__main__":
     runtime_table()
     brief_filtered()
     print("all passed")
+
+# Native describe uses a flat argument map; older cached schemas wrap it in args.
+for schema in ({"direction":"north", "ticks":"count"},{"args":{"direction":"north", "ticks":"count"}}):
+    ids={u["id"] for u in build.units({"actions":{"walk":schema}})}
+    assert "arg:walk.direction" in ids and "arg:walk.ticks" in ids

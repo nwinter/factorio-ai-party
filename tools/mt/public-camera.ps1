@@ -1,12 +1,13 @@
 # Dedicated camera files/task/executable. Never modifies world n or its cameras.
-param([ValidateSet('start','stop','status')][string]$Action = 'status', [int]$Port = 34478)
+param([ValidateSet('start','stop','status')][string]$Action = 'status', [int]$Port = 34478, [ValidateSet('2.0.77','2.1.24')][string]$Version = '2.0.77')
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$dir = 'D:\pog\mt-stream\client'
+$root = if ($Version -eq '2.1.24') { 'D:\pog\mt-stream21' } else { 'D:\pog\mt-stream' }
+$dir = "$root\client"
 $config = "$dir\config\config.ini"
-$pidfile = 'D:\pog\mt-stream\camera.pid'
-$task = 'pog-mt-stream-camera'
-$build = 'D:\pog\factorio-2.0.77-expansion'
+$pidfile = "$root\camera.pid"
+$task = if ($Version -eq '2.1.24') { 'pog-mt-stream21-camera' } else { 'pog-mt-stream-camera' }
+$build = "D:\pog\factorio-$Version-expansion"
 $exe = "$build\bin\x64\factorio-mtcam.exe"
 function Owned {
   if (Test-Path $pidfile) {
@@ -30,12 +31,14 @@ if ($Action -eq 'stop') {
 if (Owned) { throw 'mt camera already running; stop its owning run first' }
 $others = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -like 'factorio*.exe' })
 if ($others.Count) { throw 'Factorio is already running on pogwin; one camera only. Inspect and stop its owning run first.' }
-if (-not (Test-Path "$build\data\space-age")) { throw 'The public camera requires the installed 2.0.77 Space Age build' }
+if (-not (Test-Path "$build\data\space-age")) { throw "The public camera requires the installed $Version Space Age build" }
+$installed = Get-Content "$build\data\base\info.json" -Raw | ConvertFrom-Json
+if ($installed.version -ne $Version) { throw "camera version mismatch: expected $Version" }
 New-Item -ItemType Directory -Force "$dir\config" | Out-Null
 Set-Content -Encoding ascii $config @"
 [path]
-read-data=D:/pog/factorio-2.0.77-expansion/data
-write-data=D:/pog/mt-stream/client
+read-data=D:/pog/factorio-$Version-expansion/data
+write-data=$($dir -replace '\\','/')
 [other]
 check-updates=false
 show-tips-and-tricks=false

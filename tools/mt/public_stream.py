@@ -31,7 +31,7 @@ from public_overlay import PublicOverlay, CAMERA
 from udp_bridge import Bridge
 
 SCENE = 'mt-stream'
-REMOTE = 'D:/pog/mt-stream'
+REMOTE = 'D:/pog/mt-stream21' if os.environ.get('MT_EXPECT_VERSION') == '2.1.24' else 'D:/pog/mt-stream'
 SSH = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'ControlMaster=no', '-o', 'ControlPath=none']
 LOCK = Path.home() / '.local/state/pog/mt-public.lock'
 
@@ -52,7 +52,7 @@ def checked(args, **kw):
 
 
 def remote_camera(action):
-    return checked(powershell(f"& '{REMOTE}/public-camera.ps1' -Action {action}"), capture_output=True, text=True)
+    return checked(powershell(f"& '{REMOTE}/public-camera.ps1' -Action {action} -Version {os.environ.get('MT_EXPECT_VERSION', '2.0.77')}"), capture_output=True, text=True)
 
 
 def stage():
@@ -61,7 +61,7 @@ def stage():
         checked(['scp', '-q', str(HERE / name), f'pogwin:{REMOTE}/{name}'])
     # Copy the running server's on-disk mods, not a different branch's runtime.
     with tempfile.TemporaryDirectory(prefix='mt-stream-mods-') as tmp:
-        checked(['scp', '-q', '-r', 'imac.local:/Users/owner/pog-mt/mods', tmp])
+        checked(['scp', '-q', '-r', f"imac.local:{os.environ.get('MT_DIR', '/Users/owner/pog-mt')}/mods", tmp])
         checked(['scp', '-q', '-r', tmp + '/mods/.', f'pogwin:{REMOTE}/client/mods/'])
 
 
@@ -75,7 +75,7 @@ def setup_obs(obs, url, receipt):
         obs.call('CreateScene', {'sceneName': SCENE})
     specs = [
         ('mt background', 'color_source_v3', {'color': 0xff201810, 'width': 1920, 'height': 1080}, (0, 0, 1920, 1080)),
-        ('mt camera', 'game_capture', {'capture_mode': 'window', 'window': 'Factorio 2.0.77:Factorio:factorio-mtcam.exe',
+        ('mt camera', 'game_capture', {'capture_mode': 'window', 'window': f"Factorio {os.environ.get('MT_EXPECT_VERSION', '2.0.77')}:Factorio:factorio-mtcam.exe",
                                      'priority': 2, 'capture_cursor': False, 'allow_transparency': False}, (0, 72, 1440, 810)),
         ('mt overlay', 'browser_source', {'url': url, 'width': 1920, 'height': 1080, 'fps': 30,
                                         'shutdown': False, 'restart_when_active': True}, (0, 0, 1920, 1080))]

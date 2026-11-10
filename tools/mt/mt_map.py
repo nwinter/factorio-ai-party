@@ -366,8 +366,8 @@ def cmd_report(a):
     print(json.dumps(out, indent=1))
 
 
-MAC_APP = "/Users/owner/code/factorio-mac-2.0.77/factorio.app"
-MT_DIR = "/Users/owner/pog-mt"  # the iMac server's folder (tools/mt/imac_mt.sh)
+MAC_APP = os.environ.get("MT_FACTORIO_APP", "/Users/owner/code/factorio-mac-2.0.77/factorio.app")
+MT_DIR = os.environ.get("MT_DIR", "/Users/owner/pog-mt")  # the iMac server's folder (tools/mt/imac_mt.sh)
 
 
 def ssh(host, cmd, check=True):

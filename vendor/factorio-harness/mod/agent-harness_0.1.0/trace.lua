@@ -233,7 +233,10 @@ return function(api)
   -- Whether an inserter's drop target takes an item: a machine its recipe's ingredients, a lab the packs, else anything.
   local function accepts(t, item, pk)
     if not (t and t.valid) then return true end
-    if t.type == 'lab' then return pk[item] == true or (try(function() return prototypes.item[item].science_capacity end) or 0)>0 or try(function() return prototypes.item[item].type end) == 'tool' end
+    if t.type == 'lab' then
+      for _,name in ipairs(try(function() return t.prototype.lab_inputs end) or {}) do if name==item then return true end end
+      return pk[item] == true or try(function() return prototypes.item[item].type end) == 'tool'
+    end
     if CRAFTER[t.type] then
       local r = recipe_of(t)
       for _, ing in ipairs(r and r.ingredients or {}) do if ing.name == item then return true end end
