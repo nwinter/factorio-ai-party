@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- trace {position, upstream: true}: from a target back along what feeds it, to the first place an ingredient stops
 -- or goes elsewhere (Sol, Luna, Astra, Grok; d15 shifts 19-20: Starling drifted backwards ~8 min while an arm at
 -- (9.5,2.5) sent all its ore onto a furnace belt; Swift's ammo starved behind a jammed mixed return; Grok walked a coal
@@ -121,7 +124,7 @@ return function(api, H)
     bn = bn or try(function() return e.belt_neighbours end)
     for _, n in ipairs(bn and bn.inputs or {}) do cands[#cands+1] = n end
     if e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'output' then
-      local nb = try(function() return e.neighbours end)
+      local nb = try(function() return e[UNDERGROUND_NEIGHBOUR] end)
       if nb and nb.valid then cands[#cands+1] = nb end
     end
     for _, n in ipairs(cands) do

@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- Factory awareness for status: science and plate rates, research ETA, machine
 -- states, fuel and power starvation, the character's inventory, and how much
 -- of the factory still runs through the character's hands. Numbers only: what
@@ -218,7 +221,7 @@ return function(api)
   local function belt_one(b,surface,force,e,kind,p)
     if e.valid==false then return end  -- gone since the job's find (a slice a tick)
     if kind=='underground-belt' then
-      if not e.neighbours then b.unpaired[#b.unpaired+1]=e.belt_to_ground_type..' '..at_pos(p or e.position) end
+      if not e[UNDERGROUND_NEIGHBOUR] then b.unpaired[#b.unpaired+1]=e.belt_to_ground_type..' '..at_pos(p or e.position) end
     elseif #e.belt_neighbours.outputs==0 then
       local s=STEP[e.direction]
       p=p or e.position

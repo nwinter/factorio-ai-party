@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- This file is also the hot-reload payload. Top-level execution must be pure:
 -- Factorio executes it during on_load, when game and storage writes are forbidden.
 local M = {}
@@ -2001,7 +2004,7 @@ local function summary(e)
   -- An underground end shows what the belt GUI arrows show: which end it is
   -- (flow direction by name) and where its partner is.
   if e.type=='underground-belt' then
-    local other=e.neighbours
+    local other=e[UNDERGROUND_NEIGHBOUR]
     out.underground=e.belt_to_ground_type; out.flow=compass_names[e.direction]
     if other then out.paired_with=other.position else out.unpaired=true end
   end
@@ -6703,7 +6706,7 @@ local function underground_type(surface,proto,pos,direction)
   for k=1,proto.max_underground_distance or 0 do
     for _,e in pairs(surface.find_entities_filtered{position={x=x-step[1]*k,y=y-step[2]*k},radius=0.3,type='underground-belt'}) do
       if e.name==proto.name and e.direction==direction then
-        return (e.direction==direction and e.belt_to_ground_type=='input' and not e.neighbours) and 'output' or 'input'
+        return (e.direction==direction and e.belt_to_ground_type=='input' and not e[UNDERGROUND_NEIGHBOUR]) and 'output' or 'input'
       end
     end
   end
@@ -7246,7 +7249,7 @@ function M.underground_pair_ends(surface,force,place,pos)
     if e.valid and e.name~=place.name and e.prototype.fast_replaceable_group==place.fast_replaceable_group then o=e end
   end
   if not o then return nil end
-  local ok,other=pcall(function() return o.neighbours end)
+  local ok,other=pcall(function() return o[UNDERGROUND_NEIGHBOUR] end)
   if not (ok and other and other.valid and other.force==force) or other.name==place.name then return nil end
   return o,other
 end
@@ -11082,7 +11085,7 @@ function handlers.refuel(p,a)
           for k in pairs(M.farm.fuel_categories(e) or {}) do cats[#cats+1]=k end
           table.sort(cats)
           error(string.format('%s at (%g,%g) burns %s fuel, not %s (%s)',e.name,e.position.x,e.position.y,table.concat(cats,'/'),fuel,
-            tostring(prototypes.item[fuel].fuel_category)),0)
+            table.concat(M.farm.item_fuel_categories(prototypes.item[fuel]), '/')),0)
         end
       end
       local out=start_tour(p,a,'refuel',fuel,count,ents)
@@ -11100,7 +11103,7 @@ function handlers.refuel(p,a)
       for k in pairs(M.farm.fuel_categories(e) or {}) do cats[#cats+1]=k end
       table.sort(cats)
       error(string.format('%s at (%g,%g) burns %s fuel, not %s (%s)',e.name,e.position.x,e.position.y,table.concat(cats,'/'),fuel,
-        tostring(prototypes.item[fuel].fuel_category)),0)
+        table.concat(M.farm.item_fuel_categories(prototypes.item[fuel]), '/')),0)
     end
   end
   local args={direction='to_entity',item=fuel,inventory='fuel',count=count,up_to=count,quality=a.quality,fail_short=true}

@@ -1,4 +1,5 @@
 -- Strict 2.1 recipe objects reject both removed category fields.
+script={active_mods={base='2.1.24'}}
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 storage={agent_harness={active={}}}
 defines={events={on_script_path_request_finished=10,on_entity_died=11,on_entity_damaged=12,on_console_chat=13,on_unit_group_finished_gathering=14},
@@ -92,3 +93,14 @@ nick.get_main_inventory=nick.character.get_main_inventory
 prototypes.item={};prototypes.recipe={multi=r};prototypes.entity={['em-plant']=proto}
 local out=runtime.dispatch{player=1,action='configure',args={position={x=5,y=5},recipe='multi'}}
 assert(out.recipe=='multi' and current==r)
+-- Fast replacement checks both underground ends through the native 2.1 field.
+local paired={valid=true,name='underground-belt',type='underground-belt',force=force,
+  prototype={fast_replaceable_group='belt'},position={x=8.5,y=5.5}}
+local entry=setmetatable({valid=true,name='underground-belt',type='underground-belt',force=force,
+  prototype={fast_replaceable_group='belt'},underground_belt_neighbour=paired},
+  {__index=function(_,k) assert(k~='neighbours','removed neighbours') end})
+surface.find_entities_filtered=function() return {entry} end
+local old,other=runtime.underground_pair_ends(surface,force,{name='fast-underground-belt',fast_replaceable_group='belt'},{x=5.5,y=5.5})
+assert(old==entry and other==paired)
+entry.underground_belt_neighbour=nil
+assert(runtime.underground_pair_ends(surface,force,{name='fast-underground-belt',fast_replaceable_group='belt'},{x=5.5,y=5.5})==nil)

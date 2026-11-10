@@ -41,8 +41,10 @@ return function(api)
   -- The signals on its red and green wires, summed as the game reads them: {key: {type, name, quality, count}}, in order.
   function M.signals(e)
     local by, order = {}, {}
+    local selected = try(function() return e.get_control_behavior().input_networks end)
     for _, w in ipairs({'circuit_red', 'circuit_green'}) do
-      local net = try(function() return e.get_circuit_network(defines.wire_connector_id[w]) end)
+      local color = w == 'circuit_red' and 'red' or 'green'
+      local net = (not selected or selected[color] ~= false) and try(function() return e.get_circuit_network(defines.wire_connector_id[w]) end)
       for _, s in ipairs(net and try(function() return net.signals end) or {}) do
         local sig = s.signal or {}
         local kind, q = sig.type or 'item', qname(sig.quality)

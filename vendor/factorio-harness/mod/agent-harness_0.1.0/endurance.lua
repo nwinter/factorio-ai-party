@@ -1,3 +1,12 @@
+-- A specific silo may override the default rocket lift on Factorio 2.1.
+local function rocket_lift(silo)
+  local ok, v = pcall(function() return silo.prototype.lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.default_rocket_lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.rocket_lift_weight end)
+  if ok then return v end
+end
 -- platform_endurance (d15 trajectory analysis: Wayfarer was lost at Aquilo at 11:02 after its rockets, fuel and repair
 -- packs ran out; nothing projected the trip before it left): for a planned route, each leg's length and time at the
 -- platform's speed, and what its ammunition, repair packs, thruster fuel and oxidizer, power and hub space come to over
@@ -1048,7 +1057,7 @@ return function(api)
     -- The departure check (Sol 13:50: Swift left with too little ammunition, repeatedly): for each ammunition used over
     -- the route at the rates above, what it needs, what is aboard and made on the way, and a rocket's lift of it.
     local departure = {}
-    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+    local lift = rocket_lift() or 1000000
     for _, row in ipairs(rows) do
       local item = prototypes.item[row.name]
       if total_min and total_min > 0 and row.used_per_min > 0 and item and item.type == 'ammo' then

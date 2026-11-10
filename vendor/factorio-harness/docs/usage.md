@@ -18988,3 +18988,17 @@ including shared probability rolls and products exempt from productivity. Qualit
 scale. `science` keeps whole inventory packs in `labs` and reports consumed packs' remaining capacity separately
 as `lab_stored_capacity`; a lab with remaining capacity is not missing that pack. `uptime` includes that capacity
 when sampling lab consumption. Product freshness flags apply to each product separately.
+
+## Factorio 2.1.24 undergrounds, fuels and circuits
+
+Underground pairing and build-side selection use the dedicated belt neighbour API. Item fuel categories are lists;
+a burner accepts a fuel if any category matches. Actual silo cargo limits and request reads use that silo's lift
+weight, while generic item manifests use the engine default. Launch-budget estimates use the smallest selected
+silo's lift and disclose when selected silos differ (the engine chooses the silo).
+
+Circuit controls preserve independent read-contents and set-requests switches on 2.1 chests and landing pads.
+`settings.input_networks` and `output_networks` select red, green, both or a `{red,green}` record where supported.
+Tank/pipe `read.contents` reads its own box; `read.segment_contents` reads the segment; these are exclusive modes.
+Temperature is independent. Assembler/furnace fuel reads use `read_fuel`; the previous `include_fuel` input remains
+an alias. Legacy exclusive chest mode names still select one mode. Readback, snapshot/restore and ghost dry checks
+use the native controls. The 2.0.77 controls and defaults remain available on that engine.

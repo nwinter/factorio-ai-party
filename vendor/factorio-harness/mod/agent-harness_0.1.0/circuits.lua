@@ -1,3 +1,4 @@
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
 -- The circuit network, as a player works it: circuit_set changes what an
 -- entity's circuit GUI holds (enable and logistic conditions, read switches
 -- and modes, the signals it sends, combinator settings); wire connects and
@@ -56,6 +57,20 @@ return function(api)
     turret={on_off=true, ignore_unlisted_targets_condition='condition', read_ammo='bool', set_ignore_unlisted_targets='bool', set_priority_list='bool'},
     wall={circuit_condition='condition', open_gate='bool', output_signal='signal', read_sensor='bool'},
   }
+  if PORT21 then
+    for _, kind in ipairs({'assembling_machine', 'furnace'}) do
+      PROPS[kind].include_fuel = nil; PROPS[kind].read_fuel = 'bool'
+    end
+    PROPS.logistic_container.circuit_exclusive_mode_of_operation = nil
+    PROPS.logistic_container.read_contents = 'bool'; PROPS.logistic_container.set_requests = 'bool'
+    PROPS.cargo_landing_pad = {read_contents='bool', set_requests='bool', read_empty_slots='bool', empty_slots_signal='signal'}
+    PROPS.storage_tank = nil
+    PROPS.single_fluid_box = {circuit_exclusive_mode_of_operation='control_behavior.single_fluid_box.exclusive_mode', read_temperature='bool', temperature_signal='signal'}
+    PROPS.boiler = {on_off=true, read_fuel='bool'}
+    PROPS.heat_pipe = {read_temperature='bool', temperature_signal='signal'}
+    PROPS.lab = { read_contents='bool', read_fuel='bool', read_research_cost='bool', read_technology_level='bool', technology_level_signal='signal', set_research='bool'}
+    PROPS.land_mine = {on_off=true}
+  end
   -- Item filter settings of inserters and loaders: set on the entity (configure's filters), not its circuit behavior.
   local FILTER_SETTINGS = {filters='filters', filter_mode='filter_mode', mode='filter_mode', use_filters='use_filters'}
   -- read's short names from before settings (each a switch above).
@@ -93,6 +108,10 @@ return function(api)
       surface='planet or surface name: both ends there by remote view',
       returns='color, connected (already) or disconnected, by (reach|remote view), from and to {entity, position, side, wires}, network; a refusal says why'},
   }
+
+  if PORT21 then
+    M.schema.circuit_set.set_requests = 'requester/buffer chest or cargo landing pad: true sets requests from selected input wires; false stops. read: {contents: true} is independent and may stay on. settings.input_networks and output_networks select red, green or both where supported. Tanks take read.contents or read.segment_contents (one mode), and read.temperature.'
+  end
 
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function int(v, what)
@@ -221,6 +240,7 @@ return function(api)
       local t = v:lower():gsub('%s', '')
       if t == 'red+green' or t == 'green+red' then v = 'both' else v = t end
     end
+    if v == 'none' then return {red=false, green=false} end
     if v == 'red' then return {red=true, green=false} elseif v == 'green' then return {red=false, green=true}
     elseif v == 'both' then return {red=true, green=true} end
     if type(v) == 'table' and (v.red == nil or type(v.red) == 'boolean') and (v.green == nil or type(v.green) == 'boolean') then
@@ -253,8 +273,14 @@ return function(api)
   end
   -- A kind's settings; a kind not in PROPS that has the enable switch takes enable and logistic.
   local function props_of(cb, kind)
-    if PROPS[kind] then return PROPS[kind] end
-    return try(function() return cb.circuit_enable_disable end) ~= nil and {on_off=true} or {}
+    local base = PROPS[kind] or (try(function() return cb.circuit_enable_disable end) ~= nil and {on_off=true} or {})
+    if not PORT21 then return base end
+    local props = {}
+    for k, v in pairs(base) do props[k] = v end
+    for _, k in ipairs({'input_networks', 'output_networks'}) do
+      if try(function() return cb[k] end) ~= nil then props[k] = 'networks' end
+    end
+    return props
   end
   local function names(t)
     local list = {}
@@ -493,8 +519,10 @@ return function(api)
       if not (type(sig) == 'table' and sig.name) then return nil end
       if sig.type == 'virtual' and (sig.name == 'signal-everything' or sig.name == 'signal-anything' or sig.name == 'signal-each') then return nil end
       local n, wired = 0, false
-      for _, w in ipairs({defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green}) do
-        local net = try(function() return e.get_circuit_network(w) end)
+      local selected = cb and try(function() return cb.input_networks end)
+      for _, color in ipairs({'red', 'green'}) do
+        local w = defines.wire_connector_id['circuit_' .. color]
+        local net = (not selected or selected[color] ~= false) and try(function() return e.get_circuit_network(w) end)
         if net then wired = true; n = n + (try(function() return net.get_signal(sig) end) or 0) end
       end
       return wired and n or nil
@@ -932,6 +960,7 @@ return function(api)
       if k == 'bool' then if v then settings[name] = true elseif v == false then off[#off+1] = name end
       elseif k == 'signal' then settings[name] = signal_text(v)
       elseif k == 'condition' then settings[name] = condition_text(v)
+      elseif k == 'networks' then settings[name] = networks_text(v)
       elseif v ~= nil then settings[name] = define_name(k, v) end
     end
     out.settings = next(settings) and settings or nil
@@ -1120,9 +1149,16 @@ return function(api)
       error(string.format('settings: %s is not a circuit setting of %s (its settings: %s)', tostring(name), e.name, settings_list(kind, props)), 0)
     end
     local what = 'settings.' .. name
+    if PORT21 and kind == 'logistic_container' and name == 'set_requests' then
+      local proto = e.type == 'entity-ghost' and e.ghost_prototype or e.prototype
+      local mode = proto.logistic_mode
+      assert(mode == 'requester' or mode == 'buffer', 'set_requests: only requester and buffer chests set requests from the wires')
+    end
     if k == 'bool' then
       if type(v) ~= 'boolean' then error(what .. ' must be boolean', 0) end
       return v
+    elseif k == 'networks' then
+      return networks(v, what)
     elseif k == 'signal' then
       if v == false then return nil end
       return signal(v, what)
@@ -1264,7 +1300,7 @@ return function(api)
     local proto = e.type == 'entity-ghost' and try(function() return e.ghost_prototype end) or try(function() return e.prototype end)
     local mode = try(function() return proto.logistic_mode end) or '?'
     local requests = mode == 'requester' or mode == 'buffer'
-    if a.logistic ~= nil then error('logistic: ' .. e.name .. ' has ' .. CHEST_NO_LOGISTIC, 0) end
+    if a.logistic ~= nil then error('logistic: ' .. e.name .. ' has ' .. (PORT21 and 'no logistic network condition; use its circuit condition' or CHEST_NO_LOGISTIC), 0) end
     if a.enable == false then error(M.ENABLE_FALSE, 0) end
     if a.switch_off ~= nil then error('switch_off: ' .. e.name .. ' is a chest: it has no running to stop (remove_condition: true clears its circuit condition)', 0) end
     if a.remove_condition ~= nil then
@@ -1281,7 +1317,8 @@ return function(api)
       local r = {}
       for k, v in pairs(a.read) do
         if k == 'contents' or k == 'read_contents' then
-          if requests then st.circuit_exclusive_mode_of_operation = v and 'send_contents' or 'none'
+          if PORT21 then st.read_contents = v
+          elseif requests then st.circuit_exclusive_mode_of_operation = v and 'send_contents' or 'none'
           elseif v == true then notes[#notes+1] = e.name .. ' sends its contents to the wires whenever wired: 2.0.77 has no switch for it (Read contents and Set requests are requester and buffer settings)'
           else error('read.contents: ' .. e.name .. ' sends its contents whenever wired; 2.0.77 has no switch to stop it (only requester and buffer chests have Read contents / Set requests)', 0) end
         else r[k] = v end
@@ -1290,12 +1327,57 @@ return function(api)
     end
     if a.set_requests ~= nil then
       if type(a.set_requests) ~= 'boolean' then error('set_requests must be true or false', 0) end
-      if not requests then error('set_requests: ' .. e.name .. ' is a ' .. mode .. ' chest; 2.0.77 lets only requester and buffer chests set requests from the wires', 0) end
-      st.circuit_exclusive_mode_of_operation = a.set_requests and 'set_requests' or 'none'
+      if not requests then error('set_requests: ' .. e.name .. ' is a ' .. mode .. ' chest; ' .. (PORT21 and 'only' or '2.0.77 lets only') .. ' requester and buffer chests set requests from the wires', 0) end
+      if PORT21 then st.set_requests = a.set_requests
+      else st.circuit_exclusive_mode_of_operation = a.set_requests and 'set_requests' or 'none' end
       b.set_requests = nil
     end
     b.settings = next(st) and st or nil
     return b, #notes > 0 and notes or nil
+  end
+  local function port21_words(kind, a)
+    if not PORT21 then return a end
+    local b, st, r = {}, {}, {}
+    for k, v in pairs(a) do b[k] = v end
+    for k, v in pairs(type(a.settings) == 'table' and a.settings or {}) do st[k] = v end
+    for k, v in pairs(type(a.read) == 'table' and a.read or {}) do r[k] = v end
+    if kind == 'assembling_machine' or kind == 'furnace' then
+      if st.include_fuel ~= nil then
+        assert(st.read_fuel == nil or st.read_fuel == st.include_fuel, 'include_fuel and read_fuel disagree')
+        st.read_fuel, st.include_fuel = st.include_fuel, nil
+      end
+      if r.include_fuel ~= nil then r.fuel, r.include_fuel = r.include_fuel, nil end
+    end
+    if kind == 'logistic_container' or kind == 'cargo_landing_pad' then
+      local old = st.circuit_exclusive_mode_of_operation
+      if old ~= nil then
+        assert(old == 'none' or old == 'send_contents' or old == 'set_requests', 'circuit_exclusive_mode_of_operation is none, send_contents or set_requests')
+        assert(st.read_contents == nil and st.set_requests == nil, 'use read_contents and set_requests together, or one legacy exclusive mode')
+        st.read_contents, st.set_requests = old == 'send_contents', old == 'set_requests'
+        st.circuit_exclusive_mode_of_operation = nil
+      end
+      if kind == 'cargo_landing_pad' and a.set_requests ~= nil then
+        st.set_requests, b.set_requests = a.set_requests, nil
+      end
+    elseif kind == 'single_fluid_box' then
+      for _, k in ipairs({'contents', 'read_contents', 'segment_contents'}) do
+        local v = r[k]
+        if v ~= nil then
+          assert(type(v) == 'boolean', 'read.' .. k .. ' must be boolean')
+          local mode = v and (k == 'segment_contents' and 'send_segment_contents' or 'send_contents') or 'none'
+          assert(st.circuit_exclusive_mode_of_operation == nil or st.circuit_exclusive_mode_of_operation == mode, 'choose one tank content mode')
+          st.circuit_exclusive_mode_of_operation, r[k] = mode, nil
+        end
+      end
+      if st.read_contents ~= nil then
+        assert(type(st.read_contents) == 'boolean', 'settings.read_contents must be boolean')
+        assert(st.circuit_exclusive_mode_of_operation == nil, 'choose one tank content mode')
+        st.circuit_exclusive_mode_of_operation, st.read_contents = st.read_contents and 'send_contents' or 'none', nil
+      end
+    end
+    if type(a.settings) == 'table' or next(st) then b.settings = next(st) and st or nil end
+    if type(a.read) == 'table' then b.read = next(r) and r or nil end
+    return b
   end
   -- circuit_set's checks, and the steps that write what passed them (run by circuit_set; a place_ghosts dry run runs
   -- the checks alone on a stand-in of the entity: M.dry_set).
@@ -1321,6 +1403,7 @@ return function(api)
       if not chest then b.logistic = false end
       a = b
     end
+    a = port21_words(kind, a)
     a, chest_notes = chest_words(e, kind, a)
     M.check_args(a)   -- (d29 batch348) the values, as a queued step's check reads them
     -- A ghost by what it builds (its own name is entity-ghost): it takes the same settings (Astra 12:20).
@@ -1463,6 +1546,11 @@ return function(api)
   -- each type with circuit wires, get_or_create_control_behavior; a pole has wires and no control behavior).
   local TYPE_KIND = {['ammo-turret']='turret', ['electric-turret']='turret', ['fluid-turret']='turret', ['infinity-container']='logistic_container',
     ['linked-container']='container', ['offshore-pump']='generic_on_off', ['power-switch']='generic_on_off', ['electric-pole']=false}
+  if PORT21 then
+    for _, kind in ipairs({'storage-tank', 'pipe', 'pipe-to-ground', 'infinity-pipe'}) do TYPE_KIND[kind] = 'single_fluid_box' end
+  end
+  -- 2.1.24 native ghost controls, order4-21-api.json: bit 1 input, bit 2 output (dry checks only).
+  local NETWORKS21 = {accumulator=2, agricultural_tower=3, artillery_turret=3, assembling_machine=3, asteroid_collector=3, boiler=3, cargo_landing_pad=3, container=2, furnace=3, generic_on_off=1, heat_pipe=2, inserter=3, lab=3, lamp=1, land_mine=1, logistic_container=3, mining_drill=3, proxy_container=2, pump=1, rail_chain_signal=3, rail_signal=3, reactor=2, roboport=2, rocket_silo=2, single_fluid_box=2, splitter=1, train_stop=3, transport_belt=3, turret=3, wall=3}
   -- A place_ghosts dry run (d17 batch18 A3, Sol): circuit_set's checks for an entity of that name, on a stand-in of
   -- it (no entity is read or written). Errors as circuit_set would.
   function M.dry_set(name, a, force)
@@ -1477,7 +1565,11 @@ return function(api)
     end
     local e = {valid=true, name=name, type=proto.type, prototype=proto, position=a.position or {x=0, y=0}}
     qforce = force
-    plan_set(e, {type=id, circuit_enable_disable=false}, a, 'dry run')
+    local standin = {type=id, circuit_enable_disable=false}
+    local mask = PORT21 and NETWORKS21[kind] or 0
+    if mask and mask % 2 == 1 then standin.input_networks = {red=true, green=true} end
+    if mask and mask >= 2 then standin.output_networks = {red=true, green=true} end
+    plan_set(e, standin, a, 'dry run')
   end
   function M.handlers.circuit_set(p, a)
     local e, by = target(p, a, 'target')
@@ -1618,7 +1710,7 @@ return function(api)
       if settings.circuit_enable_disable == true or settings.circuit_condition_enabled == true then
         add('its enable condition' .. cond(settings.circuit_condition), runs)
       end
-      if spec.set_requests == true or settings.circuit_exclusive_mode_of_operation == 'set_requests' then add(REQUESTS[1], REQUESTS[2]) end
+      if spec.set_requests == true or settings.set_requests == true or settings.circuit_exclusive_mode_of_operation == 'set_requests' then add(REQUESTS[1], REQUESTS[2]) end
     end
     local source = bp and spec or settings
     for k, v in pairs(source) do

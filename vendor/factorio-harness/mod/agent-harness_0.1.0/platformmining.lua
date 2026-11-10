@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- Factorio 2.0.77 discards some item inventories and transport-line contents during native platform mining
 -- before on_space_platform_mined_entity. Move actual stacks out in pre_mined,
 -- then join the engine's dynamic mining buffer for hub delivery.
@@ -62,7 +65,7 @@ return function(api)
             local line=e.get_transport_line(i)
             local duplicate=false
             if e.type=='underground-belt' and i>2 then
-              local partner=e.neighbours
+              local partner=e[UNDERGROUND_NEIGHBOUR]
               if partner and partner.valid and seen[partner.unit_number] then
                 duplicate=line.line_equals(partner.get_transport_line(i))
               end

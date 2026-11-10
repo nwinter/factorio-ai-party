@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- The census: what the host services' periodic reads counted with one find over every surface in a single tick
 -- (operator 22:00, task-slowreads: the stream service's extras read 32 ms every 3 s, the live map 134 ms every minute
 -- (169 ms with ore), the analyst's snapshot 96 ms and machines 36 ms every 90 s, on world n; a find costs about every
@@ -322,7 +325,7 @@ return function(api)
       local ok, lines = pcall(e.get_max_transport_line_index)
       -- (d22 batch96 BF1) an underground exit's buried lines (3 and 4) are its entrance's: counted there once, as
       -- freight.lua stock_places counts them
-      local partner = t == 'underground-belt' and e.belt_to_ground_type == 'output' and e.neighbours
+      local partner = t == 'underground-belt' and e.belt_to_ground_type == 'output' and e[UNDERGROUND_NEIGHBOUR]
       if partner and not partner.valid then partner = nil end
       local n = ok and lines or 0
       local get_line = n >= 1 and e.get_transport_line or nil  -- (BT1) the method read once a belt, not once a line

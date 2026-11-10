@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- platform_supply {platform, fuel: true} (d17 batch31 B5, Sol 06:22: "a platform fuel starvation trace that follows
 -- water/ice and raw asteroid belts including gaps and underground-floor dependencies; nominal production rates hid
 -- missing feedstock for most of this shift"): from the thrusters back, link by link, what reaches each consumer now.
@@ -241,7 +244,7 @@ return function(api)
           local prev = {}
           for _, x in ipairs(ins) do prev[#prev+1] = x end
           if b.type == 'underground-belt' and try(function() return b.belt_to_ground_type end) == 'output' then
-            local o = try(function() return b.neighbours end)
+            local o = try(function() return b[UNDERGROUND_NEIGHBOUR] end)
             if o and o.valid then
               prev[#prev+1] = o
               -- the tiles between the ends: empty space there cuts it on a platform

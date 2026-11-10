@@ -1,3 +1,12 @@
+-- A specific silo may override the default rocket lift on Factorio 2.1.
+local function rocket_lift(silo)
+  local ok, v = pcall(function() return silo.prototype.lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.default_rocket_lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.rocket_lift_weight end)
+  if ok then return v end
+end
 -- shipment {platform | item} (d17 batch15 Group B, Sol request #614 and 08:04, Astra 07:58 and 08:05): one read across
 -- the native systems a shipment goes through, as their GUIs show them; nothing here moves or decides anything.
 -- Per stop of a platform's schedule (its station, waiting there or not, the departure conditions with what the hub holds):
@@ -208,10 +217,10 @@ return function(api)
     end
     return math.max(0, n)
   end
-  local function payload_of(item, custom)
+  local function payload_of(item, custom, silo)
     if custom then return custom end
     local w = pget(pget(pget(prototypes, 'item'), item), 'weight')
-    local lift = pget(pget(prototypes, 'utility_constants'), 'rocket_lift_weight')
+    local lift = rocket_lift(silo)
     return w and lift and w > 0 and math.floor(lift / w) or nil
   end
   local function row_of(sil, x, key)
@@ -229,7 +238,7 @@ return function(api)
   -- what their networks can give
   local function judge(sil, item, qa, cmp, custom, here)
     local key = item .. '@' .. qa .. (cmp ~= '=' and cmp or '')
-    local list, payload = {}, nil
+    local list = {}
     for i, x in ipairs(sil.list) do
       local pos = pget(x.e, 'position') or {x=0, y=0}
       local s = {i=i, name=x.e.name, position={x=pos.x, y=pos.y}, auto=x.auto, parts=parts_of(x)}
@@ -242,8 +251,7 @@ return function(api)
         local ln = net_of(sil, x)
         s.network = ln and pget(ln, 'network_id') or nil
         s.can_give = ln and can_give(ln, item, qa, cmp) or 0
-        if payload == nil then payload = payload_of(item, custom) or false end
-        s.payload = payload or nil
+        s.payload = payload_of(item, custom, x.e)
         s.can_fill = x.auto and s.payload ~= nil and s.can_give >= s.payload or false
       end
       list[#list+1] = s

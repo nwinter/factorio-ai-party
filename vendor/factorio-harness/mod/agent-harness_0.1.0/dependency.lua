@@ -1,3 +1,12 @@
+-- A specific silo may override the default rocket lift on Factorio 2.1.
+local function rocket_lift(silo)
+  local ok, v = pcall(function() return silo.prototype.lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.default_rocket_lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.rocket_lift_weight end)
+  if ok then return v end
+end
 -- dependency {item, surface?} (backlog #818, Sol and Astra for viewer Foobator: recipe inputs were known, but whether
 -- a chain runs on a planet - throughput, other users, freight on the way, rocket weights - was put together by hand).
 -- One read joining what supply, stock and freight read apart, for an item and each ingredient of its recipe (the one
@@ -102,7 +111,7 @@ return function(api)
     local gone = m and math.max(0, m.uncounted_per_min) or 0
     local pods, aboard = coming(force, surface, item)
     local w = try(function() return prototypes.item[item].weight end) or 0
-    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+    local lift = rocket_lift() or 1000000
     local per_rocket = w > 0 and math.floor(lift / w) or nil
     -- measured: the net is the measure's own (its window's stock change a minute), not the 10-minute rates less a
     -- 5-minute measure (Gleba: held 3,730 then 3,738 read -12/min that way)

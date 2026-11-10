@@ -1,3 +1,15 @@
+-- Items may burn in several fuel categories on 2.1.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local function item_fuel_categories(item)
+  if not item then return {} end
+  if PORT21 then return item.fuel_categories or {} end
+  local c = item.fuel_category
+  return c and {c} or {}
+end
+local function burns_item(cats, item)
+  for _, c in ipairs(item_fuel_categories(item)) do if cats[c] then return true end end
+  return false
+end
 -- The game's alerts and key warnings, pushed (viewer Enginerd, shift07 15:30:
 -- "The agents would be a lot more efficient if they'd react to the alerts in
 -- the UI, like reacting to unpowered buildings"). Full status listed power,
@@ -640,8 +652,7 @@ return function(api)
       CAPTIVE_FUELS = {}
       local cats = try(function() return e.prototype.burner_prototype.fuel_categories end) or {}
       for name, it in pairs(prototypes.item) do
-        local cat = try(function() return it.fuel_category end)
-        if cat and cats[cat] then CAPTIVE_FUELS[#CAPTIVE_FUELS+1] = name end
+        if burns_item(cats, it) then CAPTIVE_FUELS[#CAPTIVE_FUELS+1] = name end
       end
       table.sort(CAPTIVE_FUELS)
     end
@@ -2031,8 +2042,9 @@ return function(api)
     if not FUEL_BY then
       FUEL_BY = {}
       for name, it in pairs(prototypes.item) do
-        local cat = try(function() return it.fuel_category end)
-        if cat and (try(function() return it.fuel_value end) or 0) > 0 then FUEL_BY[cat] = FUEL_BY[cat] or {}; FUEL_BY[cat][#FUEL_BY[cat]+1] = name end
+        if (try(function() return it.fuel_value end) or 0) > 0 then
+          for _, cat in ipairs(item_fuel_categories(it)) do FUEL_BY[cat] = FUEL_BY[cat] or {}; FUEL_BY[cat][#FUEL_BY[cat]+1] = name end
+        end
       end
     end
     local out, seen = {}, {}

@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- linecut: a long belt or pipe line cut, as a team alert naming the cut tiles (d17 batch17 C1, Opus, every shift: a
 -- 2-tile gap at (422.5,-249) idled 10 drills unnoticed; the belt-cut tells of batch13 went to the nearest agent, or to
 -- nobody when the belt carried nothing as it died). What a player sees on the map: the line's tiles either side of the
@@ -63,7 +66,7 @@ return function(api)
       local list = try(function() return cur.belt_neighbours[way] end) or {}
       local nxt = list[1]
       if not nxt and cur.type == 'underground-belt' then
-        local pair = try(function() return cur.neighbours end)
+        local pair = try(function() return cur[UNDERGROUND_NEIGHBOUR] end)
         local t = try(function() return cur.belt_to_ground_type end)
         if pair and try(function() return pair.valid end) and ((way == 'inputs' and t == 'output') or (way == 'outputs' and t == 'input')) then nxt = pair end
       end
@@ -383,7 +386,7 @@ return function(api)
           for i = 2, #list do branches[#branches+1] = string.format('%s %s also %s %s', cur.name, at(cur.position), way == 'outputs' and 'feeds' or 'is fed by', at(list[i].position)) end
         end
         if not nxt and kind(cur) == 'underground-belt' then
-          local pair = try(function() return cur.neighbours end)
+          local pair = try(function() return cur[UNDERGROUND_NEIGHBOUR] end)
           local t = try(function() return cur.belt_to_ground_type end)
           if pair and try(function() return pair.valid end) and ((way == 'inputs' and t == 'output') or (way == 'outputs' and t == 'input')) then nxt = pair end
         end

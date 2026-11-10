@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- The belts a belt reading its entire belt (read_contents_mode entire_belt_hold) counts, as the game counts them (d22
 -- batch118 CA2, viewer Aurora site:4407: inspect and circuit_audit gave two rules). Measured on a private 2.0.77 server
 -- with readers on one controlled layout: a reader's signal is the sum of every belt of its segment, and every belt of
@@ -25,7 +28,7 @@ return function()
       for _, x in ipairs(list) do if x.direction ~= nil and x.direction == cur.direction then nxt = x end end
     end
     if not nxt and cur.type == 'underground-belt' then
-      local pair = try(function() return cur.neighbours end)
+      local pair = try(function() return cur[UNDERGROUND_NEIGHBOUR] end)
       local t = try(function() return cur.belt_to_ground_type end)
       if pair and pair.valid and ((way == 'inputs' and t == 'output') or (way == 'outputs' and t == 'input')) then nxt = pair end
     end

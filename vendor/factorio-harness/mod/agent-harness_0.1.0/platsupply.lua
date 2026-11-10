@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- platform_supply {platform}: one read of a platform's supply chain (Sol, Astra 03:21-03:23: Petrel's first flight
 -- starved of fuel after an exporter was repurposed and an underground side-load blocked a lane; about 20 reads by
 -- hand). In the chain's order, each with what the GUI shows of it:
@@ -123,7 +126,7 @@ return function(api)
       if not o then
         o = {}
         for _, x in ipairs(try(function() return e.belt_neighbours.outputs end) or {}) do o[#o+1] = x end
-        if e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'input' then o[#o+1] = try(function() return e.neighbours end) or false end
+        if e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'input' then o[#o+1] = try(function() return e[UNDERGROUND_NEIGHBOUR] end) or false end
         outs[k] = o
       end
       return o

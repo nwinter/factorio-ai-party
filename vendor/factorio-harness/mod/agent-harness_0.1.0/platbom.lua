@@ -1,3 +1,12 @@
+-- A specific silo may override the default rocket lift on Factorio 2.1.
+local function rocket_lift(silo)
+  local ok, v = pcall(function() return silo.prototype.lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.default_rocket_lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.rocket_lift_weight end)
+  if ok then return v end
+end
 -- platform_bom {platform, pack?} (B3, Sol 22:50: "I manually reconciled this every five minutes and found 13 mixed
 -- rockets replace 31 single-item launches"): a platform's remaining bill of materials in one read. Per item: what its
 -- ghosts still need (entity ghosts by the item that places them, tile ghosts by the tile's item), what is built of it
@@ -103,7 +112,7 @@ return function(api)
   -- A full rocket of an item by weight (the default minimum payload of a hub request), nil when not known.
   local function full_rocket(item)
     local w = try(function() return prototypes.item[item].weight end)
-    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+    local lift = rocket_lift() or 1000000
     if not (w and w > 0) then return nil end
     return math.max(1, math.floor(lift / w))
   end
@@ -315,7 +324,7 @@ return function(api)
   local function payload_fits(item, n, what)
     if type(n) ~= 'number' or n <= 0 then return end
     local w = try(function() return prototypes.item[item].weight end)
-    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+    local lift = rocket_lift() or 1000000
     if w and w > 0 and n * w > lift then
       error(string.format('%s %s %d: %d weigh %g kg, a rocket lifts %g kg: at most %d fit%s (%s %d)', what, item, n, n, n * w / 1000, lift / 1000,
         math.floor(lift / w), math.floor(lift / w) == 1 and 's' or '', what, math.floor(lift / w)), 0)

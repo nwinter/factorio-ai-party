@@ -1,3 +1,15 @@
+-- Items may burn in several fuel categories on 2.1.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local function item_fuel_categories(item)
+  if not item then return {} end
+  if PORT21 then return item.fuel_categories or {} end
+  local c = item.fuel_category
+  return c and {c} or {}
+end
+local function burns_item(cats, item)
+  for _, c in ipairs(item_fuel_categories(item)) do if cats[c] then return true end end
+  return false
+end
 -- farm: Gleba farming as a player sees it (Sol, shift09 board #368: three
 -- failures establishing the first farm; transfer refused the tower: "entity
 -- has no transferable inventory"). An agricultural tower's seeds and output,
@@ -207,11 +219,11 @@ return function(api)
     local cats = try(function() return e.burner.fuel_categories end)
     return cats or nil
   end
+  M.item_fuel_categories = item_fuel_categories
   function M.accepts_fuel(e, item)
     local cats = M.fuel_categories(e)
     if not cats then return true end
-    local cat = try(function() return prototypes.item[item].fuel_category end)
-    return cat ~= nil and cats[cat] == true
+    return burns_item(cats, prototypes.item[item])
   end
   -- Fuel items by category, read once.
   local by_category
@@ -219,8 +231,11 @@ return function(api)
     if not by_category then
       by_category = {}
       for name, item in pairs(prototypes.item) do
-        local c = try(function() return (item.fuel_value or 0) > 0 and item.fuel_category end)
-        if c then by_category[c] = by_category[c] or {}; table.insert(by_category[c], name) end
+        if (item.fuel_value or 0) > 0 then
+          for _, c in ipairs(item_fuel_categories(item)) do
+            by_category[c] = by_category[c] or {}; table.insert(by_category[c], name)
+          end
+        end
       end
       for _, list in pairs(by_category) do table.sort(list) end
     end

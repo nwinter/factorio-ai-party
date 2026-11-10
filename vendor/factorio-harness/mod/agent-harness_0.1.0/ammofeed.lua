@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- A platform's ammunition by whether it can reach a turret (d17 batch13 B1, Astra and Sol: Kestrel left with 610
 -- magazines and a positive forecast while hundreds sat on a rear belt loop and the bow turrets ran empty; it lost bow
 -- collectors and guns, 100+ entities). Each ammo turret is followed back as the items move:
@@ -37,7 +40,7 @@ return function(api)
     for _, u in ipairs(nb.outputs or {}) do if u.valid then outs[#outs+1] = u end end
     local t = e.type
     if t == 'underground-belt' then
-      local x = e.neighbours
+      local x = e[UNDERGROUND_NEIGHBOUR]
       if x and x.valid then
         if e.belt_to_ground_type == 'output' then ins[#ins+1] = x else outs[#outs+1] = x end
       end
