@@ -26,8 +26,11 @@ Unmeasured: other routes/hull heights/speeds for the asteroid fit; statistical c
 collision damage distributions; all silo qualities; artillery/find/rehash timing; splitter half-swings; cargo-bay
 unloading-distance changes; vehicle braking; lightning; railgun buffer; cross-architecture performance ratios.
 Native insertion/quality transfers, undergrounds, fluids, and science have earlier order evidence; they are not
-repeated here. Joined-client chunk activation and screenshot ownership are checked with the mt smoke in order10.
-The normal silo/hub timing fixture is recorded below when complete; queue completion always polls native state.
+repeated here. Order10 joined the isolated2.1 camera and all4 fresh setup accounts. Explicit chart requests gave
+each force81/121 charted chunks near spawn, with its spawn chunk visible. Subsequent bots read, mine and build
+on the fresh map. Three screenshots were delivered to their respective team workspaces, with the director
+force/controller/position restored exactly. The initial10s radar-only fixture charted0; it is not the passing evidence.
+Queue completion always polls native state. The operator report records the sustained-play and reload results.
 
 Normal ready silo: launch accepted at tick130127492, hub item arrived2100ticks later (**35s**). Hub hatches:
 three pods immediately, fourth unavailable, first hatch free after**120ticks**. Ground pods crossed to the planet
