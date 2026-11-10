@@ -425,7 +425,7 @@ def client_mod():
         assert names == ["agent-harness_0.1.0/" + f for f in ("avatar_parts.lua", "control.lua", "data.lua", "graphics/avatar-parts.png",
                                                              "info.json", "runtime.lua")], names
         info = json.loads(z.read("agent-harness_0.1.0/info.json"))
-        assert "? squeak-through-2" in info["dependencies"] and "base >= 2.0.0" in info["dependencies"], info
+        assert "? squeak-through-2" in info["dependencies"] and "base >= 2.1.24" in info["dependencies"] and info["factorio_version"] == "2.1", info
         assert b"--" not in z.read("agent-harness_0.1.0/control.lua").split(b"\n")[0], "comments dropped"
         bad = os.path.join(tmp, "bad.zip")
         with zipfile.ZipFile(bad, "w") as out:
