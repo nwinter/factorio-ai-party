@@ -2109,6 +2109,7 @@ def live_app(heading, sample_href, below_player=""):
 <div id="offline" class="live-offline"></div>
 <div id="strip" class="live-strip fx-root fx-panel live-panel"></div>
 <ul id="alerts" class="live-alerts"></ul>
+<div id="team-tests" class="team-tests" hidden></div>
 <div id="dash" class="live-dash"></div>
 <p class="muted small">The dashboard refreshes every {poll} seconds from the stream service on the game host.
 <a href="{sample_href}">Sample view</a>.</p>

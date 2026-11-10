@@ -1262,3 +1262,9 @@ ol.techs li { display: flex; align-items: center; gap: 6px; }
   .pl-card h2 .muted { font-size: 1em; }
 }
 @media (max-width: 480px) { .stat, .record, .keytime { min-width: min(100%, 7.5rem); } }
+
+/* Team tests share the live page's panels and viewer chat. */
+.team-tests { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1rem; margin:1rem 0; }
+.team-tests[hidden], .live-dash[hidden], .live-strip[hidden], .live-alerts[hidden] { display:none; }
+.team-test-chat { padding-left:1.2rem; overflow-wrap:anywhere; }
+.team-test-chat li { margin:.6rem 0; }
