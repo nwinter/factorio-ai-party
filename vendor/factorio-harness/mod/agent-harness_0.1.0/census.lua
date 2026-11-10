@@ -19,6 +19,7 @@ local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighb
 local snapfail = require('snapfail')
 local pair = require('numtext').pair
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {operator={}}
   local walk = api.walk or require('walk'){state=api.state}
   -- SLICE: entities read a step. d16 perf: at 200 a Nauvis slice took 8-13 ms on world n with the memory hooks, and with
@@ -186,8 +187,8 @@ return function(api)
   -- machines' counts both; the reads that may fail go through pcall with the entity as argument, no closure a call
   local function recipe_of(e) local ok, r = pcall(e.get_recipe) if ok then return r end end
   local function previous_recipe(e) return e.previous_recipe end
-  local function pump_fluid(e) local f = e.fluidbox[1]; return f and f.name end
-  local function pump_filter(e) local f = e.fluidbox.get_filter(1); return f and f.name end
+  local function pump_fluid(e) local f = fluid_boxes(e)[1]; return f and f.name end
+  local function pump_filter(e) local f = fluid_boxes(e).get_filter(1); return f and f.name end
   local function same_line(line, partner, i) return line.line_equals(partner.get_transport_line(i)) end
   local fuel_recipe = {}
   local function takes_fuel(r)

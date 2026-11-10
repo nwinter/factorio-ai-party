@@ -14,6 +14,7 @@
 -- pipe row in front of the southeast flamers 8 times).
 local flameroil=require('flameroil')
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M={handlers={},schema={}}
   local CELL,BLOCK,CACHE_TICKS,MAX_AREAS,MAX_GAPS,MAX_TURRETS,MAX_NESTS,AREA_NESTS,NEST_RANGE,LOW_AMMO,LOW_OIL=32,4,600,16,3,6,8,3,256,10,0.25
   local MAX_FLAMERS,FIRE_MARGIN=12,3
@@ -561,7 +562,7 @@ return function(api)
           local ins=e.unit_number and by[e.unit_number]
           if ins then r.fed_by=table.concat(ins,'; ')
           elseif r.type=='fluid-turret' then
-            local okp,n=pcall(function() local c=e.fluidbox.get_connections and e.fluidbox.get_connections(1); return c and #c end)
+            local okp,n=pcall(function() local c=fluid_boxes(e).get_connections and fluid_boxes(e).get_connections(1); return c and #c end)
             r.fed_by=(okp and n and n>0) and 'pipe' or nil
           elseif r.type=='electric-turret' then
             local okn,id=pcall(function() return e.electric_network_id end)

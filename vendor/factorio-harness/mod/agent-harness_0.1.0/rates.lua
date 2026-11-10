@@ -9,6 +9,8 @@
 -- status by recipe, missing ingredients, inserter feed/output capacity, and
 -- belt tier capacity against the area's outside needs.
 return function(api)
+  local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M={}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
@@ -105,7 +107,7 @@ return function(api)
   local function fluid_source(set,e)
     local proto=e.prototype
     local source=proto.fluid_energy_source_prototype
-    local fluidbox=e.fluidbox
+    local fluidbox=fluid_boxes(e)
     local fluid=fluid_of(fluidbox,e.type=='boiler' and #fluidbox or 1)
     if not fluid then err(set,'no_input_fluid'); return end
     local usage=proto.get_max_energy_usage(e.quality)*(e.consumption_bonus+1)
@@ -148,16 +150,18 @@ return function(api)
   end
 
   local function boiler(set,e)
-    local proto,fluidbox=e.prototype,e.fluidbox
+    local proto,fluidbox=e.prototype,fluid_boxes(e)
     local input=fluid_of(fluidbox,1)
     if not input then err(set,'no_input_fluid'); return end
     local function usage(fluid,index)
-      local minimum=fluidbox.get_prototype(index).minimum_temperature or fluid.default_temperature
+      local minimum
+      if PORT21 then minimum=proto.minimum_input_temperature or fluid.default_temperature
+      else minimum=fluidbox.get_prototype(index).minimum_temperature or fluid.default_temperature end
       return proto.get_max_energy_usage(e.quality)/((proto.target_temperature-minimum)*fluid.heat_capacity)*60
     end
     add(set,'input','fluid',input.name,'normal',usage(input,1),e.name)
-    if proto.boiler_mode=='heat-water-inside' then
-      add(set,'output','fluid',input.name,'normal',usage(input,1),e.name,input.max_temperature); return
+    if proto.boiler_mode=='heat-water-inside' or proto.boiler_mode=='heat-fluid-inside' then
+      add(set,'output','fluid',input.name,'normal',usage(input,1),e.name,PORT21 and proto.target_temperature or input.max_temperature); return
     end
     local output=fluid_of(fluidbox,2)
     if output then add(set,'output','fluid',output.name,'normal',usage(output,2),e.name) end
@@ -230,12 +234,12 @@ return function(api)
     elseif t=='boiler' then boiler(set,e)
     elseif t=='lab' then lab(set,e)
     elseif t=='generator' then
-      local fluid=fluid_of(e.fluidbox,1)
+      local fluid=fluid_of(fluid_boxes(e),1)
       if fluid then add(set,'input','fluid',fluid.name,'normal',proto.get_fluid_usage_per_tick(e.quality)*60,e.name)
       else err(set,'no_input_fluid') end
     elseif t=='mining-drill' then drill(set,e)
     elseif t=='offshore-pump' then
-      local fluid=e.fluidbox[1]
+      local fluid=fluid_boxes(e)[1]
       if fluid then add(set,'output','fluid',fluid.name,'normal',proto.get_pumping_speed(e.quality)*60,e.name) end
     elseif t=='reactor' then
       add(set,'output','item','heat','normal',proto.get_max_energy_usage(e.quality)*(1+e.neighbour_bonus)*(1+e.consumption_bonus)*60,e.name)

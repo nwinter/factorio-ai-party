@@ -14,6 +14,7 @@
 -- inserters, 4096 robots (counted says when a scan stopped).
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
   local function product_chance(p)
@@ -1539,8 +1540,8 @@ return function(api)
   local function miner_products(e)
     local names, fluid = {}, nil
     if e.type == 'offshore-pump' then
-      local name = try(function() local f = e.fluidbox[1]; return f and f.name end)
-        or try(function() local f = e.fluidbox.get_filter(1); return f and f.name end)
+      local name = try(function() local f = fluid_boxes(e)[1]; return f and f.name end)
+        or try(function() local f = fluid_boxes(e).get_filter(1); return f and f.name end)
         or try(function() return e.prototype.fluid.name end)
       if name then names[1] = name end
     else
@@ -1890,7 +1891,7 @@ return function(api)
   -- machines' input boxes of it are on (fluidbox.get_fluid_segment_id) and, per segment, the machines whose recipe
   -- makes it with their output on that segment.
   local function fluid_box_segments(e, fluid, out)
-    local fb = try(function() return e.fluidbox end)
+    local fb = try(function() return fluid_boxes(e) end)
     for i = 1, fb and (try(function() return #fb end) or 0) or 0 do
       local f = try(function() return fb[i] end)
       local filter = try(function() return fb.get_filter(i) end)
@@ -2719,7 +2720,7 @@ return function(api)
   -- The fluid GUI shows the whole connected segment. Count it once even when
   -- several pipes, tanks or machine ports in the search belong to that segment.
   function M.fluid_supply(surface,force,fluid,area)
-    local accounting=require('fluidstock').read(surface,force,area)
+    local accounting=require('fluidstock').read(surface,force,area,fluid_boxes)
     local stock=accounting.stock(fluid)
     local makers,users={count=0,states={},examples={}},{count=0,states={},examples={}}
     local function add(role,e)

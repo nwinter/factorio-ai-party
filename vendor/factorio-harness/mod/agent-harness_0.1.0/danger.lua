@@ -12,6 +12,7 @@
 -- Bounded: radius up to 128; at most 64 chunks of worms and spawners read a call (the rest named as not read); one
 -- bounded unit query.
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   local MAX_R, CHUNKS, WINDOW = 128, 64, 10 * 3600
   local function try(f) local ok, v = pcall(f); if ok then return v end end
@@ -68,7 +69,7 @@ return function(api)
         local ok
         if t.type == 'ammo-turret' then ok = try(function() return not t.get_inventory(defines.inventory.turret_ammo).is_empty() end)
         elseif t.type == 'electric-turret' then ok = (try(function() return t.energy end) or 0) > 0
-        else ok = (try(function() local f = t.fluidbox[1]; return f and f.amount end) or 0) > 0 end
+        else ok = (try(function() local f = fluid_boxes(t)[1]; return f and f.amount end) or 0) > 0 end
         if ok then ready = ready + 1; by[t.name] = (by[t.name] or 0) + 1 else idle = idle + 1 end
       end
     end

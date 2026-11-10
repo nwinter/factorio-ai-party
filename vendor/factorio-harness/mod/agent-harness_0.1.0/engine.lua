@@ -10,6 +10,7 @@
 -- second once and a pump working 20 ticks of every 60 reads a third of the time whatever its phase. The game keeps no
 -- count of a pump's working ticks (LuaEntity has products_finished for crafting machines only).
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   local KEEP, REFRESH, WINDOWS, STRIDE = 181, 3600, {60, 180}, 7
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -24,7 +25,7 @@ return function(api)
   local function fluids_of(thrusters)
     local out, seen = {}, {}
     for _, t in ipairs(thrusters) do
-      local fb = try(function() return t.fluidbox end)
+      local fb = try(function() return fluid_boxes(t) end)
       for i = 1, (fb and try(function() return #fb end) or 0) do
         local name = try(function() return fb.get_filter(i).name end) or try(function() return fb[i].name end)
         if name and not seen[name] then seen[name] = true; out[#out+1] = name end
@@ -62,7 +63,7 @@ return function(api)
       tank[i] = 0
     end
     for _, t in ipairs(rec.thrusters) do
-      local fb = t.fluidbox
+      local fb = fluid_boxes(t)
       for k = 1, #fb do
         local f = fb[k]
         if f then

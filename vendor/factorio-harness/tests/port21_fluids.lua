@@ -35,7 +35,7 @@ eq(fb.get_fluid_segment_id(2),nil);eq(fb.get_fluid_segment_contents(2),nil);eq(f
 eq(fb.get_fluid_segment_id(3),32);eq(next(fb.get_fluid_segment_contents(3)),nil)
 eq(fb.get_filter(1),water);eq(fb.get_locked_fluid(1),'water');eq(fb.get_locked_fluid(3),nil)
 eq(#P.fluid_prototypes(e,1),1);eq(#P.fluid_prototypes(e,2),2);eq(#P.fluid_prototypes(e,3),0)
-eq(fb.get_pipe_connections(1)[1].target,peer);eq(fb.get_neighbours(1)[1].entity,peer)
+eq(fb.get_pipe_connections(1)[1].target.owner,peer);eq(fb.get_neighbours(1)[1].entity,peer)
 assert(P.fluids(e,true):find('water 25/100 (segment holds up to 1000)',1,true))
 eq(fb.set_filter(1,{name='steam'}),false);eq(fb.set_filter(1,'water'),true)
 fails(function() fb.set_filter(1,{name='water',minimum_temperature=10}) end,'temperature limits')

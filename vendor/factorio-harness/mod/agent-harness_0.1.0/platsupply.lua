@@ -13,6 +13,7 @@ local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighb
 -- ghosts apart (by name), and the first stop in that order: a collector, crusher or maker not working, a thruster
 -- short, or an empty gun. Read only.
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   local LIST = 12
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -286,8 +287,8 @@ return function(api)
         if not WORKING[st] then stop(row) end
       elseif r and (r:find('thruster%-fuel') or r:find('thruster%-oxidizer')) then
         local fl = {}
-        for i = 1, try(function() return #e.fluidbox end) or 0 do
-          local f = try(function() return e.fluidbox[i] end)
+        for i = 1, try(function() return #fluid_boxes(e) end) or 0 do
+          local f = try(function() return fluid_boxes(e)[i] end)
           if f then fl[#fl+1] = string.format('%s %d', f.name, math.floor(f.amount)) end
         end
         local row = string.format('%s %s %s: %s; %s%s', e.name, at(e.position), r, st, held, #fl > 0 and '; fluids ' .. table.concat(fl, ', ') or '')

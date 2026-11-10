@@ -17,6 +17,7 @@ local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighb
 -- the first missing link below them; else a source not working, or the sources working while the consumer is short.
 -- Read only; bounded: MAKERS makers a fluid, FEEDERS inserters a consumer, BELTS belt tiles a walk.
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   local MAKERS, FEEDERS, BELTS, DEPTH, LINES, ALL_BELTS = 8, 4, 256, 12, 48, 1024
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -53,7 +54,7 @@ return function(api)
   -- the pipes and tanks at its ports do; thrusters can also expose the joined id), and the machines joined port to port with no pipe.
   local function segments(e, fluid, kind)
     local segs, direct, held, cap = {}, {}, 0, 0
-    local fb = try(function() return e.fluidbox end)
+    local fb = try(function() return fluid_boxes(e) end)
     for i = 1, fb and #fb or 0 do
       local k = box_kind(fb, i)
       if box_fluid(fb, i) == fluid and (k == kind or k == 'input-output' or (kind == 'input' and k == nil)) then
@@ -81,7 +82,7 @@ return function(api)
     end
     -- Shared native stock accounting also supplies the topology trace's segments.
     local fluidstock = require('fluidstock')
-    local accounting = fluidstock.read(s,force)
+    local accounting = fluidstock.read(s,force,nil,fluid_boxes)
     local seg_info = accounting.segments
     local function seg_text(segs, fluid)
       local n, tanks, ids = 0, 0, 0
@@ -97,7 +98,7 @@ return function(api)
     local pumps = {}
     for _, e in ipairs(try(function() return s.find_entities_filtered{type='pump', force=force, limit=256} end) or {}) do
       local ends = {}
-      for _, cn in ipairs(try(function() return e.fluidbox.get_connections(1) end) or {}) do
+      for _, cn in ipairs(try(function() return fluid_boxes(e).get_connections(1) end) or {}) do
         local id = try(function() return cn.get_fluid_segment_id(1) end)
         if id then ends[#ends+1] = id end
       end

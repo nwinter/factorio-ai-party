@@ -104,3 +104,18 @@ local old,other=runtime.underground_pair_ends(surface,force,{name='fast-undergro
 assert(old==entry and other==paired)
 entry.underground_belt_neighbour=nil
 assert(runtime.underground_pair_ends(surface,force,{name='fast-underground-belt',fast_replaceable_group='belt'},{x=5.5,y=5.5})==nil)
+
+-- Native fluid configure refuses before mutation and explicitly drains only its own private store.
+surface.find_entities_filtered=function() return {machine} end
+local water=200;local cleared=0;local neighbor=50
+machine.object_name='LuaEntity';machine.fluids_count=1
+machine.get_fluid=function(i) assert(i==1);return water>0 and {name='water',amount=water} or nil end
+machine.has_fluid_segment=function() return false end
+machine.clear_fluid=function() cleared=cleared+1;local old=water;water=0;return {name='water',amount=old} end
+machine.set_recipe=function(name) current=force.recipes[name];water=0;return {} end
+local dry=recipe('dry',{'crafting'});force.recipes.dry=dry;prototypes.recipe.dry=dry
+local ok,err=pcall(runtime.dispatch,{player=1,action='configure',args={position={x=5,y=5},recipe='dry'}})
+assert(not ok and tostring(err):find('nothing changed',1,true));assert(water==200 and current==r and cleared==0)
+out=runtime.dispatch{player=1,action='configure',args={position={x=5,y=5},recipe='dry',fluid='drain'}}
+assert(out.recipe=='dry' and out.fluid_flushed.water==200 and cleared==1 and water==0 and neighbor==50)
+print('port21 configure: native private-store refusal and drain passed')

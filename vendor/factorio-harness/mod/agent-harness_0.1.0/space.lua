@@ -14,6 +14,7 @@ end
 local arrival_eta=require('arrivaleta')
 local qflow=require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M={}
   -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
   M.KEEP_MAX,M.SET_MAX,M.NAME_MAX,M.STOPS_MAX,M.DROP_ITEMS=50,100,64,32,20
@@ -1259,9 +1260,9 @@ return function(api)
         local low=1
         for _,t in ipairs(thrusters) do
           for i=1,2 do
-            local f=try(function() return t.fluidbox[i] end)
+            local f=try(function() return fluid_boxes(t)[i] end)
             -- the thruster's own tank, not a connected segment's capacity
-            local cap=try(function() return t.prototype.fluidbox_prototypes[i].volume end) or try(function() return t.fluidbox.get_capacity(i) end)
+            local cap=try(function() return t.prototype.fluidbox_prototypes[i].volume end) or try(function() return fluid_boxes(t).get_capacity(i) end)
             low=math.min(low,f and cap and cap>0 and f.amount/cap or 0)
           end
         end
@@ -1851,8 +1852,8 @@ return function(api)
     local list=lists and lists.tanks
       or try(function() return pl.surface.find_entities_filtered{type={'thruster','storage-tank'},force=pl.force} end) or {}
     for _,e in ipairs(list) do
-      for i=1,try(function() return #e.fluidbox end) or 0 do
-        local f=try(function() return e.fluidbox[i] end)
+      for i=1,try(function() return #fluid_boxes(e) end) or 0 do
+        local f=try(function() return fluid_boxes(e)[i] end)
         if f and f.name=='thruster-fuel' then fuel=fuel+f.amount end
       end
     end

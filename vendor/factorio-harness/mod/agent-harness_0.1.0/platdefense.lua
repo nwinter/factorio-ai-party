@@ -22,6 +22,7 @@
 -- 0.2, 72 degrees) centred on its facing (fireline.lua reads the same rule): it reaches a point inside that arc only.
 -- Read only; bounded: 40000 foundation tiles, 256 turrets.
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
   M.PICK_NAMES, M.PICK_POSITIONS = 16, 64
@@ -165,7 +166,7 @@ return function(api)
     local armed
     if t.type == 'ammo-turret' then if ammo_known then armed = items > 0 end
     elseif t.type == 'electric-turret' then local energy = try(function() return t.energy end); if energy then armed = energy > 0 end
-    else local fluid = try(function() local fb = t.fluidbox[1]; return fb and fb.amount or 0 end); if fluid then armed = fluid > 0 end end
+    else local fluid = try(function() local fb = fluid_boxes(t)[1]; return fb and fb.amount or 0 end); if fluid then armed = fluid > 0 end end
     local only = engages(t)
     -- its arc (turn_range under a full turn): facing and half the arc in radians
     local pr = proto_of(t)

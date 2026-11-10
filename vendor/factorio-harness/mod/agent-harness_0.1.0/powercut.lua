@@ -13,6 +13,7 @@
 -- since), and in status alerts.
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   local CHECK, TRACE, STEP, KEEP, FIRST, MAX_JOBS, MAX_CUTS, LINES, DEAD = 330, 600, 100, 36000, 18000, 16, 32, 3, 1800
   -- Entities that make power rather than use it (not counted as machines).
@@ -363,7 +364,7 @@ return function(api)
     for k, v in pairs(defines.entity_status or {}) do if v == try(function() return m.status end) then status = k end end
     local fluid = ''
     if m.type == 'pump' or m.type == 'mining-drill' or m.type == 'offshore-pump' then
-      local f = try(function() return m.fluidbox[1] end)
+      local f = try(function() return fluid_boxes(m)[1] end)
       fluid = f and string.format(', holds %s %g', f.name, math.floor(f.amount * 10 + 0.5) / 10) or ', holds no fluid'
     end
     return string.format('%s %s %s%s', m.name, at(m.position), net(m) and 'on #' .. net(m) or 'on no network', status and ' (' .. status .. ')' or '') .. fluid

@@ -22,6 +22,7 @@ local budgetwindows = require('budgetwindows')
 local turnaround = require('turnaround')
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
   local function product_chance(p)
@@ -210,8 +211,8 @@ return function(api)
       all = {amount={}, tanks={}, list=list}
       for _, e in ipairs(list) do
         local tank = e.type == 'storage-tank'
-        for i = 1, try(function() return #e.fluidbox end) or 0 do
-          local f = try(function() return e.fluidbox[i] end)
+        for i = 1, try(function() return #fluid_boxes(e) end) or 0 do
+          local f = try(function() return fluid_boxes(e)[i] end)
           if f then
             all.amount[f.name] = (all.amount[f.name] or 0) + f.amount
             if tank then all.tanks[f.name] = (all.tanks[f.name] or 0) + f.amount end
@@ -321,11 +322,11 @@ return function(api)
       return true
     end
     local function own_and_beside(e)
-      local fb = e.fluidbox
+      local fb = fluid_boxes(e)
       for i = 1, try(function() return #fb end) or 0 do
         local f = try(function() return fb[i] end)
-        if f and FUELS[f.name] then
-          add(f)
+        if fb.object_name=='HarnessFluidStorage' or (f and FUELS[f.name]) then
+          if fb.object_name~='HarnessFluidStorage' or not segment(fb,i) then add(f) end
           for _, pc in ipairs(try(function() return fb.get_pipe_connections(i) end) or {}) do
             if pc.target then segment(pc.target, pc.target_fluidbox_index or 1) end
           end
@@ -333,16 +334,19 @@ return function(api)
       end
     end
     for _, e in ipairs(list) do
-      local fb = e.valid and e.fluidbox
+      local fb = e.valid and fluid_boxes(e)
       for i = 1, fb and try(function() return #fb end) or 0 do
         local f = try(function() return fb[i] end)
-        if f and FUELS[f.name] and (not segment(fb, i) or e.type ~= 'storage-tank') then add(f) end
+        if fb.object_name=='HarnessFluidStorage' then
+          if not segment(fb,i) then add(f) end
+        elseif f and FUELS[f.name] and (not segment(fb, i) or e.type ~= 'storage-tank') then add(f) end
       end
     end
     for _, e in ipairs(parts.pumps) do if e.valid then own_and_beside(e) end end
     for _, m in ipairs(parts.makers) do if m.entity.valid then own_and_beside(m.entity) end end
     return out
   end
+  M.fuel_aboard=fuel_aboard
   -- A fluid's makers: {makers, batch (the largest), recipes, craft_s (the quickest at full speed), full_per_min (all of
   -- them crafting without a pause), step (a batch a maker: what a window's count can differ from their steady output by,
   -- each counted at the end of its craft)}.
@@ -511,7 +515,7 @@ return function(api)
   end
   local routeammo, ammomodel_
   local function ammomodel()
-    ammomodel_ = ammomodel_ or api.ammomodel or require('ammomodel'){stock_places=api.stock_places, ammofeed=api.ammofeed, incoming=api.incoming}
+    ammomodel_ = ammomodel_ or api.ammomodel or require('ammomodel'){fluid_boxes=fluid_boxes,stock_places=api.stock_places, ammofeed=api.ammofeed, incoming=api.incoming}
     return ammomodel_
   end
   -- (d24 batch183 QZ1, Sol #2055) design {width, height | tiles, mass?, speed, ammo?} and progress {from, to}.

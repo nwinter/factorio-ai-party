@@ -32,7 +32,30 @@ return function(api)
       local f=segment(e, i) and e.get_fluid_segment_filter(i) or e.get_fluid_filter(i)
       return f and f.name or nil
     end,
-    get_pipe_connections=function(e, i) return e.get_fluid_box_pipe_connections(i) end,
+    get_pipe_connections=function(e, i)
+      local out={}
+      for _, c in ipairs(e.get_fluid_box_pipe_connections(i) or {}) do
+        local copy={}; for k,v in pairs(c) do copy[k]=v end
+        if c.target then copy.target=M.fluid_boxes(c.target) end
+        out[#out+1]=copy
+      end
+      return out
+    end,
+    get_connections=function(e, i)
+      local out={}
+      for _, c in ipairs(e.get_fluid_box_neighbours(i) or {}) do out[#out+1]=M.fluid_boxes(c.entity) end
+      return out
+    end,
+    flush=function(e, i, name)
+      if name==nil then return {} end
+      local has=segment(e, i)
+      local f
+      if has then f=e.get_fluid_segment_fluid(i) else f=e.get_fluid(i) end
+      if not f or f.name~=name then return {} end
+      local removed
+      if has then removed=e.clear_fluid_segment_fluid(i) else removed=e.clear_fluid(i) end
+      return removed and {[removed.name]=removed.amount} or {}
+    end,
     get_neighbours=function(e, i) return e.get_fluid_box_neighbours(i) end,
     set_filter=function(e, i, f)
       if type(f)=='table' then
@@ -61,11 +84,17 @@ return function(api)
     __newindex=function() error('fluid stores use set/add/remove/clear, whose results must be checked', 2) end,
   }
   function M.fluid_boxes(e)
+    local kind=e.object_name
+    if kind=='LuaFluidBox' or kind=='HarnessFluidStorage' or (kind==nil and e.owner) then return e end
     if not PORT21 then return e.fluidbox end
     if e.type=='entity-ghost' then return nil end
     -- Read now so unsupported objects fail here, rather than masquerading as empty stores.
     assert(type(e.fluids_count)=='number', 'entity fluid storage is unsupported')
     return setmetatable({owner=e, object_name='HarnessFluidStorage'}, FLUID_VIEW)
+  end
+  function M.fluid_neighbours(e)
+    if PORT21 then return e.fluidbox_neighbours end
+    return e.neighbours
   end
   function M.fluid_prototypes(e, i)
     local p
@@ -172,7 +201,7 @@ return function(api)
         local cd=toward(x,y,tx,ty)
         -- The target is a LuaFluidBox in 2.0 (a LuaEntity in later docs).
         local target=c.target
-        if target and target.object_name=='LuaFluidBox' then target=target.owner end
+        if target and (target.object_name=='LuaFluidBox' or target.object_name=='HarnessFluidStorage') then target=target.owner end
         out[#out+1]={box=i,flow=c.flow_direction or 'input-output',kind=c.connection_type or 'normal',x=x,y=y,dir=cd,
           tx=tx,ty=ty,fluid=fluid,target=target}
       end

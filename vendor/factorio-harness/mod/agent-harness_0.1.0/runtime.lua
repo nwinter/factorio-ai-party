@@ -3558,6 +3558,7 @@ M.SCAN_BELTS,M.SCAN_HOLDING=1024,64  -- about 6 us a belt read on world n (512 o
 -- A fluid entity's fluid as its segment holds it (scan rows, pipe_gaps cuts): the most of it in the segment, else what
 -- its first box holds, else its locked fluid or filter; 'empty' when none.
 function M.fluid_boxes(e) return pipes.fluid_boxes(e) end
+function M.fluid_neighbours(e) return pipes.fluid_neighbours(e) end
 function M.pipe_fluid(e)
   local fb=M.fluid_boxes(e)
   local okc,contents=pcall(function() return fb.get_fluid_segment_contents(1) end)
@@ -5788,7 +5789,7 @@ end
 -- deconstruction, mines them by hand (a timed construct over them) and walks again once.
 M.move_to_plain=handlers.move_to
 -- stay_in_turret_coverage (turretcover.lua; d17 batch12 A3, Opus): the route inside our turrets' reach, as via points.
-M.turretcover=require('turretcover'){}
+M.turretcover=require('turretcover'){fluid_boxes=M.fluid_boxes,}
 function M.move_to_covered(p,a)
   if a.stay_in_turret_coverage==nil then return M.move_to_plain(p,a) end
   assert(type(a.stay_in_turret_coverage)=='boolean','stay_in_turret_coverage must be true or false')
@@ -9933,7 +9934,7 @@ local function configure_branch(p,a)
       for _,x in ipairs(list) do if x.type=='fluid' then takes[x.name]=true end end
     end
     local stray={}
-    local boxes=e.fluidbox
+    local boxes=M.fluid_boxes(e)
     for i=1,boxes and #boxes or 0 do
       local f=boxes[i]
       if f and f.name and not takes[f.name] and f.amount>0 then stray[#stray+1]={index=i,name=f.name,amount=f.amount} end
@@ -9943,7 +9944,7 @@ local function configure_branch(p,a)
       for _,x in ipairs(stray) do parts[#parts+1]=string.format('%s %g (fluidbox %d)',x.name,math.floor(x.amount*10+0.5)/10,x.index) end
       local text=string.format('%s holds %s, which recipe %s takes none of',e.name,table.concat(parts,', '),recipe.name)
       if fluid_mode==nil then
-        error(text..': in 2.0.77 a recipe change drops a fluid the new recipe takes none of. fluid: "drain" changes the recipe and lets it go (the reply says how much left the machine and anything that stays); nothing changed',0)
+        error(text..(PORT21 and ': a recipe change drops' or ': in 2.0.77 a recipe change drops')..' a fluid the new recipe takes none of. fluid: "drain" changes the recipe and lets it go (the reply says how much left the machine and anything that stays); nothing changed',0)
       end
       if fluid_mode=='drain' then
         for _,x in ipairs(stray) do
@@ -9959,7 +9960,7 @@ local function configure_branch(p,a)
       -- After the change: what of each fluid left the machine and what stays (by box).
       fluid_after=function()
         local left,stays,gone={},{},{}
-        local okb,now=pcall(function() return e.fluidbox end)
+        local okb,now=pcall(function() return M.fluid_boxes(e) end)
         for i=1,okb and now and #now or 0 do
           local f=now[i]
           if f and before[f.name] and f.amount>0 then
@@ -14534,7 +14535,7 @@ M.replace=require('replace'){filters=function(e) return M.details.filters(e) end
   circuit_snapshot=function(e) return M.circuits.snapshot(e) end,circuit_restore=function(e,s) return M.circuits.restore(e,s) end}
 -- A crafting machine's input against its recipe, and its feeders (inputs.lua; Grok, shift11).
 M.inputs=require('inputs'){try=function(fn) local ok,v=pcall(fn); if ok then return v end end}
-M.outputstop=require('outputstop'){try=function(fn) local ok,v=pcall(fn); if ok then return v end end}
+M.outputstop=require('outputstop'){fluid_boxes=M.fluid_boxes,try=function(fn) local ok,v=pcall(fn); if ok then return v end end}
 M.beltflow=require('beltflow'){try=function(fn) local ok,v=pcall(fn); if ok then return v end end,blocker=function(s,q) return M.linecut and M.linecut.blocker(s,q) end}
 -- Underground entrances fed from the side by an inserter or a belt (sidefeed.lua; Sol, shift10).
 M.routefeeds=require('routefeeds')()
@@ -14594,7 +14595,7 @@ function handlers.heat_budget(p,a)
   friendly(p,e)
   return M.heating.budget(p,e,a.add_pipes)
 end
-M.dryrun=require('dryrun'){surface_block=function(s,pr,props) return M.surface_block(s,pr,props) end,railsignal=function() return M.railsignal end,rollingstock=function() return M.rollingstock end,floorcheck=function() return M.floorcheck end,one_pad=function(...) return M.one_pad(...) end,heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
+M.dryrun=require('dryrun'){fluid_boxes=M.fluid_boxes,surface_block=function(s,pr,props) return M.surface_block(s,pr,props) end,railsignal=function() return M.railsignal end,rollingstock=function() return M.rollingstock end,floorcheck=function() return M.floorcheck end,one_pad=function(...) return M.one_pad(...) end,heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
   sidefeed=M.sidefeed,coverage=function(s,force,pos,planned) return M.networks.coverage(s,force,pos,planned) end,
   placement_error=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
   ghost_placeable=function(p,proto,pos,direction) return construction.ghost_placeable(p.surface,p.force,proto,pos,direction) end,
@@ -14609,7 +14610,7 @@ M.dryrun=require('dryrun'){surface_block=function(s,pr,props) return M.surface_b
   fluid_connections=function(o) return pipes.connections(o) end}
 M.ports=require('ports'){boxes=function(proto) return pipes.boxes(proto) end,defined=function(e) return pipes.defined(e) end}
 -- The fluid segments a plan joins or cuts, and a join of two fluids refused (fluidjoin.lua; d17 batch34 B1, Sonnet).
-M.fluidjoin=require('fluidjoin'){fluid_rows=function(e,recipe) return (M.ports.rows(e,recipe and M.ports.recipe(e.prototype,recipe) or nil)) end,
+M.fluidjoin=require('fluidjoin'){fluid_boxes=M.fluid_boxes,fluid_rows=function(e,recipe) return (M.ports.rows(e,recipe and M.ports.recipe(e.prototype,recipe) or nil)) end,
   fluid_connections=function(o) return pipes.connections(o) end,direction=function(v) return M.direction_of(v) end,position=position,
   snap=function(proto,pos,dir) return M.dryrun.snap(proto,pos,dir) end}
 function M.fluid_guard(p,a,kind)
@@ -14664,7 +14665,7 @@ M.artycam=require('artycam'){state=state,range=function(e) return M.artillery.ra
 function handlers.artillery(p,a) return M.artillery.read(p,a) end
 handlers.clear_cliffs=M.capsules.handlers.clear_cliffs
 -- The fluid GUI's flush (flush.lua, Sol's request): reach as configure.
-M.flush=require('flush'){integer=integer,friendly=friendly,target=function(p,a)
+M.flush=require('flush'){fluid_boxes=M.fluid_boxes,integer=integer,friendly=friendly,target=function(p,a)
   local near,e=pcall(entity,p,a)
   if near then return e end
   local ok,far=pcall(remote_entity,p,a)
@@ -15719,7 +15720,7 @@ do
 end
 -- ingredient_gap: per crafting machine, the next craft's ingredients held, usable and short, and who can spare them
 -- (gap.lua; d17 batch21 B3, Luna).
-M.gap=require('gap'){position=position,entity=function(p,a) return entity(p,a,true) end,spoil=function() return M.spoil end,
+M.gap=require('gap'){fluid_boxes=M.fluid_boxes,position=position,entity=function(p,a) return entity(p,a,true) end,spoil=function() return M.spoil end,
   seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) or (not (type(p)=='table' and rawget(p,'__remote')) and distance(p.position,pos)<=32) end,
   scan=function(p,item,opts) return stock.scan(p,item,opts) end,where_kept=function(p,item,need,scan,q) return M.where_kept(p,item,need,scan,q) end,
   near=function(p,box,ground) return stock.near(p,box,ground) end,ground_index=function(f,s,item) return M.ground.on_ground_index(f,s,item) end,
@@ -15770,7 +15771,7 @@ M.craftrate=require('craftrate'){}
 M.circrecipe=require('circrecipe'){status_name=function(e) return entity_status_names[e.status] end}
 M.invbar=require('invbar'){integer=integer}
 -- a fusion reactor's bonus, maximum and measured rates (d21 batch64 Z6)
-M.fusion=require('fusion'){state=state}
+M.fusion=require('fusion'){fluid_boxes=M.fluid_boxes,state=state}
 -- rail and chain signals on the ground or elevated rail layer (d20 batch71 AG1)
 M.railsignal=require('railsignal'){position=position,integer=integer}
 -- a locomotive's or wagon's facing, placed and flipped (d20 batch71 AG2)
@@ -15796,7 +15797,7 @@ function M.farm_flow(p,surface,item)
   return ok and math.floor(n+0.5) or nil
 end
 -- Nest pollution from threat.lua's memory (one reading at the cloud's edge flickers), shared with status.
-M.defense=require('defense'){unset_target=function(e,side) return M.targets.unset(e,side) end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,polluted=function(s,pos) return threat.polluted(s,pos) end,reached=function(last) return threat.reached(last) end,
+M.defense=require('defense'){fluid_boxes=M.fluid_boxes,unset_target=function(e,side) return M.targets.unset(e,side) end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,polluted=function(s,pos) return threat.polluted(s,pos) end,reached=function(last) return threat.reached(last) end,
   nest_read=function(p,limit) return threat.nest_read(p,limit) end}
 handlers.defense=M.defense.handlers.defense
 handlers.flamers=M.defense.handlers.flamers
@@ -16922,7 +16923,7 @@ end
 -- there, with what stands on that tile now.
 -- What a planned build takes away (conflicts.lua; Sonnet, shift14 21:20: rich sulfuric acid wells under pipes, poles
 -- and tanks): every entity in the way, the resource under it, and the fluid segments and power links taking them cuts.
-M.conflicts=require('conflicts'){compass=compass_names,
+M.conflicts=require('conflicts'){fluid_boxes=M.fluid_boxes,compass=compass_names,
   tile_fixes=function(surface,force,proto,pos,dir) return M.dryrun.tile_fixes(surface,force,proto,pos,dir) end,
   tile_rules=function(surface,proto,pos,dir) return (M.placewhy.tile_rules(surface,proto,pos,dir)) end}
 function handlers.conflicts(p,a)
@@ -18480,7 +18481,7 @@ M.visuals=require('visuals'){state=state,lookup=function(index) return M.lookup(
 -- Platform health alerts in team.alerts (platalerts.lua): hits, turret ammo,
 -- repair packs, hub health, to the platform's creator, workers and riders.
 -- What a platform's thrusters lack and the chain behind it (thrust.lua): the slow-flight alert and platforms {platform}.
-M.thrust=require('thrust'){circuit=function(e) return M.circuits.read(e) end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end}
+M.thrust=require('thrust'){fluid_boxes=M.fluid_boxes,circuit=function(e) return M.circuits.read(e) end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end}
 M.platalerts=require('platalerts'){state=state,leg=function(pl) return M.freight.leg(pl) end,unset_target=function(e,side) return M.targets.unset(e,side) end,inventory_rounds=M.vehicles.inventory_rounds,fuel_outlook=function(pl) return M.endurance.fuel_outlook(pl) end,ammofeed={trace=function(pl,age) return M.ammofeed.get(pl,age,true) end},platform_events=function(p,h) return M.freight and M.freight.event_lines(p,h) end,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
   lookup=function(index) return M.lookup(index) end,who=function(p) return M.board.who(p) end,
   thrust=function(pl) return M.thrust.read(pl) end,thrust_lowest=function(t) return M.thrust.lowest_text(t) end,pump_states=function(pl) return M.thrust.pump_states(pl) end}
@@ -19823,7 +19824,7 @@ survey=survey_module{state=state,timed=M.timed,status_name=function(e) return M.
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
 -- (d28 batch325 IC) one item's complete count on belts and in robots' cargo, in the background (supply count_all)
 M.itemcount=require('itemcount'){state=state}
-M.supply=require('supply'){count_all=function(...) return M.itemcount.read(...) end,scope_line=function(...) return M.stores.scope_line(...) end,feeders_of=function(e) return M.feeders and M.feeders.of(e) end,surface_buildings=function(s) if M.census then return M.census.surface_buildings(s) end end,feeders_held=function(e,item,b) return M.feeders and M.feeders.held(e,item,b) end,elsewhere=function(...) return M.elsewhere.line(...) end,makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,spoilflow=M.spoilflow,ground_index=function(f,s,item) return M.ground and M.ground.on_ground_index(f,s,item) end,state_text=function(e) return M.thrust.state_text(e) end,
+M.supply=require('supply'){fluid_boxes=M.fluid_boxes,count_all=function(...) return M.itemcount.read(...) end,scope_line=function(...) return M.stores.scope_line(...) end,feeders_of=function(e) return M.feeders and M.feeders.of(e) end,surface_buildings=function(s) if M.census then return M.census.surface_buildings(s) end end,feeders_held=function(e,item,b) return M.feeders and M.feeders.held(e,item,b) end,elsewhere=function(...) return M.elsewhere.line(...) end,makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,spoilflow=M.spoilflow,ground_index=function(f,s,item) return M.ground and M.ground.on_ground_index(f,s,item) end,state_text=function(e) return M.thrust.state_text(e) end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
 -- compact: lines only (supply.lua M.compact).
 function M.compact_supply(out) return M.supply.compact(out) end
@@ -19880,7 +19881,7 @@ M.batch=require('batch'){position=position,integer=integer,entity=function(p,pos
   submit=function(p,a) return handlers.queue_submit(p,a) end}
 function handlers.assembler_batch(p,a) return M.batch.run(p,a) end
 function handlers.outpost(p,a) return M.outpost.read(p,a) end
-M.trace=require('trace'){refuses_ingredients=function(e) local r=e.type=='assembling-machine' and M.outputstop.read(e) return r and r.refuses_ingredients end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,circuits=function() return M.circuits end,state_text=function(e) return M.thrust.state_text(e) end,fluid_upstream=function(box,i) return M.thrust.upstream(box,i) end,held_blocked=M.details.held_blocked,observe=function(e,p) return M.readmemory.observe(e,p) end,memory_trace=function(p,a) return M.beltgaps.trace(p,a) end,end_seen=M.factory_digest.end_seen,supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return M.machine_status(e) end}
+M.trace=require('trace'){fluid_boxes=M.fluid_boxes,refuses_ingredients=function(e) local r=e.type=='assembling-machine' and M.outputstop.read(e) return r and r.refuses_ingredients end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,circuits=function() return M.circuits end,state_text=function(e) return M.thrust.state_text(e) end,fluid_upstream=function(box,i) return M.thrust.upstream(box,i) end,held_blocked=M.details.held_blocked,observe=function(e,p) return M.readmemory.observe(e,p) end,memory_trace=function(p,a) return M.beltgaps.trace(p,a) end,end_seen=M.factory_digest.end_seen,supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return M.machine_status(e) end}
 -- labs: research line diagnostics (labs.lua), an observe scope; science reads its packs through supply's scan.
 M.labs=require('labs'){research_rate=function(f) return M.research.rate(f) end,integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,
   wait_for_full_hand=function(e) return M.details.wait_for_full_hand(e) end,
@@ -19945,7 +19946,7 @@ function handlers.science(p,a)
   end
   return M.labs.science(p,a)
 end
-rates=rates_module{position=position,status_name=function(e) return M.machine_status(e) end,state_text=function(e) return M.thrust.state_text(e) end}
+rates=rates_module{fluid_boxes=M.fluid_boxes,position=position,status_name=function(e) return M.machine_status(e) end,state_text=function(e) return M.thrust.state_text(e) end}
 -- Electric and logistic networks and turrets, one line each (networks.lua):
 -- the shift block, the networks read, and the network push alerts.
 -- Space not in play yet (Nick 12:35, item 4, for a fresh run): no rocket launched, no platform, and no planet but
@@ -19989,7 +19990,7 @@ function handlers.belt_gaps(p,a)
   return M.beltgaps.read(p,a)
 end
 -- pipe_gaps: a pipe line's segments and cuts along tiles (pipegaps.lua; Muse, shift17 10:50).
-M.pipegaps=require('pipegaps'){pipe_fluid=function(e) return M.pipe_fluid(e) end,position=position,connections=function(e) return pipes.connections(e) end,
+M.pipegaps=require('pipegaps'){fluid_neighbours=M.fluid_neighbours,fluid_boxes=M.fluid_boxes,pipe_fluid=function(e) return M.pipe_fluid(e) end,position=position,connections=function(e) return pipes.connections(e) end,
   segment_box=function(e,i) return pipes.segment_box(e,i) end,visible=function(p,pos) return M.memory_visible(p,pos) end,
   fluids=function(e) return pipes.fluids(e,true) end}
 function handlers.pipe_gaps(p,a)
@@ -20011,7 +20012,7 @@ function handlers.pipe_gaps(p,a)
 end
 -- danger: a destination's nests, enemies seen, recent attacks and deaths, and the character's health and armor
 -- (danger.lua; Opus, shift17 10:51), facts only.
-M.danger=require('danger'){state=state,position=position,avoid=M.avoid,eggs=function(surface,pos,r) return M.spoil.near(surface,pos,r) end,
+M.danger=require('danger'){fluid_boxes=M.fluid_boxes,state=state,position=position,avoid=M.avoid,eggs=function(surface,pos,r) return M.spoil.near(surface,pos,r) end,
   surface=function(p,name) local s=game.surfaces[name]; assert(s and (s.platform==nil or s.platform.force==p.force),'unknown surface '..tostring(name)); return s end}
 function handlers.danger(p,a) return M.danger.read(p,a) end
 -- (d24 batch174 QQ1, Luna #2242) sight: which chunks are visible now, only charted, or uncharted, and from what (sight.lua)
@@ -20067,7 +20068,7 @@ M.readmemory=require('readmemory'){state=state,position=position,visible=M.memor
   belt_observe=function(e,p) return M.beltgaps.observe(e,p) end,belt_trace=function(p,a) return M.beltgaps.trace(p,a) end,
   fog_note_seen=function(e,t,pos,cx,cy,status,ctx) return M.fogmem.note_seen(e,t,pos,cx,cy,status,ctx) end,
   belt_observe_seen=function(e,t,pos,cx,cy,ctx) return M.beltgaps.observe_seen(e,t,pos,cx,cy,ctx) end}
-M.census=require('census'){state=state,timed=M.timed,observe_seen=function(e,t,pos,ctx) return M.readmemory.observe_seen(e,t,pos,ctx) end,
+M.census=require('census'){fluid_boxes=M.fluid_boxes,state=state,timed=M.timed,observe_seen=function(e,t,pos,ctx) return M.readmemory.observe_seen(e,t,pos,ctx) end,
   -- (d26 batch233 VM) census part vehicles: the agents by their character's unit_number, and the vehicles they drive by
   -- remote view now (vehicle {drive, remote}) with the drive's target
   vehicle_people=function()
@@ -20100,14 +20101,14 @@ M.fuelreactor=require('fuelreactor'){status_name=function(e) return M.machine_st
 M.fuelbudget=require('fuelbudget'){spoilflow=M.spoilflow,reactors=M.fuelreactor,fuel_users=function(s) return M.census.fuel_users(s) end,status_name=function(e) return M.machine_status(e) end,
   belt_line=function(p,e) return M.linecut.line(p,e) end}
 function handlers.fuel_budget(p,a) return M.fuelbudget.read(p,a) end
-M.networks=require('networks'){unset_target=function(e,side) return M.targets.unset(e,side) end,reqchest=function() return M.reqchest end,state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
+M.networks=require('networks'){fluid_boxes=M.fluid_boxes,unset_target=function(e,side) return M.targets.unset(e,side) end,reqchest=function() return M.reqchest end,state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
   sky=function(surface) return M.lightning and M.lightning.sky(surface) end}
 -- One item across every planet and platform (packaudit.lua; Luna, 16:50).
 M.packaudit=require('packaudit'){spoilflow=M.spoilflow,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,reuse=function(key,fn) return M.supply.reuse(key,fn) end,spoil=M.spoil,
   where=function(pl) return M.freight.where(pl) end,rocket_room=function(silo,item) return space.rocket_room(silo,item) end}
 function handlers.freight_audit(p,a) return M.packaudit.read(p,a) end
 -- The factory's shortages in one read (shortages.lua; Opus 13:51).
-M.shortages=require('shortages'){reuse=function(key,fn) return M.supply.reuse(key,fn) end,held_feeders=function(e,items) return M.supply.held_feeders(e,items) end,held_line=function(h,item) return M.supply.held_line(h,item) end,status_name=function(e) return entity_status_names[e.status] end}
+M.shortages=require('shortages'){fluid_boxes=M.fluid_boxes,reuse=function(key,fn) return M.supply.reuse(key,fn) end,held_feeders=function(e,items) return M.supply.held_feeders(e,items) end,held_line=function(h,item) return M.supply.held_line(h,item) end,status_name=function(e) return entity_status_names[e.status] end}
 function handlers.shortages(p,a) return M.shortages.read(p,a) end
 M.damagelog=require('damagelog'){state=state,position=position,integer=integer}
 -- A platform leaving while a launch to it waits for its rocket (launchwatch.lua; Luna 15:21).
@@ -20138,7 +20139,7 @@ M.ammofeed=require('ammofeed'){state=state,feeders=M.feeders,hand=function(e) re
 -- configure of its priority targets, and build and place_ghosts (dry runs too) of one.
 M.fireline=require('fireline'){}
 M.ammorate=require('ammorate'){inventory_rounds=M.vehicles.inventory_rounds}
-M.platdefense=require('platdefense'){state=state,position=position,platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,ammorate=M.ammorate,inventory_rounds=M.vehicles.inventory_rounds,rounds_text=M.vehicles.rounds_text,fireline=M.fireline,own_losses=function(name) return LOSS.own_on(name) end}
+M.platdefense=require('platdefense'){fluid_boxes=M.fluid_boxes,state=state,position=position,platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,ammorate=M.ammorate,inventory_rounds=M.vehicles.inventory_rounds,rounds_text=M.vehicles.rounds_text,fireline=M.fireline,own_losses=function(name) return LOSS.own_on(name) end}
 do
   local function target_surface(p,a)
     if type(a.platform)=='string' then
@@ -20422,7 +20423,7 @@ M.scienceline=require('scienceline'){state=state,supply=M.supply,networks=M.netw
 -- Lightning attractors on Fulgora whose catches have nowhere to go, and full accumulators beside them (lightning.lua).
 M.lightning=require('lightning'){state=state}
 -- A long belt or pipe line cut (linecut.lua; d17 batch17 C1, Opus): a team alert naming the cut tiles.
-M.linecut=require('linecut'){state=state}
+M.linecut=require('linecut'){fluid_neighbours=M.fluid_neighbours,fluid_boxes=M.fluid_boxes,state=state}
 M.robotloss=require('robotloss'){state=state,integer=integer,position=position}
 function handlers.robot_losses(p,a) return M.robotloss.read(p,a) end
 passive.robot_losses=true
@@ -20443,7 +20444,7 @@ function M.belt_groups_read(f)
   M.belt_groups_kept[f.name]={tick=game.tick,list=out}
   return out
 end
-M.pushalerts=require('pushalerts'){held_feeders=function(e,items) return M.supply.held_feeders(e,items) end,held_line=function(h,item) return M.supply.held_line(h,item) end,rest_label=function(name) local r=M.rests.get(name); return r and M.rests.label(r) or nil end,platform_eta=function(pl,loc)
+M.pushalerts=require('pushalerts'){fluid_boxes=M.fluid_boxes,held_feeders=function(e,items) return M.supply.held_feeders(e,items) end,held_line=function(h,item) return M.supply.held_line(h,item) end,rest_label=function(name) local r=M.rests.get(name); return r and M.rests.label(r) or nil end,platform_eta=function(pl,loc)
     local leg=M.freight.leg(pl)
     if leg and leg.to==loc and leg.eta_ticks then return leg.eta_ticks/60 end
     local est=M.freight.before_departure(pl,loc)
@@ -20503,7 +20504,7 @@ function handlers.game_alerts(p,a) return M.pushalerts.read(p,a) end
 -- Where drops landed (drops.lua): their pods followed down, told in the team block, the drops read.
 M.drops=require('drops'){state=state,podlog=function(pod,info) return M.podlog.sent(pod,info) end,integer=integer,who=M.board.who,resolve=M.board.resolve,contested=function(s,f,item,at) return M.ghostlist.contested(s,f,item,at) end}
 -- A pole's death that cut power (powercut.lua, round2120a): team.alerts and status alerts; scan rows' pole wires.
-M.powercut=require('powercut'){state=state}
+M.powercut=require('powercut'){fluid_boxes=M.fluid_boxes,state=state}
 function handlers.drops(p,a) return M.drops.read(p,a) end
 -- What each platform carried stop by stop and leg by leg, and where it is (freight.lua; Luna, shift12 12:47).
 M.freight=require('freight'){delivered=function(info) if M.reminders then M.reminders.trigger('delivered',info) end end,
@@ -20512,7 +20513,7 @@ M.freight=require('freight'){delivered=function(info) if M.reminders then M.remi
 -- One ammunition model for a trip (ammomodel.lua; d20 batch51 H1, viewer Aurora 09:36): platform_endurance, its route
 -- forecast, and the ammo_rates of preflight and the platforms read count stock, rockets on their way and what is made the
 -- same way.
-M.ammomodel=require('ammomodel'){stock_places=function(pl,want) return M.freight.stock_places(pl,want) end,ammofeed=M.ammofeed,
+M.ammomodel=require('ammomodel'){fluid_boxes=M.fluid_boxes,stock_places=function(pl,want) return M.freight.stock_places(pl,want) end,ammofeed=M.ammofeed,
   incoming=function(pl) return M.freight.incoming(pl) end}
 -- One read across a shipment's native systems (shipment.lua; d17 batch15 Group B, Sol #614, Astra).
 M.shipment=require('shipment'){launches=function(p,a) return M.launchcount.read(p,a) end,integer=integer,freight=function() return M.freight end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,drops_taken=function(f) return M.drops.taken(f) end,stops=function(pl) return space.stops(pl) end,hub_counts=function(pl,q) return M.freight.hub_counts(pl,q) end,
@@ -20605,7 +20606,7 @@ M.checks=require('checks'){state=state,position=position,who=function(p) return 
   condition=function(p,c) return conditions.check(p,c) end,validate=function(c) return conditions.validate(c) end,
   item_exists=function(id) return M.board.items()[id]~=nil end}
 -- The library's placed areas with their hookups, for the live map (libareas.lua; d21 batch68 AD2, viewer Aurora).
-M.libareas=require('libareas'){state=state,check_state=function(name,surface,box) return M.checks.area_state(name,surface,box) end}
+M.libareas=require('libareas'){fluid_boxes=M.fluid_boxes,state=state,check_state=function(name,surface,box) return M.checks.area_state(name,surface,box) end}
 -- Each planet's electric and logistic networks and items' sources and consumers, for the live map (netmap.lua; d21 batch68 AD3, viewer Aurora).
 M.netmap=require('netmap'){state=state,poles=function(f,s) return M.census.poles(f,s) end,typed=function(f,s,t) return M.census.typed(f,s,t) end}
 function handlers.checks(p,a) return M.checks.handler(p,a) end
@@ -20618,7 +20619,7 @@ M.lessonbook=require('lessonbook'){state=state,items=function() return M.board.i
 for name,handler in pairs(M.lessonbook.handlers) do handlers[name]=handler end
 -- platform_endurance: a route's legs at the platform's speed and what its ammunition, repair packs, thruster fluids,
 -- power and hub space come to over it at today's rates (endurance.lua; Astra, d15: Wayfarer lost at Aquilo).
-M.endurance=require('endurance'){state=state,player_of=function(i) local ok,q=pcall(player,i,true); return ok and q or nil end,platform=function(p,name) return space.platform(p,name) end,platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,ammofeed=M.ammofeed,ammorate=M.ammorate,ammo_damages=M.platdefense and M.platdefense.damages,phase_rates=function(pl,name) return M.freight.phase_rates(pl,name) end,
+M.endurance=require('endurance'){fluid_boxes=M.fluid_boxes,state=state,player_of=function(i) local ok,q=pcall(player,i,true); return ok and q or nil end,platform=function(p,name) return space.platform(p,name) end,platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,ammofeed=M.ammofeed,ammorate=M.ammorate,ammo_damages=M.platdefense and M.platdefense.damages,phase_rates=function(pl,name) return M.freight.phase_rates(pl,name) end,
   leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,ammo_counts=function(pl) return M.freight.ammo_counts(pl) end,
   path=function(a,b) return M.freight.path(a,b) end,stock_places=function(pl,want,lists) return M.freight.stock_places(pl,want,lists) end,
   places_text=function(sp,name) return M.freight.places_text(sp,name) end,moved_text=function(a,b,name) return M.freight.moved_text(a,b,name) end,
@@ -20635,11 +20636,11 @@ function handlers.platform_plan(p,a) return M.platplan.read(p,a) end
 -- (d22 batch78 AN2, Astra #1774) floating chunks, collectors' reach and the collector_tally watch (collectreach.lua)
 M.collectreach=require('collectreach'){state=state,who_index=function(index) local pl=M.lookup(index); return pl and pl.valid and M.board.who(pl) or nil end,
   mixed_view=function(job) return M.mixed.view(job) end}
-M.platsupply=require('platsupply'){unset_target=function(e,side) return M.targets.unset(e,side) end,platform=function(p,name) return space.platform(p,name) end,placewhy=M.placewhy,
+M.platsupply=require('platsupply'){fluid_boxes=M.fluid_boxes,unset_target=function(e,side) return M.targets.unset(e,side) end,platform=function(p,name) return space.platform(p,name) end,placewhy=M.placewhy,
   collectreach=M.collectreach,reason=function(v) return M.measures.reason(v) end,
   thrust=function(pl) return M.thrust.read(pl) end,turret_feed=function(t) return M.platalerts.turret_feed(t) end,fuelstock=function(pl) return M.fuelstock.trace(pl) end}
 -- The fuel feedstock trace (fuelstock.lua; d17 batch31 B5, Sol).
-M.fuelstock=require('fuelstock'){}
+M.fuelstock=require('fuelstock'){fluid_boxes=M.fluid_boxes,}
 function handlers.platform_supply(p,a) return M.platsupply.read(p,a) end
 -- platform_digest (platdigest.lua, batch24 B1): one read per platform from the reads above.
 M.platdigest=require('platdigest'){jobs=function(name) return M.platjobs.lines(name) end,platform=function(p,name) return space.platform(p,name) end,
@@ -20685,7 +20686,7 @@ function handlers.platform_tiles(p,a)
   return M.tilecheck.query(pl,cells)
 end
 -- Each platform's flight over the last 60 and 180 s: speed, thruster fluids, tanks, pumps (engine.lua; Astra, 21:20).
-M.engine=require('engine'){state=state}
+M.engine=require('engine'){fluid_boxes=M.fluid_boxes,state=state}
 -- The run's chronicle: agents' entries and the events the harness saw (chronicle.lua; viewers Alex and syndesis 22:24).
 M.chronicle=require('chronicle'){state=state,platform_made=function(pl,t) return M.starterpack.made(pl,t) end,platform_gone=function(i) return M.starterpack.forget(i) end,where=function(pl) return M.freight and M.freight.where(pl) end,
   owner=function(c) return M.character_owner(c) end}
@@ -20705,7 +20706,7 @@ M.platwait=require('platwait'){state=state}
 -- Who edited a request section or a departure gate (editlog.lua; d19 batch41 B1, Sol seq 861).
 M.editlog=require('editlog'){state=state,deliver=function(index,t) return M.board.deliver(index,t) end,
   index_of=function(name) local ok,i=pcall(M.bots.index_of,name); if ok and i then return i end; local pl=game.get_player(name); return pl and pl.index or nil end}
-space=space_module{made=function(t) return M.made.mark(t) end,floor_read=function(pl) return M.flightwatch.floor_read(pl) end,platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,plat_damaged=function(pl) return M.platalerts.damaged(pl) end,plat_damaged_seed=function(pl,l) return M.platalerts.seed_damaged(pl,l) end,
+space=space_module{fluid_boxes=M.fluid_boxes,made=function(t) return M.made.mark(t) end,floor_read=function(pl) return M.flightwatch.floor_read(pl) end,platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,plat_damaged=function(pl) return M.platalerts.damaged(pl) end,plat_damaged_seed=function(pl,l) return M.platalerts.seed_damaged(pl,l) end,
   plat_damaged_forget=function(pl,u) return M.platalerts.forget_damaged(pl,u) end,editlog=M.editlog,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,deliver=function(index,t) return M.board.deliver(index,t) end,launch_need=function(pl) return M.launchneed.for_platform(pl) end,wait_need=function(pl) return M.launchneed.wait_lines(pl) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,ghost_tally=function() return M.ghosttally end,platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name,by) return M.departure and M.departure.lines(name,by) end,departure_all=function() return M.departure and M.departure.all() end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,starterpack=function() return M.starterpack end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,

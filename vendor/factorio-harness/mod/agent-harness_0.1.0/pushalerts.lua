@@ -34,6 +34,7 @@ end
 local flameroil = require('flameroil')
 local snapfail = require('snapfail')
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
   M.KINDS = 16
@@ -1117,7 +1118,7 @@ return function(api)
   end
   local function holds_of(e)
     if e.type == 'pipe' or e.type == 'pipe-to-ground' or e.type == 'storage-tank' or e.type == 'pump' then
-      local f = try(function() return e.fluidbox[1] end)
+      local f = try(function() return fluid_boxes(e)[1] end)
       return f and string.format('%s %d', f.name, math.floor(f.amount + 0.5)) or 'empty'
     end
     local items = {}

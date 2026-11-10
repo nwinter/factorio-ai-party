@@ -16,6 +16,7 @@
 -- binds: which limit sets what is made over a time: the stock (none made aboard), the make rate, or an ingredient.
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
   local function product_chance(p)
@@ -114,8 +115,8 @@ return function(api)
     local fluid_stock = o.fluid_stock or function(names)
       local out = {}
       for _, e in ipairs(try(function() return pl.surface.find_entities_filtered{type={'thruster', 'storage-tank'}, force=pl.force} end) or {}) do
-        for i = 1, try(function() return #e.fluidbox end) or 0 do
-          local f = try(function() return e.fluidbox[i] end)
+        for i = 1, try(function() return #fluid_boxes(e) end) or 0 do
+          local f = try(function() return fluid_boxes(e)[i] end)
           if f and names[f.name] then out[f.name] = (out[f.name] or 0) + f.amount end
         end
       end
@@ -143,8 +144,8 @@ return function(api)
           rec, per = r, made_here
           local inv = try(function() return e.get_inventory((defines.inventory.crafter_input or defines.inventory.assembling_machine_input)) end)
           for _, c in ipairs(inv and try(function() return inv.get_contents() end) or {}) do inputs[c.name] = (inputs[c.name] or 0) + c.count end
-          for i = 1, try(function() return #e.fluidbox end) or 0 do
-            local f = try(function() return e.fluidbox[i] end)
+          for i = 1, try(function() return #fluid_boxes(e) end) or 0 do
+            local f = try(function() return fluid_boxes(e)[i] end)
             if f and f.name then fluids_in[f.name] = (fluids_in[f.name] or 0) + (f.amount or 0) end
           end
         end
