@@ -309,6 +309,9 @@ return function(api)
     .. 'to 10 km/s. Measured on 2.0.77: a 170 t, 21-tile-wide test platform with 1 normal thruster went from 0 to 86 '
     .. 'km/s in 6 s on one full tank with no supply; on a copy of Resolute, 4 legendary thrusters burned 5 of each a '
     .. 'tick at full and gave 2.5 times the thrust 4 normal ones gave at the same speed'
+  if script and script.active_mods and (script.active_mods.base or ''):match('^2%.1%.') then
+    M.RULE=M.RULE:match('^(.-) With no thrust')..' Measured on 2.1.24: normal/rare/legendary burn 2/3.2/5 of each fluid per tick above 80%; the low-fill curve is unchanged. Speed depends on mass-based drag; 2.0 speed measurements are not a 2.1 forecast.'
+  end
   -- A thruster's quality: its name and the multiplier the game applies to its burn and thrust.
   local function qual(t)
     local q = try(function() return t.quality end)

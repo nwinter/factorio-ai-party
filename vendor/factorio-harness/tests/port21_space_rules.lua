@@ -53,6 +53,7 @@ local P=dofile('mod/agent-harness_0.1.0/productionlegs.lua'){state=function() re
 eq(#P.read(pl,1).legs,0);eq(st.production_legs_history['2.0-unversioned'],oldlegs)
 local EN=dofile('mod/agent-harness_0.1.0/endurance.lua'){state=function() return st end}
 local fo=EN.fuel_outlook(pl);eq(fo.rate_unknown,true);eq(#fo.rows,0);has(fo.line,'less than one minute')
+local T=dofile('mod/agent-harness_0.1.0/thrust.lua'){};has(T.RULE,'Measured on 2.1.24');assert(not T.RULE:find('170 t',1,true))
 local R=dofile('mod/agent-harness_0.1.0/routeammo.lua'){}
 eq(R.EXTRA,0);eq(R.ON_PATH[1],.9);has(R.CALIBRATION,'2.1.24');has(R.CALIBRATION,'unmeasured')
 script.active_mods.base='2.0.77';R=dofile('mod/agent-harness_0.1.0/routeammo.lua'){};eq(R.EXTRA,20);eq(R.ON_PATH[1],1.19)

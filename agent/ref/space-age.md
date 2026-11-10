@@ -888,3 +888,9 @@ A full rocket of each requested item is no longer a launch prerequisite. Orbital
 incoming deliveries reset inactivity. Flight/fuel histories from 2.0 are archived on migration and new forecasts use
 2.1 samples. The 2.1 geometric asteroid estimate is provisional: measured on Nauvis–Vulcanus only; its reply gives
 hull widths, speed, sample counts, and the unmeasured scope. It does not predict collision damage to the foundation.
+
+On 2.1.24, a medium metallic asteroid fixture destroyed two foundation tiles and itself; the resulting two ghosts
+rebuilt using two hub foundation items, with zero item-statistics consumption. The foundation counters still use
+ghosts and build events. This is not a model of the damage caused by every asteroid size. Native thruster tests on
+2.1.24 confirmed normal/rare/legendary full burn of 2/3.2/5 units of each fluid per tick and the low-fill burn curve;
+platform speed measurements from 2.0 do not account for 2.1 mass-based drag.
