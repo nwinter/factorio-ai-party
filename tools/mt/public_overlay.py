@@ -1,4 +1,4 @@
-"""Read-only public projection of team stream services; one camera, round-robin.
+"""Read-only public projection of team stream services; one camera, event-aware race director.
 
 No Relay, viewer_say, inbox writes, or HTTP mutation routes. The camera controller
 is operator-only and reuses the stream harness and lookcam chart checks.
@@ -19,6 +19,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / 'stream'))
 from harness import Harness
 import lookcam
+from public_race import project, Race, Director, read_views, icons, speech
 
 CAMERA = 'pog-director2'
 
@@ -54,24 +55,12 @@ def roster(tree, run, team):
     return agents
 
 
-def project(team, state, agents, now):
-    """Deliberate allowlist: no paths, errors, tokens, confessions, operator requests."""
-    research, space = state.get('research') or {}, state.get('space') or {}
-    current = {a['name']: a for a in state.get('agents') or []}
-    chat = state.get('chat') or []
-    freshness = state.get('poll_ok') if 'poll_ok' in state else state.get('now')
-    return {'team': team, 'stale': now - float(freshness or 0) > 25 or bool(state.get('poll_error')),
-            'game_time': state.get('game_time'), 'paused': bool(state.get('paused')),
-            'agents': [dict(a, display_name=current.get(a['name'], {}).get('display_name') or a['name'],
-                            activity=current.get(a['name'], {}).get('activity')) for a in agents],
-            'research': {k: research.get(k) for k in ('label', 'current', 'progress', 'done_count')},
-            'science': {k: (state.get('science') or {}).get(k) for k in ('spm', 'stage_label')},
-            'space': {k: space.get(k) for k in ('rockets', 'planets')},
-            'chat': [{'name': str(m.get('name') or m.get('agent') or m.get('from') or ''),
-                      'text': str(m.get('text') or '')[:600], 't': m.get('t')} for m in chat[-5:]]}
-
-
 def target(state):
+    # Show the active builder/miner, including work outside the original base core.
+    for a in state.get('agents') or []:
+        p = a.get('position') or {}
+        if a.get('activity') == 'acting' and a.get('surface') and all(type(p.get(k)) in (int, float) for k in ('x', 'y')):
+            return a['surface'], p['x'], p['y']
     base = (state.get('basemap') or {}).get('core') or state.get('basemap') or {}
     if all(isinstance(base.get(k), (int, float)) for k in ('x0', 'y0', 'w', 'h', 'cell')) and base['w'] > 0 and base['h'] > 0:
         return 'nauvis', base['x0'] + base['w'] * base['cell'] / 2, base['y0'] + base['h'] * base['cell'] / 2
@@ -105,11 +94,13 @@ def cut(h, state):
 
 class PublicOverlay:
     def __init__(self, op, tree, run, port=8790, dwell=30, youtube=None, camera=True):
+        self.op = op
         self.feeds = feeds(op)
+        self.race, self.director = Race(), Director(dwell)
         self.rosters = {t: roster(tree, run, t) for t, _ in self.feeds}
         self.harnesses = {t: Harness('imac2', t) for t, _ in self.feeds} if camera else {}
         self.stop = threading.Event()
-        self.state = {'teams': [], 'camera': None, 'viewers': [], 'viewer_status': 'off', 'now': 0}
+        self.state = {'teams': [], 'camera': None, 'viewers': [], 'viewer_status': 'off', 'now': 0, 'events': [], 'ranking': 'Awaiting scores'}
         self.lock = threading.Lock()
         self.dwell = dwell
         owner = self
@@ -123,6 +114,17 @@ class PublicOverlay:
                 elif self.path.split('?')[0] in ('/', '/overlay.html'):
                     body = (HERE / 'public-overlay.html').read_bytes()
                     mime = 'text/html; charset=utf-8'
+                elif self.path.split('?')[0] == '/mapview.js':
+                    body = (HERE.parents[1] / 'site/static/mapview.js').read_bytes()
+                    mime = 'text/javascript; charset=utf-8'
+                elif re.fullmatch(r'/static/game/(item|tech|place)/[a-z0-9-]+\.webp', self.path.split('?')[0]):
+                    _, _, _, kind, filename = self.path.split('?')[0].split('/')
+                    name = filename[:-5]
+                    if name not in icons.INDEX.get(kind, set()):
+                        self.send_error(404)
+                        return
+                    body = (icons.GAME / kind / filename).read_bytes()
+                    mime = 'image/webp'
                 elif self.path == '/health':
                     body, mime = b'ok', 'text/plain'
                 else:
@@ -148,15 +150,17 @@ class PublicOverlay:
             threading.Thread(target=self.viewers, daemon=True).start()
 
     def poll(self):
-        index, next_cut, previous = 0, 0, {}
+        previous = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.feeds)) as pool:
             while not self.stop.is_set():
                 now, rows, fresh = time.time(), [], {}
+                views = read_views(self.op, now)
+                scores = {r['team']: r.get('score') for r in views.get('teams', []) if r.get('team') in self.rosters and not (r.get('errors') or {}).get('score')}
                 pending = [(t, pool.submit(fetch, u)) for t, u in self.feeds]
                 for team, job in pending:
                     try:
                         data = job.result()
-                        row = project(team, data, self.rosters[team], now)
+                        row = project(team, data, self.rosters[team], now, scores.get(team))
                         if not row['stale']:
                             fresh[team] = data
                         previous[team] = row
@@ -165,21 +169,21 @@ class PublicOverlay:
                         row = dict(previous.get(team) or project(team, {}, self.rosters[team], now), stale=True)
                     rows.append(row)
                 with self.lock:
-                    self.state.update(teams=rows, now=now)
-                if self.harnesses and now >= next_cut:
-                    team = self.feeds[index % len(self.feeds)][0]
-                    index += 1
+                    self.state.update(self.race.update(rows, now, views.get('contacts') or []), now=now)
+                choice = self.director.choose(rows, self.state['events'], now) if self.harnesses else None
+                if choice:
+                    team, reason = choice
                     try:
-                        if team not in fresh:
-                            raise ValueError('team feed unavailable')
                         camera = cut(self.harnesses[team], fresh[team])
+                        since = time.time()
+                        self.director.success(team, since)
                         with self.lock:
-                            self.state['camera'] = dict(camera, since=time.time())
-                        next_cut = time.time() + self.dwell
+                            surface = camera['surface'] if camera['surface'] in ('nauvis', 'vulcanus', 'gleba', 'fulgora', 'aquilo') else 'factory'
+                            self.state['camera'] = {'team': team, 'surface': surface, 'since': since, 'reason': reason}
                         print(f'camera: {team} {camera}', flush=True)
                     except Exception as e:
-                        print(f'camera {team}: {e}', flush=True)
-                        next_cut = time.time() + 5
+                        print(f'camera {team}: {type(e).__name__}', flush=True)
+                        self.director.failed(team, time.time())
                 self.stop.wait(5)
 
     def viewers(self):
@@ -199,7 +203,9 @@ class PublicOverlay:
                 for msg in msgs:
                     row, reasons = filt.check(msg, time.time())
                     if not reasons:
-                        lines.append({k: row.get(k) for k in ('id', 'name', 'text', 't')})
+                        text = speech(row.get('text'))
+                        if text:
+                            lines.append({'name': 'Viewer', 'text': text, 't': time.time()})
                 lines = lines[-8:]
                 with self.lock:
                     self.state.update(viewers=lines, viewer_status=reader.state)
