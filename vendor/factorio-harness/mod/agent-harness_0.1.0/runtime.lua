@@ -3557,8 +3557,9 @@ M.SCAN_PAGE=256  -- (d23 batch123 CF4) rows a call; page continues
 M.SCAN_BELTS,M.SCAN_HOLDING=1024,64  -- about 6 us a belt read on world n (512 on Kestrel II: 3.1 ms)
 -- A fluid entity's fluid as its segment holds it (scan rows, pipe_gaps cuts): the most of it in the segment, else what
 -- its first box holds, else its locked fluid or filter; 'empty' when none.
+function M.fluid_boxes(e) return pipes.fluid_boxes(e) end
 function M.pipe_fluid(e)
-  local fb=e.fluidbox
+  local fb=M.fluid_boxes(e)
   local okc,contents=pcall(function() return fb.get_fluid_segment_contents(1) end)
   local best,amount
   for name,n in pairs(okc and contents or {}) do if not amount or n>amount then best,amount=name,n end end
@@ -8395,7 +8396,7 @@ do
     if okk and kd then r.kills=kd.kills; r.damage_dealt=kd.damage_dealt end
     -- (d17 batch21 B1, Sonnet: pipes read empty in every area read) an entity with fluid boxes: each box's fluid and
     -- amount over its capacity, its segment's capacity and extent (pipes.fluids, as scan fields=fluids reads them)
-    local okf,ft=pcall(function() local fb=e.fluidbox; return fb and #fb>0 and pipes.fluids(e,true) end)
+    local okf,ft=pcall(function() local fb=M.fluid_boxes(e); return fb and #fb>0 and pipes.fluids(e,true) end)
     if okf and ft then r.fluid=ft; if r.holds=='empty' then r.holds=nil end end
     return r
   end

@@ -7,6 +7,83 @@ local heap=require('heap')
 local flameroil=require('flameroil')
 return function(api)
   local M={}
+  -- One entity's indexed stores. Native 2.1 methods distinguish each store from its segment;
+  -- old consumers keep their indexed view while callers can ask for either capacity explicitly.
+  local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+  local TRANSPORT = {pipe=true, ['pipe-to-ground']=true, ['storage-tank']=true, ['infinity-pipe']=true}
+  local function segment(e, i) return e.has_fluid_segment(i) end
+  local FLUID_METHODS = {
+    get_capacity=function(e, i)
+      if TRANSPORT[e.type] and segment(e, i) then return e.get_fluid_segment_capacity(i) end
+      return e.get_fluid_capacity(i)
+    end,
+    get_own_capacity=function(e, i) return e.get_fluid_capacity(i) end,
+    get_segment_capacity=function(e, i) if segment(e, i) then return e.get_fluid_segment_capacity(i) end end,
+    get_filter=function(e, i) return e.get_fluid_filter(i) end,
+    get_prototype=function(e, i) return e.get_fluid_box_prototype(i) end,
+    get_fluid_segment_id=function(e, i) if segment(e, i) then return e.get_fluid_segment_id(i) end end,
+    get_fluid_segment_extent_bounding_box=function(e, i) if segment(e, i) then return e.get_fluid_segment_extent_bounding_box(i) end end,
+    get_fluid_segment_contents=function(e, i)
+      if not segment(e, i) then return nil end
+      local f=e.get_fluid_segment_fluid(i)
+      return f and {[f.name]=f.amount} or {}
+    end,
+    get_locked_fluid=function(e, i)
+      local f=segment(e, i) and e.get_fluid_segment_filter(i) or e.get_fluid_filter(i)
+      return f and f.name or nil
+    end,
+    get_pipe_connections=function(e, i) return e.get_fluid_box_pipe_connections(i) end,
+    get_neighbours=function(e, i) return e.get_fluid_box_neighbours(i) end,
+    set_filter=function(e, i, f)
+      if type(f)=='table' then
+        assert(f.minimum_temperature==nil and f.maximum_temperature==nil, '2.1 fluid filters take a name, not temperature limits')
+        f=f.name
+      end
+      return e.set_fluid_filter(i, f)
+    end,
+    set=function(e, i, f) if f==nil then e.clear_fluid(i); return 0 end; return e.set_fluid(i, f) end,
+    clear=function(e, i) return e.clear_fluid(i) end,
+    add=function(e, i, f) return e.add_fluid(i, f) end,
+    remove=function(e, i, amount) return e.remove_fluid(i, amount) end,
+  }
+  local FLUID_VIEW = {
+    __len=function(v) return v.owner.fluids_count end,
+    __index=function(v, k)
+      if type(k)=='number' then return v.owner.get_fluid(k) end
+      if k=='valid' then return v.owner.valid end
+      local fn=FLUID_METHODS[k]
+      if fn then
+        local bound=function(...) return fn(v.owner, ...) end
+        rawset(v, k, bound)
+        return bound
+      end
+    end,
+    __newindex=function() error('fluid stores use set/add/remove/clear, whose results must be checked', 2) end,
+  }
+  function M.fluid_boxes(e)
+    if not PORT21 then return e.fluidbox end
+    if e.type=='entity-ghost' then return nil end
+    -- Read now so unsupported objects fail here, rather than masquerading as empty stores.
+    assert(type(e.fluids_count)=='number', 'entity fluid storage is unsupported')
+    return setmetatable({owner=e, object_name='HarnessFluidStorage'}, FLUID_VIEW)
+  end
+  function M.fluid_prototypes(e, i)
+    local p
+    if PORT21 then p=e.get_fluid_box_prototype(i)
+    else p=e.fluidbox.get_prototype(i) end
+    if p==nil then return {} end
+    return type(p)=='table' and p[1] and p or {p}
+  end
+  function M.set_fluid(e, i, f)
+    if PORT21 then return FLUID_METHODS.set(e, i, f) end
+    e.fluidbox[i]=f
+    if f==nil then return 0 end
+    -- Legacy assignment replaces the segment total, not the entity's proportional share.
+    local ok, contents=pcall(function() return e.fluidbox.get_fluid_segment_contents(i) end)
+    if ok and contents then return contents[f.name] or 0 end
+    local got=e.fluidbox[i]
+    return got and got.amount or 0
+  end
   local DIRS={0,4,8,12}
   local STEP={[0]={0,-1},[4]={1,0},[8]={0,1},[12]={-1,0}}
   local NAME={[0]='north',[4]='east',[8]='south',[12]='west'}
@@ -82,7 +159,7 @@ return function(api)
   -- and what each connection is joined to.
   local function engine(e)
     if e.type=='entity-ghost' then return nil end
-    local ok,fb=pcall(function() return e.fluidbox end)
+    local ok,fb=pcall(function() return M.fluid_boxes(e) end)
     if not ok or not fb then return nil end
     local out={}
     for i=1,#fb do
@@ -133,7 +210,7 @@ return function(api)
     local ghost=e.type=='entity-ghost'
     local proto=ghost and e.ghost_prototype or e.prototype
     local conns=engine(e)
-    local ok,fb=pcall(function() return e.fluidbox end)
+    local ok,fb=pcall(function() return M.fluid_boxes(e) end)
     if ghost or not ok then fb=nil end
     local count=fb and #fb or #boxes(proto)
     if count==0 then return nil end
@@ -148,13 +225,14 @@ return function(api)
         -- The box's own volume: get_capacity is the whole connected segment's in 2.0 (a flamer on a long line read
         -- "fluid 19.9/21100", and 99.4/66700 for a full one); the segment's, when larger, comes apart.
         local okc,cap=pcall(fb.get_capacity,i)
-        local own=defs[i] and volume(defs[i])
+        local own=PORT21 and fb.get_own_capacity(i) or (defs[i] and volume(defs[i]))
         -- A crafting machine's boxes are its recipe's (fewer than the prototype lists, so defs[i] is another box), and
         -- get_capacity is the box's own there, sized to the recipe (2.0.77: cryogenic science's hot output 300, its
         -- cold input 12; Sol read "fluoroketone-hot 135/1000"); pipes joined to it do not add to it.
-        if (e.type=='assembling-machine' or e.type=='furnace') and okc and type(cap)=='number' then own=cap end
+        if not PORT21 and (e.type=='assembling-machine' or e.type=='furnace') and okc and type(cap)=='number' then own=cap end
         fluid,amount,capacity=f and f.name,f and f.amount or 0,own or (okc and cap) or 0
-        if own and okc and type(cap)=='number' and cap>own+0.5 then segment=cap end
+        if PORT21 then segment=fb.get_segment_capacity(i); if segment and segment<=capacity+0.5 then segment=nil end
+        elseif own and okc and type(cap)=='number' and cap>own+0.5 then segment=cap end
         -- An empty box a recipe has fixed to one fluid says which.
         if not f then
           local okf,flt=pcall(fb.get_filter,i)
@@ -217,7 +295,7 @@ return function(api)
   M.span=span
   function M.segment_box(e,i)
     if not (e and e.valid and SEGMENT_TYPES[e.type]) then return nil end
-    local ok,bb=pcall(function() return e.fluidbox.get_fluid_segment_extent_bounding_box(i or 1) end)
+    local ok,bb=pcall(function() return M.fluid_boxes(e).get_fluid_segment_extent_bounding_box(i or 1) end)
     return ok and bb and tile_box(bb) or nil
   end
   local function grow(b,x,y)
@@ -332,12 +410,12 @@ return function(api)
   function M.overlong(p,max)
     local limit,seen,out=M.extent_limit(),{},{}
     for _,e in pairs(p.surface.find_entities_filtered{type={'pipe','pipe-to-ground','storage-tank'},force=p.force}) do
-      local ok,id=pcall(function() return e.fluidbox.get_fluid_segment_id(1) end)
+      local ok,id=pcall(function() return M.fluid_boxes(e).get_fluid_segment_id(1) end)
       if ok and id and not seen[id] then
         seen[id]=true
         local b=M.segment_box(e,1)
         if b and span(b)>limit then
-          local f=e.fluidbox[1]
+          local f=M.fluid_boxes(e)[1]
           out[#out+1]={extent=span(b),box=b,fluid=f and f.name,at=e.position}
           if #out>=(max or 4) then break end
         end

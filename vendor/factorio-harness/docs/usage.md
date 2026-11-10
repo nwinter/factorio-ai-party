@@ -19002,3 +19002,20 @@ Tank/pipe `read.contents` reads its own box; `read.segment_contents` reads the s
 Temperature is independent. Assembler/furnace fuel reads use `read_fuel`; the previous `include_fuel` input remains
 an alias. Legacy exclusive chest mode names still select one mode. Readback, snapshot/restore and ghost dry checks
 use the native controls. The 2.0.77 controls and defaults remain available on that engine.
+
+## Factorio 2.1.24 fluid core
+
+Fluid reads distinguish an entity's own indexed storage from the connected segment. `scan`/`inspect` fluid text
+shows own amount/capacity, with segment capacity separately when larger. Empty storage, no segment, and unsupported
+storage are distinct. Merged crafting-box prototypes remain a list; a wagon and a turret's internal buffer can have
+storage without a fluid-box prototype or segment. A 2.1 flamer's capacity includes both indexed stores.
+
+The internal `pipes.fluid_boxes(entity)` view reads native 2.1 methods (legacy LuaFluidBox on 2.0). Its native
+`set`/`add`/`remove`/`clear` methods preserve engine return values. A write to a connected pipe redistributes at once:
+50 added to an empty two-pipe segment can read 25 per pipe immediately; clearing one then removes its proportional
+share. A caller must account for the returned applied/removed amount. Native segment mutations and conservation
+checks in topology/flush actions are handled separately from these indexed storage primitives.
+
+On 2.0.77, legacy indexed assignment replaces a connected segment's total, and assigning nil clears that segment.
+The 2.1 indexed clear removes only the selected store's proportional share; clearing a segment is a separate API.
+The port retains those engine semantics and distinguishes them in conservation checks.
