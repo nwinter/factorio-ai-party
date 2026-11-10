@@ -1,5 +1,10 @@
 # Public test stream (mt289 race view)
 
+Cp3 fits two agents per team, scoped internal conversations, and a permanent viewer
+chat footer. The live relay/site integration belongs to mt290; its merge contract is
+in `docs/mt-public-chat-contract.md`. The standalone commands below retain the old
+read-only YouTube reader until that integration is merged.
+
 This lives on the `mt/` line only. Public test broadcasts are authorized; the
 mode's implementation still stays off `main`. Nothing here starts streaming or
 transitions a YouTube broadcast to live.
@@ -103,9 +108,10 @@ startup times out instead of weakening server authentication.
 
 The `mt-stream` scene contains only `mt background`, `mt camera`, `mt overlay`.
 The main camera occupies 1280×720 at (24,248). A ranked race strip runs across
-the top; all-team activity/maps and recent events occupy the right rail; each
-team has a radio lane below. Viewer chat appears over the camera only when it
-has a recent message, and never relays to agents. The canvas is 1920×1080. The camera is silent in this
+the top; each right-hand team panel contains its activities, map and last two conversation
+messages. A permanent viewer-chat panel occupies the wide footer, and the right
+footer shows two recent race events. Mt290 owns relaying viewer messages to agents;
+team conversations are never copied to that relay. The canvas is 1920×1080. The camera is silent in this
 checkpoint; music and caster pipelines are not started.
 All graphics/text are canvas-rendered, retaining mt288's workaround for disappearing
 OBS HTML text. The browser remains transparent over the camera rectangle. Mt289
@@ -159,9 +165,9 @@ single explicit public boundary. The page cannot read raw team state or operator
 files. Numeric fields are finite and bounded, grids contain only map categories,
 technologies/items come from the existing Wube icon manifest, and identities come
 from the launch roster. Actions are built from recognized verbs/item names, never
-arbitrary jobs, notes, errors or action payloads. Only roster team-speech is kept;
-private tell/confession/operator/notice lanes and sensitive-looking speech are
-excluded. Viewer author identities are not published. Free-form speech filtering
+arbitrary jobs, notes, errors or action payloads. Roster team-speech and tells with exclusively same-team recipients are kept,
+explicitly tagged and nested under their team. Confession/operator/notice lanes,
+cross-team tells and sensitive-looking speech are excluded. Viewer author identities are not published. Free-form speech filtering
 is conservative; it is not a general-purpose classifier of every possible secret.
 
 The standings rank rockets, then completed technologies; ties remain ties. This
@@ -178,7 +184,7 @@ are introduced. Milestones use safe chronicle/research fields or score changes;
 `~` means the time of observation, not an exact event timestamp. Building counts
 only establish that a building exists, never that power is flowing or that a
 count decrease was destruction. The event ring retains 80 events in memory,
-exposes the latest 12 and shows four; restarting reseeds only available recent
+exposes the latest 12 and shows two; restarting reseeds only available recent
 source events. The minimaps reuse the existing basemap core and the main map's
 category colours/run grouping; missing maps stay unavailable. They are factory
 grids, not new cameras. The icon credit is always on screen.

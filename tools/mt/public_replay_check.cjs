@@ -18,12 +18,28 @@ const fs=require('node:fs'),path=require('node:path');
  await shot('after-mtt1-final.png',recorded.at(-1));
  await shot('after-mtt1-start.png',recorded[12]);
  await shot('after-mtt1-foundations.png',recorded[5]);
- const four=structuredClone(frames[15]);const red=structuredClone(four.teams[0]);red.team='red';red.rank=4;red.leader=false;red.research.done_count=8;red.gap='11 techs back';red.agents=[0,1,2].map(i=>({...red.agents[0],name:'agent'+i,display_name:'Agent '+i}));four.teams.forEach(t=>t.agents=red.agents);four.teams.push(red);await shot('after-four-teams.png',four);
+ const four=structuredClone(frames[15]);const red=structuredClone(four.teams[0]);red.team='red';red.rank=4;red.leader=false;red.research.done_count=8;red.gap='11 techs back';four.teams.push(red);
+ four.teams.forEach(t=>{const first=t.agents[0];t.agents=[0,1,2].map(i=>({...first,name:t.team+'agent'+i,display_name:capName(t.team)+' agent '+i}));t.chat=[{team:t.team,name:t.agents[1].name,to:[t.agents[0].name],kind:'tell',tick:t.tick-600,text:'I will feed the labs while you connect the new copper line. Keep the assemblers supplied.'}];});
+ await shot('after-four-teams.png',four);
+ function capName(s){return s.charAt(0).toUpperCase()+s.slice(1);}
  const stale=structuredClone(frames[4]);stale.teams[0].stale=true;stale.teams[0].rank=null;stale.teams[0].leader=false;stale.teams[0].gap='Feed delayed';stale.teams[1].rank=1;stale.teams[1].leader=true;stale.teams[1].gap='Leading';stale.teams[2].rank=2;stale.teams[2].gap='4 techs back';await shot('after-stale-feed.png',stale);
+ const isolation=await page.evaluate(s=>{
+   const calls=[],original=ctx.fillText;
+   s.teams.forEach(t=>{t.chat=[{team:t.team,name:t.agents[0].name,to:[],kind:'talk',text:'TEAM-'+t.team+'-ONLY',tick:t.tick}];});
+   const foreign=s.teams[0].chat[0];s.teams[1].chat.push({...foreign},{...foreign,team:s.teams[1].team});
+   s.viewers=[{source:'site',text:'GLOBAL-VIEWER',t:Date.now()/1000},{...foreign,source:'site',t:Date.now()/1000},{...foreign,team:undefined,source:'youtube',t:Date.now()/1000}];
+   ctx.fillText=function(text,x,y,...args){calls.push({text:String(text),x,y});return original.call(this,text,x,y,...args);};
+   try{render({...s,now:Date.now()/1000});}finally{ctx.fillText=original;}
+   return {team:calls.filter(c=>c.text.startsWith('TEAM-')),viewer:calls.filter(c=>c.text==='GLOBAL-VIEWER')};
+ },structuredClone(frames[4]));
+ if(isolation.team.length!==3||isolation.team.some(c=>c.x<1328||c.y<284||c.y>968)||isolation.viewer.length!==1||isolation.viewer[0].y<980||isolation.viewer[0].x>=1304)errors.push('Team/viewer drawing boundary failed');
+ const long=structuredClone(frames[19]);long.teams.forEach(t=>t.chat.forEach(m=>m.text+=' We need enough copper plates for every assembler, a steady supply of iron gears, and a separate belt for science so neither agent has to stop the line.'));
+ await shot('after-long-team-chat.png',long);
+ const quiet=structuredClone(frames[4]);quiet.viewers=[];quiet.viewer_status='waiting';await shot('after-viewer-chat-waiting.png',quiet);
  const timings=await page.evaluate(()=>{const times=[];for(let i=0;i<100;i++){const t=performance.now();draw();times.push(performance.now()-t);}return times.sort((a,b)=>a-b);});
  const serialized=await page.evaluate(()=>({scroll:[document.documentElement.scrollWidth,document.documentElement.scrollHeight],text:document.getElementById('summary').textContent,canvas:[canvas.width,canvas.height],camera_alpha:ctx.getImageData(640,600,1,1).data[3]}));
  if(serialized.camera_alpha!==0)errors.push('Camera window is not transparent');
- const out={shots,errors,requests:requests.length,paint_ms:{median:timings[50],p95:timings[95],max:timings[99]},...serialized};
+ const out={shots,errors,isolation,requests:requests.length,paint_ms:{median:timings[50],p95:timings[95],max:timings[99]},...serialized};
  if(process.env.MT_SOAK){
    const started=Date.now(),seen=new Set(),timer=setInterval(()=>{selected=frames[Math.floor((Date.now()-started)/2000)%frames.length];},500);
    for(let i=0;i<15;i++){await page.waitForTimeout(5000);seen.add(await page.evaluate(()=>JSON.stringify(raceState().teams.map(t=>[t.research.progress,t.leader]))));}

@@ -206,7 +206,7 @@ class PublicOverlay:
                     if not reasons:
                         text = speech(row.get('text'), ('Nick', 'Winter'))
                         if text:
-                            lines.append({'name': 'Viewer', 'text': text, 't': time.time()})
+                            lines.append({'name': 'Viewer', 'source': 'youtube', 'text': text, 't': time.time()})
                 lines = lines[-8:]
                 with self.lock:
                     self.state.update(viewers=lines, viewer_status=reader.state)

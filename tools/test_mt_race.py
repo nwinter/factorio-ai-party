@@ -163,6 +163,67 @@ class ProjectionTest(unittest.TestCase):
             finally:service.close()
 
 
+class ConversationTest(unittest.TestCase):
+    def setUp(self):
+        self.roster=[{'name':n,'model':'Gemini Flash'} for n in ('gemini1','gemini2')]
+        self.tell={'from':'gemini1','agent':'gemini1','lane':'tell','tell':True,'to':['gemini2'],
+                   'body':'I will build the labs. Please bring copper.', 'text':'PRIVATE presentation name',
+                   'to_shown':'PRIVATE display name','tick':6000}
+
+    def project_chat(self, messages, team='green', roster=None):
+        return race.project(team,{'now':100,'chat':messages},self.roster if roster is None else roster,100)['chat']
+
+    def test_two_agent_tell_and_reply_stay_in_own_team(self):
+        reply=dict(self.tell,agent='gemini2',**{'from':'gemini2'},to=['gemini1'],body='Copper is on the way.')
+        own=self.project_chat([self.tell,reply])
+        self.assertEqual([m['name'] for m in own],['gemini1','gemini2'])
+        self.assertEqual([m['team'] for m in own],['green','green'])
+        self.assertEqual(own[0]['to'],['gemini2'])
+        self.assertNotIn('PRIVATE',json.dumps(own))
+        other=[{'name':n,'model':'Grok'} for n in ('grok1','grok2')]
+        self.assertEqual(self.project_chat([self.tell,reply],'yellow',other),[])
+        self.assertEqual(race.project_viewers(own,100,('green','yellow')),[])
+        data=race.Race().update([row(chat=[self.tell])],100)
+        self.assertEqual(data['events'],[])
+
+    def test_reject_cross_team_unknown_recipient_and_wrong_scope(self):
+        rejected=[dict(self.tell,to=['grok1']),dict(self.tell,to=['gemini2','grok1']),
+                  dict(self.tell,to=['team','grok1']),dict(self.tell,to=[]),dict(self.tell,to={}),
+                  dict(self.tell,team='yellow'),dict(self.tell,force='yellow'),dict(self.tell,operator=True),
+                  dict(self.tell,confess=True),dict(self.tell,source='site'),dict(self.tell,body=None),
+                  dict(self.tell,agent='gemini1',**{'from':'grok1'})]
+        self.assertEqual(self.project_chat(rejected),[])
+        good=self.project_chat([dict(self.tell,to='team'),dict(self.tell,to=['pog-gemini2'])])
+        self.assertEqual([m['to'] for m in good],[['team'],['gemini2']])
+
+    def test_chat_history_keeps_both_speakers_and_bounded_fields(self):
+        msgs=[dict(self.tell,body='Lab '+str(i),tokens='PRIVATE',error='PRIVATE') for i in range(20)]
+        own=self.project_chat(msgs)
+        self.assertEqual(len(own),6)
+        self.assertEqual(own[-1]['text'],'Lab 19')
+        self.assertEqual(set(own[0]),{'team','name','to','kind','text','tick','t'})
+
+    def test_viewer_sources_and_receipts_only(self):
+        msgs=[{'source':source,'name':'PRIVATE author','text':'Keep the labs fed!','t':95,
+               'targets':['all'],'delivery':'sent','delivery_why':'PRIVATE','tokens':'PRIVATE'}
+              for source in ('site','youtube')]
+        out=race.project_viewers(msgs,100,('green','yellow','blue'))
+        self.assertEqual([m['source'] for m in out],['site','youtube'])
+        self.assertTrue(all(m['delivery']=='sent' and m['targets']==['all'] for m in out))
+        self.assertNotIn('PRIVATE',json.dumps(out))
+        invalid=dict(msgs[0],targets=['green','PRIVATE'],delivery='PRIVATE')
+        clean=race.project_viewers([invalid],100,('green',))[0]
+        self.assertEqual(clean['targets'],[]);self.assertIsNone(clean['delivery'])
+
+    def test_viewer_lane_rejects_team_messages_stale_and_private_text(self):
+        base={'source':'site','text':'Copper next?','t':95}
+        msgs=[dict(base,lane='tell'),dict(base,kind='talk'),dict(base,team='green'),dict(base,agent='gemini1'),
+              dict(base,**{'from':'gemini1'}),dict(base,tell=True),dict(base,operator=True),dict(base,source='private'),
+              dict(base,t=-1000),dict(base,t=1000),dict(base,text='Path /Users/private/file'),dict(base,text='Ask Nick')]
+        self.assertEqual(race.project_viewers(msgs,100,('green',)),[])
+
+
+
 class DirectorTest(unittest.TestCase):
     def teams(self):return [row(t) for t in ('green','yellow','blue')]
 
