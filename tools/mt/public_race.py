@@ -181,7 +181,7 @@ def project(team, state, agents, now, score=None):
     out_agents = []
     for a in agents:
         live = obj(current.get(a['name']))
-        activity = live.get('activity') if isinstance(live.get('activity'), str) and live['activity'] in ACTIVITY else 'unknown'
+        activity = live.get('activity') if isinstance(live.get('activity'), str) and live['activity'] in ACTIVITY else None
         active = live.get('active') if isinstance(live.get('active'), str) else ''
         verb, _, what = active.partition(':')
         item = prototype('item', what)
@@ -190,7 +190,7 @@ def project(team, state, agents, now, score=None):
             action += ' ' + title(item).lower()
         action = action or {'thinking': 'Planning the next move', 'resting': 'Between turns',
                             'idle': 'Waiting for the next move', 'offline': 'Agent offline',
-                            'dead': 'Waiting to respawn'}.get(activity, 'Working in the factory' if activity == 'acting' else 'Awaiting activity')
+                            'dead': 'Waiting to respawn'}.get(activity, 'Working in the factory' if activity == 'acting' else None)
         p = obj(live.get('position'))
         pos = {k: number(p.get(k), lo=-1e7, hi=1e7) for k in ('x', 'y')}
         out_agents.append({'name': a['name'], 'display_name': a['name'].capitalize(),

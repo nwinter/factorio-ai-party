@@ -57,7 +57,7 @@ class ProjectionTest(unittest.TestCase):
     def test_malformed_values(self):
         out=race.project('green',{'now':100,'tick':float('nan'),'agents':[{'name':'gemini','activity':{},'active':{'secret':'x'}}],
                                  'research':{'progress':'SECRET','done_count':{'secret':'x'}},'space':{'rockets':float('inf')}},AGENTS,100)
-        self.assertEqual(out['agents'][0]['activity'],'unknown')
+        self.assertIsNone(out['agents'][0]['activity']);self.assertIsNone(out['agents'][0]['action'])
         self.assertIsNone(out['tick']);self.assertIsNone(out['research']['progress'])
         self.assertIsNone(out['space']['rockets']);json.dumps(out,allow_nan=False)
 
@@ -71,6 +71,8 @@ class ProjectionTest(unittest.TestCase):
         out=race.project('green',{'now':100},AGENTS,100)
         self.assertIsNone(out['research']['done_count']);self.assertIsNone(out['science']['spm'])
         self.assertIsNone(out['entities']);self.assertIsNone(out['map'])
+        self.assertEqual(out['agents'][0]['model'],'Flash')
+        self.assertIsNone(out['agents'][0]['activity']);self.assertIsNone(out['agents'][0]['action'])
         race.rank([out]);self.assertIsNone(out['rank'])
 
     def test_fresh_score_fallback_does_not_replace_newer_feed(self):

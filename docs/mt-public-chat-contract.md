@@ -1,4 +1,4 @@
-# Public race conversations — mt289 cp3 / mt290 handoff
+# Public race conversations — mt289 cp4 / mt290 handoff
 
 The audience sees all teams; game agents must consume only their team's own feed and the
 separate moderated viewer relay. The public overlay/site projection is **not an agent inbox**.
@@ -12,9 +12,16 @@ last **two** conversation messages. Each message gets a sender/recipient heading
 and up to two text lines. Four-team/twelve-agent stress mode fits three activities and one
 conversation message per panel. Long messages truncate within their panel.
 
-The permanent viewer area is **(24,980,1280,88)**. It shows two recent site/YouTube messages,
-source badges and available delivery receipts. An empty or connecting lane keeps its place.
+The fixed viewer area is **(24,980,1280,88)**. It shows two recent site/YouTube messages,
+source badges and available delivery receipts. Cp4 hides the tile when there are no messages;
+its location is reserved so incoming chat never covers the game or causes a layout shift.
 The right footer shows two recent race events. No change to game polling or camera selection.
+
+Cp4 emits `null` for unavailable agent activity/action. The renderer uses the already
+allowlisted roster `model` as its fallback description (e.g. Gemini 3.8 Flash, Grok 4.7,
+Muse Spark 1.3), never a feed-provided name/model. It also handles cp3's old `unknown`
+activity value without printing it. Missing map tiles, SPM, history, research progress,
+scores and empty team chat/news placeholders are omitted. Zero remains a real value.
 
 ## Team conversation projection
 
@@ -97,6 +104,10 @@ The likely merge overlap is `public_race.py`'s chat block and return dictionary:
 Keep `audience()` and its `viewer_delivery` / `viewer_read` state intact. Do not restore the
 legacy standalone YouTube reader when resolving the merge.
 
-The private cp3 branch is for mt290's merge. Public site code must stay independent of this
+The private cp4 branch is for mt290's merge. Public site code must stay independent of this
 private module and consume only the operator-pushed public projection, with each team's
 chat nested in that team's view. All relay/game-agent isolation tests remain mt290's scope.
+
+Checkpoint names `mt/batch289-cp1` through `mt/batch289-cp4` are local branch refs for the
+operator watcher. Cp1–cp3 also retain their original tags at the same commits. Use
+`refs/heads/mt/batch289-cpN` when a command needs an unambiguous branch ref.

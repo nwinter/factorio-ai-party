@@ -1,7 +1,9 @@
 # Public test stream (mt289 race view)
 
-Cp3 fits two agents per team, scoped internal conversations, and a permanent viewer
-chat footer. The live relay/site integration belongs to mt290; its merge contract is
+Cp4 fits two agents per team, scoped internal conversations, and a fixed viewer
+chat footer. Missing activity falls back to the roster's model label. Missing maps,
+metrics and empty chat/news are hidden; the viewer footer appears when messages arrive.
+The live relay/site integration belongs to mt290; its merge contract is
 in `docs/mt-public-chat-contract.md`. The standalone commands below retain the old
 read-only YouTube reader until that integration is merged.
 
@@ -109,7 +111,7 @@ startup times out instead of weakening server authentication.
 The `mt-stream` scene contains only `mt background`, `mt camera`, `mt overlay`.
 The main camera occupies 1280×720 at (24,248). A ranked race strip runs across
 the top; each right-hand team panel contains its activities, map and last two conversation
-messages. A permanent viewer-chat panel occupies the wide footer, and the right
+messages. A viewer-chat panel occupies the wide footer when messages are present, and the right
 footer shows two recent race events. Mt290 owns relaying viewer messages to agents;
 team conversations are never copied to that relay. The canvas is 1920×1080. The camera is silent in this
 checkpoint; music and caster pipelines are not started.
@@ -186,7 +188,7 @@ only establish that a building exists, never that power is flowing or that a
 count decrease was destruction. The event ring retains 80 events in memory,
 exposes the latest 12 and shows two; restarting reseeds only available recent
 source events. The minimaps reuse the existing basemap core and the main map's
-category colours/run grouping; missing maps stay unavailable. They are factory
+category colours/run grouping; missing maps are hidden, with the roster/activity text reclaiming their width. They are factory
 grids, not new cameras. The icon credit is always on screen.
 
 Offline (no game, clients, OBS, broadcast, or operator gate):

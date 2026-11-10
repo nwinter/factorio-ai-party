@@ -16,6 +16,17 @@ const fs=require('node:fs'),path=require('node:path');
  await shot('after-synthetic-opening.png',frames[4]);
  await shot('after-synthetic-lead-change.png',frames[19]);
  await shot('after-mtt1-final.png',recorded.at(-1));
+ const missing=await page.evaluate(s=>{
+   const texts=[],fills=[],originalText=ctx.fillText,originalRect=rect;
+   ctx.fillText=function(text,...args){texts.push(String(text));return originalText.call(this,text,...args);};
+   rect=function(x,y,w,h,c,...args){fills.push({x,y,w,h,c});return originalRect(x,y,w,h,c,...args);};
+   try{render({...s,now:Date.now()/1000});}finally{ctx.fillText=originalText;rect=originalRect;}
+   return {models:texts.filter(t=>['Gemini 3.8 Flash','Grok 4.7','Muse Spark 1.3'].includes(t)),
+           placeholders:texts.filter(t=>/UNKNOWN|Awaiting|History warming up|SPM —|Preparing the next research|Waiting for the team|Site and YouTube messages appear/.test(t)),
+           map_tiles:fills.filter(r=>r.c==='#0a141b').length,
+           viewer_tiles:fills.filter(r=>r.y===980&&r.w===1280).length};
+ },recorded.at(-1));
+ if(missing.models.length!==3||missing.placeholders.length||missing.map_tiles||missing.viewer_tiles)errors.push('Missing-data display or roster fallback failed');
  await shot('after-mtt1-start.png',recorded[12]);
  await shot('after-mtt1-foundations.png',recorded[5]);
  const four=structuredClone(frames[15]);const red=structuredClone(four.teams[0]);red.team='red';red.rank=4;red.leader=false;red.research.done_count=8;red.gap='11 techs back';four.teams.push(red);
@@ -39,7 +50,7 @@ const fs=require('node:fs'),path=require('node:path');
  const timings=await page.evaluate(()=>{const times=[];for(let i=0;i<100;i++){const t=performance.now();draw();times.push(performance.now()-t);}return times.sort((a,b)=>a-b);});
  const serialized=await page.evaluate(()=>({scroll:[document.documentElement.scrollWidth,document.documentElement.scrollHeight],text:document.getElementById('summary').textContent,canvas:[canvas.width,canvas.height],camera_alpha:ctx.getImageData(640,600,1,1).data[3]}));
  if(serialized.camera_alpha!==0)errors.push('Camera window is not transparent');
- const out={shots,errors,isolation,requests:requests.length,paint_ms:{median:timings[50],p95:timings[95],max:timings[99]},...serialized};
+ const out={shots,errors,isolation,missing,requests:requests.length,paint_ms:{median:timings[50],p95:timings[95],max:timings[99]},...serialized};
  if(process.env.MT_SOAK){
    const started=Date.now(),seen=new Set(),timer=setInterval(()=>{selected=frames[Math.floor((Date.now()-started)/2000)%frames.length];},500);
    for(let i=0;i<15;i++){await page.waitForTimeout(5000);seen.add(await page.evaluate(()=>JSON.stringify(raceState().teams.map(t=>[t.research.progress,t.leader]))));}

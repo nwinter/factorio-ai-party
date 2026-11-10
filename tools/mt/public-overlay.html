@@ -30,36 +30,38 @@ function icon(kind,name,x,y,size=30){
  const im=imgs.get(url);if(im?.complete&&im.naturalWidth)ctx.drawImage(im,x,y,size,size);
 }
 function pill(text,x,y,c=C.gold,w){w=w||text.length*9+20;rect(x,y,w,24,c+'20',4);label(text,x+10,y+17,13,c,750,w-14);}
-function time(tick){if(tick==null)return '--:--';const sec=Math.floor(tick/60);return String(Math.floor(sec/60)).padStart(2,'0')+':'+String(sec%60).padStart(2,'0');}
+function time(tick){if(tick==null)return '';const sec=Math.floor(tick/60);return String(Math.floor(sec/60)).padStart(2,'0')+':'+String(sec%60).padStart(2,'0');}
 function spark(values,x,y,w,h,c){
- line(x,y+h,x+w,y+h,C.line);if(values.length<2){label('History warming up',x,y+h-5,13,C.dim,500,w);return;}
+ if(values.length<2)return;line(x,y+h,x+w,y+h,C.line);
  const top=Math.max(1,...values);ctx.beginPath();values.forEach((v,i)=>{const px=x+i*w/(values.length-1),py=y+h-v/top*h;i?ctx.lineTo(px,py):ctx.moveTo(px,py);});ctx.strokeStyle=c;ctx.lineWidth=2;ctx.stroke();
  label('0',x,y+h+14,11,C.dim);label(Math.round(top)+' SPM',x+w-63,y-4,11,C.muted,500,70);
 }
 function research(t,x,y,w){
  const r=t.research||{},p=r.progress;
+ if(!r.current&&(!t.startup||t.startup_steps==null))return;
  icon('tech',r.current,x,y-25,32);
- label(r.current?cap(r.label||r.current):t.startup?'Opening: '+(t.startup_steps??'—')+' of 5 foundations':'Preparing the next research',x+(r.current?40:0),y,19,C.ink,600,w-72);
+ label(r.current?cap(r.label||r.current):'Opening: '+t.startup_steps+' of 5 foundations',x+(r.current?40:0),y,19,C.ink,600,w-72);
  label(r.current&&p!=null?Math.round(p*100)+'%':'',x+w-48,y,19,color(t.team),700,54);
- rect(x,y+10,w,5,'#25303c',2);if(r.current&&p!=null)rect(x,y+10,w*p,5,color(t.team),2);else if(t.startup)rect(x,y+10,w*(t.startup_steps||0)/5,5,color(t.team),2);
+ if(r.current&&p!=null){rect(x,y+10,w,5,'#25303c',2);rect(x,y+10,w*p,5,color(t.team),2);}
+ else if(!r.current&&t.startup){rect(x,y+10,w,5,'#25303c',2);rect(x,y+10,w*t.startup_steps/5,5,color(t.team),2);}
 }
 function scoreboard(t,i,n){
  const w=(1872-(n-1)*12)/n,x=24+i*(w+12),y=70,col=color(t.team),compact=n>=4;
  rect(x,y,w,162,C.panel,8);rect(x,y,5,162,col,2);
- label(t.rank==null?'—':String(t.rank).padStart(2,'0'),x+18,y+45,39,t.leader?col:C.dim,800,66);
- label(cap(t.team),x+86,y+31,25,C.ink,750,w-270);
- label(t.gap,x+86,y+57,16,t.stale?'#ffb790':col,650,w-270);
+ if(t.rank!=null)label(String(t.rank).padStart(2,'0'),x+18,y+45,39,t.leader?col:C.dim,800,66);
+ const nameX=x+(t.rank==null?22:86);
+ label(cap(t.team),nameX,y+31,25,C.ink,750,w-270);
+ if(t.gap&&t.gap!=='Awaiting score')label(t.gap,nameX,y+57,16,t.stale?'#ffb790':col,650,w-270);
  if(t.leader&&!t.stale)pill('LEADER',x+w-94,y+13,col,80);
- const count=t.research?.done_count;icon('item',t.startup?'burner-mining-drill':'lab',x+20,y+73,28);
- label(t.startup?(t.startup_steps??'—')+'/5 built':(count??'—')+' techs',x+54,y+95,25,C.ink,750,140);
- const spm=t.science?.spm;label(spm==null?'SPM —':spm.toFixed(1)+' SPM',x+(compact?180:218),y+95,23,C.ink,700,160);
+ const count=t.startup?t.startup_steps:t.research?.done_count;
+ if(count!=null){icon('item',t.startup?'burner-mining-drill':'lab',x+20,y+73,28);label(count+(t.startup?'/5 built':' techs'),x+54,y+95,25,C.ink,750,140);}
+ const spm=t.science?.spm;if(spm!=null)label(spm.toFixed(1)+' SPM',x+(compact?180:218),y+95,23,C.ink,700,160);
  spark(t.science?.series||[],x+w-(compact?112:184),y+75,compact?88:160,26,col);
  research(t,x+22,y+130,w-44);
  if((t.space?.rockets||0)>0){icon('item','rocket-part',x+w-194,y+10,25);label(t.space.rockets,x+w-162,y+30,20,C.gold,700,60);}
 }
 function minimap(t,x,y,w,h){
- rect(x,y,w,h,'#0a141b',5);const m=t.map;
- if(!m){label('BASE MAP',x+10,y+22,12,C.dim,700);wrap('Awaiting map',x+10,y+49,w-18,15,C.muted,2);return;}
+ const m=t.map;if(!m)return;rect(x,y,w,h,'#0a141b',5);
  const scale=Math.min((w-12)/m.w,(h-25)/m.h),ox=x+(w-m.w*scale)/2,oy=y+6+(h-25-m.h*scale)/2;
  const palette=Object.fromEntries(PogMap.BASE.map(v=>[v[0],v[1]]));
  // Same category colours and run grouping as the main stream/site map.
@@ -72,22 +74,26 @@ function visibleTeamChat(t){
  const names=new Set(t.agents.map(a=>a.name));
  return (t.chat||[]).filter(m=>m.team===t.team&&names.has(m.name)&&['talk','tell'].includes(m.kind)&&Array.isArray(m.to)&&m.to.every(n=>n==='team'||names.has(n)));
 }
+function agentText(a,t){
+ const active=['thinking','acting','idle','resting','offline','dead'].includes(a.activity);
+ const status=t.stale?'DELAYED':t.paused?'PAUSED':active?a.activity.toUpperCase():'';
+ return {who:a.display_name+(status?' · '+status:''),detail:active?a.action||'':a.model||''};
+}
 function teamsNow(s){
  const n=s.teams.length,h=684/Math.max(1,n),x=1328,w=568,compact=n>=4;
  label('TEAM VIEWS',x,270,16,C.muted,750);label('ACTIVITY + TEAM CHAT',x+334,270,13,C.dim,650);
  s.teams.forEach((t,i)=>{const y=284+i*h,on=s.camera?.team===t.team,col=color(t.team),mapw=126;
  rect(x,y,w,h-8,C.panel,6);if(on)rect(x,y,3,h-8,col);
- minimap(t,x+10,y+10,mapw,compact?78:84);const tx=x+mapw+26,tw=w-mapw-40;
+ minimap(t,x+10,y+10,mapw,compact?78:84);const tx=x+(t.map?mapw+26:14),tw=x+w-14-tx;
  label(cap(t.team),tx,y+25,21,col,750,tw-106);if(on)pill('ON CAMERA',x+w-113,y+8,col,103);
  const agents=t.agents.slice(0,3);
- agents.forEach((a,j)=>{const status=t.stale?'DELAYED':t.paused?'PAUSED':a.activity.toUpperCase();
- if(compact||agents.length>=3){label(a.display_name+' · '+status+' · '+a.action,tx,y+45+j*19,14,C.ink,550,tw);}
- else if(agents.length===2){const ay=y+50+j*28;label(a.display_name+' · '+status,tx,ay,12,C.muted,700,148);label(a.action,tx+156,ay,16,C.ink,600,tw-156);}
- else{const ay=y+42+j*34;label(a.display_name+' · '+status,tx,ay,13,C.muted,700,tw);label(a.action,tx,ay+18,17,C.ink,600,tw);}
+ agents.forEach((a,j)=>{const {who,detail}=agentText(a,t);
+ if(compact||agents.length>=3){label(who+(detail?' · '+detail:''),tx,y+45+j*19,14,C.ink,550,tw);}
+ else if(agents.length===2){const ay=y+50+j*28;label(who,tx,ay,12,C.muted,700,148);label(detail,tx+156,ay,16,C.ink,600,tw-156);}
+ else{const ay=y+42+j*34;label(who,tx,ay,13,C.muted,700,tw);label(detail,tx,ay+18,17,C.ink,600,tw);}
  });
  const count=compact?1:2, chat=visibleTeamChat(t).slice(-count), top=compact?100:106, slot=compact?50:58;
- line(x+14,y+top-11,x+w-14,y+top-11);
- if(!chat.length){label(cap(t.team)+' team chat',x+14,y+top+8,13,col,700,w-28);label('Waiting for the team’s conversation',x+14,y+top+33,16,C.dim,500,w-28);}
+ if(chat.length)line(x+14,y+top-11,x+w-14,y+top-11);
  chat.forEach((m,j)=>{const yy=y+top+j*slot;
  const who=cap(m.name)+(m.kind==='tell'?' → '+m.to.map(cap).join(', '):'');
  label(who,x+14,yy+6,12,col,700,w-105);label(time(m.tick),x+w-66,yy+6,12,C.dim,600,56);
@@ -96,22 +102,21 @@ function teamsNow(s){
  });
 }
 function news(s){
+ const events=(s.events||[]).slice(0,2);if(!events.length)return;
  const x=1328,y=990;label('RACE NEWS',x,y,14,C.muted,750);label('GAME TIME',x+482,y,11,C.dim,600,86);
- const events=(s.events||[]).slice(0,2);
- if(!events.length){label('Opening moves underway',x,y+35,19,C.muted,550,555);return;}
  events.forEach((e,i)=>{const yy=y+12+i*38,col=color(e.team);icon(e.icon_kind||'item',e.icon,x,yy+5,26);
  label(cap(e.team)+(s.camera?.team!==e.team?' · OFF CAMERA':''),x+36,yy+9,11,col,750,440);
  label(e.text,x+36,yy+28,17,C.ink,600,520);label((e.observed?'~':'')+e.time,x+494,yy+9,12,C.muted,600,74);
  });
 }
 function viewerChat(s){
+ // Separate from team lanes even if a malformed producer puts team rows here.
+ const msgs=(s.viewers||[]).filter(m=>['site','youtube'].includes(m.source)&&(!m.kind||m.kind==='viewer')&&(!m.lane||m.lane==='viewer')&&!m.team&&!m.agent&&!m.from&&!m.tell&&!m.operator&&!m.confess&&Date.now()/1000-(m.t||0)<=600).slice(-2);
+ if(!msgs.length)return;
  const x=24,w=1280;rect(x,980,w,88,C.panel,6);
  label('VIEWER CHAT',x+16,998,14,C.gold,750);
  const statuses={'live':'LIVE · SITE + YOUTUBE','on':'LIVE · SITE + YOUTUBE','off':'CHAT NOT CONNECTED','waiting':'CONNECTING CHAT','connecting':'CONNECTING CHAT','delayed':'CHAT DELAYED','ended':'CHAT ENDED','display-only':'VIEWER MESSAGES'};
  label(statuses[s.viewer_status]||'VIEWER MESSAGES',x+180,998,12,C.muted,650,w-215);
- // Separate from team lanes even if a malformed producer puts team rows here.
- const msgs=(s.viewers||[]).filter(m=>['site','youtube'].includes(m.source)&&(!m.kind||m.kind==='viewer')&&(!m.lane||m.lane==='viewer')&&!m.team&&!m.agent&&!m.from&&!m.tell&&!m.operator&&!m.confess&&Date.now()/1000-(m.t||0)<=600).slice(-2);
- if(!msgs.length){label('Site and YouTube messages appear here',x+16,1034,20,C.muted,500,w-32);return;}
  msgs.forEach((m,i)=>{const yy=1025+i*31,source=m.source==='youtube'?'YOUTUBE':'SITE';pill(source,x+16,yy-18,m.source==='youtube'?'#ff9f91':C.gold,88);
  let receipt=m.delivery==='held'?'QUEUED':m.delivery==='sent'?'SENT':'';
  if(m.delivery==='sent'&&m.targets?.length)receipt+=' → '+(m.targets.includes('all')?'ALL':m.targets.map(cap).join(', '));
@@ -128,17 +133,16 @@ function draw(){
  const s=state;ctx.clearRect(0,0,1920,1080);
  rect(0,0,1920,248,C.bg);rect(0,248,24,720,C.bg);rect(1304,248,616,720,C.bg);rect(0,968,1920,112,C.bg);
  label('FACTORIO',24,37,27,C.ink,850);label('THE FACTORY RACE',201,36,16,C.gold,750);
- label(s.ranking||'Awaiting scores',480,36,16,C.muted,600,900);
- const tick=Math.max(0,...s.teams.map(t=>t.tick||0));label('GAME '+time(tick),1670,36,20,C.ink,700,226);
+ if(s.ranking&&!s.ranking.startsWith('Awaiting'))label(s.ranking,480,36,16,C.muted,600,900);
+ const ticks=s.teams.map(t=>t.tick).filter(t=>t!=null);if(ticks.length)label('GAME '+time(Math.max(...ticks)),1670,36,20,C.ink,700,226);
  const teams=[...s.teams].sort((a,b)=>(a.rank??99)-(b.rank??99));teams.forEach((t,i)=>scoreboard(t,i,teams.length));
  ctx.strokeStyle=C.line;ctx.lineWidth=2;ctx.strokeRect(24,248,1280,720);
  const on=s.teams.find(t=>t.team===s.camera?.team);if(on){const col=color(on.team);rect(44,268,430,60,'#0b1118ee',6);rect(44,268,5,60,col);label('ON CAMERA / '+cap(on.team),62,292,18,col,750,395);label(on.stale?'Feed delayed':on.paused?'WORLD PAUSED':s.camera.reason||'Following the action',62,315,16,C.muted,500,395);}
- else{rect(44,268,420,56,'#0b1118ee',6);label('Waiting for the game camera',62,303,22,C.muted,600);}
  label('Graphics copyright Wube Software',1000,958,12,'#c9d0c8',500,295);
  teamsNow(s);news(s);viewerChat(s);
  if(s.fixture){rect(44,930,670,30,'#0b1118ee',4);label(s.fixture+' · camera still from mtt1',56,951,14,C.gold,700,645);}
  if(lost||Date.now()/1000-s.now>25){rect(480,268,500,46,'#5b301dee',6);label('FEED DELAYED · showing last confirmed state',498,298,19,'#ffdbb5',700,465);}
- document.getElementById('summary').textContent=teams.map(t=>`${t.team}: ${t.gap}, ${t.research?.done_count??'unknown'} technologies. ${t.agents.map(a=>a.display_name+': '+a.action).join('. ')}`).join(' / ');
+ document.getElementById('summary').textContent=teams.map(t=>`${t.team}${t.rank!=null?': '+t.gap:''}${t.research?.done_count!=null?', '+t.research.done_count+' technologies':''}. ${t.agents.map(a=>{const v=agentText(a,t);return v.who+(v.detail?': '+v.detail:'');}).join('. ')}`).join(' / ');
 }
 function render(s){state=s;lost=false;draw();}
 async function poll(){try{const r=await fetch('/state.json',{cache:'no-store'});if(!r.ok)throw Error('unavailable');render(await r.json());}catch{lost=true;draw();}}
