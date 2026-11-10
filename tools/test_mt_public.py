@@ -230,6 +230,7 @@ class PublicTest(unittest.TestCase):
             receipt = Path(d) / 'broadcast.json'
             body = broadcast.broadcast_body('Test', '2026-11-09T05:00:00Z')
             self.assertFalse(body['contentDetails']['enableAutoStop'])
+            self.assertEqual(body['status']['privacyStatus'], 'unlisted')
             self.assertFalse(body['contentDetails']['enableAutoStart'])
             api = Api()
             with self.assertRaises(RuntimeError): broadcast.create(api, body, 'sid', receipt)
