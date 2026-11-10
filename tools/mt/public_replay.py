@@ -81,6 +81,15 @@ def jsonl(path):
 def recorded(op):
     scores={t:jsonl(op/t/'scores.jsonl') for t in ROSTER}
     chats={t:jsonl(op/t/'chat.jsonl') for t in ROSTER}
+    # views.json's final 60s read can be newer than the 120s score log.
+    view=json.loads((op/'views.json').read_text()) if (op/'views.json').exists() else {}
+    for team in view.get('teams',[]):
+        name,s=team.get('team'),team.get('score') or {}
+        if name in scores and s.get('tick') is not None and not (team.get('errors') or {}).get('score'):
+            scores[name].append({'score':{'tick':s['tick'],'research_done':s.get('research'),
+                                         'current_research':s.get('researching'),'entities':s.get('entities'),
+                                         'rockets':s.get('rockets')}})
+            scores[name].sort(key=lambda r:r['score']['tick'])
     ticks=sorted({r['score']['tick'] for ss in scores.values() for r in ss})
     race, frames=Race(),[]
     for i,tick in enumerate(ticks):

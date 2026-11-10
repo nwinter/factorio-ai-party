@@ -18,7 +18,7 @@ spec.loader.exec_module(icons)
 
 ACTIVITY = {'thinking', 'acting', 'idle', 'resting', 'offline', 'dead'}
 ACTIONS = {'mine': 'Mining', 'craft': 'Crafting', 'build': 'Building', 'build_blueprint': 'Placing a blueprint',
-           'walk': 'Moving', 'move': 'Moving', 'insert': 'Loading machines', 'take': 'Collecting materials',
+           'walk': 'Moving', 'move': 'Moving', 'insert': 'Supplying', 'take': 'Collecting',
            'research': 'Starting research', 'shoot': 'Fighting', 'attack': 'Fighting', 'kite': 'Fighting',
            'guard': 'On guard', 'repair': 'Repairing', 'rotate': 'Rotating machines', 'wait': 'Waiting',
            'wait_until': 'Waiting', 'drive': 'Driving', 'launch': 'Launching'}
@@ -100,7 +100,7 @@ def project(team, state, agents, now, score=None):
     research, science, space = (obj(state.get(k)) for k in ('research', 'science', 'space'))
     current = {a.get('name'): a for a in rows(state.get('agents')) if isinstance(a, dict) and isinstance(a.get('name'), str)}
     public_names = {a['name'] for a in agents}
-    private_names = [s for a in current.values() if a.get('name') not in public_names
+    private_names = [n for n in ('Nick', 'Winter') if n.lower() not in public_names] + [s for a in current.values() if a.get('name') not in public_names
                      for s in (a.get('name'), a.get('display_name')) if isinstance(s, str)]
     freshness = number(state.get('poll_ok') if 'poll_ok' in state else state.get('now'), 0)
     tick = number(state.get('tick'))
@@ -117,7 +117,7 @@ def project(team, state, agents, now, score=None):
         active = live.get('active') if isinstance(live.get('active'), str) else ''
         verb, _, what = active.partition(':')
         item = prototype('item', what)
-        action = ACTIONS.get(verb)
+        action = ACTIONS.get(verb) if activity == 'acting' else None
         if action and item:
             action += ' ' + title(item).lower()
         action = action or {'thinking': 'Planning the next move', 'resting': 'Between turns',
@@ -131,6 +131,8 @@ def project(team, state, agents, now, score=None):
     chat = []
     for m in rows(state.get('chat'))[-12:]:
         m = obj(m)
+        if m.get('lane') not in (None, 'talk') or m.get('confess') or m.get('notice') or m.get('viewer') or m.get('to'):
+            continue
         name = m.get('name') or m.get('agent') or m.get('from')
         text = speech(m.get('text'), private_names)
         if isinstance(name, str) and name in public_names and text:
@@ -156,10 +158,20 @@ def project(team, state, agents, now, score=None):
             text, icon = 'Space platform lost', 'space-platform-hub'
         if text and et is not None:
             events.append({'kind': kind, 'text': text, 'tick': et, 'icon': icon,
-                           'icon_kind': 'tech' if kind == 'research' else 'item'})
+                           'icon_kind': 'tech' if kind == 'research' else 'item', 'observed': False})
+    # The stream's chronicle snapshot intentionally omits research.name. Its
+    # research.recent rows carry the safe prototype plus finish/observation tick.
+    for r in rows(research.get('recent'))[:4]:
+        r = obj(r)
+        name, et = prototype('tech', r.get('name')), number(r.get('tick'))
+        if name and et is not None:
+            events.append({'kind': 'research', 'text': title(name) + ' completed', 'tick': et,
+                           'icon': name, 'icon_kind': 'tech', 'observed': True})
+    completed = [p for name in list(score_done)[:512] if (p := prototype('tech', name))] if isinstance(score_done, (list, dict)) else None
     return {'team': team, 'stale': now - freshness > 25 or freshness > now + 5 or bool(state.get('poll_error')),
             'tick': tick, 'game_time': clock(tick), 'paused': bool(state.get('paused')), 'agents': out_agents,
-            'research': {'current': tech, 'label': title(tech), 'progress': number(research.get('progress'), hi=1), 'done_count': done},
+            'research': {'current': tech, 'label': title(tech), 'progress': number(research.get('progress'), hi=1), 'done_count': done,
+                         'completed': completed},
             'science': {'spm': number(science.get('spm')), 'series': [number(v, 0) for v in rows(science.get('series'))[-30:]],
                         'stage': int(number(science.get('stage'), 0, hi=5)),
                         'packs': [p for p in PACKS if any(obj(m).get('item') == p and number(obj(m).get('total'), 0) > 0
@@ -189,19 +201,23 @@ def rank(rows_):
         if k == best:
             gap = 'Joint lead' if tied else 'Leading'
         elif startup:
-            gap = f'{best[0] - k[0]} startup steps back'
+            delta = best[0] - k[0]
+            gap = f'{delta} startup step' + ('s' if delta != 1 else '') + ' back'
         elif best[0] != k[0]:
-            gap = f'{int(best[0] - k[0])} rockets back'
+            delta = int(best[0] - k[0])
+            gap = f'{delta} rocket' + ('s' if delta != 1 else '') + ' back'
         else:
-            gap = f'{int(best[1] - k[1])} techs back'
+            delta = int(best[1] - k[1])
+            gap = f'{delta} tech' + ('s' if delta != 1 else '') + ' back'
         r.update(rank=place, leader=k == best, gap=gap,
                  startup_steps=sum((r['entities'] or {}).get(k, 0) > 0 for k in STARTUP))
-    return 'Startup: miner · furnace · power · lab · assembler' if startup else 'Rank: rockets → technologies completed'
+    return 'Startup: miner · furnace · engine · lab · assembler' if startup else 'Rank: rockets → technologies completed'
 
 
 class Race:
     def __init__(self):
         self.previous, self.events, self.seen = {}, deque(maxlen=80), deque(maxlen=400)
+        self.built = {}
 
     def add(self, team, kind, text, tick, now, icon=None, icon_kind='item', observed=False):
         key = (team, kind, text, tick)
@@ -222,27 +238,45 @@ class Race:
             if old and tick is not None and old['tick'] is not None and tick < old['tick']:
                 self.events = deque((e for e in self.events if e['team'] != t), maxlen=80)
                 self.seen = deque((k for k in self.seen if k[0] != t), maxlen=400)
+                self.built.pop(t, None)
                 old = None
+            built = self.built.setdefault(t, set())
+            if old is None and r['entities']:
+                built.update(k for k, n in r['entities'].items() if n)
             for e in r['events']:
                 if tick is not None and 0 <= tick - e['tick'] <= 36000:
-                    self.add(t, e['kind'], e['text'], e['tick'], now - (tick - e['tick']) / 60, e['icon'], e['icon_kind'])
+                    self.add(t, e['kind'], e['text'], e['tick'], now - (tick - e['tick']) / 60, e['icon'], e['icon_kind'], e['observed'])
             if old and tick is not None:
                 before, after = old['research']['done_count'], r['research']['done_count']
                 if before is not None and after is not None and after > before and not any(e['kind'] == 'research' and e['tick'] > (old['tick'] or 0) for e in r['events']):
-                    self.add(t, 'research', f'{int(after-before)} technologies completed', tick, now, 'lab', observed=True)
+                    was, done = old['research']['completed'], r['research']['completed']
+                    names = sorted(set(done) - set(was)) if was is not None and done is not None else []
+                    if names:
+                        for name in names[-4:]:
+                            self.add(t, 'research', title(name) + ' completed', r['score_tick'] or tick, now, name, 'tech', observed=True)
+                    else:
+                        count = int(after-before)
+                        self.add(t, 'research', f'{count} ' + ('technology' if count == 1 else 'technologies') + ' completed', tick, now, 'lab', observed=True)
                 if r['space']['rockets'] is not None and old['space']['rockets'] is not None and r['space']['rockets'] > old['space']['rockets'] and not any(e['kind'] == 'rocket' and e['tick'] > (old['tick'] or 0) for e in r['events']):
                     self.add(t, 'rocket', 'First rocket launched' if old['space']['rockets'] == 0 else 'Rocket launched', tick, now, 'rocket-part', observed=True)
                 if r['entities'] is not None and old['entities'] is not None:
                     for item in BUILDINGS:
                         n, b = r['entities'][item], old['entities'][item]
                         if n > b and (b == 0 or item in ('lab', 'assembling-machine-1', 'electric-mining-drill')):
-                            self.add(t, 'build', ('First ' if b == 0 else f'+{n-b} ') + title(item).lower() + (' built' if b == 0 else f' · {n} total'), r['score_tick'] or tick, now, item, observed=True)
+                            first = item not in built
+                            self.add(t, 'build', ('First ' if first else f'+{n-b} ') + title(item).lower() + (' built' if first else f' · {n} total'), r['score_tick'] or tick, now, item, observed=True)
+                        if n:
+                            built.add(item)
             self.previous[t] = r
         known = {r['team'] for r in teams}
         for c in contacts:
             c = obj(c)
-            if isinstance(c.get('a'), str) and isinstance(c.get('b'), str) and c['a'] in known and c['b'] in known and number(c.get('tick')) is not None:
-                self.add(c['a'], 'contact', 'First contact with ' + c['b'].capitalize(), c['tick'], now, 'radar')
+            team, other = c.get('team'), c.get('other')
+            if isinstance(team, str) and isinstance(other, str) and team in known and other in known and number(c.get('tick')) is not None and c.get('kind') in ('chart', 'shot'):
+                text = ('First shots at ' if c['kind'] == 'shot' else 'First contact with ') + other.capitalize()
+                latest = max((r['tick'] or 0 for r in teams), default=0)
+                if c['tick'] <= latest:
+                    self.add(team, 'contact', text, c['tick'], now - (latest - c['tick']) / 60, 'radar')
         basis = rank(teams)
         return {'teams': teams, 'events': sorted(self.events, key=lambda e: e['tick'] or 0, reverse=True)[:12], 'ranking': basis}
 

@@ -50,7 +50,7 @@ function scoreboard(t,i,n){
  label(cap(t.team),x+86,y+31,25,C.ink,750,w-270);
  label(t.gap,x+86,y+57,16,t.stale?'#ffb790':col,650,w-270);
  if(t.leader&&!t.stale)pill('LEADER',x+w-94,y+13,col,80);
- const count=t.research?.done_count;icon('item','lab',x+20,y+73,28);
+ const count=t.research?.done_count;icon('item',t.startup?'burner-mining-drill':'lab',x+20,y+73,28);
  label(t.startup?(t.startup_steps??'—')+'/5 built':(count??'—')+' techs',x+54,y+95,25,C.ink,750,140);
  const spm=t.science?.spm;label(spm==null?'SPM —':spm.toFixed(1)+' SPM',x+(compact?180:218),y+95,23,C.ink,700,160);
  spark(t.science?.series||[],x+w-(compact?112:184),y+75,compact?88:160,26,col);
@@ -76,9 +76,9 @@ function teamsNow(s){
  minimap(t,x+10,y+10,mapw,h-30);const tx=x+mapw+26,tw=w-mapw-40;
  label(cap(t.team),tx,y+26,20,col,750,tw-106);if(on)pill('ON CAMERA',x+w-113,y+9,col,103);
  const agents=t.agents.slice(0,3),small=agents.length>1;
- agents.forEach((a,j)=>{const ay=y+49+j*(small?30:40);
- label(a.display_name+' · '+(t.stale?'DELAYED':t.paused?'PAUSED':a.activity.toUpperCase()),tx,ay,small?13:14,C.muted,700,tw);
- label(a.action,tx,ay+(small?15:24),small?14:20,C.ink,600,tw);});
+ agents.forEach((a,j)=>{const ay=y+49+j*20,status=t.stale?'DELAYED':t.paused?'PAUSED':a.activity.toUpperCase();
+ if(small){label(a.display_name+' · '+status+' · '+a.action,tx,ay-3,14,C.ink,550,tw);}
+ else{label(a.display_name+' · '+status,tx,ay,14,C.muted,700,tw);label(a.action,tx,ay+24,20,C.ink,600,tw);}});
  if(agents.length===1){const e=t.entities;const bits=e?`${(e['burner-mining-drill']||0)+(e['electric-mining-drill']||0)} miners  ·  ${(e['stone-furnace']||0)+(e['steel-furnace']||0)+(e['electric-furnace']||0)} furnaces  ·  ${e.lab||0} labs`:t.agents[0].model;
  label(bits,tx,y+h-23,13,C.dim,500,tw);}
  });
@@ -110,8 +110,8 @@ function draw(){
  const on=s.teams.find(t=>t.team===s.camera?.team);if(on){const col=color(on.team);rect(44,268,430,60,'#0b1118ee',6);rect(44,268,5,60,col);label('ON CAMERA / '+cap(on.team),62,292,18,col,750,395);label(on.stale?'Feed delayed':on.paused?'WORLD PAUSED':s.camera.reason||'Following the action',62,315,16,C.muted,500,395);}
  else{rect(44,268,420,56,'#0b1118ee',6);label('Waiting for the game camera',62,303,22,C.muted,600);}
  label('Graphics copyright Wube Software',1000,958,12,'#c9d0c8',500,295);
- if(s.fixture){rect(44,923,670,30,'#0b1118ee',4);label(s.fixture+' · camera still from mtt1',56,944,14,C.gold,700,645);}
  teamsNow(s);news(s);chats(s);
+ if(s.fixture){rect(44,930,670,30,'#0b1118ee',4);label(s.fixture+' · camera still from mtt1',56,951,14,C.gold,700,645);}
  if(lost||Date.now()/1000-s.now>25){rect(480,268,500,46,'#5b301dee',6);label('FEED DELAYED · showing last confirmed state',498,298,19,'#ffdbb5',700,465);}
  document.getElementById('summary').textContent=teams.map(t=>`${t.team}: ${t.gap}, ${t.research?.done_count??'unknown'} technologies. ${t.agents.map(a=>a.display_name+': '+a.action).join('. ')}`).join(' / ');
 }

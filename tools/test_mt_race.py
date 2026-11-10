@@ -8,6 +8,10 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
+import threading
+import urllib.request
+import urllib.error
 
 sys.dont_write_bytecode = True
 ROOT=Path(__file__).resolve().parent.parent
@@ -84,12 +88,12 @@ class ProjectionTest(unittest.TestCase):
     def test_rank_tie_stale_and_startup(self):
         teams=[row('green',entities={'lab':1,'steam-engine':1}),row('yellow',entities={'lab':1}),row('blue',entities={'lab':3})]
         basis=race.rank(teams);self.assertIn('Startup',basis)
-        self.assertEqual([r['rank'] for r in teams],[1,2,2]);self.assertEqual(teams[1]['gap'],'1 startup steps back')
+        self.assertEqual([r['rank'] for r in teams],[1,2,2]);self.assertEqual(teams[1]['gap'],'1 startup step back')
         teams[0]['stale']=True;race.rank(teams)
         self.assertIsNone(teams[0]['rank']);self.assertFalse(teams[0]['leader']);self.assertEqual(teams[1]['gap'],'Joint lead')
         teams=[row('green',techs=10),row('yellow',techs=8),row('blue',techs=8)]
         race.rank(teams);self.assertEqual(teams[2]['rank'],2);self.assertEqual(teams[1]['gap'],'2 techs back')
-        teams[1]['space']['rockets']=1;race.rank(teams);self.assertTrue(teams[1]['leader']);self.assertEqual(teams[0]['gap'],'1 rockets back')
+        teams[1]['space']['rockets']=1;race.rank(teams);self.assertTrue(teams[1]['leader']);self.assertEqual(teams[0]['gap'],'1 rocket back')
 
     def test_event_dedup_first_observation_and_save_reset(self):
         r=race.Race();a=row(entities={'lab':2})
@@ -108,8 +112,55 @@ class ProjectionTest(unittest.TestCase):
 
     def test_contact_only_public_teams(self):
         r=race.Race();teams=[row(),row('yellow')]
-        out=r.update(teams,100,[{'a':'green','b':'private','tick':2},{'a':'green','b':'yellow','tick':6000,'text':'PRIVATE'}])
+        out=r.update(teams,100,[{'team':'green','other':'private','tick':2,'kind':'chart'},
+                                {'team':'green','other':'yellow','tick':6000,'kind':'chart','text':'PRIVATE'}])
         self.assertEqual([e['text'] for e in out['events']],['First contact with Yellow'])
+
+    def test_real_stream_research_and_private_chat_lanes(self):
+        state={'now':100,'tick':6300,'research':{'done_count':1,'recent':[{'name':'automation','tick':6000,'label':'PRIVATE'}]},
+               'chronicle':{'events':[{'kind':'research','tick':6000,'line':'research finished: automation'}]},
+               'chat':[{'agent':'gemini','text':'PRIVATE','lane':'tell'}, {'agent':'gemini','text':'PRIVATE','lane':'operator'},
+                       {'agent':'gemini','text':'PRIVATE','lane':'talk','confess':True},
+                       {'agent':'gemini','text':'Hello Nick','lane':'talk'}, {'agent':'gemini','text':'Labs are ready','lane':'talk'}]}
+        out=race.project('green',state,AGENTS,100)
+        self.assertEqual([e['text'] for e in out['events']],['Automation completed'])
+        self.assertEqual([c['text'] for c in out['chat']],['Labs are ready'])
+        self.assertNotIn('PRIVATE',json.dumps(out))
+
+    def test_rebuilding_is_not_first_and_old_events_do_not_trigger_cut(self):
+        r=race.Race();r.update([row(entities={'lab':1})],100)
+        r.update([row(now=105)],105)
+        rebuilt=row(now=110,entities={'lab':1});rebuilt['tick']=6600
+        self.assertEqual(r.update([rebuilt],110)['events'][0]['text'],'+1 lab · 1 total')
+        recent=row('blue',now=120,chronicle={'events':[{'kind':'research','name':'automation','tick':60}]})
+        news=r.update([recent],120)['events']
+        d=race.Director();d.success('green',100)
+        self.assertIsNone(d.choose([row(now=120),recent],news,120))
+
+    def test_production_http_poll_and_fixed_assets(self):
+        with tempfile.TemporaryDirectory() as d:
+            op=Path(d);td=op/'runs/test/green';td.mkdir(parents=True)
+            (td/'team.tsv').write_text('gemini\tagy\troute\tmodel\thigh\tFlash\tagy\n')
+            (op/'streams.txt').write_text('green http://127.0.0.1:1/\n')
+            (op/'views.json').write_text(json.dumps({'t':time.strftime('%Y-%m-%d %H:%M:%S'),'teams':[{'team':'green','score':{'tick':6000,'entities':{'lab':2},'research':['automation']}}]}))
+            service=overlay.PublicOverlay(op,op,'test',port=0,camera=False)
+            raw={'now':time.time(),'tick':6000,'research':{'done_count':1},'space':{'rockets':0},'tokens':{'secret':'PRIVATE'}}
+            # One production poll, no camera or real game/network request.
+            with mock.patch.object(overlay,'fetch',return_value=raw), mock.patch.object(service.stop,'wait',side_effect=lambda _:service.stop.set()):
+                service.poll()
+            threading.Thread(target=service.http.serve_forever,daemon=True).start()
+            url=f'http://127.0.0.1:{service.http.server_port}'
+            try:
+                with urllib.request.urlopen(url+'/state.json') as response:state=json.load(response)
+                self.assertEqual(state['teams'][0]['entities']['lab'],2)
+                self.assertEqual(state['teams'][0]['rank'],1)
+                self.assertNotIn('PRIVATE',json.dumps(state))
+                for asset in ('/mapview.js','/static/game/item/lab.webp','/static/game/tech/automation.webp'):
+                    with urllib.request.urlopen(url+asset) as response:self.assertGreater(len(response.read()),100)
+                for forbidden in ('/views.json','/static/game/item/../../gameicons.py','/static/game/item/secret.webp'):
+                    with self.assertRaises(urllib.error.HTTPError) as e:urllib.request.urlopen(url+forbidden)
+                    self.assertEqual(e.exception.code,404);e.exception.close()
+            finally:service.close()
 
 
 class DirectorTest(unittest.TestCase):

@@ -19,7 +19,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / 'stream'))
 from harness import Harness
 import lookcam
-from public_race import project, Race, Director, read_views, icons, speech
+from public_race import project, Race, Director, read_views, icons, speech, rows as list_rows, obj
 
 CAMERA = 'pog-director2'
 
@@ -155,7 +155,8 @@ class PublicOverlay:
             while not self.stop.is_set():
                 now, rows, fresh = time.time(), [], {}
                 views = read_views(self.op, now)
-                scores = {r['team']: r.get('score') for r in views.get('teams', []) if r.get('team') in self.rosters and not (r.get('errors') or {}).get('score')}
+                scores = {r['team']: r.get('score') for r in map(obj, list_rows(views.get('teams')))
+                          if isinstance(r.get('team'), str) and r['team'] in self.rosters and not obj(r.get('errors')).get('score')}
                 pending = [(t, pool.submit(fetch, u)) for t, u in self.feeds]
                 for team, job in pending:
                     try:
@@ -169,7 +170,7 @@ class PublicOverlay:
                         row = dict(previous.get(team) or project(team, {}, self.rosters[team], now), stale=True)
                     rows.append(row)
                 with self.lock:
-                    self.state.update(self.race.update(rows, now, views.get('contacts') or []), now=now)
+                    self.state.update(self.race.update(rows, now, list_rows(views.get('contacts'))), now=now)
                 choice = self.director.choose(rows, self.state['events'], now) if self.harnesses else None
                 if choice:
                     team, reason = choice
@@ -203,7 +204,7 @@ class PublicOverlay:
                 for msg in msgs:
                     row, reasons = filt.check(msg, time.time())
                     if not reasons:
-                        text = speech(row.get('text'))
+                        text = speech(row.get('text'), ('Nick', 'Winter'))
                         if text:
                             lines.append({'name': 'Viewer', 'text': text, 't': time.time()})
                 lines = lines[-8:]

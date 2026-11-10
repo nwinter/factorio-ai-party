@@ -17,9 +17,18 @@ const fs=require('node:fs'),path=require('node:path');
  await shot('after-synthetic-lead-change.png',frames[19]);
  await shot('after-mtt1-final.png',recorded.at(-1));
  await shot('after-mtt1-start.png',recorded[12]);
- const four=structuredClone(frames[15]);const red=structuredClone(four.teams[0]);red.team='red';red.rank=4;red.leader=false;red.gap='7 techs back';red.agents=[0,1,2].map(i=>({...red.agents[0],name:'agent'+i,display_name:'Agent '+i}));four.teams.forEach(t=>t.agents=red.agents);four.teams.push(red);await shot('after-four-teams.png',four);
- const stale=structuredClone(frames[4]);stale.teams[0].stale=true;stale.teams[0].rank=null;stale.teams[0].leader=false;stale.teams[0].gap='Feed delayed';await shot('after-stale-feed.png',stale);
+ await shot('after-mtt1-foundations.png',recorded[5]);
+ const four=structuredClone(frames[15]);const red=structuredClone(four.teams[0]);red.team='red';red.rank=4;red.leader=false;red.research.done_count=8;red.gap='11 techs back';red.agents=[0,1,2].map(i=>({...red.agents[0],name:'agent'+i,display_name:'Agent '+i}));four.teams.forEach(t=>t.agents=red.agents);four.teams.push(red);await shot('after-four-teams.png',four);
+ const stale=structuredClone(frames[4]);stale.teams[0].stale=true;stale.teams[0].rank=null;stale.teams[0].leader=false;stale.teams[0].gap='Feed delayed';stale.teams[1].rank=1;stale.teams[1].leader=true;stale.teams[1].gap='Leading';stale.teams[2].rank=2;stale.teams[2].gap='4 techs back';await shot('after-stale-feed.png',stale);
  const timings=await page.evaluate(()=>{const times=[];for(let i=0;i<100;i++){const t=performance.now();draw();times.push(performance.now()-t);}return times.sort((a,b)=>a-b);});
- const serialized=await page.evaluate(()=>({scroll:[document.documentElement.scrollWidth,document.documentElement.scrollHeight],text:document.getElementById('summary').textContent,canvas:[canvas.width,canvas.height]}));
- const out={shots,errors,requests:requests.length,paint_ms:{median:timings[50],p95:timings[95],max:timings[99]},...serialized};fs.writeFileSync(path.join(dir,'browser-check.json'),JSON.stringify(out,null,2));console.log(JSON.stringify(out,null,2));await browser.close();if(errors.length)process.exitCode=1;
+ const serialized=await page.evaluate(()=>({scroll:[document.documentElement.scrollWidth,document.documentElement.scrollHeight],text:document.getElementById('summary').textContent,canvas:[canvas.width,canvas.height],camera_alpha:ctx.getImageData(640,600,1,1).data[3]}));
+ if(serialized.camera_alpha!==0)errors.push('Camera window is not transparent');
+ const out={shots,errors,requests:requests.length,paint_ms:{median:timings[50],p95:timings[95],max:timings[99]},...serialized};
+ if(process.env.MT_SOAK){
+   const started=Date.now(),seen=new Set(),timer=setInterval(()=>{selected=frames[Math.floor((Date.now()-started)/2000)%frames.length];},500);
+   for(let i=0;i<15;i++){await page.waitForTimeout(5000);seen.add(await page.evaluate(()=>JSON.stringify(raceState().teams.map(t=>[t.research.progress,t.leader]))));}
+   clearInterval(timer);out.soak={seconds:(Date.now()-started)/1000,distinct_states:seen.size};
+   await page.screenshot({path:path.join(dir,'after-75s.png')});if(seen.size<8)errors.push('Moving replay stopped updating');
+ }
+ out.requests=requests.length;fs.writeFileSync(path.join(dir,'browser-check.json'),JSON.stringify(out,null,2));console.log(JSON.stringify(out,null,2));await browser.close();if(errors.length)process.exitCode=1;
 })().catch(e=>{console.error(e);process.exitCode=1;});
