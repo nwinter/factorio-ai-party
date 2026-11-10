@@ -504,14 +504,15 @@ return function(api)
       local w = api.cargo.weigh(loaded, lift, slots)
       -- room_kg (batch24 A4, Gemini: what is aboard and the room left without a full inspect)
       local room = math.max(0, math.floor((api.cargo.kg(lift) - w.total_kg) * 10 + 0.5) / 10)
-      row.cargo = {kg=w.total_kg, lift_kg=api.cargo.kg(lift), room_kg=room, stacks=w.stacks, slots=slots, items=items_text(loaded, 8),
+      row.cargo = {kg=w.total_kg, lift_kg=api.cargo.kg(lift), room_kg=room, stacks=w.stacks, weight_only=slots==math.huge or nil, slots=slots~=math.huge and slots or nil, items=items_text(loaded, 8),
         over_kg=w.total_kg > api.cargo.kg(lift) and math.floor((w.total_kg - api.cargo.kg(lift)) * 10 + 0.5) / 10 or nil}
-      words[#words+1] = string.format('cargo %g/%g kg (%g kg free), %d/%d slots: %s', w.total_kg, api.cargo.kg(lift), room, w.stacks, slots, row.cargo.items)
+      words[#words+1] = slots==math.huge and string.format('cargo %g/%g kg (%g kg free), %d stacks, weight only: %s',w.total_kg,api.cargo.kg(lift),room,w.stacks,row.cargo.items)
+        or string.format('cargo %g/%g kg (%g kg free), %d/%d slots: %s', w.total_kg, api.cargo.kg(lift), room, w.stacks, slots, row.cargo.items)
       -- (B2) what of it spoils, and how far it has spoiled
       row.cargo.spoil = M.spoil_lines(rocket_inv)
       if row.cargo.spoil then words[#words+1] = 'aboard: ' .. table.concat(row.cargo.spoil, '; ') end
     else
-      row.cargo = {kg=0, lift_kg=api.cargo.kg(lift), room_kg=api.cargo.kg(lift), stacks=0, slots=slots}
+      row.cargo = {kg=0, lift_kg=api.cargo.kg(lift), room_kg=api.cargo.kg(lift), stacks=0, weight_only=slots==math.huge or nil, slots=slots~=math.huge and slots or nil}
       words[#words+1] = rocket_inv and 'no cargo loaded' or 'no rocket to load yet'
     end
     local trash = defines.inventory.rocket_silo_trash and try(function() return e.get_inventory(defines.inventory.rocket_silo_trash) end)

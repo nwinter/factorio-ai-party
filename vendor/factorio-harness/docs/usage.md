@@ -19028,3 +19028,12 @@ segments are separate. `flush` clears the selected segment, or only the selected
 segment. `configure` refuses a recipe change that would drop an incompatible fluid unless `fluid: "drain"` or
 `"keep"` is explicit; the reply reports what left the machine. A normal boiler consumes 6 water/s and makes 60
 steam/s at full speed on 2.1.24 (2.0.77: 60 water/s and 60 steam/s).
+
+### Rocket cargo on 2.1.24
+
+A rocket is limited by its silo's lift weight; it has no fixed cargo slot limit. The rocket inventory grows with
+its contents, including mixed items and qualities. `cargo`, `preflight` and `load_silo` report `weight_only: true`
+where applicable and omit finite free-slot capacities. Stack counts still describe the manifest. Loading an empty
+rocket and unloading its shrinking inventory preserve item quality, spoilage and other stack metadata. The
+`load_silo` manifest accepts up to 64 item/quality entries on 2.1 (20 on 2.0). The 2.0.77 rocket retains its slot
+limit; platform hub and cargo-pod capacity remain separate from rocket lift.

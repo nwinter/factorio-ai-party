@@ -10231,7 +10231,9 @@ local function move_stacks(source,target,match,limit)
   -- keep and up_to near the cap), so every call is skipped at 0.
   local remaining,moved,order=math.max(0,limit),{},{}
   local fresh
-  for i=1,#source do
+  local rocket_id=PORT21 and defines.inventory.rocket_silo_rocket
+  local reverse=rocket_id and source.index==rocket_id
+  for i=reverse and #source or 1,reverse and 1 or #source,reverse and -1 or 1 do
     if remaining<=0 then break end
     local stack=source[i]
     if stack.valid_for_read and match(stack) then
@@ -10241,6 +10243,14 @@ local function move_stacks(source,target,match,limit)
       local okp,spct=pcall(function() return stack.spoil_percent end)
       -- Top up partial stacks of the same item first, as a player's
       -- shift-click does, then fill empty slots.
+      if rocket_id and target.index==rocket_id then
+        local wanted=math.min(start,remaining)
+        stack.count=wanted
+        local ok,inserted=pcall(target.insert,stack)
+        stack.count=start-(ok and inserted or 0)
+        if not ok then error(inserted,0) end
+        remaining=remaining-inserted
+      else
       for pass=1,2 do
         for j=1,#target do
           if remaining<=0 or not stack.valid_for_read then break end
@@ -10251,6 +10261,7 @@ local function move_stacks(source,target,match,limit)
             remaining=math.max(0,remaining-(before-(stack.valid_for_read and stack.count or 0)))
           end
         end
+      end
       end
       local n=start-(stack.valid_for_read and stack.count or 0)
       if n>0 then
@@ -10267,6 +10278,7 @@ local function move_stacks(source,target,match,limit)
   for i,key in ipairs(order) do stacks[i]=moved[key]; total=total+moved[key].count end
   return total,stacks,fresh
 end
+M.move_stacks=move_stacks
 -- A moved batch's spoilage in lines (Sol, 22:25: choosing 2000 fresh agricultural packs for Aquilo): per item the
 -- spread (spoil.lua spread_text); a science pack the running research takes, how many a unit it takes and the units
 -- left. Effective research value uses the measured 2.0.77 spoil/durability rule (spoil.lua).
@@ -15294,8 +15306,8 @@ function handlers.load_silo_run(p,a)
           local t={}; for _,r in ipairs(part) do t[#t+1]=r.name..' '..r.count end
           lines[i]=string.format('rocket %d: %s',i,table.concat(t,', '))
         end
-        error(string.format('the list is over one rocket (%s kg; lift %g kg, %d slots): it would go as %d rockets (%s); launch_split: true sends it so (the default without all_or_nothing, wait_platform or launch_split: false), or load less; dry_run: true shows each item\'s weight and slots; nothing loaded or queued',
-          total,lift/1000,slots,#parts,table.concat(lines,'; ')),0)
+        error(string.format('the list is over one rocket (%s kg; lift %g kg, %s slots): it would go as %d rockets (%s); launch_split: true sends it so (the default without all_or_nothing, wait_platform or launch_split: false), or load less; dry_run: true shows each item\'s weight and slots; nothing loaded or queued',
+          total,lift/1000,slots==math.huge and 'unlimited' or tostring(slots),#parts,table.concat(lines,'; ')),0)
       end
       if parts then
         local function args_for(part,left)
@@ -15315,12 +15327,12 @@ function handlers.load_silo_run(p,a)
         for i=1,#parts do steps[#steps+1]={action='load_silo',args=args_for(parts[i],#parts-i+1),label=string.format('rocket %d of %d',i,#parts)} end
         local default=a.launch_split==nil and ' (split by default: launch_split: false refuses a list over one rocket)' or ''
         local out,at=queue_rockets(steps,function(why)
-          return string.format('the list is over one rocket (%s kg; lift %g kg, %d slots) and goes as %d rockets, which this queue step could not become in place (%s); nothing loaded or queued: load less a step, or launch_split: false for one rocket',
-            total,lift/1000,slots,#parts,why)
+          return string.format('the list is over one rocket (%s kg; lift %g kg, %s slots) and goes as %d rockets, which this queue step could not become in place (%s); nothing loaded or queued: load less a step, or launch_split: false for one rocket',
+            total,lift/1000,slots==math.huge and 'unlimited' or tostring(slots),#parts,why)
         end)
         out.rockets=#parts
         out.rocket_cargo=lines
-        out.split=string.format('%s kg over %d rockets (lift %g kg, %d slots): %s; %s, loading and launching in turn%s',total,#parts,lift/1000,slots,table.concat(lines,'; '),
+        out.split=string.format('%s kg over %d rockets (lift %g kg, %s slots): %s; %s, loading and launching in turn%s',total,#parts,lift/1000,slots==math.huge and 'unlimited' or tostring(slots),table.concat(lines,'; '),
           at and string.format('this step %s became %d load_silo steps (%s), run right after it and %s',at.step,#parts,at.ids,behind_text(at)) or 'each a load_silo step appended to your queue',default)
         return out
       end

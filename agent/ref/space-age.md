@@ -668,8 +668,8 @@
   of silo, and built parts.
   Example: `./fh call launch_budget --args '{"surface":"aquilo","platform":"Asterion","manifest":{"uranium-rounds-magazine":2150},"reserve":{"rocket-fuel":600}}'`
 - `cargo {items | position, silo?, to_platform?, incoming?}`: weighs a rocket cargo list (or a chest, silo or pad at
-  `position`): each item's weight, the total against a rocket's 1000 kg and 20 cargo slots, the fewest rockets, and
-  one split into rockets that keeps each within both. With `silo` (and `to_platform`) it adds when that list can go up
+  `position`): each item's weight, the total against the rocket lift (normally 1000 kg), the fewest rockets, and
+  one split within that lift. Only 2.0.77 also limits rockets to 20 cargo slots. With `silo` (and `to_platform`) it adds when that list can go up
   (rockets, parts, the platform's arrival). `incoming: true` lists our platforms headed for your planet with their ETA
   and hub cargo. Example: `./fh call cargo --args '{"items":{"thruster":2,"cargo-bay":4}}'`
 - `load_silo {position, items, to_total?, from?, walk?, up_to?, up_to_stock_at_start?, launch?, platform?,
@@ -707,7 +707,7 @@
   before the rocket is ready holds there, in reach, loading nothing until it is; status's active then gives `holding`
   (`at the silo stop (17.5,-13.5), in reach: waiting for the rocket to be ready (rocket parts 29 of 50, 31.1 a minute),
   the last part in about 40s at that rate; held for it: 1000; holding 42s`) and no `stuck_s`. A rocket
-  holding what a platform above asks for is launched by the game when it stops, one item type a rocket: the wait then
+  holding what a platform above asks for is launched by the game when it stops, with mixed cargo on 2.1 (one item type on 2.0): the wait then
   ends `launched_by_game` (what went, and what stayed in the silo). A silo with automatic requests on is refused,
   naming what is aboard; `auto_requests: "pause"` (with `launch`) turns them off for this manifest and back on after
   its last launch, and a load that ends short or failed leaves them off (`auto_requests_kept_off`; `configure
@@ -866,3 +866,12 @@ These reads do not start, stop, replace or mark anyone's watch read; `seconds`, 
 Completed results survive resting. Starting another watch retains four previous completed tallies, oldest dropped
 first; a running watch replaced by a new start is not a completed tally. Without selectors, the caller's usual
 `platform_supply {platform,collection:true}` behavior is unchanged.
+
+### Rocket cargo on 2.1.24
+
+A rocket is limited by its silo's lift weight; it has no fixed cargo slot limit. The rocket inventory grows with
+its contents, including mixed items and qualities. `cargo`, `preflight` and `load_silo` report `weight_only: true`
+where applicable and omit finite free-slot capacities. Stack counts still describe the manifest. Loading an empty
+rocket and unloading its shrinking inventory preserve item quality, spoilage and other stack metadata. The
+`load_silo` manifest accepts up to 64 item/quality entries on 2.1 (20 on 2.0). The 2.0.77 rocket retains its slot
+limit; platform hub and cargo-pod capacity remain separate from rocket lift.

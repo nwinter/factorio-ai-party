@@ -119,3 +119,16 @@ assert(not ok and tostring(err):find('nothing changed',1,true));assert(water==20
 out=runtime.dispatch{player=1,action='configure',args={position={x=5,y=5},recipe='dry',fluid='drain'}}
 assert(out.recipe=='dry' and out.fluid_flushed.water==200 and cleared==1 and water==0 and neighbor==50)
 print('port21 configure: native private-store refusal and drain passed')
+
+-- A zero-slot weight-limited target inserts the actual stack (metadata retained), with a bounded partial move.
+defines.inventory.rocket_silo_rocket=21
+local source_stack={valid_for_read=true,name='tagged',quality={name='rare'},count=10,
+ spoil_tick=9999,spoil_percent=.25,tags={label='same metadata'},health=.7}
+local received
+local target={index=21,insert=function(st) assert(st==source_stack);received={count=st.count,quality=st.quality,tags=st.tags,spoil_tick=st.spoil_tick};return 3 end}
+local n=runtime.move_stacks({source_stack},target,function() return true end,4)
+assert(n==3 and source_stack.count==7 and received.count==4 and received.quality.name=='rare' and received.tags.label=='same metadata' and received.spoil_tick==9999)
+target.insert=function() error('insert refused') end
+local ok=pcall(runtime.move_stacks,{source_stack},target,function() return true end,4)
+assert(not ok and source_stack.count==7)
+print('port21 cargo transfer: metadata, partial insertion, and failure conservation passed')
