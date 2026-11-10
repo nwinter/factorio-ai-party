@@ -116,7 +116,7 @@ Use the existing stream ID matching OBS's configured ingest key:
 ```sh
 python3 tools/mt/public_broadcast.py streams
 
-# Review the exact public broadcast insert and bind; no network or auth in dry-run.
+# Review the exact unlisted broadcast insert and bind; no network or auth in dry-run.
 python3 tools/mt/public_broadcast.py create \
   --title 'Factorio: Space Age — AI team tests' \
   --start 2026-11-09T05:00:00Z --stream-id STREAM_ID \
@@ -130,7 +130,8 @@ python3 tools/mt/public_broadcast.py create \
 ```
 
 The receipt saves the inserted ID before binding, so a failed bind can be retried
-with the same arguments without inserting a second broadcast. Privacy is public;
+with the same arguments without inserting a second broadcast. Privacy defaults to
+unlisted; `--privacy unlisted|public|private` overrides it.
 `enableAutoStart=false`, `enableAutoStop=false`, DVR and recording from start are
 enabled. Creating/binding does not send video. OBS's start-stream and YouTube's
 go-live controls remain explicit operator actions after checking the preview.
