@@ -35,7 +35,7 @@ return function(api)
     local station = d.station and try(function() return d.station.valid and d.station end)
     local surface = station and try(function() return station.surface.name end)
       or try(function() return type(d.surface) == 'string' and d.surface or d.surface.name end)
-    return surface, station and {x=station.position.x, y=station.position.y} or nil
+    return surface, station and {x=station.position.x, y=station.position.y, platform=station.type=='space-platform-hub' and try(function() return station.surface.platform.name end) or nil} or nil
   end
   -- (d18 batch38 A2, Grok 18:20, twice: copper from Petrel read "to the ground (no pad takes it)" in the air and
   -- landed in the pad at (54,8); shift36 drops #1496 and #1498) a pod waiting to launch or rising names no station
@@ -114,6 +114,7 @@ return function(api)
   -- Where a pod lands, as words: the pad it names; the planet's pad when it names none yet; the ground when the planet has
   -- no landing pad of ours.
   function M.lands(r, to)
+    if r.pad and r.pad.platform then return 'platform '..r.pad.platform..' hub' end
     if r.pad and r.guessed then
       return string.format('the landing pad at (%g,%g) (%s\'s pad: pods from a platform land in it; this one names no station yet)', r.pad.x, r.pad.y, tostring(to))
     end

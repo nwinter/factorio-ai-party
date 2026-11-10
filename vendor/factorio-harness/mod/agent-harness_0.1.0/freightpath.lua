@@ -11,6 +11,7 @@
 -- told once. Facts only; nothing is changed back.
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
+  local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function name_of(v) return type(v) == 'string' and v or try(function() return v.name end) end
@@ -43,9 +44,9 @@ return function(api)
       if sec and sec.active ~= false then
         for _, f in ipairs(sec.filters or {}) do
           local item, from = name_of(f.value), f.import_from and name_of(f.import_from)
-          if item and focus[item] and from and (f.min or 0) > 0 then
+          if item and focus[item] and (from or PORT21) and (not PORT21 or f.request_from~='platforms') and (f.min or 0) > 0 then
             row.asks[item] = row.asks[item] or {}
-            row.asks[item][from] = true
+            row.asks[item][from or '*'] = true
           end
         end
       end
@@ -109,7 +110,7 @@ return function(api)
       local u = snap.pad(path.to).units[1]
       return string.format('%s\'s landing pad no longer requests %s', path.to, path.item), u and {scope='req:' .. u}
     end
-    if not (row.asks[path.item] and row.asks[path.item][path.from]) then
+    if not (row.asks[path.item] and (row.asks[path.item][path.from] or row.asks[path.item]['*'])) then
       return string.format('%s\'s hub no longer requests %s from %s', path.platform, path.item, path.from), row.hub and {scope='req:' .. row.hub}
     end
     if not row.at[path.from] then return string.format('%s\'s schedule no longer stops at %s', path.platform, path.from), {scope='plat:' .. path.platform, key='schedule stops'} end

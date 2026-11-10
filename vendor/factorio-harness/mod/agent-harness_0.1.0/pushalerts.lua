@@ -34,6 +34,10 @@ end
 local flameroil = require('flameroil')
 local snapfail = require('snapfail')
 return function(api)
+  local function planet_request(f, from, planet)
+    if PORT21 then return f.request_from ~= 'platforms' and (from == nil or from == planet) end
+    return from == planet
+  end
   local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
@@ -529,7 +533,7 @@ return function(api)
           local v = f.value
           local name = v and (type(v.name) == 'string' and v.name or try(function() return v.name.name end))
           local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
-          if name and from == planet and (try(function() return prototypes.item[name].get_spoil_ticks() end) or 0) > 0 then
+          if name and planet_request(f, from, planet) and (try(function() return prototypes.item[name].get_spoil_ticks() end) or 0) > 0 then
             wants[name] = wants[name] or {}
             table.insert(wants[name], pl)
           end

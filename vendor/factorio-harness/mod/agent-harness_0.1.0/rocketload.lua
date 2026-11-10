@@ -15,6 +15,10 @@
 -- bundled into a hot reload.
 return function(api)
   local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+  local function planet_request(f, from, planet, legacy_any)
+    if PORT21 then return f.request_from ~= 'platforms' and (from == nil or from == planet) end
+    return from == planet or (legacy_any and from == nil)
+  end
   local M = {}
   local MAX_ITEMS, MAX_CHESTS, MAX_FROM = PORT21 and 64 or 20, 16, 16
   M.MAX_FROM = MAX_FROM  -- (d25 batch208 QU1) also a queue step's check (runtime.lua step_lengths)
@@ -411,7 +415,7 @@ return function(api)
               local v = f.value
               local name = type(v) == 'table' and v.name or v
               local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
-              if name and (not items or items[name]) and (f.min or 0) > 0 and (from == nil or from == planet) then
+              if name and (not items or items[name]) and (f.min or 0) > 0 and planet_request(f, from, planet, true) then
                 local held = inv and try(function() return inv.get_item_count(name) end) or 0
                 if held < f.min then out[#out+1] = string.format('%s asks %s %d, holds %d (%d short)', pl.name, name, f.min, held, f.min - held) end
               end
@@ -645,7 +649,8 @@ return function(api)
     if not (recipe and input) then return nil end
     local parts = try(function() return silo.rocket_parts end) or 0
     local required = try(function() return silo.prototype.rocket_parts_required end) or 0
-    if M.rocket_inventory(silo) then return nil end
+    if (not PORT21 and M.rocket_inventory(silo)) or (PORT21 and
+      (silo.rocket_silo_status == defines.rocket_silo_status.rocket_ready or (required > 0 and parts >= required))) then return nil end
     local left = math.max(1, required - parts)
     local rows, parts_txt = {}, {}
     for _, ing in ipairs(recipe.ingredients or {}) do
@@ -1401,7 +1406,7 @@ return function(api)
           local quality = type(v) == 'table' and v.quality or 'normal'
           quality = quality or 'normal'
           local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
-          if type(name) == 'string' and from == planet and (f.min or 0) > 0 and (sec.multiplier or 1) > 0 then
+          if type(name) == 'string' and planet_request(f, from, planet) and (f.min or 0) > 0 and (sec.multiplier or 1) > 0 then
             local k = key(name, quality)
             if not out[k] then out[k] = {name=name, quality=quality, min=0}; order[#order+1] = out[k] end
             out[k].min = out[k].min + math.floor(f.min * (sec.multiplier or 1))

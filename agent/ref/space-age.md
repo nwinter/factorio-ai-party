@@ -1,3 +1,10 @@
+Factorio 2.1.24 integration: hub requests accept `request_from: "planet"|"platforms"|"all"`.
+`from:false` clears the location restriction; omitted source/location fields keep their previous values.
+`requests {platform, providing_to_other_platforms:true}` enables supplying other platforms at the same location.
+A planet/all request from anywhere retains stock at every stop; a platforms-only request permits delivery to
+planetary landing pads. `min_payload` edits preserve the request source. The native construction-request switch
+preserves manual sections. These rules supersede the explicitly dated 2.0 observations below.
+
 - `platforms {platform?, compact?, eta_to?}`: our platforms, a row each: where it is, `speed_kms`, `leg_left_km`,
   `eta_min` (at the current speed), `next_stop`, hub health, and `stops` (each stop's wait conditions with the time
   left and items to go where it waits; a stop's wait line names a queue step, either lane, or standing order that

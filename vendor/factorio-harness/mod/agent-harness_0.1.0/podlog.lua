@@ -146,7 +146,8 @@ return function(api)
     if not planet then return nil end
     st.seq = st.seq + 1
     r = {id=st.seq, unit=unit, up=up or nil, platform=pl and pl.name, stop=pl and try(function() return pl.space_location.name end),
-      sent=tick or game.tick, items=contents(pod), starter=starter, orbit=orbit}
+      sent=tick or game.tick, items=contents(pod), starter=starter, orbit=orbit,
+      destination_platform=not up and platform_of(station) and platform_of(station).name or nil}
     for k, v in pairs(info or {}) do r[k] = v end
     if up then set_silo(r, silo or origin) end
     count(r, planet, r.sent)
@@ -194,7 +195,7 @@ return function(api)
       r.free = free
       open.pad, open.counts = station, counts
     elseif station then
-      r.dest = 'hub'
+      r.dest = r.destination_platform and 'platform '..r.destination_platform..' hub' or 'hub'
     else
       r.dest = 'ground ' .. at(pod.position)
     end

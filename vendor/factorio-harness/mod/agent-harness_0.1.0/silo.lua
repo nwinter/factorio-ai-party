@@ -20,6 +20,11 @@ end
 -- Bounded: 16 silos, the inserters within 8 tiles of each. Read only.
 -- The factory is pure so the same module can be bundled into a hot reload.
 return function(api)
+  local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+  local function planet_request(f, from, planet, legacy_any)
+    if PORT21 then return f.request_from ~= 'platforms' and (from == nil or from == planet) end
+    return from == planet or (legacy_any and from == nil)
+  end
   local M = {}
   local MAX_SILOS, FEED_REACH, MAX_FEEDERS, MAX_RECORDS = 16, 8, 64, 32
   -- request rows: shown in a silo's row, read by default, read with requests: true, a page of those
@@ -758,8 +763,8 @@ return function(api)
             -- (BA1) the hub's holding, the networks' stock and what is on the way by the request's quality and comparator
             local q, cmp = M.want(v)
             local held = name and M.count_q(function(id) return pl.hub.get_item_count(id) end, name, q, cmp) or 0
-            if name and from == planet and (f.min or 0) > held and #rows >= cap then unread = unread + 1
-            elseif name and from == planet and (f.min or 0) > held then
+            if name and planet_request(f, from, planet) and (f.min or 0) > held and #rows >= cap then unread = unread + 1
+            elseif name and planet_request(f, from, planet) and (f.min or 0) > held then
               local w = try(function() return prototypes.item[name].weight end)
               local full = w and lift and w > 0 and math.floor(lift / w) or nil
               local way = 0

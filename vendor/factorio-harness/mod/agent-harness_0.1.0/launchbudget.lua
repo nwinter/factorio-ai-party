@@ -20,6 +20,11 @@ end
 -- recipe's research, capped as the game caps it): ingredients per launch = parts / (1 + productivity), the
 -- productivity bar carrying the fraction from rocket to rocket. Bounded: 16 silos, 64 platforms, 48 rows listed.
 return function(api)
+  local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+  local function planet_request(f, from, planet, legacy_any)
+    if PORT21 then return f.request_from ~= 'platforms' and (from == nil or from == planet) end
+    return from == planet or (legacy_any and from == nil)
+  end
   local M = {}
   local MAX_SILOS, MAX_PLATFORMS, ROWS = 16, 64, 48
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -171,7 +176,7 @@ return function(api)
           for _, f in ipairs(sec and sec.active ~= false and try(function() return sec.filters end) or {}) do
             local v = f.value
             local name = v and sname(v.name)
-            if name and sname(f.import_from) == planet and (f.min or 0) > 0 then
+            if name and planet_request(f, sname(f.import_from), planet) and (f.min or 0) > 0 then
               local q, cmp = api.silo.want(v)
               if not (is_cand and cmp == '=' and manifest[key(name, q)]) then
                 local held = hub_count(hub, name, q, cmp)
@@ -202,7 +207,7 @@ return function(api)
           local sec = try(function() return secs.get_section(i) end)
           for _, f in ipairs(sec and sec.active ~= false and try(function() return sec.filters end) or {}) do
             local v = f.value
-            if v and sname(v.name) == name and sname(f.import_from) == planet and api.silo.want(v) == q then mp = mp or f.minimum_delivery_count end
+            if v and sname(v.name) == name and planet_request(f, sname(f.import_from), planet) and api.silo.want(v) == q then mp = mp or f.minimum_delivery_count end
           end
         end
       end

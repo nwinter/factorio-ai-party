@@ -6,6 +6,7 @@
 -- own hub holds. Facts only; read only. At most SILOS silos a planet.
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
+  local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
   local M = {}
   M.SILOS = 8
   local ITEM_WAITS = {item_count=true, all_requests_satisfied=true, any_request_not_satisfied=true, any_request_zero=true}
@@ -100,9 +101,9 @@ return function(api)
           local v = f.value
           local name = type(v) == 'table' and v.name or v
           local planet = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
-          if type(name) == 'string' and planet and (f.min or 0) > 0 then
+          if type(name) == 'string' and (planet or PORT21) and (not PORT21 or f.request_from~='platforms') and (f.min or 0) > 0 then
             from[name] = from[name] or {}
-            from[name][planet] = true
+            from[name][planet or '*'] = true
           end
         end
       end
@@ -171,7 +172,7 @@ return function(api)
               lines[#lines+1] = string.format('%s, %d short; %s: %s', head, need, stock, eta)
             else
               local asks = src.from[f]
-              local here = asks and asks[planet]
+              local here = asks and (asks[planet] or asks['*'])
               local req = here and string.format('the hub asks for it from %s', planet)
                 or asks and string.format('the hub asks for it from %s only, not from %s', planets_text(asks), planet)
                 or 'the hub has no request for it'

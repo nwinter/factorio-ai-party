@@ -26,6 +26,10 @@ local arrival_eta=require('arrivaleta')
 -- in flight (their unit numbers and cargo).
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
+  local function planet_request(f, from, planet)
+    if PORT21 then return f.request_from ~= 'platforms' and (from == nil or from == planet) end
+    return from == planet
+  end
   local M = {}
   -- a signal's name, with @quality when not normal (d22 batch87 AW1: an uncommon signal read as the normal one)
   local function sigtext(s) local q = s.quality; if q and type(q) ~= 'string' then q = q.name end; return q and q ~= 'normal' and s.name .. '@' .. q or s.name end
@@ -698,7 +702,7 @@ return function(api)
           local name = type(v) == 'table' and v.name or v
           if type(name) == 'table' then name = name.name end
           local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or pget(f.import_from, 'name'))
-          if type(name) == 'string' and from == planet then
+          if type(name) == 'string' and planet_request(f, from, planet) then
             local q, cmp = qual(v), type(v) == 'table' and v.comparator or '='
             local k = out[name] or {max=0, parts={}, q={}}
             k.max = k.max + (f.max or math.huge)
@@ -918,7 +922,7 @@ return function(api)
           local v = f.value
           local name = type(v) == 'table' and v.name or v
           local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
-          if type(name) == 'string' and from == planet and (f.min or 0) > 0 then
+          if type(name) == 'string' and planet_request(f, from, planet) and (f.min or 0) > 0 then
             local key = name .. '@' .. qual(v)
             by[key] = (by[key] or 0) + f.min
           end
