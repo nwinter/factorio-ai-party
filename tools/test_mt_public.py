@@ -119,7 +119,7 @@ class PublicTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('public staging: team feeds on 8791', result.stdout)
         self.assertIn('recording ON, streaming OFF', result.stdout)
-        self.assertIn('viewer chat display-only', result.stdout)
+        self.assertIn('viewer chat through the team services', result.stdout)
         self.assertFalse((ROOT / 'runs/p288dry/op').exists())
 
     def test_camera_chart_and_index(self):
@@ -195,27 +195,12 @@ class PublicTest(unittest.TestCase):
         self.assertEqual(sleep.call_count, 2)
         self.assertFalse(receipt['recording_active'])
 
-    def test_viewer_chat_is_display_only_even_with_relay_env(self):
-        import types
-        service = overlay.PublicOverlay.__new__(overlay.PublicOverlay)
-        service.youtube = 'video'
-        service.rosters = {'green': [{'name': 'a'}]}
-        service.stop, service.lock, service.state = threading.Event(), threading.Lock(), {}
-        class Reader:
-            state = 'live'
-            def __init__(self, target): pass
-            def poll(self):
-                service.stop.set()
-                return [{'id': '1', 'name': 'Viewer', 'text': 'hello', 't': 1}], [], 2
-        class Filter:
-            def __init__(self, **kw): pass
-            def check(self, msg, now): return msg, []
-        forbidden = mock.Mock(side_effect=AssertionError('relay/inbox-capable feed constructed'))
-        fake = types.SimpleNamespace(YouTubeChat=Reader, Filter=Filter, Relay=forbidden, Feed=forbidden)
-        with mock.patch.dict('os.environ', {'POG_VIEWER_RELAY': '1', 'POG_VIEWER_ROUTE': '1'}), mock.patch.dict(sys.modules, {'viewers': fake}):
-            service.viewers()
-        forbidden.assert_not_called()
-        self.assertEqual(service.state['viewers'][0]['text'], 'hello')
+    def test_overlay_uses_filtered_feed_only(self):
+        source = (ROOT / 'tools/mt/public_overlay.py').read_text()
+        self.assertNotIn('YouTubeChat(', source)
+        self.assertNotIn('Feed(', source)
+        out = overlay.audience({'green': {'viewers': [{'id': 'site:8', 'name': 'Guest', 'text': 'How are the furnaces?', 'source': 'site', 't': 99}] }}, {'green': []}, 100)
+        self.assertEqual(out['viewers'][0]['text'], 'How are the furnaces?')
 
     def test_broadcast_resume_bind(self):
         class Api:

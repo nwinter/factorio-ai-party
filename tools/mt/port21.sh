@@ -13,7 +13,7 @@ if [ "${POG_MT_PUBLIC:-0}" != 0 ]; then
   echo 'Public camera remains 2.0.77: complete docs/PORT21.md public-camera run-boundary steps first.' >&2
   exit 64
 fi
-export POG_MT_PUBLIC=0 POG_MT_STREAM=0
+export POG_MT_PUBLIC=0 POG_MT_STREAM=${POG_MT_STREAM:-0}
 case ${1:-status} in
   start) shift; exec "$root/tools/mt/start-mt.sh" "$@" ;;
   stop) shift; exec "$root/tools/mt/stop-mt.sh" "$@" ;;

@@ -92,6 +92,38 @@ def cut(h, state):
     raise ValueError('camera frame is not fully charted by this team')
 
 
+def audience(states, teams, now):
+    """Only the already-filtered team feeds; no second reader or relay."""
+    lines, deliveries, cursors = {}, {}, []
+    for team, state in states.items():
+        for m in list_rows(state.get('viewers')):
+            m = obj(m)
+            text = speech(m.get('text'), ('Nick', 'Winter'))
+            ident, stamp = m.get('id'), m.get('t')
+            if (text and isinstance(ident, str) and re.fullmatch(r'[A-Za-z0-9_.:=-]{1,120}', ident)
+                    and type(stamp) in (int, float) and math.isfinite(stamp) and 0 <= now - stamp <= 180):
+                lines[ident] = {'id': ident, 'name': 'Viewer', 'text': text, 't': stamp,
+                               'source': m.get('source') if m.get('source') in ('site', 'youtube') else 'site'}
+        status = obj(state.get('viewers_status'))
+        cursor = obj(status.get('site')).get('after')
+        if type(cursor) is int:
+            cursors.append(cursor)
+        for r in map(obj, list_rows(status.get('delivery'))):
+            ident = r.get('id')
+            if isinstance(ident, str) and re.fullmatch(r'site:[0-9]+', ident):
+                deliveries.setdefault(ident[5:], {})[team] = r
+    receipts = {}
+    for seq, by_team in deliveries.items():
+        statuses = [obj(by_team.get(t)).get('status') for t in teams]
+        kind = statuses[0] if len(set(statuses)) == 1 and statuses[0] in ('relayed', 'operator', 'expired', 'not_relayed') else 'held'
+        receipts[seq] = {'s': kind, 'teams': [t for t in teams if obj(by_team.get(t)).get('status') == 'relayed'], 't': now}
+    out = {'viewers': sorted(lines.values(), key=lambda m: m['t'])[-30:],
+           'viewer_status': 'on' if states else 'waiting', 'viewer_delivery': receipts}
+    if len(cursors) == len(teams):
+        out['viewer_read'] = {'after': min(cursors)}
+    return out
+
+
 class PublicOverlay:
     def __init__(self, op, tree, run, port=8790, dwell=30, youtube=None, camera=True):
         self.op = op
@@ -146,14 +178,12 @@ class PublicOverlay:
     def start(self):
         for fn in (self.http.serve_forever, self.poll):
             threading.Thread(target=fn, daemon=True).start()
-        if self.youtube:
-            threading.Thread(target=self.viewers, daemon=True).start()
 
     def poll(self):
         previous = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.feeds)) as pool:
             while not self.stop.is_set():
-                now, rows, fresh = time.time(), [], {}
+                now, rows, fresh, audience_states = time.time(), [], {}, {}
                 views = read_views(self.op, now)
                 scores = {r['team']: r.get('score') for r in map(obj, list_rows(views.get('teams')))
                           if isinstance(r.get('team'), str) and r['team'] in self.rosters and not obj(r.get('errors')).get('score')}
@@ -164,13 +194,18 @@ class PublicOverlay:
                         row = project(team, data, self.rosters[team], now, scores.get(team))
                         if not row['stale']:
                             fresh[team] = data
+                        if not row['stale']:
+                            audience_states[team] = data
                         previous[team] = row
                     except Exception as e:
                         print(f'feed {team}: {type(e).__name__}', flush=True)
                         row = dict(previous.get(team) or project(team, {}, self.rosters[team], now), stale=True)
                     rows.append(row)
                 with self.lock:
-                    self.state.update(self.race.update(rows, now, list_rows(views.get('contacts'))), now=now)
+                    self.state.update(self.race.update(rows, now, list_rows(views.get('contacts'))), now=now,
+                                      **audience(audience_states, self.rosters, now))
+                    if self.youtube:
+                        self.state['stream'] = {'youtube_video_id': self.youtube}
                 choice = self.director.choose(rows, self.state['events'], now) if self.harnesses else None
                 if choice:
                     team, reason = choice
@@ -186,34 +221,6 @@ class PublicOverlay:
                         print(f'camera {team}: {type(e).__name__}', flush=True)
                         self.director.failed(team, time.time())
                 self.stop.wait(5)
-
-    def viewers(self):
-        # Reader and display filter only. Never construct Feed/Relay (which can
-        # write inboxes), even when POG_VIEWER_RELAY=1 is inherited.
-        from viewers import YouTubeChat, Filter
-        reader = YouTubeChat(self.youtube)
-        filt = Filter(agent_names=[a['name'] for agents in self.rosters.values() for a in agents])
-        lines = []
-        while not self.stop.is_set():
-            try:
-                msgs, deletions, wait = reader.poll()
-                # Deletions include author purges as well as individual IDs.
-                # Clear the short display lane conservatively on any deletion.
-                if deletions:
-                    lines = []
-                for msg in msgs:
-                    row, reasons = filt.check(msg, time.time())
-                    if not reasons:
-                        text = speech(row.get('text'), ('Nick', 'Winter'))
-                        if text:
-                            lines.append({'name': 'Viewer', 'text': text, 't': time.time()})
-                lines = lines[-8:]
-                with self.lock:
-                    self.state.update(viewers=lines, viewer_status=reader.state)
-            except Exception as e:
-                print(f'viewer read: {type(e).__name__}', flush=True)
-                wait = 15
-            self.stop.wait(max(2, wait))
 
     def close(self):
         self.stop.set()

@@ -431,6 +431,7 @@ class Filter:
         self.agent_names = [n.lower() for n in agent_names]
         self.blocklist = [b.casefold() for b in blocklist if b.strip()]
         self.limit = Limiter(lane_gap, lane_per_min, lane_total)
+        self.hidden = lambda name, text: False
         self.recent = collections.deque()          # (t, author, folded text)
 
     def set_agents(self, names):
@@ -471,7 +472,7 @@ class Filter:
         text = full  # the filters below read the whole message
         if m.get("staff"):
             out["staff"] = m["staff"]
-        reasons = []
+        reasons = ["hidden"] if self.hidden(m.get("name"), text) else []
         if not text:
             return out, ["empty"]
         s = spam(text)
@@ -1025,6 +1026,8 @@ class Relay:
         # (router.Team, serve.py's set_team)
         self.route_switch = os.path.join(os.path.dirname(os.path.abspath(switch)), router.ROUTE_SWITCH) if switch else None
         self.team = None
+        self.broadcast_roster = False
+        self.hidden = lambda name, text: False
 
     def routing(self):
         return bool(self.route_switch) and os.path.exists(self.route_switch) and self.team is not None
@@ -1224,6 +1227,12 @@ class Relay:
         the next agent in team order not addressed by a viewer in the last 5 minutes (all of them were: the one
         addressed longest ago). The harness has no team-wide viewer mention (a viewer's "@everyone" wakes nobody),
         and waking all nine for one line would stop the team."""
+        if self.broadcast_roster and not msg.get("operator"):
+            # Every accepted audience line reaches this roster. An address is a
+            # conversational cue, not a privacy boundary for audience messages.
+            to = [n for n, _ in self.roster]
+            msg["route_why"] = "audience line to this team"
+            return to, to
         named = self.named_agents(msg["text"])
         if msg.get("operator"):
             # (d19 batch42 A3) a line to the operator goes to the agents it addresses too, never to one it only names
@@ -1291,7 +1300,9 @@ class Relay:
         from harness import lua_string
         req = {"id": "viewers-" + hashlib.sha256(f"{time.time()}{action}".encode()).hexdigest()[:12],
                "operator": True, "action": action, "args": args}
-        raw = self.h.command('/silent-command rcon.print(remote.call("agent_harness","dispatch",'
+        if getattr(self.h, "team", None):
+            req["team"] = self.h.team
+        raw = self.h.command('/silent-command rcon.print(remote.call("agent_harness","dispatch",' 
                              + lua_string(json.dumps(req, ensure_ascii=False)) + '))')
         return json.loads(raw or "{}")
 
@@ -1318,7 +1329,10 @@ class Relay:
         for item in list(self.q):  # in place: offer() appends from the feed's thread
             m = item[0]
             # a line's age counts from when it may go: its own time, or its viewer's gap ending (author_wait)
-            if m["name"].casefold() in self.muted:
+            if self.hidden(m.get("name"), m.get("full") or m.get("text")):
+                self.dropped["hidden"] += 1
+                not_relayed(m, "hidden by moderation")
+            elif m["name"].casefold() in self.muted:
                 m["muted"] = True
                 self.dropped["muted"] += 1
                 not_relayed(m, "the viewer is muted in the game")
@@ -1937,7 +1951,7 @@ class Feed:
         """(viewers, viewers_status) for the snapshot. Each viewer message: {id, seq, source, name, text, t, order,
         checked, staff?, relayed?}; `order` marks an order to the agents (shown and answerable, never relayed)."""
         with self.lock:
-            msgs = [dict(m) for m in self.lane_msgs]
+            msgs = [dict(m) for m in self.lane_msgs if not self.filt.hidden(m.get("name"), m.get("full") or m.get("text"))]
             st = {name: s.status() for name, s in self.sources.items()}
             st["relay"] = self.relay.status() if self.relay else {"state": "off"}
             if self.relay:  # the relay's own refusals (muted, the harness's rate limits, a viewer's gap)
@@ -2004,6 +2018,22 @@ class Feed:
         return self
 
 
+class HiddenViewers:
+    """Reload the site's manual/deletion moderation without changing its rules."""
+    def __init__(self, manual, runs):
+        sys.path.append(os.path.join(os.path.dirname(os.path.dirname(HERE)), "site"))
+        import moderation
+        self.module, self.manual, self.runs = moderation, manual, runs
+        self.at, self.rules = 0, None
+
+    def __call__(self, name, text):
+        now = time.time()
+        if now - self.at >= 10 or self.rules is None:
+            self.rules = self.module.load(self.runs, self.manual)
+            self.at = now
+        return self.rules.hides(name, text)
+
+
 def add_args(ap, prefix=""):
     """Options shared by this CLI and serve.py (serve.py passes prefix='viewers-')."""
     p = "--" + prefix
@@ -2017,6 +2047,8 @@ def add_args(ap, prefix=""):
     ap.add_argument(p + "record", metavar="JSONL", help="append every incoming message (replay format)")
     ap.add_argument(p + "relay", metavar="SWITCH_FILE",
                     help="relay into the game while SWITCH_FILE exists (touch / rm to switch); off without it")
+    ap.add_argument(p + "hidden", metavar="FILE", help="site moderation list, applied before display and relay")
+    ap.add_argument(p + "broadcast-roster", action="store_true", help="deliver accepted audience lines to this entire roster")
     ap.add_argument(p + "relay-fn", default="viewer_say", help="the harness's operator action that posts a viewer line")
 
 
@@ -2025,7 +2057,7 @@ def build(a, prefix="", agent_names=(), harness=None, log_dir=None, speed=1.0, l
     """A Feed from parsed args, or None when no source is configured. roster: [(name, display_name)] in team order,
     for addressing viewers' questions (serve.py refreshes it with Relay.set_roster). inbox: the operator inbox file
     viewer lines to the operator go to. deletions: the run's viewer-deletions.jsonl."""
-    g = lambda k: getattr(a, (prefix + k).replace("-", "_"))  # noqa: E731
+    g = lambda k: getattr(a, (prefix + k).replace("-", "_"), None)  # noqa: E731
     sources = {}
     if g("replay"):
         sources["replay"] = ReplayChat(g("replay"), speed=speed, loop=loop)
@@ -2048,6 +2080,11 @@ def build(a, prefix="", agent_names=(), harness=None, log_dir=None, speed=1.0, l
         log_path = os.path.join(log_dir, time.strftime("viewers-%Y%m%d-%H%M%S.jsonl"))
     feed = Feed(sources, Filter(agent_names, blocklist), clf, relay, log_path, g("record"), inbox=inbox, deletions=deletions,
                 cursor=cursor if g("site") else None)
+    if g("hidden"):
+        feed.filt.hidden = HiddenViewers(g("hidden"), os.path.dirname(os.path.dirname(deletions)) if deletions else "")
+    if relay:
+        relay.broadcast_roster = bool(g("broadcast-roster"))
+        relay.hidden = feed.filt.hidden
     if log_dir:
         feed.preload(log_dir)
     return feed

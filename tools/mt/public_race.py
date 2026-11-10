@@ -131,7 +131,10 @@ def project(team, state, agents, now, score=None):
     chat = []
     for m in rows(state.get('chat'))[-12:]:
         m = obj(m)
-        if m.get('lane') not in (None, 'talk') or m.get('confess') or m.get('notice') or m.get('viewer') or m.get('to'):
+        if m.get('lane') not in (None, 'talk', 'tell') or m.get('confess') or m.get('notice') or m.get('viewer') or m.get('operator'):
+            continue
+        recipients = m.get('to') or []
+        if recipients and (not isinstance(recipients, list) or any(n not in public_names | {'team'} for n in recipients)):
             continue
         name = m.get('name') or m.get('agent') or m.get('from')
         text = speech(m.get('text'), private_names)

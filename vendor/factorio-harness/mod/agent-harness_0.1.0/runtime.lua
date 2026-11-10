@@ -287,7 +287,7 @@ end
 -- their old keys of the state, so a one-team world and an old save read as before. Another team's are kept in
 -- state().team_stores[name] and sit at those keys only while a call, event or tick step of that team runs
 -- (M.as_team), then go back; saves fall between ticks, so a save holds the player force's at the keys.
-M.TEAM_KEYS={'board','plans','checks','progress','mentions','owed','tells','unseen','wakes','operator_requests','chat','votes','lessonbook','bplibrary','drops','reminders'}
+M.TEAM_KEYS={'board','plans','checks','progress','mentions','owed','tells','unseen','wakes','operator_requests','chat','votes','audience','lessonbook','bplibrary','drops','reminders'}
 -- team_held: the player force's stores while another team's sit at the keys (empty between calls; never in storage)
 local team_now,team_held='player',{}
 function M.team_now() return team_now end

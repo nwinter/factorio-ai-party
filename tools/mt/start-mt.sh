@@ -2,7 +2,7 @@
 # (mt277, private) Start a multi-team run on the mt server on the iMac (tools/mt/imac_mt.sh, world imac2): every team's
 # agents in their own folder runs/RUN/TEAM/<agent>, with the team's own roster, prompt, RCON broker sockets, team-tools
 # and carry, launched from the launch tree (tools/mt/launch-tree.sh) with the moderate lockdown (part E).
-#   tools/mt/start-mt.sh RUN_ID MINUTES [TEAMS_FILE]      (default agent/mt/teams-test.tsv: one agent per team)
+#   tools/mt/start-mt.sh RUN_ID MINUTES [TEAMS_FILE]      (default agent/mt/teams-test.tsv: two agents per team)
 # TEAMS_FILE: team<TAB>name<TAB>kind<TAB>route<TAB>model<TAB>effort<TAB>label<TAB>harness; the team is the force
 # (tools/mt/mt_map.py setup made red, blue, green, yellow). Each team's file runs/RUN/TEAM/team.tsv is the usual
 # 7-column team file, so quota_check, quota_rest, team_bots and the launch read it unchanged.
@@ -21,11 +21,11 @@
 #   on the iMac, tools/mt/imac_cam.py, which renders the agents' ./shot; 0 leaves it out and ./shot fails),
 #   POG_MT_STREAM (default 0; 1: the stream service per team on this Mac, overlays at 127.0.0.1:8791...),
 #   POG_MT_PUBLIC (default 0; 1: implies POG_MT_STREAM=1, pogwin spectator, public overlay, mt-stream OBS scene,
-#     recording; NEVER starts streaming). POG_MT_YOUTUBE=VIDEO_ID adds display-only viewer chat.
+#     recording; NEVER starts streaming). POG_MT_YOUTUBE=VIDEO_ID selects the viewer chat broadcast.
 #   POG_MT_HUMANS (default 0; 1: the human team, its freeze, and the server's game password and whitelist),
 #   POG_NETGATE (default 0; 1: Grok's, Muse's and agy's shells through the run's network gate, tools/mt/netgate.py).
 # Always: Space Age, real time, POG_BROKER=1 (no key in the run; the broker reaches the iMac, which Claude Code's
-# sandbox would not). Public staging is opt-in; no site, polls, casters, analyst or viewer relay.
+# sandbox would not). Public staging is opt-in; no site publishing, polls, casters or analyst.
 # Lockdown (multiteam-design.md, moderate): POG_WEB_BLOCK (the site, YouTube, GitHub; tools/full_tools.py says per
 # harness what that does), POG_DENY_READ (this checkout, every mt/ worktree, the operator's folder) for the Claude Code
 # and Grok sandboxes, which also deny the other teams' folders (tools/launch-agent.sh). The operator's files (this log,
@@ -37,6 +37,8 @@ run=${1:?usage: start-mt.sh RUN_ID MINUTES [TEAMS_FILE]} minutes=${2:?usage: sta
 teams_file=${3:-agent/mt/teams-test.tsv}
 world=imac2
 if [ "${POG_MT_PUBLIC:-0}" = 1 ]; then export POG_MT_STREAM=1; fi
+export POG_MT_VIEWERS=${POG_MT_VIEWERS:-${POG_MT_PUBLIC:-0}}
+if [ "$POG_MT_VIEWERS" = 1 ]; then export POG_MT_STREAM=1; fi
 case $run in */*|.*|op) echo "RUN_ID: a plain name" >&2; exit 64 ;; esac
 export POG_SPACE_AGE=1 POG_BROKER=1 POG_TIME_MODE=realtime POG_ENEMIES=${POG_ENEMIES:-normal} POG_SEED=${POG_SEED:-274274}
 export POG_KB=${POG_KB:-space-age-2.0.77}
@@ -114,7 +116,7 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   echo "2c. camera: $([ "${POG_MT_CAM:-1}" = 1 ] && echo 'pog-cam1 joins on the iMac (tools/mt/imac_cam.py, about 5 GB there) and renders ./shot; copied into shots/' || echo 'off (POG_MT_CAM=0): ./shot fails')"
   echo "3. agents: one Herdr tab per team, each agent's web and network state in the log; supervisors; per-team scores and chat logs in runs/$run/op/TEAM/, the team views in runs/$run/op/views.html; idle nudges $([ "${POG_IDLE_NUDGE:-0}" = 1 ] && echo 'on (per team)' || echo off)"
   if [ "${POG_MT_PUBLIC:-0}" = 1 ]; then
-    echo "4. public staging: team feeds on 8791..., overlay 127.0.0.1:${POG_MT_PUBLIC_PORT:-8790}; one pogwin spectator via reverse SSH/UDP; mt-stream scene; recording ON, streaming OFF; viewer chat display-only"
+    echo "4. public staging: team feeds on 8791..., overlay 127.0.0.1:${POG_MT_PUBLIC_PORT:-8790}; one pogwin spectator via reverse SSH/UDP; mt-stream scene; recording ON, streaming OFF; viewer chat through the team services"
   fi
   exit 0
 fi
@@ -293,7 +295,7 @@ nohup python3 tools/mt/team_views.py "$run" --every "${POG_VIEWS_EVERY:-60}" >"$
 echo $! >> "$op/helpers.pid"
 # POG_MT_STREAM=1: the stream service per team (tools/stream/serve.py --team), its overlay at 127.0.0.1:879N (red
 # 8791, then in teams-file order; 8788 is world n's): no camera calls or highlights (pog-cam1 renders the agents'
-# ./shot), no OBS, replays, night lift or image show, no viewer chat or relay. Its run config and state sit in the
+# ./shot), no OBS, replays, night lift or image show. Audience relay is separately opt-in. Its run config and state sit in the
 # team's folder (its journals, token logs and its own force's facts); the director logs in op/TEAM/.
 if [ "${POG_MT_STREAM:-0}" = 1 ]; then
   : > "$op/streams.txt"
@@ -310,7 +312,20 @@ for line in open(sys.argv[1]):
 json.dump({"title": "Factorio: Space Age", "subtitle": "real time", "space_age": True, "agents": agents, "cameras": [],
            "show": False, "cuts": False, "highlights": False, "replays": False, "night": False}, open(sys.argv[2], "w"), indent=1)
 EOF
-    nohup python3 tools/stream/serve.py --world "$world" --team "$t" --run "$td/stream.json" --port $port --poll 5 \
+    viewer_args=()
+    if [ "$POG_MT_VIEWERS" = 1 ]; then
+      touch "$td/viewer-relay"
+      viewer_args=(--viewers-relay "$td/viewer-relay" --viewers-broadcast-roster
+        --viewers-hidden "${POG_HIDDEN_VIEWERS:-$root/site/hidden-viewers.json}")
+      if [ -n "${POG_MT_VIEWER_REPLAY:-}" ]; then
+        # Closed smoke only: the real Feed/Relay with a local recorded source.
+        viewer_args+=(--viewers-replay "$POG_MT_VIEWER_REPLAY" --viewers-classifier heuristic)
+      else
+        viewer_args+=(--viewers-site "${POG_MT_SITE_CHAT:-https://player-of-games-live.your-subdomain.workers.dev}")
+        [ -z "${POG_MT_YOUTUBE:-}" ] || viewer_args+=(--viewers-youtube "$POG_MT_YOUTUBE")
+      fi
+    fi
+    nohup python3 tools/stream/serve.py "${viewer_args[@]}" --world "$world" --team "$t" --run "$td/stream.json" --port $port --poll 5 \
       --no-camera --no-highlights --no-replays --no-night --no-cuts --log-dir "$op/$t/stream-logs" >"$op/$t/stream-service.log" 2>&1 &
     echo $! >> "$op/helpers.pid"
     echo "$t http://127.0.0.1:$port/" >> "$op/streams.txt"
