@@ -213,8 +213,8 @@ def team_files():
     assert len(seen["teams-four.tsv"]) == 12 and len(seen["teams-smoke.tsv"]) == 4
     rows = [l.rstrip("\n").split("\t") for l in open(os.path.join(ROOT, "agent", "mt", "teams-test.tsv"))
             if l.strip() and not l.startswith("#")]
-    assert len(rows) == 3 and len({r[0] for r in rows}) == 3
-    assert [(r[1], r[2], r[3], r[4], r[5]) for r in rows] == [
+    assert len(rows) == 6 and len({r[0] for r in rows}) == 3
+    assert [(r[1], r[2], r[3], r[4], r[5]) for r in rows[::2]] == [
         ("gemini", "agy", "agy", "gemini-3.8-flash-high", "-"),
         ("grok", "grok", "grok", "grok-4.7", "low"),
         ("muse", "muse", "muse", "muse-spark-1.3", "low")]

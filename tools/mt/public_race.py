@@ -134,12 +134,20 @@ def project(team, state, agents, now, score=None):
         if m.get('lane') not in (None, 'talk', 'tell') or m.get('confess') or m.get('notice') or m.get('viewer') or m.get('operator'):
             continue
         recipients = m.get('to') or []
+        if m.get('lane') == 'tell' and not recipients:
+            continue
         if recipients and (not isinstance(recipients, list) or any(n not in public_names | {'team'} for n in recipients)):
             continue
         name = m.get('name') or m.get('agent') or m.get('from')
         text = speech(m.get('text'), private_names)
         if isinstance(name, str) and name in public_names and text:
             chat.append({'name': name, 'text': text, 'tick': number(m.get('tick')), 't': number(m.get('t'))})
+    board = []
+    b = obj(state.get('board'))
+    for m in map(obj, rows(b.get('open_items')) + rows(b.get('doing_items')) + rows(b.get('claims'))):
+        owner, title_text = m.get('owner'), speech(m.get('title'), private_names)
+        if title_text and (owner is None or owner == '' or isinstance(owner, str) and owner in public_names):
+            board.append({'title': title_text, 'owner': owner or '', 'id': number(m.get('id'))})
     entities = {k: int(number(obj(score.get('entities')).get(k), 0)) for k in BUILDINGS} if score else None
     bm = obj(state.get('basemap'))
     mini = grid(bm.get('core')) or grid(bm)
@@ -181,7 +189,7 @@ def project(team, state, agents, now, score=None):
                                                        for m in rows(obj(science.get('made')).get('packs')))]},
             'space': {'rockets': number(space.get('rockets'), number(score.get('rockets')))},
             'entities': entities, 'score_tick': number(score.get('tick')), 'map': mini,
-            'chat': chat[-3:], 'events': events}
+            'chat': chat[-8:], 'board': board[:12], 'events': events}
 
 
 def rank(rows_):
