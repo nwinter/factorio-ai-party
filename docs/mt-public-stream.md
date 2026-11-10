@@ -3,9 +3,9 @@
 Cp4 fits two agents per team, scoped internal conversations, and a fixed viewer
 chat footer. Missing activity falls back to the roster's model label. Missing maps,
 metrics and empty chat/news are hidden; the viewer footer appears when messages arrive.
-The live relay/site integration belongs to mt290; its merge contract is
-in `docs/mt-public-chat-contract.md`. The standalone commands below retain the old
-read-only YouTube reader until that integration is merged.
+The merged mt290 relay/site integration uses each team's existing moderated
+viewer feed. The projection contract is in `docs/mt-public-chat-contract.md`;
+the overlay starts no separate YouTube reader.
 
 This lives on the `mt/` line only. Public test broadcasts are authorized; the
 mode's implementation still stays off `main`. Nothing here starts streaming or
