@@ -93,6 +93,9 @@ def manifest():
     m = json.load(open(build.MANIFEST))
     ids = [u["id"] for u in m["units"]]
     assert len(ids) == len(set(ids)), [i for i in ids if ids.count(i) > 1][:5]
+    # Native describe hides these until contact; catalog exports must retain the conditional schemas.
+    for action in ("pact_propose", "pact_accept", "pact_decline", "pact_withdraw", "pact_amend", "pact_end", "pacts"):
+        assert "action:" + action in ids, "conditional action missing: " + action
     bad = [(u["id"], a) for u in m["units"] for a in u["condition"]["any"] + ["world:" + w for w in u["condition"]["world"]]
            if not atom_ok(a)]
     assert not bad, bad[:10]
