@@ -201,7 +201,7 @@ class PublicOverlay:
                         row = dict(previous.get(team) or project(team, {}, self.rosters[team], now), stale=True)
                     rows.append(row)
                 with self.lock:
-                    self.state.update(self.race.update(rows, now, list_rows(views.get('contacts'))), now=now,
+                    self.state.update(self.race.update(rows, now, list_rows(views.get('contacts')), list_rows(views.get('pacts'))), now=now,
                                       **audience(audience_states, self.rosters, now))
                     if self.youtube:
                         self.state['stream'] = {'youtube_video_id': self.youtube}

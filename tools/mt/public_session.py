@@ -69,6 +69,15 @@ def site_state():
         return json.load(r).get('state') or {}
 
 
+def fresh_feed(state, now):
+    teams = state.get('teams')
+    stamp = state.get('now')
+    return (isinstance(stamp, (int, float)) and 0 <= now - stamp <= 60
+            and isinstance(teams, list) and len(teams) == 3
+            and {t.get('team') for t in teams if isinstance(t, dict)} == {'green', 'yellow', 'blue'}
+            and all(not t.get('stale', True) and len(t.get('agents') or []) == 2 for t in teams))
+
+
 def owns_site(state, video):
     return state.get('mode') == 'team-tests' and (state.get('stream') or {}).get('youtube_video_id') == video
 
@@ -126,6 +135,7 @@ def supervise(run, minutes):
         state.update(phase='live', live_at=time.time())
         write(statefile,state)
         print('LIVE https://factorio.nickwinter.net/live/ https://www.youtube.com/watch?v='+receipt['id'],flush=True)
+        feed_failures = 0
         while time.time() < state['deadline'] and not stop.wait(10):
             if publisher.poll() is not None:
                 raise RuntimeError('site publisher exited')
@@ -133,6 +143,14 @@ def supervise(run, minutes):
                 raise RuntimeError('public camera/overlay supervisor failed')
             if not obs.call('GetStreamStatus')['outputActive']:
                 raise RuntimeError('OBS stream stopped')
+            try:
+                with urlopen('http://127.0.0.1:8790/state.json', timeout=5) as response:
+                    healthy = fresh_feed(json.load(response), time.time())
+            except (OSError, ValueError):
+                healthy = False
+            feed_failures = 0 if healthy else feed_failures + 1
+            if feed_failures >= 6:
+                raise RuntimeError('team feeds stayed stale for a minute')
             state['heartbeat'] = time.time()
             write(statefile,state)
     except Exception as e:

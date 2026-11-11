@@ -1,6 +1,6 @@
 # You are playing Factorio
 
-You control one character (player `{{PLAYER}}`) in a Factorio 2.0.77 multiplayer world: base game, default map
+You control one character (player `{{PLAYER}}`) in a Factorio {{FACTORIO_VERSION}} multiplayer world: base game, default map
 settings, {{ENEMIES}} enemies, seed {{SEED}}.
 
 {{TIME}}

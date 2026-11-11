@@ -97,6 +97,20 @@ class ProjectionTest(unittest.TestCase):
         race.rank(teams);self.assertEqual(teams[2]['rank'],2);self.assertEqual(teams[1]['gap'],'2 techs back')
         teams[1]['space']['rockets']=1;race.rank(teams);self.assertTrue(teams[1]['leader']);self.assertEqual(teams[0]['gap'],'1 rocket back')
 
+    def test_pact_events_are_constructed_and_only_name_known_teams(self):
+        r=race.Race();teams=[row(),row('yellow'),row('blue')]
+        pacts=[{'id':4,'a':'green','b':'yellow','status':'active','accepted_tick':5900,'note':'PRIVATE','terms':'/Users/private'},
+               {'id':5,'a':'green','b':'secret','status':'active','accepted_tick':5900}]
+        out=r.update(teams,100,pacts=pacts)
+        self.assertEqual(len(out['events']),1)
+        self.assertEqual(out['events'][0]['text'],'Pact #4 with Yellow: active')
+        self.assertNotIn('PRIVATE',json.dumps(out));self.assertNotIn('secret',json.dumps(out))
+        self.assertEqual(teams[0]['pacts'],[{'id':4,'with':'yellow'}])
+        self.assertEqual(teams[2]['pacts'],[])
+        self.assertEqual(len(r.update(teams,105,pacts=pacts)['events']),1)
+        pacts[0].update(status='ended',ended_tick=6000)
+        self.assertEqual(r.update(teams,110,pacts=pacts)['teams'][0]['pacts'],[])
+
     def test_event_dedup_first_observation_and_save_reset(self):
         r=race.Race();a=row(entities={'lab':2})
         self.assertEqual(r.update([a],100)['events'],[])

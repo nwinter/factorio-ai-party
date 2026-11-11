@@ -295,7 +295,7 @@ class Race:
                             'time': clock(tick), 'at': now, 'icon': icon, 'icon_kind': icon_kind,
                             'observed': observed})
 
-    def update(self, teams, now, contacts=()):
+    def update(self, teams, now, contacts=(), pacts=()):
         for r in teams:
             if r['stale']:
                 continue
@@ -344,6 +344,23 @@ class Race:
                 latest = max((r['tick'] or 0 for r in teams), default=0)
                 if c['tick'] <= latest:
                     self.add(team, 'contact', text, c['tick'], now - (latest - c['tick']) / 60, 'radar')
+        latest = max((r['tick'] or 0 for r in teams), default=0)
+        for r in teams:
+            r['pacts'] = []
+        for p in pacts:
+            p = obj(p)
+            a, b, status, ident = p.get('a'), p.get('b'), p.get('status'), p.get('id')
+            if not (isinstance(a, str) and isinstance(b, str) and a in known and b in known and a != b
+                    and type(ident) is int and ident > 0 and status in ('proposed', 'active', 'ended', 'declined', 'withdrawn', 'expired')):
+                continue
+            key = 'accepted_tick' if status == 'active' else 'proposed_tick' if status == 'proposed' else 'ended_tick'
+            tick = number(p.get(key))
+            if tick is not None and 0 <= tick <= latest:
+                self.add(a, 'pact', f'Pact #{ident} with {b.capitalize()}: {status}', tick, now - (latest - tick) / 60, 'steel-chest')
+            if status == 'active':
+                for r in teams:
+                    if r['team'] in (a, b):
+                        r['pacts'].append({'id':ident, 'with': b if r['team'] == a else a})
         basis = rank(teams)
         return {'teams': teams, 'events': sorted(self.events, key=lambda e: e['tick'] or 0, reverse=True)[:12], 'ranking': basis}
 
@@ -371,7 +388,7 @@ class Director:
             return max(overdue, key=age)['team'], 'Around the teams'
         def interest(r):
             recent = [e for e in events if e['team'] == r['team'] and now - e['at'] <= 40 and e['at'] > self.shown.get(r['team'], -1)]
-            weight = max(({'rocket': 10, 'death': 9, 'platform_lost': 9, 'contact': 8, 'research': 6, 'build': 4}.get(e['kind'], 0) for e in recent), default=0)
+            weight = max(({'rocket': 10, 'death': 9, 'platform_lost': 9, 'contact': 8, 'pact': 8, 'research': 6, 'build': 4}.get(e['kind'], 0) for e in recent), default=0)
             return weight + 2 * any(a['activity'] == 'acting' for a in r['agents']), weight
         best = max(others, key=lambda r: (interest(r)[0], age(r)))
         score, event = interest(best)

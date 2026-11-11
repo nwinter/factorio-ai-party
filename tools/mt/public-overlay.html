@@ -53,6 +53,8 @@ function scoreboard(t,i,n){
  label(cap(t.team),nameX,y+31,25,C.ink,750,w-270);
  if(t.gap&&t.gap!=='Awaiting score')label(t.gap,nameX,y+57,16,t.stale?'#ffb790':col,650,w-270);
  if(t.leader&&!t.stale)pill('LEADER',x+w-94,y+13,col,80);
+ const allies=[...new Set((t.pacts||[]).map(p=>cap(p.with)))];
+ if(allies.length)label('PACT · '+allies.join(', '),x+w-230,y+57,13,C.gold,650,208);
  const count=t.startup?t.startup_steps:t.research?.done_count;
  if(count!=null){icon('item',t.startup?'burner-mining-drill':'lab',x+20,y+73,28);label(count+(t.startup?'/5 built':' techs'),x+54,y+95,25,C.ink,750,140);}
  const spm=t.science?.spm;if(spm!=null)label(spm.toFixed(1)+' SPM',x+(compact?180:218),y+95,23,C.ink,700,160);

@@ -39,12 +39,20 @@ do
   local players={}
   game={tick=100,players=players,forces={player=player,red=red,blue=blue,enemy={name='enemy'}},surfaces={nauvis=surface},
     get_player=function() return nil end,get_surface=function() return surface end,print=function() end,connected_players=players}
-  local R=dofile('mod/agent-harness_0.1.0/runtime.lua')
+  local source=assert(io.open('mod/agent-harness_0.1.0/runtime.lua')):read('*a')
+  local R=assert(load('local BUNDLE_ID="fixture-bundle"\n'..source))()
   R.operator.bot_create({name='rb1',force='red'}); R.operator.bot_create({name='rb2',force='red'})
   R.operator.bot_create({name='bb1',force='blue'})
   local s=storage.agent_harness
   -- the teams as mt_setup records them
   s.mt={teams={red={},blue={}},order={'blue','red'},first={},set_tick=1}
+  local function describe(bot,args)
+    local reply=R.dispatch{id='help-'..bot..'-'..tostring(game.tick),bot=bot,action='describe',args=args or {}}
+    game.tick=game.tick+1;return reply
+  end
+  local before=describe('rb1')
+  eq(before.bundle,'fixture-bundle');eq(before.actions.pact_propose,nil)
+  eq(describe('rb1',{if_bundle=before.bundle}).unchanged,true)
   local function box(team,bot)
     local idx=R.bots.index_of(bot)
     local m=s.team_stores[team] and s.team_stores[team].mentions
@@ -55,6 +63,10 @@ do
   local wall={valid=true,name='stone-wall',force=blue,surface=surface,position={x=10.5,y=20.5}}
   local turret={valid=true,name='gun-turret',force=red,position={x=0,y=20}}
   R.multiteam.on_damaged{entity=wall,force=red,cause=turret,final_damage_amount=5}
+  local after=describe('rb1',{if_bundle=before.bundle})
+  assert(after.actions.pact_propose,'first contact invalidates cached help')
+  assert(after.bundle~=before.bundle)
+  eq(describe('rb1',{if_bundle=after.bundle}).unchanged,true)
   local b=box('blue','bb1')
   eq(#b,1,'blue hears of the hit')
   has(b[1].text,'hit: our stone-wall at (10,20) on nauvis, by gun-turret of force red'); eq(b[1].wake,true)

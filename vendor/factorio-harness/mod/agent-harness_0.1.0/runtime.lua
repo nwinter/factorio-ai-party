@@ -2296,6 +2296,13 @@ function M.near_actions(name)
   for i=1,math.min(6,#list) do out[i]=list[i].n end
   return out
 end
+function M.describe_bundle()
+  -- Contact changes the available schema without installing another runtime. Retain the
+  -- ordinary opaque bundle before contact; nothing hints at hidden tools.
+  local bundle=BUNDLE_ID
+  if bundle and M.pacts and M.pacts.open_for(M.team_now()) then bundle=bundle..':1' end
+  return bundle
+end
 function handlers.describe(_,a)
   -- (d22 batch90 AZ3: describe {action} refused 19 times in s55-57) one action's entry, or a few
   if type(a)=='table' and a.action~=nil then
@@ -2311,7 +2318,7 @@ function handlers.describe(_,a)
   end
   -- The bundle this runtime came in (host/bundle.ts BUNDLE_ID; nil for the mod's folder runtime). fh help keeps this
   -- describe per bundle (host/cli.ts helpDescribe): a call naming the bundle it holds gets two fields back, not 280 KB.
-  local bundle=BUNDLE_ID
+  local bundle=M.describe_bundle()
   if bundle and type(a)=='table' and a.if_bundle==bundle then return {bundle=bundle,unchanged=true} end
   -- walk on every call that acts on a target in reach (autowalk.lua)
   local WALK='default (omitted): a target out of reach within 32 tiles of you (transfer, collect, feed, rearm and refuel: 64; to its edge; build: to the position) is walked into reach first and the call is made there, one timed call (the reply\'s walking line says so; fh call waits for it as --wait does; a queue step waits for it); past that refused, naming this call with walk: true; true: walks there from farther too (any distance; transfer also via); false: out of reach is refused, nothing walked. The walk keeps move_to\'s enemy checks: a goal inside a weapon\'s reach the map shows is refused unless unsafe_goal, and avoid_enemies goes round the nests'
@@ -19553,11 +19560,11 @@ function dispatch_team(request)
   local ok,result
   if refused then ok,result=false,refused
   elseif disc and request.action=='describe' and M.disclosure.mode()=='filter' and type(request.args)=='table'
-    and request.args.if_bundle~=nil and request.args.if_bundle==M.disclosure.describe_key(disc,BUNDLE_ID) then
+    and request.args.if_bundle~=nil and request.args.if_bundle==M.disclosure.describe_key(disc,M.describe_bundle()) then
     ok,result=true,{bundle=request.args.if_bundle,unchanged=true}
   else
     ok,result=pcall(M.dispatch_inner,request)
-    if ok and disc and request.action=='describe' then result=M.disclosure.filter_describe(result,disc,BUNDLE_ID) end
+    if ok and disc and request.action=='describe' then result=M.disclosure.filter_describe(result,disc,M.describe_bundle()) end
   end
   if disc then pcall(M.disclosure.count,request,ok,result,disc,from) end
   M.ghost_via=nil

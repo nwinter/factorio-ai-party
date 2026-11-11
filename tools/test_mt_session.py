@@ -19,6 +19,16 @@ class Api:
         return {'items':[{'status':{'privacyStatus':self.privacy,'lifeCycleStatus':self.phase},'contentDetails':{'boundStreamId':self.stream}}]}
 
 class TestSession(unittest.TestCase):
+    def test_stale_or_partial_roster_cannot_look_healthy(self):
+        state={'now':100,'teams':[{'team':t,'stale':False,'agents':[{},{}]} for t in ('green','yellow','blue')]}
+        self.assertTrue(session.fresh_feed(state,110))
+        self.assertFalse(session.fresh_feed(state,161))
+        state['teams'][1]['stale']=True
+        self.assertFalse(session.fresh_feed(state,110))
+        state['teams'][1]['stale']=False
+        state['teams'][0]['agents'].pop()
+        self.assertFalse(session.fresh_feed(state,110))
+
     def test_never_clear_another_publication(self):
         self.assertFalse(session.owns_site({'mode':'team-tests','stream':{'youtube_video_id':'other'}},'ours'))
         self.assertFalse(session.owns_site({'stream':{'youtube_video_id':'ours'}},'ours'))

@@ -99,6 +99,7 @@ def fill(text, values):
 def values(player, mate="", mate_notes="", role=""):
     sa = os.environ.get("POG_SPACE_AGE") == "1"
     return {"PLAYER": player, "TEAMMATE": mate, "TEAMMATE_NOTES": mate_notes, "ROLE": role,
+            "FACTORIO_VERSION": os.environ.get("POG_FACTORIO_VERSION", "2.0.77"),
             "ENEMIES": os.environ.get("POG_ENEMIES", "peaceful"), "SEED": os.environ.get("POG_SEED", "20261010"),
             "GOAL": os.environ.get("POG_GOAL") or ("reaching the Shattered Planet, past the solar system's edge" if sa else "a rocket launch")}
 

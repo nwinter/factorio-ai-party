@@ -31,10 +31,15 @@ local function chest(f)
     return n
   end
   inv.count=function(name) local n=0; for _,s in ipairs(slots) do if s.valid_for_read and s.name==name then n=n+s.count end end; return n end
-  return {valid=true,force=f,get_inventory=function() return inv end,inv=inv}
+  local c={valid=true,force=f,get_inventory=function() return inv end,inv=inv}
+  c.destroy=function() c.valid=false end
+  return setmetatable(c,{__newindex=function(t,k,v)
+    assert(k~='minable','LuaEntity minable is read only')
+    rawset(t,k,v)
+  end})
 end
 local made={}
-local surface={name='nauvis',find_entities_filtered=function() return {} end,count_entities_filtered=function(f) return f.force=='blue' and 3 or 0 end,
+local surface={name='nauvis',can_place_entity=function() return true end,find_entities_filtered=function() return {} end,count_entities_filtered=function(f) return f.force=='blue' and 3 or 0 end,
   create_entity=function(a) local c=chest(a.force); c.position=a.position; made[#made+1]=c; return c end}
 game={tick=1000,forces={red=red,blue=blue,green=green},get_surface=function(n) return (n==nil or n=='nauvis') and surface or nil end,
   get_player=function() return nil end}
@@ -70,16 +75,25 @@ assert(last('blue'):find('red proposes pact #'..id..': cease%-fire; shares blue 
 assert(last('blue'):find('blue delivers 60 iron%-plate an hour') and last('blue'):find('Note: trade'),last('blue'))
 fails(function() H.pact_accept(nil,{id=id}) end,'the other team accepts it')
 
+local duplicate=H.pact_propose(nil,{with='blue',terms={cease_fire=true}}).pact.id
 -- blue accepts: cease-fire both ways, four chests, facts to both
 team='blue'
+-- A blocked second slot rolls back the first chest, without accepting the pact.
+local checks=0
+surface.can_place_entity=function() checks=checks+1;return checks~=2 end
+fails(function() H.pact_accept(nil,{id=id}) end,'is taken')
+eq(#made,1);eq(made[1].valid,false)
+eq(s.mt.pacts.by_id[id].status,'proposed');eq(red.get_cease_fire('blue'),false)
+made={};surface.can_place_entity=function() return true end
 H.pact_accept(nil,{id=id})
 eq(red.get_cease_fire('blue'),true); eq(blue.get_cease_fire('red'),true)
+fails(function() H.pact_accept(nil,{id=duplicate}) end,'already holds')
 eq(#made,4,'four chests: each team sends and receives')
 local d=s.mt.pacts.by_id[id].terms.depot.chests
 assert(d['red send'].force=='red' and d['blue receive'].force=='blue','each chest its team\'s')
-eq(d['red send'].destructible,false); eq(d['red send'].minable,false)
+eq(d['red send'].destructible,false); eq(d['red send'].minable_flag,false)
 assert(last('red'):find('pact #'..id..' between red and blue holds'),last('red'))
-team='red'
+team='red';H.pact_withdraw(nil,{id=duplicate})
 fails(function() H.pact_propose(nil,{with='blue'}) end,'pact_amend replaces it')
 
 -- the depot moves red's 50 iron plates: 40 arrive, 10 are the cut; 300 copper plates: 100 fit, the rest waits
@@ -113,7 +127,8 @@ assert(txt:find('blue has 3 entities within 50 of %(0,0%)') and txt:find('blue h
 
 -- pacts read; pact_end: ended now, the cease-fire lifts end_notice_s later
 local list=H.pacts(nil,{}).pacts
-eq(list[1].id,id); eq(list[1].status,'active')
+eq(list[1].id,duplicate); eq(list[1].status,'withdrawn')
+eq(list[2].id,id); eq(list[2].status,'active')
 team='blue'
 game.tick=3000
 P.operator.mt_pacts({config={end_notice_s=600}})   -- the notice path (the default 0 lifts at once: below)
@@ -189,5 +204,24 @@ H.pact_end(nil,{id=q})
 eq(red.get_cease_fire('blue'),false,'lifted at once'); eq(blue.get_cease_fire('red'),false)
 assert(last('red'):find('blue ended pact #'..q..' at tick %d+; the cease%-fire lifted now'),last('red'))
 eq(#facts-before_n,2,'one line to each team, no second lift line')
-game=nil; defines=nil; prototypes=nil; helpers=nil
 print('mt281 pacts: ok')
+
+team='red'
+local original=H.pact_propose(nil,{with='blue',terms={cease_fire=true,depot={x=30,y=30}}}).pact.id
+team='blue';H.pact_accept(nil,{id=original})
+local original_chests=s.mt.pacts.by_id[original].terms.depot.chests
+team='red'
+local amend=H.pact_amend(nil,{id=original,terms={cease_fire=true,depot={x=30,y=30},shares={red=.5,blue=.5}}}).pact.id
+local count=#made
+team='blue';H.pact_accept(nil,{id=amend})
+eq(#made,count,'same depot amendment retains chests')
+eq(s.mt.pacts.by_id[amend].terms.depot.chests,original_chests)
+team='red'
+local bad=H.pact_amend(nil,{id=amend,terms={cease_fire=true,depot={x=40,y=40}}}).pact.id
+surface.can_place_entity=function() return false end
+team='blue';fails(function() H.pact_accept(nil,{id=bad}) end,'is taken')
+eq(s.mt.pacts.by_id[amend].status,'active','failed amendment keeps old pact')
+eq(red.get_cease_fire('blue'),true)
+print('mt291 depot creation rollback and amendment: ok')
+
+game=nil; defines=nil; prototypes=nil; helpers=nil

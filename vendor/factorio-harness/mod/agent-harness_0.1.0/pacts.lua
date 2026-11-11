@@ -157,22 +157,38 @@ return function(api)
 
   -- The depot: four steel chests in a row, each team's sending chest and receiving chest, indestructible, not
   -- minable, tagged on each team's map.
-  local function place_depot(p)
+  local function place_depot(p, old)
     local d = p.terms.depot
+    local previous = old and old.terms.depot
+    -- An amendment at the same depot retains the inventories and their ownership.
+    if previous and previous.surface == d.surface and previous.x == d.x and previous.y == d.y and previous.chests then
+      local n = 0
+      for _, c in pairs(previous.chests) do if c.valid then n = n + 1 end end
+      if n == 4 then d.chests = previous.chests; return end
+    end
     local surface = game.get_surface(d.surface)
     local spots = {{p.a, 'send', 0}, {p.a, 'receive', 1}, {p.b, 'receive', 2}, {p.b, 'send', 3}}
-    d.chests = {}
-    for _, s in ipairs(spots) do
-      local at = {x=d.x + s[3], y=d.y}
-      for _, e in ipairs(surface.find_entities_filtered{position=at, radius=0.6}) do
-        if e.valid and (e.type == 'tree' or e.type == 'simple-entity' or e.type == 'item-entity') then e.destroy() end
+    local chests, created = {}, {}
+    local ok, err = pcall(function()
+      for _, s in ipairs(spots) do
+        local at = {x=d.x + s[3], y=d.y}
+        assert(surface.can_place_entity{name='steel-chest', position=at, force=s[1]},
+          'depot: the spot (' .. at.x .. ',' .. at.y .. ') is taken')
+        local c = surface.create_entity{name='steel-chest', position=at, force=s[1], create_build_effect_smoke=false}
+        assert(c, 'depot: the spot (' .. at.x .. ',' .. at.y .. ') is taken')
+        created[#created+1] = c
+        c.destructible = false
+        c.minable_flag = false
+        chests[s[1] .. ' ' .. s[2]] = c
       end
-      local c = surface.create_entity{name='steel-chest', position=at, force=s[1], create_build_effect_smoke=false}
-      assert(c, 'depot: the spot (' .. at.x .. ',' .. at.y .. ') is taken')
-      c.destructible = false
-      c.minable = false
-      d.chests[s[1] .. ' ' .. s[2]] = c
-      pcall(function() game.forces[s[1]].add_chart_tag(surface, {position=at, text='pact #' .. p.id .. ' ' .. s[2]}) end)
+    end)
+    if not ok then
+      for _, c in ipairs(created) do if c.valid then c.destroy() end end
+      error(err, 0)
+    end
+    d.chests = chests
+    for _, s in ipairs(spots) do
+      pcall(function() game.forces[s[1]].add_chart_tag(surface, {position=chests[s[1] .. ' ' .. s[2]].position, text='pact #' .. p.id .. ' ' .. s[2]}) end)
     end
   end
 
@@ -180,14 +196,20 @@ return function(api)
     local p = pact(a.id, team)
     assert(p.status == 'proposed', 'pact #' .. p.id .. ' is ' .. p.status)
     assert(p.b == team, 'pact #' .. p.id .. ' was proposed by us: the other team accepts it')
+    local old = p.replaces and st().by_id[p.replaces]
+    assert(not p.replaces or (old and old.status == 'active'), 'the pact this amendment replaces is no longer active')
+    for _, q in pairs(st().by_id) do
+      if q ~= old and q.status == 'active' and ((q.a == p.a and q.b == p.b) or (q.a == p.b and q.b == p.a)) then
+        error('pact #' .. q.id .. ' already holds: withdraw this duplicate proposal and use pact_amend', 0)
+      end
+    end
+    if p.terms.depot then place_depot(p, old and old.status == 'active' and old or nil) end
     if p.replaces then
-      local old = st().by_id[p.replaces]
       if old and old.status == 'active' then
         M.finish(old, team, who, 'replaced by #' .. p.id, true)
         if p.terms.cease_fire then old.lift_tick = nil end   -- the new pact's cease-fire goes on: nothing lifts
       end
     end
-    if p.terms.depot then place_depot(p) end
     p.status, p.accepted_by = 'active', {team=team, agent=who, tick=game.tick}
     if p.terms.cease_fire then
       local fa, fb = game.forces[p.a], game.forces[p.b]

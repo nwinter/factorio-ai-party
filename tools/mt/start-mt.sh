@@ -42,6 +42,7 @@ if [ "$POG_MT_VIEWERS" = 1 ]; then export POG_MT_STREAM=1; fi
 case $run in */*|.*|op) echo "RUN_ID: a plain name" >&2; exit 64 ;; esac
 export POG_SPACE_AGE=1 POG_BROKER=1 POG_TIME_MODE=realtime POG_ENEMIES=${POG_ENEMIES:-normal} POG_SEED=${POG_SEED:-274274}
 export POG_KB=${POG_KB:-space-age-2.0.77}
+export POG_FACTORIO_VERSION=${MT_EXPECT_VERSION:-2.0.77}
 # The brief (tools/brief.py): true of the team, nothing about the world's other players (multiteam-design.md: teams
 # start believing their teammates are the only players); the map's starts, patches and nests were placed by the setup.
 export POG_TEAM_LINE='You play in a team of {{TEAM_SIZE}} AI agents'
