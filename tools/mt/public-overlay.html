@@ -111,14 +111,27 @@ function news(s){
  label(e.text,x+36,yy+28,17,C.ink,600,520);label((e.observed?'~':'')+e.time,x+494,yy+9,12,C.muted,600,74);
  });
 }
+function diplomacyRows(s){
+ const teams=new Map(s.teams.map(t=>[t.team,new Set(t.agents.map(a=>a.name))]));
+ return (s.diplomacy||[]).filter(m=>teams.has(m.from_team)&&teams.has(m.to_team)&&m.from_team!==m.to_team&&teams.get(m.from_team).has(m.agent));
+}
+function diplomacyChat(s){
+ const msgs=diplomacyRows(s);if(!msgs.length)return;
+ const m=msgs.at(-1),x=24,w=632;rect(x,980,w,88,C.panel,6);
+ label('DIPLOMACY',x+16,998,14,C.gold,750,120);
+ label(cap(m.from_team)+' → '+cap(m.to_team)+' · '+cap(m.agent),x+150,998,13,color(m.from_team),700,360);
+ label(m.time,x+w-65,998,12,C.muted,600,55);
+ wrap(m.text,x+16,1025,w-32,18,C.ink,2);
+}
 function viewerChat(s){
  // Separate from team lanes even if a malformed producer puts team rows here.
  const msgs=(s.viewers||[]).filter(m=>['site','youtube'].includes(m.source)&&(!m.kind||m.kind==='viewer')&&(!m.lane||m.lane==='viewer')&&!m.team&&!m.agent&&!m.from&&!m.tell&&!m.operator&&!m.confess&&Date.now()/1000-(m.t||0)<=600).slice(-2);
  if(!msgs.length)return;
- const x=24,w=1280;rect(x,980,w,88,C.panel,6);
+ const split=diplomacyRows(s).length>0,x=split?672:24,w=split?632:1280;rect(x,980,w,88,C.panel,6);
  label('VIEWER CHAT',x+16,998,14,C.gold,750);
  const statuses={'live':'LIVE · SITE + YOUTUBE','on':'LIVE · SITE + YOUTUBE','off':'CHAT NOT CONNECTED','waiting':'CONNECTING CHAT','connecting':'CONNECTING CHAT','delayed':'CHAT DELAYED','ended':'CHAT ENDED','display-only':'VIEWER MESSAGES'};
  label(statuses[s.viewer_status]||'VIEWER MESSAGES',x+180,998,12,C.muted,650,w-215);
+ if(split){const m=msgs.at(-1);label(cap(m.source)+' · '+(m.name||'Viewer'),x+16,1019,12,C.muted,650,250);wrap(m.text,x+16,1040,w-32,17,C.ink,2);return;}
  msgs.forEach((m,i)=>{const yy=1025+i*31,source=m.source==='youtube'?'YOUTUBE':'SITE';pill(source,x+16,yy-18,m.source==='youtube'?'#ff9f91':C.gold,88);
  let receipt=m.delivery==='held'?'QUEUED':m.delivery==='sent'?'SENT':'';
  if(m.delivery==='sent'&&m.targets?.length)receipt+=' → '+(m.targets.includes('all')?'ALL':m.targets.map(cap).join(', '));
@@ -141,7 +154,7 @@ function draw(){
  ctx.strokeStyle=C.line;ctx.lineWidth=2;ctx.strokeRect(24,248,1280,720);
  const on=s.teams.find(t=>t.team===s.camera?.team);if(on){const col=color(on.team);rect(44,268,430,60,'#0b1118ee',6);rect(44,268,5,60,col);label('ON CAMERA / '+cap(on.team),62,292,18,col,750,395);label(on.stale?'Feed delayed':on.paused?'WORLD PAUSED':s.camera.reason||'Following the action',62,315,16,C.muted,500,395);}
  label('Graphics copyright Wube Software',1000,958,12,'#c9d0c8',500,295);
- teamsNow(s);news(s);viewerChat(s);
+ teamsNow(s);news(s);diplomacyChat(s);viewerChat(s);
  if(s.fixture){rect(44,930,670,30,'#0b1118ee',4);label(s.fixture+' · camera still from mtt1',56,951,14,C.gold,700,645);}
  if(lost||Date.now()/1000-s.now>25){rect(480,268,500,46,'#5b301dee',6);label('FEED DELAYED · showing last confirmed state',498,298,19,'#ffdbb5',700,465);}
  document.getElementById('summary').textContent=teams.map(t=>`${t.team}${t.rank!=null?': '+t.gap:''}${t.research?.done_count!=null?', '+t.research.done_count+' technologies':''}. ${t.agents.map(a=>{const v=agentText(a,t);return v.who+(v.detail?': '+v.detail:'');}).join('. ')}`).join(' / ');

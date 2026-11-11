@@ -111,6 +111,10 @@ def collect(r, op):
     except Exception:
         view["pacts"] = []
     try:
+        view["diplomacy"] = r.op("mt_diplomacy").get("messages") or []
+    except Exception:
+        view["diplomacy"] = []
+    try:
         view["freeze"] = r.op("mt_freeze")
     except Exception:
         view["freeze"] = None   # no human team (mt_humans not set up)

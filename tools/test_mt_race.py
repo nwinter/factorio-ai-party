@@ -30,6 +30,21 @@ def row(team='green',now=100,techs=0,entities=None,**extra):
 
 
 class ProjectionTest(unittest.TestCase):
+    def test_diplomacy_is_explicit_and_filters_private_content(self):
+        teams=[row(),row('yellow'),row('blue')]
+        message={'kind':'diplomacy','from_team':'green','to_team':'yellow','agent':'gemini',
+                 'text':'Shall we end this pact?', 'tick':5900,'seq':1,'internal':'PRIVATE'}
+        bad=[dict(message,kind='tell'),dict(message,from_team='hidden'),dict(message,agent='unknown'),
+             dict(message,text='/Users/private/file'),dict(message,text='multi-team'),
+             dict(message,source='site'),dict(message,to_team='green')]
+        result=race.diplomacy([message]+bad,teams)
+        self.assertEqual(len(result),1)
+        self.assertEqual(result[0]['text'],'Shall we end this pact?')
+        self.assertNotIn('PRIVATE',json.dumps(result))
+        # This lane is never folded into team chat or viewer relay input.
+        self.assertEqual(race.team_chat('green',[message],{'gemini'}),[])
+        self.assertEqual(race.project_viewers([message],100,{'green','yellow','blue'}),[])
+
     def test_recursive_allowlist(self):
         marker={'path':'/PRIVATE','error':'PRIVATE','token':'PRIVATE'}
         state={'now':100,'tick':6000,'errors':marker,'operator_requests':[marker],

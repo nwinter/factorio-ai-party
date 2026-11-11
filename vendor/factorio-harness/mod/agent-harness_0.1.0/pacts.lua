@@ -126,6 +126,47 @@ return function(api)
     return p
   end
 
+  -- An explicit channel between contacted teams. Ordinary say/tell/board remain private.
+  -- Each pair has its own cursor: reading one conversation reveals no other pair's traffic.
+  local function conversation(team, other)
+    assert(type(other)=='string' and teams()[other] and other~=team, 'with/to: another contacted team')
+    assert(M.contacted(team,other), 'no contact with '..other..' yet')
+    local s=st()
+    s.diplomacy=s.diplomacy or {}
+    local key=team<other and team..'>'..other or other..'>'..team
+    s.diplomacy[key]=s.diplomacy[key] or {next=1,messages={}}
+    return s.diplomacy[key]
+  end
+  function M.send(team, who, a)
+    local c=conversation(team,a.to)
+    assert(type(a.text)=='string' and #a.text<=500 and a.text:find('%S'), 'text: 1..500 bytes, not blank')
+    local text=a.text:gsub('%s+',' '):match('^%s*(.-)%s*$')
+    local s=st();s.diplomacy_sent=s.diplomacy_sent or {}
+    local recent={}
+    for _,tick in ipairs(s.diplomacy_sent[team] or {}) do
+      if game.tick-tick<3600 then recent[#recent+1]=tick end
+    end
+    assert(#recent<6,'diplomacy rate limit: six messages per team per game minute; wait before sending again')
+    recent[#recent+1]=game.tick;s.diplomacy_sent[team]=recent
+    local m={kind='diplomacy',seq=c.next,tick=game.tick,from_team=team,to_team=a.to,agent=who,text=text}
+    c.next=c.next+1;c.messages[#c.messages+1]=m
+    while #c.messages>100 do table.remove(c.messages,1) end
+    local line='Diplomacy '..team..' ('..who..') -> '..a.to..': '..text
+    fact(team,line,false);fact(a.to,line,true)
+    return {message=m,delivered_to={team,a.to},note='Every agent of these two teams receives this message. Ordinary say/tell/board are private to your team.'}
+  end
+  function M.messages(team,a)
+    local c=conversation(team,a.with)
+    local since,limit=a.since or 0,a.limit or 20
+    assert(type(since)=='number' and since>=0 and since==math.floor(since),'since: a nonnegative message sequence')
+    assert(type(limit)=='number' and limit>=1 and limit<=50 and limit==math.floor(limit),'limit: 1..50')
+    local out={}
+    for _,m in ipairs(c.messages) do if m.seq>since then out[#out+1]=m end end
+    while #out>limit do table.remove(out,1) end
+    return {with=a.with,messages=out,last_seq=c.next-1,tick=game.tick,
+      note='Only this conversation. To negotiate with the other team, use diplomacy_send; say/tell/board stay within your own team.'}
+  end
+
   function M.propose(team, who, a, replaces)
     local with = a.with
     assert(type(with) == 'string' and teams()[with] and with ~= team, 'with: another team')
@@ -239,6 +280,16 @@ return function(api)
   end
 
   lift = function(p, quiet)
+    -- A fresh agreement can be accepted during the old pact's notice period.
+    -- The old deadline must not turn that newer cease-fire back into war.
+    for _,q in pairs(st().by_id) do
+      if q.id~=p.id and q.status=='active' and q.terms.cease_fire
+        and ((q.a==p.a and q.b==p.b) or (q.a==p.b and q.b==p.a)) then
+        p.lift_tick,p.lifted_tick,p.lift_superseded_by=nil,game.tick,q.id
+        if not quiet then both(p,string.format('the notice of pact #%d ended; pact #%d keeps the cease-fire',p.id,q.id),false) end
+        return
+      end
+    end
     local fa, fb = game.forces[p.a], game.forces[p.b]
     -- teams are at war but by a pact (mt_setup): a lift is war both ways
     local prev = {ab=false, ba=false}
@@ -418,6 +469,8 @@ return function(api)
   end
 
   M.handlers = {
+    diplomacy_send=function(p,a) local team,who=caller(p);return M.send(team,who,a) end,
+    diplomacy=function(p,a) local team=caller(p);return M.messages(team,a) end,
     pact_propose=function(p, a) local team, who = caller(p); return M.propose(team, who, a or {}) end,
     pact_accept=function(p, a) local team, who = caller(p); return M.accept(team, who, a or {}) end,
     pact_decline=function(p, a)
@@ -449,19 +502,39 @@ return function(api)
       M.finish(q, team, who, (a or {}).note)
       return {pact=M.view(q)}
     end,
-    pacts=function(p, a) local team = caller(p); return {pacts=list(team), tick=game.tick} end,
+    pacts=function(p, a)
+      local team=caller(p);local contacts={}
+      for other in pairs(teams()) do if other~=team and M.contacted(team,other) then contacts[#contacts+1]=other end end
+      table.sort(contacts)
+      return {pacts=list(team),contacts=contacts,tick=game.tick,end_notice_s=cfg('end_notice_s'),
+        communication='say/tell/board are private to your team. Use diplomacy_send {to: TEAM, text: MESSAGE} to negotiate with a contacted team; diplomacy {with: TEAM} reads that conversation.'}
+    end,
   }
-  M.reads = {pacts=true}
+  M.reads = {pacts=true,diplomacy=true}
   M.schema = {
+    diplomacy_send={to='one contacted team; every agent of that team and your own team receives it',text='1..500 bytes; explicit cross-team negotiation, six messages per team per game minute',
+      returns='message with authenticated sender, pair-local seq and game tick; ordinary say/tell/board remain private to your team'},
+    diplomacy={with='one contacted team',since='optional nonnegative sequence from this conversation',limit='1..50, default 20; newest messages kept',
+      returns='messages for your conversation with that team only, last_seq; no third-team conversations or private chat'},
     pact_propose={with='the other team (a team you have had contact with)', terms='{cease_fire?: true, shares?: {TEAM: fraction, both teams, summing to 1, each at most 0.70}, depot?: {x, y, surface?}, obligations?: [{kind: "deliver", who, item, count (an hour, through the depot)}, {kind: "keep_out", who, x, y, r, surface?}, {kind: "no_attack", who, target}]}',
       note='optional text, 500 bytes', expires_min='optional minutes it stays open (default 60)', returns='pact: its number, terms and status; the other team gets it as a fact line'},
     pact_accept={id='a pact proposed to your team', returns='pact; its terms hold from now (the cease-fire both ways, the depot\'s chests placed)'},
     pact_decline={id='a pact proposed to your team', note='optional text', returns='pact'},
     pact_withdraw={id='your team\'s open proposal', returns='pact'},
-    pact_amend={id='an active pact', terms='as pact_propose', note='optional text', returns='pact: a new proposal that replaces it when accepted'},
-    pact_end={id='an active pact', note='optional text', returns='pact; ended now for both teams, the cease-fire lifted now'},
+    pact_amend={id='an active pact', terms='as pact_propose', note='optional text', expires_min='optional proposal lifetime in minutes', returns='pact: a new proposal that replaces it when accepted'},
+    pact_end={id='an active pact', note='optional text', returns='pact; trade ends now; cease-fire lifts at lift_tick if a notice is configured (pacts reports end_notice_s), otherwise immediately'},
     pacts={returns='pacts: your team\'s pacts and proposals, with this hour\'s depot ledger and the obligations\' last measurements'},
   }
+  -- Describe's general argument cache can have been built before first contact. Check these
+  -- dynamic actions here as well, after the contact gate, without exposing their schemas early.
+  for name,fn in pairs(M.handlers) do
+    M.handlers[name]=function(p,a)
+      caller(p)
+      a=a or {};assert(type(a)=='table','arguments: one object')
+      for key in pairs(a) do assert(key~='returns' and M.schema[name][key]~=nil,'unknown argument '..tostring(key)..' for '..name) end
+      return fn(p,a)
+    end
+  end
   -- describe: the pact actions for a team with a contact only (none before: nothing says other teams exist)
   function M.describe_into(actions)
     if M.open_for(api.team_now()) then for name, schema in pairs(M.schema) do actions[name] = schema end end
@@ -474,10 +547,11 @@ return function(api)
     if not (h and pl and h.players[pl.name] and pl.force.name == h.team) then return end
     local action, rest = (event.message or ''):match('^!pact%s+([%w_]+)%s*(.*)$')
     if not action then return end
-    local name = action:match('^pact') and action or (action == 'list' and 'pacts' or 'pact_' .. action)
+    local name = action=='message' and 'diplomacy_send' or action=='messages' and 'diplomacy'
+      or action:match('^pact') and action or (action == 'list' and 'pacts' or 'pact_' .. action)
     local fn = M.handlers[name]
     local ok, r = pcall(function()
-      assert(fn, 'no pact action ' .. action .. ' (propose, accept, decline, withdraw, amend, end, list)')
+      assert(fn, 'no pact action ' .. action .. ' (propose, accept, decline, withdraw, amend, end, list, message, messages)')
       local args = rest ~= '' and helpers.json_to_table(rest) or {}
       assert(type(args) == 'table', 'arguments: one JSON object')
       return api.as_team(h.team, function() return fn(pl, args) end)
@@ -508,6 +582,14 @@ return function(api)
     local ticks = math.floor(tonumber(a.ticks) or 1)
     for i = 0, ticks - 1 do M.tick(a.as_tick and (a.as_tick + i) or game.tick) end
     return {tick=game.tick}
+  end
+  function M.operator.mt_diplomacy(a)
+    local out={}
+    for _,c in pairs(st().diplomacy or {}) do for _,m in ipairs(c.messages) do out[#out+1]=m end end
+    table.sort(out,function(a,b) if a.tick~=b.tick then return a.tick<b.tick end
+      if a.from_team~=b.from_team then return a.from_team<b.from_team end return a.seq<b.seq end)
+    while #out>100 do table.remove(out,1) end
+    return {messages=out}
   end
   return M
 end

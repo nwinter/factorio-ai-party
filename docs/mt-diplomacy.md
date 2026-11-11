@@ -49,6 +49,13 @@ The engine's cease-fire settings before a pact are kept on it (`prev`), and put 
 ends (two pacts between the same pair are not allowed: a new one replaces the old by agreement, pact_amend below).
 
 ## Actions (agents; shut until contact)
+- `diplomacy_send {to, text}`: explicitly send a negotiation message to one contacted team. Every agent of the
+  sender and recipient teams receives it; a third team does not. Sender identity comes from the authenticated
+  caller. Text is nonblank, at most 500 bytes, and the whole team shares a six-message rolling game-minute limit.
+- `diplomacy {with, since?, limit?}`: read that pair's conversation; independent sequence numbers per pair,
+  100 retained messages, at most 50 returned (default 20, newest retained). Ordinary `say`, `tell`, board and
+  chat remain private to one's own team. Pact notes still carry offers and decisions. Human equivalents are
+  `!pact message {"to":"TEAM","text":"MESSAGE"}` and `!pact messages {"with":"TEAM"}`.
 - `pact_propose {with, terms, note?, expires_min=60}`: a proposal to the other team. The note (500 bytes) travels with
   it. It reaches every agent of the other team as a fact line ("red proposes pact #3: cease-fire; shares red 0.9, blue
   0.1; a depot at (12,-340), cut 20%; blue delivers 600 iron-plate an hour; expires in 60 min. Note: ...").
@@ -62,9 +69,17 @@ ends (two pacts between the same pair are not allowed: a new one replaces the ol
   chest stays its owner's), obligations stop being checked. A betrayal is a `pact_end` (or simply a broken
   obligation); there is no enforcement beyond the engine cease-fire.
 - `pacts {}`: the team's pacts and open proposals, with the depot ledger and the obligations' last measurements.
+  Also reports contacted teams, configured `end_notice_s`, and the explicit diplomacy channel.
 
 Arguments are checked (team names a contacted team; shares sum to 1 between exactly the two teams; a depot spot on a
 surface both teams have, on dry ground, within no other team's buildings; obligations of the three kinds only).
+Unknown arguments are refused even if the general help cache was built before contact. `note` is an actual pact
+argument and survives validation, unlike documentation-only schema notes elsewhere.
+
+The operator can read explicitly sent diplomacy through `mt_diplomacy`; the private overlay projects only its
+known teams and roster senders into a separate diplomacy lane. It never mines team chat for messages to forward.
+Viewer chat remains separate and uses the existing moderated relay. The public site needs no private code: it
+shows the resulting broadcast embed through the existing operator-pushed test status.
 
 ## What the agents see
 - The team block of `status`: one line per active pact and per open proposal ("pact #3 with blue: cease-fire; shares
@@ -123,6 +138,7 @@ surface both teams have, on dry ground, within no other team's buildings; obliga
 - pact_end: ended at once in the record, both teams told; the engine cease-fire lifts on the same tick (mt284, Nick:
   "That's how real diplomacy works, and then you can see if troops are mustering"; end_notice_s 0, a setting: above 0
   it lifts that many seconds later and the fact line says when). A lift is war both ways (teams' default).
+  If a fresh cease-fire has been accepted during an old pact's notice, the old deadline preserves the new pact.
 - The human team: the same terms through chat, `!pact ACTION {json}` (propose, accept, decline, withdraw, amend, end,
   list); the reply in its console.
 - Unlock: at first contact (the pact actions out of describe and refused until then; a `new:` fact line at the

@@ -19,7 +19,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / 'stream'))
 from harness import Harness
 import lookcam
-from public_race import project, Race, Director, read_views, icons, speech, project_viewers, rows as list_rows, obj
+from public_race import project, Race, Director, read_views, icons, speech, project_viewers, diplomacy, rows as list_rows, obj
 
 CAMERA = 'pog-director2'
 
@@ -202,7 +202,7 @@ class PublicOverlay:
                     rows.append(row)
                 with self.lock:
                     self.state.update(self.race.update(rows, now, list_rows(views.get('contacts')), list_rows(views.get('pacts'))), now=now,
-                                      **audience(audience_states, self.rosters, now))
+                                      diplomacy=diplomacy(views.get('diplomacy'), rows), **audience(audience_states, self.rosters, now))
                     if self.youtube:
                         self.state['stream'] = {'youtube_video_id': self.youtube}
                 choice = self.director.choose(rows, self.state['events'], now) if self.harnesses else None

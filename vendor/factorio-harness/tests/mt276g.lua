@@ -103,5 +103,23 @@ do
   eq(R.cause_text({valid=true,name='small-biter',force={name='enemy'}},'blue'),'small-biter')
   eq(R.cause_text(nil,'blue',red),'unknown source of force red')
   eq(R.cause_text({valid=true,name='gun-turret',force=blue},'blue'),'gun-turret','our own: its name')
-  print('mt276 G contact lines, rules, causes: ok')
+  -- Two agents per team receive explicit diplomacy; the third team receives none.
+  local green=force('green');game.forces.green=green;s.mt.teams.green={};s.mt.order[#s.mt.order+1]='green'
+  R.operator.bot_create({name='gb1',force='green'});R.operator.bot_create({name='gb2',force='green'})
+  R.operator.bot_create({name='bb2',force='blue'})
+  local counts={};for _,pair in ipairs{{'red','rb1'},{'red','rb2'},{'blue','bb1'},{'blue','bb2'}} do counts[pair[2]]=#box(pair[1],pair[2]) end
+  local own=R.dispatch{id='diplo-1',bot='rb1',action='diplomacy_send',args={to='blue',text='Please agree to end pact 10.'}}
+  eq(own.message.agent,'rb1');has(own.message.text,'Please agree')
+  for _,pair in ipairs{{'red','rb2'},{'blue','bb1'},{'blue','bb2'}} do
+    local messages=box(pair[1],pair[2]);eq(#messages,counts[pair[2]]+1);has(messages[#messages].text,'Diplomacy red (rb1) -> blue')
+  end
+  eq(#box('green','gb1'),0);eq(#box('green','gb2'),0)
+  local reply=R.dispatch{id='diplo-read',bot='bb2',action='diplomacy',args={with='red'}}
+  eq(reply.messages[1].agent,'rb1')
+  fails(function() R.dispatch{id='diplo-no-contact',bot='gb1',action='diplomacy',args={with='red'}} end,'no contact')
+  fails(function() R.dispatch{id='diplo-spoof',bot='bb1',action='diplomacy_send',args={to='red',text='hi',agent='rb2'}} end,'unknown argument agent')
+  local proposal=R.dispatch{id='pact-note',bot='rb1',action='pact_propose',args={with='blue',terms={cease_fire=true},note='Please review these terms.'}}
+  eq(proposal.pact.note,'Please review these terms.')
+  fails(function() R.dispatch{id='pact-bogus',bot='rb1',action='pact_propose',args={with='blue',bogus=true}} end,'unknown argument bogus')
+  print('mt276 G contact lines, paired diplomacy delivery and third-team privacy: ok')
 end

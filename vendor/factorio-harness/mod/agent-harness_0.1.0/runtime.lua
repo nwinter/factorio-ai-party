@@ -18387,7 +18387,7 @@ M.multiteam=require('multiteam'){state=state,
     for _,l in ipairs(lines) do
       if opened[l[1]] then
         opened[l[1]]=nil
-        l[3]=l[3]..'. new: pact_propose, pact_accept, pact_decline, pact_withdraw, pact_amend, pact_end and pacts (fh help pact_propose): agreements with a team you have had contact with'
+        l[3]=l[3]..'. new: diplomacy_send {to: TEAM, text: MESSAGE} and diplomacy {with: TEAM} for negotiation; say/tell/board remain private to your own team. pact_propose, pact_accept, pact_decline, pact_withdraw, pact_amend, pact_end and pacts (fh help pact_propose): agreements with a contacted team'
       end
     end
     for _,l in ipairs(lines) do
@@ -18885,6 +18885,9 @@ EXTRA_ARGS.trace=TARGET
 local VIEW_SCOPES={danger=true,pipe_gaps=true,belt_gaps=true,drill_sites=true,agriculture=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
 local allowed_args
 function check_args(action,args)
+  -- Contact-gated actions validate in their own wrappers. Their schema is dynamic,
+  -- and `note` is a real argument there (DOC_ONLY treats it as prose elsewhere).
+  if M.pacts and M.pacts.handlers[action] then return end
   if not allowed_args then
     allowed_args={}
     for name,schema in pairs(handlers.describe().actions) do

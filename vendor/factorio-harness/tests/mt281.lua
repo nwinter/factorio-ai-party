@@ -224,4 +224,16 @@ eq(s.mt.pacts.by_id[amend].status,'active','failed amendment keeps old pact')
 eq(red.get_cease_fire('blue'),true)
 print('mt291 depot creation rollback and amendment: ok')
 
+-- A new agreement during an end notice survives the older notice's expiry.
+P.operator.mt_pacts({config={end_notice_s=60}})
+team='red';H.pact_end(nil,{id=amend})
+local lift_tick=s.mt.pacts.by_id[amend].lift_tick
+local renewed=H.pact_propose(nil,{with='blue',terms={cease_fire=true},note='New agreement.'}).pact.id
+team='blue';H.pact_accept(nil,{id=renewed})
+game.tick=lift_tick+60;P.tick(game.tick-game.tick%60+29)
+eq(red.get_cease_fire('blue'),true);eq(blue.get_cease_fire('red'),true)
+eq(s.mt.pacts.by_id[amend].lift_tick,nil)
+eq(s.mt.pacts.by_id[amend].lift_superseded_by,renewed)
+print('mt293 replacement during notice keeps its cease-fire: ok')
+
 game=nil; defines=nil; prototypes=nil; helpers=nil

@@ -77,6 +77,8 @@ def team_chat(team, messages, names, private_names=()):
     aliases = {alias: n for n in names for alias in (n, 'pog-' + n)}
     out = []
     for m in map(obj, rows(messages)[-60:]):
+        if m.get('kind') == 'diplomacy' or m.get('from_team') or m.get('to_team'):
+            continue
         if any(m.get(k) for k in ('operator', 'confess', 'notice', 'viewer', 'source')):
             continue
         if any(m.get(k) not in (None, team) for k in ('team', 'force')):
@@ -105,6 +107,25 @@ def team_chat(team, messages, names, private_names=()):
             out.append({'team': team, 'name': sender, 'to': to, 'kind': kind, 'text': text,
                         'tick': number(m.get('tick')), 't': number(m.get('t'))})
     return out[-6:]
+
+
+def diplomacy(messages, teams):
+    """Only explicitly sent diplomacy. Never derive this lane from private team chat."""
+    rosters = {t['team']: {a['name'] for a in t['agents']} for t in teams}
+    latest = max((t.get('tick') or 0 for t in teams), default=0)
+    out = []
+    for m in map(obj, rows(messages)[-100:]):
+        sender, recipient, agent = m.get('from_team'), m.get('to_team'), m.get('agent')
+        if not (m.get('kind') == 'diplomacy' and isinstance(sender, str) and isinstance(recipient, str) and sender != recipient
+                and sender in rosters and recipient in rosters and isinstance(agent, str) and agent in rosters[sender]):
+            continue
+        if any(m.get(k) for k in ('operator', 'tell', 'viewer', 'source', 'confess')):
+            continue
+        tick, body = number(m.get('tick')), speech(m.get('text'), ('Nick', 'Winter'))
+        if tick is not None and 0 <= latest - tick <= 36000 and body and type(m.get('seq')) is int:
+            out.append({'from_team':sender, 'to_team':recipient, 'agent':agent, 'text':body,
+                        'seq':m['seq'], 'tick':tick, 'time':clock(tick)})
+    return out[-12:]
 
 
 def project_viewers(messages, now, teams=()):
