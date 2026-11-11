@@ -25,7 +25,7 @@ def broadcast_body(title, start, privacy='unlisted'):
     if instant.utcoffset() is None:
         raise ValueError('--start requires a timezone (for example Z)')
     return {'snippet': {'title': title, 'scheduledStartTime': instant.isoformat(),
-                        'description': 'Test runs: AI teams play Factorio: Space Age. Viewer chat is display-only.'},
+                        'description': 'Team tests: AI teams play Factorio 2.1: Space Age. Moderated site and YouTube chat reaches every team. Watch at https://factorio.nickwinter.net/live/'},
             'status': {'privacyStatus': privacy, 'selfDeclaredMadeForKids': False},
             'contentDetails': {'enableAutoStart': False, 'enableAutoStop': False,
                                'enableDvr': True, 'recordFromStart': True,
