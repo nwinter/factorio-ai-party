@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prepared complementary bases for the private stage-1 market/control experiment.
 
-prepare runs once on a fresh paused baseline, before agents. Save that map and
+prepare runs once on a fresh baseline, before agents. Save that map and
 reuse its exact bytes for both treatments. activate performs real chart contact
 and either enables markets/Coinage or keeps the same stock chest without markets.
 No server is started here. The caller owns the shared-server claim.
@@ -219,7 +219,9 @@ def main():
     try:
         if a.action=='prepare':
             receipt['fixture']=c.lua(PREPARE.replace('TARGETS',lua_string(json.dumps(TARGETS))))
-            c.h.command('/silent-command game.server_save('+lua_string(a.run+'-base')+')')
+            # Deployment needs simulation ticks. Save unpaused with production held;
+            # POG_MT_PAUSED_START pauses after deploy, before any agent is launched.
+            c.h.command('/silent-command game.tick_paused=false; game.server_save('+lua_string(a.run+'-base')+')')
         elif a.action=='activate':
             from market_metrics import BASELINE
             c.call('mt_market',{'config':{'enabled':a.market=='on'}})

@@ -1,17 +1,17 @@
 -- (mt281, private) Pacts between teams on a multi-team map (docs/mt-diplomacy.md): proposed by one team, accepted by
--- the other; terms: a cease-fire, score shares, a border depot (items moved less a cut), obligations reported as facts.
+-- the other; terms: a cease-fire, score shares, obligations reported as facts. Trading Posts own all item settlement.
 -- The actions open for a team at its first contact with another (multiteam.lua's record), and only towards a team it
 -- has had contact with. Nothing runs on a map without teams.
 --   agents: pact_propose, pact_accept, pact_decline, pact_withdraw, pact_amend, pact_end, pacts (read)
 --   the human team: the same through chat, "!pact ACTION {json}" (humans.lua's roster)
 --   operator: mt_pacts {config?} (settings; the pacts and departures), mt_pacts_tick (test: the step now)
--- Settings (mt_pacts config): cut 0.2, move_s 10, end_notice_s 0, share_max_score 1.4, expires_min 60, check_s 3600.
+-- Settings (mt_pacts config): end_notice_s 0, share_max_score 1.4, expires_min 60, check_s 3600.
 return function(api)
   local M = {operator={}}
   -- (mt284, Nick d29 14:00) end_notice_s 0: the cease-fire lifts on the tick a side ends the pact; share_max_score 1.4:
   -- no member's allied score above it (the solo edge is 1.5), so no team-up pays more than winning alone
-  local DEFAULTS = {cut=0.2, move_s=10, end_notice_s=0, share_max_score=1.4, expires_min=60, check_s=3600,
-    terms={cease_fire=true, shares=true, depot=true, obligations=true}}
+  local DEFAULTS = {end_notice_s=0, share_max_score=1.4, expires_min=60, check_s=3600,
+    terms={cease_fire=true, shares=true, obligations=true}}
   local KINDS = {deliver=true, keep_out=true, no_attack=true}
   local MAX_PACTS, MAX_DEPARTURES, NOTE = 64, 50, 500
   local function mt() return api.state().mt end
@@ -19,6 +19,20 @@ return function(api)
     local m = mt()
     m.pacts = m.pacts or {next=1, by_id={}, hits={}, departures={}, platforms={}}
     m.pacts.config = m.pacts.config or {}
+    local s=m.pacts
+    if not s.depots_retired then
+      s.depots_retired=true;s.config.cut=nil;s.config.move_s=nil
+      if type(s.config.terms)=='table' then s.config.terms.depot=nil end
+      for _,p in pairs(s.by_id) do if p.terms and p.terms.depot then
+        p.legacy_depot=p.terms.depot;p.terms.depot=nil;p.depot_retired_tick=game.tick
+        -- Preserve old chests and their exact contents. Never silently change a pending agreement.
+        if p.status=='proposed' then p.status='expired';p.ended={tick=game.tick,note='depot term retired'} end
+        if api.fact then
+          local text='Pact #'..p.id..': automatic depot transfers retired; old chests retain their goods. Use offer at the Trading Post. Cease-fire, shares and active obligations remain.'
+          api.fact(p.a,text,true);api.fact(p.b,text,true)
+        end
+      end end
+    end
     return m.pacts
   end
   local function cfg(key)
@@ -54,7 +68,6 @@ return function(api)
       table.sort(s)
       parts[#parts+1] = 'shares ' .. table.concat(s, ' / ')
     end
-    if t.depot then parts[#parts+1] = string.format('a depot at (%d,%d) on %s, cut %d%%', math.floor(t.depot.x), math.floor(t.depot.y), t.depot.surface or 'nauvis', math.floor(cfg('cut') * 100 + 0.5)) end
     for _, o in ipairs(t.obligations or {}) do
       if o.kind == 'deliver' then parts[#parts+1] = string.format('%s delivers %d %s an hour', o.who, o.count, o.item)
       elseif o.kind == 'keep_out' then parts[#parts+1] = string.format('%s builds nothing within %d of (%d,%d)', o.who, o.r, math.floor(o.x), math.floor(o.y))
@@ -65,10 +78,11 @@ return function(api)
 
   -- Arguments: the terms checked against the two teams and the settings.
   local function check_terms(t, a, b)
-    assert(type(t) == 'table', 'terms: {cease_fire?, shares?, depot?, obligations?}')
+    assert(type(t) == 'table', 'terms: {cease_fire?, shares?, obligations?}')
     local on = cfg('terms')
     local out = {}
-    for k in pairs(t) do assert(on[k], 'terms: no ' .. tostring(k) .. ' (cease_fire, shares, depot, obligations)') end
+    assert(t.depot==nil,'depot retired; call describe {} for offer at the Trading Post')
+    for k in pairs(t) do assert(on[k], 'terms: no ' .. tostring(k) .. ' (cease_fire, shares, obligations)') end
     if t.cease_fire ~= nil then assert(type(t.cease_fire) == 'boolean', 'cease_fire: true or false'); out.cease_fire = t.cease_fire or nil end
     if t.shares ~= nil then
       assert(type(t.shares) == 'table', 'shares: {TEAM=fraction} for both teams, summing to 1')
@@ -81,13 +95,6 @@ return function(api)
       assert(sa <= most + 1e-9 and sb <= most + 1e-9, string.format('shares: at most %.2f each (no allied score above %.2f, below the solo edge 1.5)', most, cfg('share_max_score')))
       out.shares = {[a]=sa, [b]=sb}
     end
-    if t.depot ~= nil then
-      local d = t.depot
-      assert(type(d) == 'table' and tonumber(d.x) and tonumber(d.y), 'depot: {x, y, surface?}')
-      local surface = game.get_surface(d.surface or 'nauvis')
-      assert(surface, 'depot: no surface ' .. tostring(d.surface))
-      out.depot = {surface=surface.name, x=math.floor(tonumber(d.x)) + 0.5, y=math.floor(tonumber(d.y)) + 0.5}
-    end
     if t.obligations ~= nil then
       assert(type(t.obligations) == 'table' and #t.obligations <= 6, 'obligations: a list of at most 6')
       out.obligations = {}
@@ -96,7 +103,6 @@ return function(api)
         assert(o.who == a or o.who == b, 'obligation ' .. i .. ': who is ' .. a .. ' or ' .. b)
         local r = {id=i, who=o.who, kind=o.kind}
         if o.kind == 'deliver' then
-          assert(out.depot, 'obligation ' .. i .. ': a delivery needs a depot in the terms')
           assert(type(o.item) == 'string' and prototypes.item[o.item], 'obligation ' .. i .. ': item, an item name')
           r.item, r.count = o.item, math.floor(tonumber(o.count) or 0)
           assert(r.count >= 1, 'obligation ' .. i .. ': count, 1 or more an hour')
@@ -199,43 +205,6 @@ return function(api)
     return {pact=M.view(p)}
   end
 
-  -- The depot: four steel chests in a row, each team's sending chest and receiving chest, indestructible, not
-  -- minable, tagged on each team's map.
-  local function place_depot(p, old)
-    local d = p.terms.depot
-    local previous = old and old.terms.depot
-    -- An amendment at the same depot retains the inventories and their ownership.
-    if previous and previous.surface == d.surface and previous.x == d.x and previous.y == d.y and previous.chests then
-      local n = 0
-      for _, c in pairs(previous.chests) do if c.valid then n = n + 1 end end
-      if n == 4 then d.chests = previous.chests; return end
-    end
-    local surface = game.get_surface(d.surface)
-    local spots = {{p.a, 'send', 0}, {p.a, 'receive', 1}, {p.b, 'receive', 2}, {p.b, 'send', 3}}
-    local chests, created = {}, {}
-    local ok, err = pcall(function()
-      for _, s in ipairs(spots) do
-        local at = {x=d.x + s[3], y=d.y}
-        assert(surface.can_place_entity{name='steel-chest', position=at, force=s[1]},
-          'depot: the spot (' .. at.x .. ',' .. at.y .. ') is taken')
-        local c = surface.create_entity{name='steel-chest', position=at, force=s[1], create_build_effect_smoke=false}
-        assert(c, 'depot: the spot (' .. at.x .. ',' .. at.y .. ') is taken')
-        created[#created+1] = c
-        c.destructible = false
-        c.minable_flag = false
-        chests[s[1] .. ' ' .. s[2]] = c
-      end
-    end)
-    if not ok then
-      for _, c in ipairs(created) do if c.valid then c.destroy() end end
-      error(err, 0)
-    end
-    d.chests = chests
-    for _, s in ipairs(spots) do
-      pcall(function() game.forces[s[1]].add_chart_tag(surface, {position=chests[s[1] .. ' ' .. s[2]].position, text='pact #' .. p.id .. ' ' .. s[2]}) end)
-    end
-  end
-
   function M.accept(team, who, a)
     local p = pact(a.id, team)
     assert(p.status == 'proposed', 'pact #' .. p.id .. ' is ' .. p.status)
@@ -247,7 +216,6 @@ return function(api)
         error('pact #' .. q.id .. ' already holds: withdraw this duplicate proposal and use pact_amend', 0)
       end
     end
-    if p.terms.depot then place_depot(p, old and old.status == 'active' and old or nil) end
     if p.replaces then
       if old and old.status == 'active' then
         M.finish(old, team, who, 'replaced by #' .. p.id, true)
@@ -266,7 +234,7 @@ return function(api)
     return {pact=M.view(p)}
   end
 
-  -- Ending: the record at once; the engine cease-fire lifts end_notice_s later (M.tick); depot moves stop.
+  -- Ending: the record at once; the engine cease-fire lifts end_notice_s later (M.tick); market orders are independent.
   local lift   -- below: the cease-fire back as the pact found it
   function M.finish(p, team, who, note, quiet)
     p.status = 'ended'
@@ -310,8 +278,7 @@ return function(api)
     if not quiet then both(p, string.format('the cease-fire of pact #%d lifted at tick %d', p.id, game.tick), false) end
   end
 
-  -- The depot's move: each send chest's stacks into the other team's receive chest, floor(count x (1 - cut)) arriving,
-  -- the rest removed; what does not fit waits in the sending chest. Counted in the ledger by game hour.
+  -- Arrived market goods count toward delivery obligations by game hour, without a cut.
   local function hour() return math.floor(game.tick / 216000) end
   local function count_to(p, key, team, item, n)
     local h = hour()
@@ -322,36 +289,6 @@ return function(api)
     l[key][team][item] = (l[key][team][item] or 0) + n
     for k in pairs(p.ledger) do if k < h - 24 then p.ledger[k] = nil end end
   end
-  local function move(p)
-    local ch = p.terms.depot.chests or {}
-    local cut = cfg('cut')
-    for _, from in ipairs({p.a, p.b}) do
-      local to = other_of(p, from)
-      local src, dst = ch[from .. ' send'], ch[to .. ' receive']
-      if src and src.valid and dst and dst.valid then
-        local si, di = src.get_inventory(defines.inventory.chest), dst.get_inventory(defines.inventory.chest)
-        for i = 1, #si do
-          local stack = si[i]
-          if stack.valid_for_read then
-            local name, count, quality = stack.name, stack.count, stack.quality and stack.quality.name or 'normal'
-            local arrive = math.floor(count * (1 - cut))
-            local ins = 0
-            if arrive > 0 then
-              local spec = {name=name, count=arrive, quality=quality}
-              if stack.spoil_percent and stack.spoil_percent > 0 then spec.spoil_percent = stack.spoil_percent end
-              ins = di.insert(spec)
-            end
-            local used = ins >= arrive and count or math.min(count, math.ceil(ins / (1 - cut)))
-            if used > 0 then
-              stack.count = count - used
-              count_to(p, 'sent', from, name, used); count_to(p, 'received', to, name, ins); count_to(p, 'cut', from, name, used - ins)
-            end
-          end
-        end
-      end
-    end
-  end
-
   -- Obligations: measured each check_s and reported as facts to both teams when short or broken.
   local function check(p)
     local period = cfg('check_s') * 60
@@ -413,6 +350,7 @@ return function(api)
   function M.tick(tick)
     local s = mt() and mt().pacts
     if not s then return end
+    s=st()
     if tick % 60 == 29 then
       for _, p in pairs(s.by_id) do
         if p.status == 'proposed' and tick >= p.expires_tick then
@@ -423,12 +361,6 @@ return function(api)
           p.next_check = tick + cfg('check_s') * 60
           check(p)
         end
-      end
-    end
-    if tick % (cfg('move_s') * 60) == 31 then
-      for _, p in pairs(s.by_id) do
-        local frozen = mt().humans and mt().humans.state == 'frozen' and (mt().humans.team == p.a or mt().humans.team == p.b)
-        if p.status == 'active' and p.terms.depot and not frozen then move(p) end
       end
     end
     if tick % 600 == 37 then departures() end
@@ -519,14 +451,14 @@ return function(api)
       returns='message with authenticated sender, pair-local seq and game tick; ordinary say/tell/board remain private to your team'},
     diplomacy={with='one contacted team',since='optional nonnegative sequence from this conversation',limit='1..50, default 20; newest messages kept',
       returns='messages for your conversation with that team only, last_seq; no third-team conversations or private chat'},
-    pact_propose={with='the other team (a team you have had contact with)', terms='{cease_fire?: true, shares?: {TEAM: fraction, both teams, summing to 1, each at most 0.70}, depot?: {x, y, surface?}, obligations?: [{kind: "deliver", who, item, count (an hour, through the depot)}, {kind: "keep_out", who, x, y, r, surface?}, {kind: "no_attack", who, target}]}',
+    pact_propose={with='the other team (a team you have had contact with)', terms='{cease_fire?: true, shares?: {TEAM: fraction, both teams, summing to 1, each at most 0.70}, obligations?: [{kind: "deliver", who, item, count (an hour, arrived through the Trading Post)}, {kind: "keep_out", who, x, y, r, surface?}, {kind: "no_attack", who, target}]}',
       note='optional text, 500 bytes', expires_min='optional minutes it stays open (default 60)', returns='pact: its number, terms and status; the other team gets it as a fact line'},
-    pact_accept={id='a pact proposed to your team', returns='pact; its terms hold from now (the cease-fire both ways, the depot\'s chests placed)'},
+    pact_accept={id='a pact proposed to your team', returns='pact; its terms hold from now (the cease-fire both ways)'},
     pact_decline={id='a pact proposed to your team', note='optional text', returns='pact'},
     pact_withdraw={id='your team\'s open proposal', returns='pact'},
     pact_amend={id='an active pact', terms='as pact_propose', note='optional text', expires_min='optional proposal lifetime in minutes', returns='pact: a new proposal that replaces it when accepted'},
-    pact_end={id='an active pact', note='optional text', returns='pact; trade ends now; cease-fire lifts at lift_tick if a notice is configured (pacts reports end_notice_s), otherwise immediately'},
-    pacts={returns='pacts: your team\'s pacts and proposals, with this hour\'s depot ledger and the obligations\' last measurements'},
+    pact_end={id='an active pact', note='optional text', returns='pact ends; market orders are separate; cease-fire lifts at lift_tick if a notice is configured (pacts reports end_notice_s), otherwise immediately'},
+    pacts={returns='pacts: your team\'s pacts and proposals, with this hour\'s delivered-goods ledger and the obligations\' last measurements'},
   }
   -- Describe's general argument cache can have been built before first contact. Check these
   -- dynamic actions here as well, after the contact gate, without exposing their schemas early.
@@ -567,6 +499,10 @@ return function(api)
     if type(a.config) == 'table' then
       for k, v in pairs(a.config) do
         assert(DEFAULTS[k] ~= nil, 'config: ' .. tostring(k) .. ' is no setting')
+        if k=='terms' then
+          assert(type(v)=='table','terms settings: a table')
+          for name,on in pairs(v) do assert(DEFAULTS.terms[name] and type(on)=='boolean','unknown pact term setting') end
+        end
         s.config[k] = v
       end
     end
@@ -1153,5 +1089,14 @@ return function(api)
     K.PRICES=PRICES
     return K
   end)()
+  M.market.on_delivery=function(from,to,item,n)
+    if not (mt() and mt().pacts) then return end
+    for _,p in pairs(st().by_id) do
+      if p.status=='active' and ((p.a==from and p.b==to) or (p.b==from and p.a==to)) then
+        p.ledger=p.ledger or {}
+        count_to(p,'sent',from,item,n);count_to(p,'received',to,item,n)
+      end
+    end
+  end
   return M
 end

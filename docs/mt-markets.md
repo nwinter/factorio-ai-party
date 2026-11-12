@@ -49,8 +49,9 @@ The gears consumed by red science count within the 1,500, not as extra iron dema
 produced gears. Expected missing plates are 1,390/1,700; a 10,000 grant buys 500 plates (36%/29%). These are fixture design
 estimates until engine throughput is measured. The same stock position and items are preserved in the control.
 
-The original pact depot remains pending real-engine swap acceptance. Retire it and its cut only after that gate;
-cease-fire, shares and obligations remain, with delivered market goods counted toward delivery obligations.
+The pact depot and its cut are retired after real-engine swap acceptance. Legacy chests retain their contents;
+active cease-fire, shares and obligations remain. Pending depot proposals expire. Only actual market arrivals count
+toward active-pact delivery obligations. No competing automatic depot pipe remains.
 
 The canonical fixture holds production machines/inserters inactive until activation. Startup may tick to deploy the
 runtime, but cannot consume supplied inputs. POG_MT_PAUSED_START keeps models from starting before the operator

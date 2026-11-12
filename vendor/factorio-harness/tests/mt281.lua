@@ -1,7 +1,6 @@
 -- mt281 (private: multi-team part I). Run from the harness root: lua tests/mt281.lua
--- Pacts (pacts.lua): shut before contact and in describe; propose, accept with a cease-fire both ways and the depot's
--- four chests; the depot's move less the cut, what does not fit waiting; an obligation reported short; pact_end with
--- the cease-fire lifting after the notice; amend, decline, withdraw, expiry; the human team's chat command; departures.
+-- Pacts retain cease-fire, shares, measured obligations, amendments and human chat.
+-- mt296 retires depot creation/cut/moves; legacy chests stay intact and market arrivals feed obligations.
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function fails(fn,text) local ok,err=pcall(fn); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
 
@@ -65,56 +64,34 @@ fails(function() H.pact_propose(nil,{with='green'}) end,'no contact with green y
 -- a proposal: checked terms, a fact line to blue that wakes it
 fails(function() H.pact_propose(nil,{with='blue',terms={shares={red=0.9,blue=0.2}}}) end,'summing to 1')
 fails(function() H.pact_propose(nil,{with='blue',terms={chart=true}}) end,'terms: no chart')
-fails(function() H.pact_propose(nil,{with='blue',terms={obligations={{kind='deliver',who='blue',item='iron-plate',count=60}}}}) end,'needs a depot')
+fails(function() H.pact_propose(nil,{with='blue',terms={depot={x=10,y=20}}}) end,'depot retired')
 fails(function() H.pact_propose(nil,{with='blue',terms={shares={red=0.9,blue=0.1}}}) end,'at most 0.70 each')
 fails(function() H.pact_propose(nil,{with='blue',terms={obligations={{kind='no_attack',who='blue',target='green'}}}}) end,'target unavailable')
 s.mt.first['chart red>green']=501;s.mt.first['chart blue>green']=501
-local r=H.pact_propose(nil,{with='blue',note='trade',terms={cease_fire=true,shares={red=0.7,blue=0.3},depot={x=10,y=20},
+local r=H.pact_propose(nil,{with='blue',note='trade',terms={cease_fire=true,shares={red=0.7,blue=0.3},
   obligations={{kind='deliver',who='blue',item='iron-plate',count=60},{kind='keep_out',who='blue',x=0,y=0,r=50},{kind='no_attack',who='blue',target='green'}}}})
 local id=r.pact.id
 eq(r.pact.status,'proposed')
-assert(last('blue'):find('red proposes pact #'..id..': cease%-fire; shares blue 0.30 / red 0.70; a depot at %(10,20%)'),last('blue'))
+assert(last('blue'):find('red proposes pact #'..id..': cease%-fire; shares blue 0.30 / red 0.70'),last('blue'))
 assert(last('blue'):find('blue delivers 60 iron%-plate an hour') and last('blue'):find('Note: trade'),last('blue'))
 fails(function() H.pact_accept(nil,{id=id}) end,'the other team accepts it')
 
 local duplicate=H.pact_propose(nil,{with='blue',terms={cease_fire=true}}).pact.id
--- blue accepts: cease-fire both ways, four chests, facts to both
-team='blue'
--- A blocked second slot rolls back the first chest, without accepting the pact.
-local checks=0
-surface.can_place_entity=function() checks=checks+1;return checks~=2 end
-fails(function() H.pact_accept(nil,{id=id}) end,'is taken')
-eq(#made,1);eq(made[1].valid,false)
-eq(s.mt.pacts.by_id[id].status,'proposed');eq(red.get_cease_fire('blue'),false)
-made={};surface.can_place_entity=function() return true end
-H.pact_accept(nil,{id=id})
-eq(red.get_cease_fire('blue'),true); eq(blue.get_cease_fire('red'),true)
+-- blue accepts: cease-fire both ways, no transport chests or loss fee.
+team='blue';H.pact_accept(nil,{id=id})
+eq(red.get_cease_fire('blue'),true);eq(blue.get_cease_fire('red'),true)
 fails(function() H.pact_accept(nil,{id=duplicate}) end,'already holds')
-eq(#made,4,'four chests: each team sends and receives')
-local d=s.mt.pacts.by_id[id].terms.depot.chests
-assert(d['red send'].force=='red' and d['blue receive'].force=='blue','each chest its team\'s')
-eq(d['red send'].destructible,false); eq(d['red send'].minable_flag,false)
+eq(#made,0,'pacts no longer create depots')
 assert(last('red'):find('pact #'..id..' between red and blue holds'),last('red'))
 team='red';H.pact_withdraw(nil,{id=duplicate})
 fails(function() H.pact_propose(nil,{with='blue'}) end,'pact_amend replaces it')
 
--- the depot moves red's 50 iron plates: 40 arrive, 10 are the cut; 300 copper plates: 100 fit, the rest waits
-d['red send'].inv.insert({name='iron-plate',count=50})
-d['red send'].inv.insert({name='copper-plate',count=50})
-d['blue send'].inv.insert({name='iron-plate',count=50})
-s.mt.pacts.config.move_s=10
-game.tick=1200; P.tick(1200+31-(1200%600))  -- a move tick (tick % 600 == 31)
-P.tick(1231)
-eq(d['blue receive'].inv.count('iron-plate'),40,'50 sent, 40 arrive (cut 20%)')
-eq(d['red receive'].inv.count('iron-plate'),40,'both ways')
-eq(d['blue receive'].inv.count('copper-plate'),40)
+-- Successful market arrivals, not dispatch or promised quantities, feed the obligation ledger.
+game.tick=1200
+P.market.on_delivery('blue','red','iron-plate',40)
+P.market.on_delivery('red','blue','copper-plate',100)
 local l=s.mt.pacts.by_id[id].ledger[math.floor(game.tick/216000)]
-eq(l.sent.red['iron-plate'],50); eq(l.cut.red['iron-plate'],10); eq(l.received.blue['iron-plate'],40)
-d['red send'].inv.insert({name='copper-plate',count=300})
-P.tick(1831)
-eq(d['blue receive'].inv.count('copper-plate'),60,'the receiving chest full (100 items in this mock, 40 iron there): the rest waits')
-assert(d['red send'].inv.count('copper-plate')>0,'what did not fit stays in the sending chest')
-
+eq(l.sent.blue['iron-plate'],40);eq(l.received.red['iron-plate'],40);eq(l.cut,nil)
 -- the obligations at their check (check_s): blue's delivery 40 of 60 short, its 3 entities in the circle; a hit on green
 s.mt.pacts.hits['blue>green']=game.tick
 local p=s.mt.pacts.by_id[id]
@@ -142,10 +119,9 @@ P.tick(38999-(38999%60)+29)
 eq(red.get_cease_fire('blue'),true)
 P.tick(39029)
 eq(red.get_cease_fire('blue'),false,'lifted after the notice'); eq(blue.get_cease_fire('red'),false)
-d['red send'].inv.insert({name='iron-plate',count=10})
-local before=d['blue receive'].inv.count('iron-plate')
-P.tick(39631)
-eq(d['blue receive'].inv.count('iron-plate'),before,'no moves after the end')
+local before=l.received.red['iron-plate']
+P.market.on_delivery('blue','red','iron-plate',10)
+eq(l.received.red['iron-plate'],before,'ended pact no longer accrues obligations')
 
 -- decline, withdraw, expiry, amend
 team='red'
@@ -186,8 +162,11 @@ local dep=s.mt.pacts.departures[1]
 eq(dep.team,'red'); eq(dep.from,'nauvis'); eq(dep.pacts[1].with,'blue'); eq(dep.pacts[1].shares.red,0.5)
 
 -- the operator read and its settings
-local o=P.operator.mt_pacts({config={cut=0.3}})
-eq(o.config.cut,0.3); eq(o.config.end_notice_s,600); eq(o.config.share_max_score,1.4)
+local o=P.operator.mt_pacts({})
+eq(o.config.cut,nil);
+fails(function() P.operator.mt_pacts({config={cut=.3}}) end,'is no setting')
+fails(function() P.operator.mt_pacts({config={terms={depot=true}}}) end,'unknown pact term')
+ eq(o.config.end_notice_s,600); eq(o.config.share_max_score,1.4)
 fails(function() P.operator.mt_pacts({config={chart=true}}) end,'is no setting')
 -- the scoring's allied edge (mt284): shares bounded by share_max_score / N; 0.7/0.3 of two is 1.4/0.6, even 1.0 each
 local sc=P.allied_scores({red=0.7,blue=0.3},{'red','blue'})
@@ -208,23 +187,24 @@ assert(last('red'):find('blue ended pact #'..q..' at tick %d+; the cease%-fire l
 eq(#facts-before_n,2,'one line to each team, no second lift line')
 print('mt281 pacts: ok')
 
+-- A legacy active depot loses only the automatic pipe; all physical goods and other terms remain.
 team='red'
-local original=H.pact_propose(nil,{with='blue',terms={cease_fire=true,depot={x=30,y=30}}}).pact.id
+local original=H.pact_propose(nil,{with='blue',terms={cease_fire=true}}).pact.id
 team='blue';H.pact_accept(nil,{id=original})
-local original_chests=s.mt.pacts.by_id[original].terms.depot.chests
-team='red'
-local amend=H.pact_amend(nil,{id=original,terms={cease_fire=true,depot={x=30,y=30},shares={red=.5,blue=.5}}}).pact.id
-local count=#made
-team='blue';H.pact_accept(nil,{id=amend})
-eq(#made,count,'same depot amendment retains chests')
-eq(s.mt.pacts.by_id[amend].terms.depot.chests,original_chests)
-team='red'
-local bad=H.pact_amend(nil,{id=amend,terms={cease_fire=true,depot={x=40,y=40}}}).pact.id
-surface.can_place_entity=function() return false end
-team='blue';fails(function() H.pact_accept(nil,{id=bad}) end,'is taken')
-eq(s.mt.pacts.by_id[amend].status,'active','failed amendment keeps old pact')
-eq(red.get_cease_fire('blue'),true)
-print('mt291 depot creation rollback and amendment: ok')
+local src,dst=chest('red'),chest('blue');src.inv.insert{name='iron-plate',count=80}
+local old=s.mt.pacts.by_id[original];old.terms.depot={x=30.5,y=30.5,surface='nauvis',chests={['red send']=src,['blue receive']=dst}}
+s.mt.pacts.depots_retired=nil;s.mt.pacts.config.cut=.2;s.mt.pacts.config.move_s=10
+P.tick(31);eq(old.terms.depot,nil);eq(old.legacy_depot.chests['red send'],src)
+eq(src.inv.count('iron-plate'),80);eq(dst.inv.count('iron-plate'),0);eq(old.status,'active')
+eq(red.get_cease_fire('blue'),true);eq(s.mt.pacts.config.cut,nil)
+P.tick(631);eq(src.inv.count('iron-plate'),80);eq(dst.inv.count('iron-plate'),0)
+team='red';local amend=H.pact_amend(nil,{id=original,terms={cease_fire=true,shares={red=.5,blue=.5}}}).pact.id
+team='blue';H.pact_accept(nil,{id=amend});eq(old.status,'ended');eq(s.mt.pacts.by_id[amend].status,'active')
+-- A legacy proposal is invalidated rather than accepting changed terms without the proposer.
+team='red';local pending=H.pact_amend(nil,{id=amend,terms={cease_fire=true}}).pact.id
+s.mt.pacts.by_id[pending].terms.depot={x=40,y=40};s.mt.pacts.depots_retired=nil
+P.tick(691);eq(s.mt.pacts.by_id[pending].status,'expired');eq(s.mt.pacts.by_id[amend].status,'active')
+print('mt296 legacy depot migration: stock/cease-fire preserved, no cut/moves, pending proposal invalidated: ok')
 
 -- A new agreement during an end notice survives the older notice's expiry.
 P.operator.mt_pacts({config={end_notice_s=60}})

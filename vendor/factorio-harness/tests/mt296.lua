@@ -233,3 +233,13 @@ print('mt296 final total: '..checks)
 reset(false,false);s.mt.spawns.red.nauvis={100,200};s.mt.first['chart red>blue']=1;tick(60)
 eq(s.mt.market.teams.red.post.position.x,104);eq(s.mt.market.teams.red.post.position.y,200)
 print('mt296 engine regression total: '..checks)
+-- Active pact obligations count only actual market arrivals, including partial delivery exactly once.
+reset(true,true);teamname='red'
+local pid=P.handlers.pact_propose(nil,{with='blue',terms={obligations={{kind='deliver',who='red',item='iron-ore',count=100}}}}).pact.id
+teamname='blue';P.handlers.pact_accept(nil,{id=pid})
+stock('red','iron-ore',100);sell('red','iron-ore',100);buy('blue','iron-ore',100);tick(600)
+eq(next(s.mt.pacts.by_id[pid].ledger),nil)
+s.mt.market.teams.blue.post.inv.capacity=30;tick(6000)
+local ledger=s.mt.pacts.by_id[pid].ledger[0];eq(ledger.received.blue['iron-ore'],30);eq(ledger.sent.red['iron-ore'],30);eq(ledger.cut,nil)
+s.mt.market.teams.blue.post.inv.capacity=100;tick(6060);tick(6120);eq(ledger.received.blue['iron-ore'],100)
+print('mt296 pact integration total: '..checks)

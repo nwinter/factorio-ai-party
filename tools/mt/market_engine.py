@@ -150,14 +150,23 @@ assert(t.post and t.post.valid);t.post.destructible=true;assert(t.post.die(game.
             coins=c.lua('''local m=storage.agent_harness.mt.market;local f=game.forces.green;local home=storage.agent_harness.mt.spawns.green.nauvis
 local dst=m.teams.yellow.post.get_inventory(defines.inventory.chest)
 for j=1,#dst do if dst[j].valid_for_read and dst[j].name=='stone' then dst[j].clear() end end
-local n=0
+local n,ground,carried=0,0,{}
 for _,e in ipairs(game.surfaces.nauvis.find_entities_filtered{type='item-entity',position=home,radius=64}) do
  if e.stack.valid_for_read and e.stack.name=='mt-coin' then
-  local k=m.teams.yellow.post.insert(e.stack);e.stack.count=e.stack.count-k;n=n+k
+  local k=m.teams.yellow.post.insert(e.stack);e.stack.count=e.stack.count-k;n=n+k;ground=ground+k
  end
 end
-rcon.print(helpers.table_to_json{collected=n})''')
+-- A nearby native character may have automatically picked up the looted spill.
+for name,b in pairs(storage.agent_harness.bots.by_name) do if b.character and b.character.valid then
+ local i=b.character.get_inventory(defines.inventory.character_main);local held=i.get_item_count('mt-coin')
+ if held>0 then
+  local k=m.teams.yellow.post.insert{name='mt-coin',count=held}
+  assert(i.remove{name='mt-coin',count=k}==k);carried[name]=k;n=n+k
+ end
+end end
+rcon.print(helpers.table_to_json{collected=n,ground=ground,carried=carried})''')
             assert coins['collected']==6125,coins
+            record('native_coin_items_recovered',coins)
             state=wait(c,lambda s:s['audit']['physical']==0,10);assert state['teams']['yellow']['wallet']==12125
             assert not state['audit']['faults'];record('coin_recovery_conserves',state['audit'])
             c.h.command('/silent-command game.server_save("m296-engine-passed")')

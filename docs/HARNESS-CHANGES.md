@@ -112,3 +112,13 @@ exact-count arrival settlement, pair-scoped responses, passive dispatch and home
 suite has 187 assertions plus runtime/data fixtures. Full harness run passed 786/786 before the latest viewer/docs
 additions; their focused regressions pass. Real-engine save/load and agent/control runs remain required. See
 `docs/mt-markets.md`; no live-world deployment has occurred.
+
+## mt296 checkpoint 6 (private): native settlement and depot retirement
+
+Factorio 2.1.24 acceptance passed a real in-transit save/restart, replay after cache eviction, full-receiver
+partial insertion, exact arrival payment, human freeze, both 25% raids and physical-coin recovery/deposit.
+The native probe exposed array-form saved spawn positions; Post creation now normalizes both coordinate forms.
+The depot and its cut are retired: old chest stock is preserved, active diplomatic terms remain, pending depot
+proposals expire, and actual market arrivals count toward delivery obligations. A native hot-deploy migration
+preserved all 37 legacy plates and recorded a new 10-plate arrival without a cut. Full suite: 786/786; market:
+247 assertions; Lua syntax checks pass. Agent market/control experiments remain pending.
