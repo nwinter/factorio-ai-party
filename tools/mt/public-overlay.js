@@ -231,6 +231,7 @@ function ingest(s) {
   if (top != null && clockTop != null && top < clockTop - 1800) rewind();
   if (top != null) clockTop = top;
   state = s; lost = false;
+  if (window.pogPlaybackClock) window.pogPlaybackClock.observe(s.now);
   if (s.layout && Array.isArray(s.layout.camera) && s.layout.camera.length === 4 && s.layout.camera.every(Number.isFinite)) R = rects(s.layout.camera);
   const agents = new Map(), teams = new Map();
   for (const t of s.teams || []) {

@@ -6,7 +6,9 @@
   python3 tools/mt/public_stream.py stop RUN
 
 Requires the run's per-team services and op/streams.txt. POG_MT_PUBLIC_PORT=8790,
-POG_MT_PUBLIC_DWELL=30, POG_MT_YOUTUBE=VIDEO_ID (optional display-only chat).
+POG_MT_PUBLIC_DWELL=30, POG_MT_YOUTUBE=VIDEO_ID (operator/display-only chat).
+The existing music slot D:\\pog\\music\\bed.mp3 must exist. POG_MT_TTS defaults
+to eleven-fast; a failed cloud voice falls back to the main stream's local say.
 One supervisor owns its SSH children, pogwin camera task and OBS recording. An
 exclusive machine-local lock prevents two checkouts competing for the camera.
 """
@@ -29,6 +31,7 @@ sys.path.insert(0, str(HERE.parent / 'stream'))
 from obsws import OBS
 from public_overlay import PublicOverlay, CAMERA, CAMERA_RECT
 from udp_bridge import Bridge
+from obs_audio import setup_audio, MUSIC_FILE
 
 SCENE = 'mt-stream'
 REMOTE = 'D:/pog/mt-stream21' if os.environ.get('MT_EXPECT_VERSION') == '2.1.24' else 'D:/pog/mt-stream'
@@ -76,7 +79,7 @@ def setup_obs(obs, url, receipt):
     specs = [
         ('mt background', 'color_source_v3', {'color': 0xff201810, 'width': 1920, 'height': 1080}, (0, 0, 1920, 1080)),
         ('mt camera', 'game_capture', {'capture_mode': 'window', 'window': f"Factorio {os.environ.get('MT_EXPECT_VERSION', '2.0.77')}:Factorio:factorio-mtcam.exe",
-                                     'priority': 2, 'capture_cursor': False, 'allow_transparency': False}, CAMERA_RECT),
+                                     'priority': 2, 'capture_cursor': False, 'allow_transparency': False, 'capture_audio': False}, CAMERA_RECT),
         ('mt overlay', 'browser_source', {'url': url, 'width': 1920, 'height': 1080, 'fps': 30,
                                         'shutdown': False, 'restart_when_active': True}, (0, 0, 1920, 1080))]
     names = [i['inputName'] for i in obs.call('GetInputList')['inputs']]
@@ -102,6 +105,7 @@ def setup_obs(obs, url, receipt):
             'cropLeft': 0, 'cropRight': 0, 'cropTop': 0, 'cropBottom': 0}})
         obs.call('SetSceneItemEnabled', {'sceneName': SCENE, 'sceneItemId': item, 'sceneItemEnabled': True})
         obs.call('SetSceneItemIndex', {'sceneName': SCENE, 'sceneItemId': item, 'sceneItemIndex': order})
+    receipt['audio'] = setup_audio(obs)
     obs.call('SetCurrentProgramScene', {'sceneName': SCENE})
     if not receipt['record_was_active']:
         # Mark before the request, so a lost response still gets cleanup.
@@ -160,7 +164,7 @@ def supervise(op, run):
             raise ValueError('camera dwell must be 10..300 seconds')
         bridge = Bridge()
         bridge.start()
-        overlay = PublicOverlay(op, tree, run, port, dwell, os.environ.get('POG_MT_YOUTUBE'))
+        overlay = PublicOverlay(op, tree, run, port, dwell, os.environ.get('POG_MT_YOUTUBE'), audio=True)
         overlay.start()
         tunnel_args = SSH + ['-N', '-o', 'ExitOnForwardFailure=yes', '-o', 'ServerAliveInterval=10',
                             '-o', 'ServerAliveCountMax=3', '-R', f'127.0.0.1:{port}:127.0.0.1:{port}',
@@ -178,6 +182,7 @@ def supervise(op, run):
                 stop.wait(.5)
         if obs.call('GetStreamStatus')['outputActive']:
             raise RuntimeError('OBS is streaming; staging refused')
+        checked(powershell(f"if (!(Test-Path -LiteralPath '{MUSIC_FILE}' -PathType Leaf)) {{ throw 'stream music bed is missing' }}"), capture_output=True)
         stage()
         if stop.is_set():
             raise RuntimeError('startup cancelled')
@@ -199,9 +204,10 @@ def supervise(op, run):
             stop.wait(2)
         else:
             raise RuntimeError('camera did not join and frame a team within 240s; inspect pogwin camera log')
-        setup_obs(obs, f'http://127.0.0.1:{port}/', receipt)
+        setup_obs(obs, f'http://127.0.0.1:{port}/?audio=1', receipt)
         receipt.update(phase='ready', overlay=f'http://127.0.0.1:{port}/', camera=CAMERA, scene=SCENE,
                        streaming=False, recording_active=True)
+        receipt['audio']['tts'] = overlay.audio.backend
         write(statefile, receipt)
         print('READY: public overlay, one camera, mt-stream scene, recording; OBS streaming is OFF', flush=True)
         while not stop.wait(2):

@@ -119,7 +119,7 @@ class PublicTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('public staging: team feeds on 8791', result.stdout)
         self.assertIn('recording ON, streaming OFF', result.stdout)
-        self.assertIn('viewer chat through the team services', result.stdout)
+        self.assertIn('viewer chat to the operator inbox/display only', result.stdout)
         self.assertFalse((ROOT / 'runs/p288dry/op').exists())
 
     def test_camera_chart_and_index(self):
@@ -240,7 +240,7 @@ class PublicTest(unittest.TestCase):
                 for method in ('POST', 'PUT', 'DELETE'):
                     with self.assertRaises(urllib.error.HTTPError) as e:
                         urllib.request.urlopen(urllib.request.Request(url + '/say', data=b'{}', method=method))
-                    self.assertEqual(e.exception.code, 501)
+                    self.assertEqual(e.exception.code, 404 if method == 'POST' else 501)
                     e.exception.close()
                 with self.assertRaises(urllib.error.HTTPError) as e: urllib.request.urlopen(url + '/../../task-common.md')
                 e.exception.close()

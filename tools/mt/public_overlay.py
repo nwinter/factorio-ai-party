@@ -1,9 +1,10 @@
 """Read-only public projection of team stream services; one camera, activity-aware race director.
 
-No Relay, viewer_say, inbox writes, or HTTP mutation routes. The camera controller
+No Relay, viewer_say or inbox writes. HTTP writes are audio playback receipts only. The camera controller
 is operator-only and reuses the stream harness and lookcam chart checks.
 """
 import concurrent.futures
+import copy
 import http.server
 import json
 import math
@@ -22,6 +23,7 @@ import lookcam
 from public_race import (project, Race, Director, read_views, icons, speech, project_viewers, diplomacy,
                          subjects, broadcast, project_market, rows as list_rows, obj)
 from public_feed import project_feed
+from public_audio import PublicAudio, AudioRoutes
 
 CAMERA = 'pog-director2'
 # The one camera rectangle, in overlay pixels. The OBS scene item (public_stream.setup_obs) and the
@@ -37,6 +39,8 @@ STATIC = {'/': ('public-overlay.html', 'text/html; charset=utf-8'),
           '/mapview.js': ('../../site/static/mapview.js', 'text/javascript; charset=utf-8'),
           # The main stream's own avatar generator: original pixel art, no game sprites.
           '/avatar.js': ('../stream/static/avatar.js', 'text/javascript; charset=utf-8')}
+STATIC.update({f'/{name}': (f'../stream/static/{name}', 'text/javascript; charset=utf-8')
+               for name in ('audio.js', 'playback-clock.js')})
 FONTS = {'titillium-web-400.woff2', 'titillium-web-600.woff2', 'titillium-web-700.woff2',
          'titillium-web-600-italic.woff2', 'big-shoulders-display-var.woff2'}
 
@@ -217,7 +221,7 @@ def operator_audience(op, teams, now):
 
 
 class PublicOverlay:
-    def __init__(self, op, tree, run, port=8790, dwell=30, youtube=None, camera=True):
+    def __init__(self, op, tree, run, port=8790, dwell=30, youtube=None, camera=True, audio=False):
         self.op = op
         self.feeds = feeds(op)
         self.race, self.director = Race(), Director(dwell)
@@ -227,11 +231,17 @@ class PublicOverlay:
         self.state = {'v': 2, 'teams': [], 'camera': None, 'viewers': [], 'viewer_status': 'off', 'now': 0, 'events': [],
                       'feed': [], 'ranking': 'Awaiting scores', 'layout': {'camera': list(CAMERA_RECT)}}
         self.lock = threading.Lock()
+        self.audio = PublicAudio(self.snapshot, op)
+        self.audio_enabled = audio
         self.dwell = dwell
         owner = self
 
-        class Handler(http.server.BaseHTTPRequestHandler):
+        class Handler(AudioRoutes, http.server.BaseHTTPRequestHandler):
+            audio = owner.audio
+
             def do_GET(self):
+                if self.audio_get():
+                    return
                 if self.path.split('?')[0] == '/state.json':
                     with owner.lock:
                         body = json.dumps(owner.state).encode()
@@ -260,6 +270,12 @@ class PublicOverlay:
     def start(self):
         for fn in (self.http.serve_forever, self.poll):
             threading.Thread(target=fn, daemon=True).start()
+        if self.audio_enabled:
+            self.audio.start()
+
+    def snapshot(self):
+        with self.lock:
+            return copy.deepcopy(self.state)
 
     def poll(self):
         previous = {}
@@ -314,5 +330,6 @@ class PublicOverlay:
 
     def close(self):
         self.stop.set()
+        self.audio.close()
         self.http.shutdown()
         self.http.server_close()
