@@ -47,6 +47,17 @@ class MarketDisplayTests(unittest.TestCase):
         ordinary = dict(self.line, kind='say', scope='team-private', agent='green1', to=[])
         self.assertEqual(self.feed([ordinary]), [])
 
+    def test_market_event_recipients_and_legacy_fill(self):
+        events = [self.line, dict(self.line, seq=11, event='embargo'),
+                  dict(self.line, seq=12, event='coinage', to={}), dict(self.line, seq=13, event='raid', to=[])]
+        lines = self.feed(events)
+        self.assertEqual([v['event'] for v in lines], ['fill', 'embargo', 'coinage', 'raid'])
+        self.assertEqual([v.get('to_team') for v in lines], ['yellow', 'yellow', None, None])
+        self.assertEqual(len(race.Race().update(self.teams, 100, lines=lines)['feed']), 4)
+        bad = [dict(self.line, event='wealth'), dict(self.line, event='coinage'), dict(self.line, event='raid'),
+               dict(self.line, event='fill', to=[]), dict(self.line, event='embargo', to=[]), dict(self.line, event=None)]
+        self.assertEqual(self.feed(bad), [])
+
     def test_marker_price_allowlist_no_wealth_and_no_pair_collisions(self):
         raw = dict(tick=6000, markers=[self.marker, dict(self.marker, **{'from': 'yellow'}, to='green'),
                                      dict(self.marker, **{'from': 'blue'})],

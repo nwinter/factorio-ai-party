@@ -50,12 +50,16 @@ def project_feed(messages,teams):
         if to=={}:to=[]  # Factorio serializes an empty Lua array as an object.
         if not isinstance(to,list) or any(not isinstance(n,str) for n in to):continue
         if kind=='market':
+            event=m.get('event','fill')
             if (scope!='market' or m.get('system') is not True or agent!='Trading Post'
-                or len(to)!=1 or to[0] not in rosters or to[0]==team
+                or event not in ('fill','coinage','raid','embargo')
                 or type(m.get('source_seq')) is not int or m['source_seq']<1):continue
+            if event in ('fill','embargo'):
+                if len(to)!=1 or to[0] not in rosters or to[0]==team:continue
+            elif to:continue
             body=text(m.get('text'),4000)
             if body:out.setdefault(seq,{'seq':seq,'tick':tick,'team':team,'agent':agent,'kind':kind,
-                'scope':scope,'system':True,'source_seq':m['source_seq'],'text':body,'to':to})
+                'scope':scope,'system':True,'event':event,'source_seq':m['source_seq'],'text':body,'to':to})
             continue
         if agent not in rosters[team] or m.get('system'):continue
         if kind=='diplomacy':

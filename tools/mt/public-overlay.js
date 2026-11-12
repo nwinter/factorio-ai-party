@@ -378,8 +378,9 @@ function feedRows(s) {
   for (const m of s.feed || []) {
     const t = model.teams.get(m.team), a = t && who(m.team, m.name);
     if (m.kind === 'market') {
-      if (t && m.system === true && m.name === 'Trading Post' && model.teams.has(m.to_team) && m.to_team !== m.team && typeof m.text === 'string' && m.text)
-        rowsOut.push({id: 'a:' + m.id, kind: 'market', team: m.team, to_team: m.to_team, text: m.text, tick: m.tick, at: m.at || 0});
+      const event = m.event || 'fill', pair = ['fill', 'embargo'].includes(event), solo = ['coinage', 'raid'].includes(event);
+      if (t && m.system === true && m.name === 'Trading Post' && ((pair && model.teams.has(m.to_team) && m.to_team !== m.team) || (solo && !m.to_team)) && typeof m.text === 'string' && m.text)
+        rowsOut.push({id: 'a:' + m.id, kind: 'market', event, team: m.team, to_team: m.to_team, text: m.text, tick: m.tick, at: m.at || 0});
       continue;
     }
     if (!a || !['talk', 'tell', 'diplomacy', 'board', 'identity'].includes(m.kind) || typeof m.text !== 'string') continue;
@@ -485,8 +486,9 @@ function drawBubble(it, x, y, w, h, e, life) {
   if (it.kind === 'market') {
     ctx.save(); ctx.globalAlpha *= clamp(life * 1.4 - .2, 0, 1);
     plate(x, y, w, h, {cut: 10, fill: '#34312a', fill2: '#25241f'});
-    box(x, y + 6, 5, h - 12, teamColor(it.team)); box(x + w - 5, y + 6, 5, h - 12, teamColor(it.to_team));
-    text('TRADING POST · SYSTEM', x + 16, y + 24, font(14, 700), C.gold, {ls: .8});
+    box(x, y + 6, 5, h - 12, teamColor(it.team));
+    if (it.to_team) box(x + w - 5, y + 6, 5, h - 12, teamColor(it.to_team));
+    text('TRADING POST · ' + String(it.event || 'fill').toUpperCase(), x + 16, y + 24, font(14, 700), C.gold, {ls: .8});
     text(clockOf(it.tick), x + w - 16, y + 24, font(13, 600), C.muted, {align: 'right'});
     wrap(it.text, SMALL, w - 32, 3).forEach((l, i) => text(l, x + 16, y + 54 + i * 24, SMALL, C.text));
     pop(); return;

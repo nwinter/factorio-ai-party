@@ -281,15 +281,21 @@ def broadcast(lines, teams, now):
             continue
         row = {'id': f'f:{seq}', 'team': team, 'name': m['agent'], 'to': [n for n in to if isinstance(n, str)] if kind == 'tell' else [],
                'kind': kind, 'text': text, 'tick': tick, 'at': now - max(0, latest - tick) / 60, 'reply': False}
-        if kind in ('diplomacy', 'market'):
+        if kind == 'market':
+            event = m.get('event', 'fill')
+            if (m.get('system') is not True or m['agent'] != 'Trading Post' or m.get('scope') != 'market'
+                    or event not in ('fill', 'coinage', 'raid', 'embargo')
+                    or type(m.get('source_seq')) is not int or m['source_seq'] < 1):
+                continue
+            if event in ('fill', 'embargo'):
+                if len(to) != 1 or to[0] not in known or to[0] == team: continue
+                row['to_team'] = to[0]
+            elif to: continue
+            row.update(system=True, event=event, source_seq=m['source_seq'])
+        elif kind == 'diplomacy':
             if len(to) != 1 or to[0] not in known or to[0] == team:
                 continue
             row['to_team'] = to[0]
-            if kind == 'market':
-                if (m.get('system') is not True or m['agent'] != 'Trading Post' or m.get('scope') != 'market'
-                        or type(m.get('source_seq')) is not int or m['source_seq'] < 1):
-                    continue
-                row.update(system=True, source_seq=m['source_seq'])
         elif kind == 'identity':
             who = obj(m.get('identity'))
             name, persona = label(who.get('display_name'), ('Nick', 'Winter')), speech(who.get('persona'), ('Nick', 'Winter'), 160)
@@ -628,8 +634,10 @@ class Race:
                     if r['team'] in (a, b):
                         r['pacts'].append({'id':ident, 'with': b if r['team'] == a else a})
         for m in lines or ():
+            event = m.get('event', 'fill')
             system = (m.get('kind') == 'market' and m.get('system') is True and m.get('name') == 'Trading Post'
-                      and m.get('to_team') in known and m['to_team'] != m['team'])
+                      and ((event in ('fill', 'embargo') and m.get('to_team') in known and m['to_team'] != m['team'])
+                           or (event in ('coinage', 'raid') and not m.get('to_team'))))
             if m['team'] in known and (system or any(a['name'] == m['name'] for r in teams if r['team'] == m['team'] for a in r['agents'])):
                 self.say(dict(m, reply=False))
         for m in () if self.ordered else diplomacy:
