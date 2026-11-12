@@ -122,3 +122,12 @@ The depot and its cut are retired: old chest stock is preserved, active diplomat
 proposals expire, and actual market arrivals count toward delivery obligations. A native hot-deploy migration
 preserved all 37 legacy plates and recorded a new 10-plate arrival without a cut. Full suite: 786/786; market:
 247 assertions; Lua syntax checks pass. Agent market/control experiments remain pending.
+
+## mt296 checkpoint 7 (private): prepared-base native QA
+
+Fixture holds use 2.1's writable disabled_by_script flag, position-plus-unit identity checks for static entities,
+and one fuel stack per furnace. Both 137-entity bases produced all six required products; both 1,200-ore poor
+patches exhausted within the ten-minute probe. The saved, production-held baseline survived reload with zero
+production/stock drift. Real chart contact then placed both Posts exactly at the stock chests, preserved stock,
+and issued exactly 20,000 total coin. The canonical save is unpaused only to permit runtime deployment; cp20
+pauses before clients start. The paired runs release production only at operator activation.

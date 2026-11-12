@@ -51,8 +51,8 @@ for k,name in ipairs{'green','yellow'} do
   assert(sf.can_place_entity{name=n,position={x+dx,y+dy},force=f,direction=d},'fixture collision: '..n..' at '..dx..','..dy)
   local e=assert(sf.create_entity{name=n,position={x+dx,y+dy},force=f,direction=d},n)
   if n=='inserter' then assert(e.pickup_position.x<e.drop_position.x,'fixture inserter must carry west to east') end
-  local held=({['assembling-machine']=true,furnace=true,['mining-drill']=true,inserter=true,lab=true,['electric-energy-interface']=true})[e.type]
-  if held then e.active=false end
+  local held=({['assembling-machine']=true,furnace=true,['mining-drill']=true,inserter=true,lab=true})[e.type]
+  if held then e.disabled_by_script=true;assert(e.disabled_by_script,'fixture hold refused: '..n) end
   row.entities[#row.entities+1]={name=n,position=e.position,unit=e.unit_number,held=held};return e
  end
  local function put(e,n,count)
@@ -85,7 +85,7 @@ for k,name in ipairs{'green','yellow'} do
   make('electric-mining-drill',dx,dy,defines.direction.east)
   make('steel-chest',dx+2,dy)
   make('inserter',dx+3,dy,defines.direction.west)
-  local furnace=make('stone-furnace',dx+4.5,dy+.5);put(furnace,'coal',100)
+  local furnace=make('stone-furnace',dx+4.5,dy+.5);put(furnace,'coal',50)
   make('inserter',dx+6,dy,defines.direction.west);make('steel-chest',dx+7,dy)
  end
  local function cell(recipe,dx,dy,inputs)
@@ -133,14 +133,16 @@ for _,row in ipairs(fxt.teams) do
  local st=game.forces[row.team].get_item_production_statistics(game.surfaces.nauvis)
  for n,v in pairs(row.prepared_counts.made) do assert(st.get_input_count(n)==v,'production before start: '..row.team..' '..n) end
  for n,v in pairs(row.prepared_counts.used) do assert(st.get_output_count(n)==v,'consumption before start: '..row.team..' '..n) end
- local e=assert(game.get_entity_by_unit_number(row.stock_unit));local i=e.get_inventory(defines.inventory.chest)
+ local e=assert(game.surfaces.nauvis.find_entity('steel-chest',row.stock_position));assert(e.unit_number==row.stock_unit)
+ local i=e.get_inventory(defines.inventory.chest)
  assert(i.get_item_count('iron-plate')==1750 and i.get_item_count('copper-plate')==500,'stock moved before start')
 end
 BASELINE
 local held={}
 if on then
  for _,row in ipairs(fxt.teams) do
-  local e=assert(game.get_entity_by_unit_number(row.stock_unit));local inv=e.get_inventory(defines.inventory.chest)
+  local e=assert(game.surfaces.nauvis.find_entity('steel-chest',row.stock_position));assert(e.unit_number==row.stock_unit)
+  local inv=e.get_inventory(defines.inventory.chest)
   held[row.team]=inv.get_contents();e.destroy()
  end
 end
@@ -169,7 +171,9 @@ rcon.print(helpers.table_to_json(fxt))
 '''
 RELEASE=r'''
 for _,row in ipairs(storage.mt296_fixture.teams) do for _,v in ipairs(row.entities) do if v.held then
- local e=assert(game.get_entity_by_unit_number(v.unit),'fixture machine missing before activation');e.active=true
+ local e=assert(game.surfaces.nauvis.find_entity(v.name,v.position),'fixture machine missing before activation')
+ assert(e.unit_number==v.unit,'fixture machine replaced before activation');e.disabled_by_script=false
+ assert(not e.disabled_by_script,'fixture release refused')
 end end end
 '''
 
