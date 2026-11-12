@@ -101,6 +101,12 @@ shows the resulting broadcast embed through the existing operator-pushed test st
 - The ledger counts items sent, received and cut per team per hour of game time (the obligations read it).
 
 ## Scoring (how the operator's scoring reads it)
+- Nick d41 (note-mt290-d41b): **no direct combat reward and no kill points**. Combat has instrumental value only:
+  deny access to resources, damage production or defenses, and loot what the ordinary survival interfaces allow.
+  Rival character corpses remain lootable via `transfer` (the engine makes those corpses neutral); `recover`
+  remains own-death recovery. Living rival inventories are protected; there is no free building-ownership swap.
+  Destroying a rival building is a hostile shooting action, not a deconstruction or capture shortcut. Collision,
+  reach, ammunition and cease-fire rules still apply. The d41b engine evidence is recorded in report-mt295.md.
 - The alliance status that counts is the one when a team's edge-run platform leaves its last planet (d27 10:45 rule).
   The harness records a snapshot of that team's active pacts at that departure (a `departure` record on the platform's
   first move away from the last planet past a set distance; the platform watch already sees routes).
@@ -115,6 +121,9 @@ shows the resulting broadcast embed through the existing operator-pushed test st
 - A mid-run milestone ranking (if Nick adds one): pacts do not change it.
 
 ## Interactions
+- Nick d41: before first contact, agent-facing context must not identify coloured teams or announce competition.
+  Own cooperative partner identities and individual character colours remain distinct. Contact reveals only the
+  parties actually encountered. Broadcast/site colours remain public viewer data, never agent input.
 - Freeze (mt278 H): a frozen team's pacts stay; its depot does not move items while it is frozen (its players cannot
   act, so an obligation to deliver is reported as "frozen" rather than short).
 - The human team: the same actions, through chat commands (`!pact ...`) or an operator relay, since humans have no

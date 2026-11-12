@@ -67,6 +67,8 @@ fails(function() H.pact_propose(nil,{with='blue',terms={shares={red=0.9,blue=0.2
 fails(function() H.pact_propose(nil,{with='blue',terms={chart=true}}) end,'terms: no chart')
 fails(function() H.pact_propose(nil,{with='blue',terms={obligations={{kind='deliver',who='blue',item='iron-plate',count=60}}}}) end,'needs a depot')
 fails(function() H.pact_propose(nil,{with='blue',terms={shares={red=0.9,blue=0.1}}}) end,'at most 0.70 each')
+fails(function() H.pact_propose(nil,{with='blue',terms={obligations={{kind='no_attack',who='blue',target='green'}}}}) end,'target unavailable')
+s.mt.first['chart red>green']=501;s.mt.first['chart blue>green']=501
 local r=H.pact_propose(nil,{with='blue',note='trade',terms={cease_fire=true,shares={red=0.7,blue=0.3},depot={x=10,y=20},
   obligations={{kind='deliver',who='blue',item='iron-plate',count=60},{kind='keep_out',who='blue',x=0,y=0,r=50},{kind='no_attack',who='blue',target='green'}}}})
 local id=r.pact.id

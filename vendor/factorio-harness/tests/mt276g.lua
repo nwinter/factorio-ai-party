@@ -116,7 +116,7 @@ do
   eq(#box('green','gb1'),0);eq(#box('green','gb2'),0)
   local reply=R.dispatch{id='diplo-read',bot='bb2',action='diplomacy',args={with='red'}}
   eq(reply.messages[1].agent,'rb1')
-  fails(function() R.dispatch{id='diplo-no-contact',bot='gb1',action='diplomacy',args={with='red'}} end,'no contact')
+  fails(function() R.dispatch{id='diplo-no-contact',bot='gb1',action='diplomacy',args={with='red'}} end,'unsupported action')
   fails(function() R.dispatch{id='diplo-spoof',bot='bb1',action='diplomacy_send',args={to='red',text='hi',agent='rb2'}} end,'unknown argument agent')
   local proposal=R.dispatch{id='pact-note',bot='rb1',action='pact_propose',args={with='blue',terms={cease_fire=true},note='Please review these terms.'}}
   eq(proposal.pact.note,'Please review these terms.')
@@ -144,6 +144,19 @@ do
   local latest=feed.last_seq
   R.dispatch{operator=true,team='red',action='tell',args={to='team',text='Operator-only instructions.'}}
   eq(R.dispatch{operator=true,action='mt_feed',args={}}.last_seq,latest,'operator tells excluded')
+  -- Explicit hostile building fire selects the entity; a cease-fire or own
+  -- building keeps ordinary enemy fire and cannot become a force attack.
+  defines.shooting.shooting_selected=2
+  local protected=false
+  red.get_friend=function() return false end;red.get_cease_fire=function() return protected end
+  local chest={valid=true,name='wooden-chest',health=10,force=blue,position={x=0,y=0}}
+  surface.find_entities_filtered=function() return {chest} end
+  local shooter={force=red,surface=surface,position={x=0,y=0}}
+  eq(R.shoot_selected(shooter,chest.position),2);eq(shooter.selected,chest)
+  protected=true;shooter.selected=nil
+  eq(R.shoot_selected(shooter,chest.position),1);eq(shooter.selected,nil)
+  protected=false;chest.force=red
+  eq(R.shoot_selected(shooter,chest.position),1)
   print('mt295 identity, complete ordered speech and operator-only feed: ok')
   print('mt276 G contact lines, paired diplomacy delivery and third-team privacy: ok')
 end

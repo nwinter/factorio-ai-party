@@ -29,22 +29,25 @@ class TestAudience(unittest.TestCase):
             pair=[r for r in rows if r[0]==team];self.assertEqual(len(pair),2)
             self.assertTrue(all(r[3]==route and r[4]==model for r in pair))
 
-    def test_site_path_to_each_roster_and_retry_dedupe(self):
+    def test_site_path_operator_only_and_no_team_relay(self):
         now=time.time()
         with tempfile.TemporaryDirectory() as tmp:
-            for team,names in [('green',['gemini','gemini2']),('yellow',['grok','grok2']),('blue',['muse','muse2'])]:
-                td=Path(tmp)/team;td.mkdir();switch=td/'relay';switch.touch();h=Harness(team)
-                r=viewers.Relay(h,str(switch),roster=[(n,None) for n in names]);r.broadcast_roster=True
-                source=viewers.SiteChat(fetch=lambda *_:json.dumps({'messages':[{'seq':701,'name':'Visitor','text':'Green, how are the furnaces?','t':now}],'last_seq':701,'open':True}),resume=700)
-                messages,dels,_=source.poll();feed=viewers.Feed({'site':source},relay=r)
-                feed.ingest(messages,dels,now);sent=r.step(now)
-                self.assertIsNotNone(sent);self.assertEqual(sent['to_all'],names)
-                self.assertTrue(all(q['team']==team for q in h.requests))
-                posted=[q for q in h.requests if q['action']=='viewer_say'];self.assertEqual(len(posted),1)
-                self.assertEqual(posted[0]['args']['id'],'site:701')
-                for n in names:self.assertIn('@'+n,posted[0]['args']['text'])
-                r2=viewers.Relay(h,str(switch),roster=[(n,None) for n in names]);r2.offer(dict(messages[0]),'Visitor')
-                self.assertEqual(len(r2.q),0)
+            inbox=Path(tmp)/'viewer-inbox.jsonl'
+            for team in ('green','yellow','blue'):
+                h=Harness(team)
+                with self.assertRaisesRegex(ValueError,'never receive'):
+                    viewers.Relay(h,str(Path(tmp)/'relay'))
+                self.assertEqual(h.requests,[])
+            source=viewers.SiteChat(fetch=lambda *_:json.dumps({'messages':[{'seq':701,'name':'Visitor','text':'Green, how are the furnaces?','t':now}],'last_seq':701,'open':True}),resume=700)
+            messages,dels,_=source.poll()
+            feed=viewers.Feed({'site':source},inbox=str(inbox),operator_only=True)
+            feed.ingest(messages,dels,now)
+            self.assertIsNone(feed.relay)
+            self.assertEqual(feed.lane()[0][0]['text'],'Green, how are the furnaces?')
+            self.assertEqual(feed.lane()[1]['delivery'][0]['status'],'operator')
+            again=viewers.Feed({},inbox=str(inbox),operator_only=True);again.ingest(messages,[],now)
+            self.assertEqual(len(inbox.read_text().splitlines()),1)
+            self.assertEqual(json.loads(inbox.read_text())['id'],'site:701')
 
     def test_hidden_deletion_and_rate_preserved(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -52,7 +55,7 @@ class TestAudience(unittest.TestCase):
             hidden=viewers.HiddenViewers(str(p),tmp);f=viewers.Filter();f.hidden=hidden
             m={'id':'site:1','source':'site','name':'Visitor','text':'How are the furnaces?','author':'v','t':100}
             self.assertIn('hidden',f.check(m,100)[1])
-            r=viewers.Relay(Harness('green'),str(p),roster=[('gemini',None)]);r.hidden=hidden
+            r=viewers.Relay(Harness(None),str(p),roster=[('gemini',None)]);r.hidden=hidden
             r.offer(dict(m),'v');self.assertIsNone(r.step(100));self.assertEqual(len(r.q),0)
             f=viewers.Filter();reasons=[]
             for i in range(21):
@@ -71,9 +74,9 @@ class TestAudience(unittest.TestCase):
         out=public_race.project('green',state,roster,100)
         self.assertEqual([m['text'] for m in out['chat']],['Supply the lab'])
         self.assertEqual(public_race.speech('This is multi-team mode'), '')
-        states={t:{'viewers_status':{'delivery':[{'id':'site:701','status':'relayed'}]}} for t in ['green','yellow','blue']}
-        self.assertEqual(public_overlay.audience(states,states,100)['viewer_delivery']['701']['s'],'relayed')
-        del states['blue']
-        self.assertEqual(public_overlay.audience(states,['green','yellow','blue'],100)['viewer_delivery']['701']['s'],'held')
+        states={'operator':{'viewers_status':{'delivery':[{'id':'site:701','status':'operator'}]}}}
+        receipt=public_overlay.audience(states,['green','yellow','blue'],100)['viewer_delivery']['701']
+        self.assertEqual(receipt['s'],'operator');self.assertEqual(receipt['teams'],[])
+        self.assertEqual(public_overlay.audience({'green':states['operator']},['green'],100)['viewer_delivery'],{})
 
 if __name__=='__main__':unittest.main()

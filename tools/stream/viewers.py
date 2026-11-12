@@ -1006,6 +1006,8 @@ class Relay:
     AUTHOR_QUEUE = 8
 
     def __init__(self, harness, switch, fn="viewer_say", gap=3.0, author_gap=3.0, max_age=90.0, roster=()):
+        if getattr(harness, 'team', None):
+            raise ValueError('scoped game agents never receive viewer chat')
         self.h, self.switch, self.fn = harness, switch, fn
         self.gap, self.author_gap, self.max_age = gap, author_gap, max_age
         # Questions that name no agent are addressed to one (see address()); roster: [(name, display_name)] in team order
@@ -1424,7 +1426,9 @@ class Feed:
     """Sources -> filter -> classifier -> lane (+ relay). `lane()` is what serve.py puts into the snapshot."""
 
     def __init__(self, sources, filt=None, classifier=None, relay=None, log_path=None, record=None, max_age=120.0,
-                 inbox=None, deletions=None, log_dir=None, cursor=None):
+                 inbox=None, deletions=None, log_dir=None, cursor=None, operator_only=False):
+        assert not operator_only or (inbox and relay is None), 'operator-only audience requires an inbox and no game relay'
+        self.operator_only = operator_only
         self.sources = sources            # {name: source with poll() and status()}
         self.cursor_path = cursor         # (AA5) runs/RUN/site-cursor.json: the site seq this service has finished with
         self._saved_cursor = None
@@ -1659,6 +1663,9 @@ class Feed:
 
     def route(self, v, author, relay_ok):
         """A line that passed: to the operator's inbox, chatter (shown only), or offered to the relay."""
+        if self.operator_only:
+            self.to_operator_only(v, "to the operator's inbox")
+            return
         v["chatter"] = is_chatter(v["text"])
         expired = self.expired_why(v)
         if not v.get("staff") and to_operator(v["text"]):
@@ -1799,6 +1806,7 @@ class Feed:
 
     def only_operator(self, v):
         """A line to the operator that addresses no agent: the inbox is all of its delivery."""
+        if self.operator_only:return True
         text = v.get("full") or v.get("text") or ""
         return not v.get("staff") and to_operator(text) and not (self.relay.explicit(text) if self.relay else [])
 
@@ -2047,6 +2055,7 @@ def add_args(ap, prefix=""):
     ap.add_argument(p + "record", metavar="JSONL", help="append every incoming message (replay format)")
     ap.add_argument(p + "relay", metavar="SWITCH_FILE",
                     help="relay into the game while SWITCH_FILE exists (touch / rm to switch); off without it")
+    ap.add_argument(p + "operator-only", action="store_true", help="accepted audience lines go only to the operator inbox")
     ap.add_argument(p + "hidden", metavar="FILE", help="site moderation list, applied before display and relay")
     ap.add_argument(p + "broadcast-roster", action="store_true", help="deliver accepted audience lines to this entire roster")
     ap.add_argument(p + "relay-fn", default="viewer_say", help="the harness's operator action that posts a viewer line")
@@ -2058,6 +2067,10 @@ def build(a, prefix="", agent_names=(), harness=None, log_dir=None, speed=1.0, l
     for addressing viewers' questions (serve.py refreshes it with Relay.set_roster). inbox: the operator inbox file
     viewer lines to the operator go to. deletions: the run's viewer-deletions.jsonl."""
     g = lambda k: getattr(a, (prefix + k).replace("-", "_"), None)  # noqa: E731
+    if getattr(harness, 'team', None) and any(g(k) for k in ('replay','youtube','site','relay')):
+        raise ValueError('scoped game services cannot consume viewer chat; use the operator audience service')
+    if g('operator-only') and g('relay'):
+        raise ValueError('operator-only audience cannot use a game relay')
     sources = {}
     if g("replay"):
         sources["replay"] = ReplayChat(g("replay"), speed=speed, loop=loop)
@@ -2079,7 +2092,7 @@ def build(a, prefix="", agent_names=(), harness=None, log_dir=None, speed=1.0, l
         os.makedirs(log_dir, exist_ok=True)
         log_path = os.path.join(log_dir, time.strftime("viewers-%Y%m%d-%H%M%S.jsonl"))
     feed = Feed(sources, Filter(agent_names, blocklist), clf, relay, log_path, g("record"), inbox=inbox, deletions=deletions,
-                cursor=cursor if g("site") else None)
+                cursor=cursor if g("site") else None, operator_only=bool(g('operator-only')))
     if g("hidden"):
         feed.filt.hidden = HiddenViewers(g("hidden"), os.path.dirname(os.path.dirname(deletions)) if deletions else "")
     if relay:

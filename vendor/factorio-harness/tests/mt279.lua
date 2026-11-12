@@ -74,7 +74,7 @@ do
   local t=R.dispatch{id='q1',bot='rb1',action='tells',args={}}
   local seen
   for _,x in ipairs(t.tells or t.log or {}) do seen=x.text end
-  eq(seen,'the gun-turret of force ours and force other')
+  eq(seen,nil,'undiscovered force line withheld, not anonymized as other')
   eq(s.team_stores.red.tells.log[1].text,'the gun-turret of force red and force blue','stored as sent')
   R.as_team('player',function() R.tells.operator.tell({to='astra',text='a gun-turret of force red'}) end)
   local p=R.dispatch{id='q2',bot='astra',action='tells',args={}}

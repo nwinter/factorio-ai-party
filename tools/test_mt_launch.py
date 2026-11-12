@@ -53,7 +53,7 @@ def brief_and_new_run():
         sock = os.path.join(tmp, "runs", "mt9", "blue", ".sock", "haiku.sock")
         assert f'POG_FH_SOCKET="{sock}"' in fh and "POG_WORLD=imac2" in fh and "RCON_PASSWORD" not in fh, fh
         text = open(os.path.join(out, "AGENTS.md")).read()
-        assert "You play in a team of 2 AI agents" in text and "share this world" not in text, text[:800]
+        assert "You play cooperatively with 2 AI agents in all" in text and "share this world" not in text, text[:800]
         assert "- `opus`: Claude Opus 5.5 (Claude Code)" in text and "- `haiku`" not in text
         assert "a space platform of the team's reaching the solar system's edge, as soon as you can" in text
         assert "Space Age (with Quality and Elevated Rails), map settings\nmade for this run, normal enemies, seed 274274" in text, text[:400]

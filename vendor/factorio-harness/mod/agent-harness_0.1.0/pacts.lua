@@ -107,6 +107,8 @@ return function(api)
         else
           r.target = o.target
           assert(teams()[r.target] and r.target ~= o.who, 'obligation ' .. i .. ': target, another team')
+          assert((r.target==a or M.contacted(a,r.target)) and (r.target==b or M.contacted(b,r.target)),
+            'obligation target unavailable to both parties')
         end
         out.obligations[i] = r
       end

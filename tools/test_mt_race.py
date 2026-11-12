@@ -385,7 +385,7 @@ class ConversationTest(unittest.TestCase):
         self.assertRegex(own[3]['id'],r'^green:[0-9a-f]{12}$');self.assertRegex(own[4]['id'],r'^green:[0-9a-f]{12}$')
         self.assertEqual(own[0]['at'],90.0)      # from its tick: 600 ticks before the feed's own
         self.assertEqual(own[1]['at'],98.5);self.assertEqual(own[3]['at'],95.0)
-        self.assertEqual([m['reply'] for m in own],[False,True,False,False,False])
+        self.assertEqual([m['reply'] for m in own],[False,False,False,False,False])
         again=race.project('green',{'now':130,'tick':7800,'chat':said},self.roster,130)['chat']
         self.assertEqual([m['id'] for m in again],[m['id'] for m in own])
 
@@ -395,7 +395,7 @@ class ConversationTest(unittest.TestCase):
               for source in ('site','youtube')]
         out=race.project_viewers(msgs,100,('green','yellow','blue'))
         self.assertEqual([m['source'] for m in out],['site','youtube'])
-        self.assertTrue(all(m['delivery']=='sent' and m['targets']==['all'] for m in out))
+        self.assertTrue(all(m['delivery'] is None and m['targets']==[] for m in out))
         self.assertNotIn('PRIVATE',json.dumps(out))
         invalid=dict(msgs[0],targets=['green','PRIVATE'],delivery='PRIVATE')
         clean=race.project_viewers([invalid],100,('green',))[0]
@@ -510,7 +510,7 @@ class OrderedFeedTest(unittest.TestCase):
         r=race.Race()
         raw=[dict(self.line,seq=1,kind='say',to={},text='We split it: I feed the labs.'),dict(self.line,seq=2,team='yellow',agent='grok',to=['grok2'])]
         feed=r.update(self.teams,100,lines=self.lines(raw))['feed']
-        self.assertEqual([(m['id'],m['team'],m['reply']) for m in feed],[('f:1','green',True),('f:2','yellow',False)])   # no chat-window copies
+        self.assertEqual([(m['id'],m['team'],m['reply']) for m in feed],[('f:1','green',False),('f:2','yellow',False)])   # no chat-window copies
         # A poll without the operator feed (a stale views file) adds nothing twice; the feed resumes when it returns.
         self.assertEqual(len(r.update(self.teams,105)['feed']),2)
         self.assertEqual(len(r.update(self.teams,110,lines=self.lines(raw+[dict(self.line,seq=3)]))['feed']),3)
@@ -744,7 +744,7 @@ class ReplayTest(unittest.TestCase):
         self.assertEqual({t['team'] for t in last['teams']},{'green','yellow','blue','red'})
         self.assertIn('diplomacy',{m['kind'] for m in last['feed']});self.assertIn('tell',{m['kind'] for m in last['feed']})
         self.assertTrue(any(v['source']=='youtube' for f in frames for v in f['viewers']))
-        self.assertTrue(any(f['viewer_delivery'].get('104',{}).get('teams')==['green','yellow','blue','red'] for f in frames))
+        self.assertTrue(any(f['viewer_delivery'].get('104',{}).get('s')=='operator' for f in frames))
         self.assertTrue(any(t['pacts'] for t in last['teams']))
         names={a['display_name'] for t in last['teams'] for a in t['agents']}
         self.assertTrue({'Vesper','Grok the Unyielding','Muse3','Terra'}<=names)

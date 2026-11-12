@@ -77,7 +77,7 @@ LINES = [
     (24, 'green', 0, 1, 'Agreed. Accept it, then send fifty iron through the depot and I will check what arrives.'),
     (27, 'yellow', 2, 1, 'Depot chests are placed. Fifty copper going in now, watch for forty on their side.'),
     (29, 'red', 2, 0, 'Second boiler is on. Power is steady, the labs stopped flickering.'),
-    (31, 'yellow', 1, 'talk', 'Viewer question: yes, we split it. I keep the labs fed, Grok runs copper, Bolt builds belts.'),
+    (31, 'yellow', 1, 'talk', 'Yes, we split the work. I keep the labs fed, Grok runs copper, Bolt builds belts.'),
     (33, 'green', 2, 1, 'Forty copper arrived, cut ten. The ledger matches. Trade is real.'),
     (35, 'blue', 1, 0, 'Fuel is here. Restarting the furnaces, then the lab. We are behind but not out.'),
     (38, 'yellow', 0, 1, 'Steel is done. I am moving to engines, you take the military line so the walls go up.'),
@@ -176,8 +176,6 @@ def synthetic(teams=3, per=2, steps=56, fresh=False):
                 line = {'seq': at if to == 'talk' else f't{at}', 'tick': said, 'from': speaker, 'agent': speaker, 't': 1000.0 + at * 5}
                 if to == 'talk':
                     line.update(text=text, lane='talk')
-                    if text.startswith('Viewer question'):
-                        line.update(reply_to=3, replies_to=[{'seq': 3, 'source': 'youtube'}])
                 else:
                     line.update(tell=True, lane='tell', to=[CAST[team][to][0]], body=text, text='presentation text is ignored')
                 chat.append(line)
@@ -191,7 +189,7 @@ def synthetic(teams=3, per=2, steps=56, fresh=False):
                 if at <= step and now - (1000.0 + at * 5) <= 170:
                     viewers.append({'id': ident, 'source': source, 'name': 'A viewer', 'text': text, 't': 1000.0 + at * 5})
                     if source == 'site' and step >= at + 1 + ti * 2:  # each team's relay confirms in its own time
-                        delivery.append({'id': ident, 'status': 'relayed'})
+                        delivery.append({'id': ident, 'status': 'operator'})
             raws[team] = {'now': now, 'tick': tick, 'agents': agents, 'chat': chat[-10:],
                           'research': {'current': TECHS[min(done, len(TECHS) - 1)] if not fresh or opening['lab'] else None,
                                        'progress': (step % speed[ti]) / speed[ti] if not fresh or opening['lab'] else None, 'done_count': done, 'recent': recent},
@@ -225,7 +223,7 @@ def assemble(race, director, rosters, raws, scores, views, now, camera, fixture)
     lines = broadcast(project_feed(views['feed'], rows), rows, now) if isinstance(views.get('feed'), list) else None
     data = race.update(rows, now, views.get('contacts') or [], views.get('pacts') or [], talks, lines)
     fresh = {t: raws[t] for t, r in zip(rosters, rows) if not r['stale']}
-    data.update(v=2, now=now, diplomacy=talks, layout={'camera': list(CAMERA_RECT)}, fixture=fixture, **audience(fresh, rosters, now))
+    data.update(v=2, now=now, diplomacy=talks, layout={'camera': list(CAMERA_RECT)}, fixture=fixture, **audience({'operator':next(iter(fresh.values()))} if fresh else {}, rosters, now))
     scout = {t: subjects(raw, {a['name'] for a in rosters[t]}, now) for t, raw in fresh.items()}
     choice = director.choose(rows, data['events'], now, scout)
     if choice:

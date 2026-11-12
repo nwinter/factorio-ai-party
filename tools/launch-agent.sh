@@ -16,6 +16,8 @@ if [ "${1:-}" = --resume-sentence ]; then echo "$resume_sentence"; exit 0; fi
 agy_loop_script() {
   # POG_WEB_BLOCK: no web tools for agy (a workspace agent's tool list, and session settings: tools/full_tools.py)
   local agy_web=""
+  local agy_client=agy
+  [ "${POG_ISOLATED:-0}" != 1 ] || agy_client="python3 '$root/tools/agy-local.py'"
   [ -z "${POG_WEB_BLOCK:-}" ] || agy_web="--settings '$(python3 "$root/tools/full_tools.py" agy-web-off)' $(python3 "$root/tools/full_tools.py" agy-agent "$dir")"
   cat > "$dir/.agy-loop.sh" <<EOL
 #!/usr/bin/env bash
@@ -39,7 +41,7 @@ turn() {
   touch .agy-stamp
   t0=\$(date +%s)
   # The wait cap goes on agy only: this loop's own sleep until a quota reset stays a plain sleep.
-  '$sleepcap_run' agy "\$@" --model $model --dangerously-skip-permissions $agy_web --print-timeout ${POG_AGY_TURN_S:-300}s
+  '$sleepcap_run' $agy_client "\$@" --model $model --dangerously-skip-permissions $agy_web --print-timeout ${POG_AGY_TURN_S:-300}s
   # ran into the timeout: it ends at turn_s (a turn that ends by itself much later was not cut)
   took=\$((\$(date +%s) - t0)); timed_out=0
   [ "\$took" -ge "\$((turn_s - 2))" ] && [ "\$took" -le "\$((turn_s + 30))" ] && timed_out=1
@@ -184,6 +186,7 @@ claude_settings() {
   done
   # POG_DENY_READ: more folders no agent reads (space-separated absolute paths)
   for d in ${POG_DENY_READ:-}; do
+    [ "${POG_ISOLATED:-0}" != 1 ] || continue  # filesystem scope enforces this without listing private paths in model settings
     keys_read="$keys_read, \"$d\""
     keys_rules="$keys_rules, \"Read(/$d/**)\", \"Read($d/**)\""
   done
@@ -225,6 +228,19 @@ new_pane() {
   else
     herdr tab create --workspace "${HERDR_WORKSPACE_ID:?run inside Herdr}" --label "$label" --cwd "$dir" --no-focus | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['root_pane']['pane_id'])"
   fi
+}
+
+run_prepared() {
+  if [ "${POG_ISOLATED:-0}" = 1 ]; then
+    python3 - "$2" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1]);text=p.read_text()
+guard='[ "${POG_SCOPE_ACTIVE:-}" = 1 ] || { echo "launch through the prepared process scope" >&2; exit 1; }\n'
+p.write_text(text.replace('#!/usr/bin/env bash\n','#!/usr/bin/env bash\n'+guard,1))
+PY
+    herdr pane run "$1" "python3 '$root/tools/agent-scope.py' '$root' '${POG_PROXY:?isolated clients require their provider proxy}' '$2'" >/dev/null
+  else herdr pane run "$1" "'$2'" >/dev/null; fi
 }
 
 case $kind in
@@ -303,7 +319,7 @@ case $kind in
     # pane whose shell is not ready yet, input past the terminal's 1,024-byte line limit can be cut (smoke-l4g's
     # Grok never started). grok-start.log shows that the script ran.
     grok_run_script "$dir" "$home_env $ctx_env $proxy_env '$sleepcap_run'" "$model" "$effort" "$prompt" "$compact_rule"
-    herdr pane run "$pane" "'$dir/.grok-run.sh'" >/dev/null
+    run_prepared "$pane" "$dir/.grok-run.sh"
     ;;
   agy)
     model=${6:-gemini-3.8-flash-high}
@@ -315,19 +331,22 @@ case $kind in
     # conversation that picks up from notes.md. The check runs only between turns, and one turn can last the hour
     # (shake2: 53 minutes); agy's own compaction covers that case.
     agy_loop_script
-    herdr pane run "$pane" "'$dir/.agy-loop.sh'" >/dev/null
+    run_prepared "$pane" "$dir/.agy-loop.sh"
     ;;
   muse)
     model=${6:-muse-spark-1.3} effort=${7:-low}
     ctx_args=$(python3 "$root/tools/context.py" setup muse "$model" "$dir")   # -c context_compaction.* options
     clean_args=$(python3 "$root/tools/clean-profile.py" muse "$dir")         # -c 'hooks={}'; $muse_env: profile-flags.sh
+    # The outer process scope covers native tools and all descendants. macOS
+    # refuses a nested sandbox-exec; keep one enforced boundary for this route.
+    [ "${POG_ISOLATED:-0}" != 1 ] || clean_args="$clean_args --no-foreign-personal-context --disable-sandbox"
     [ -z "${POG_WEB_BLOCK:-}" ] || clean_args="$clean_args $(python3 "$root/tools/full_tools.py" muse-web-off)"
     pane=$(new_pane)
     printf '%s\n' '#!/usr/bin/env bash' "cd '$dir'" "${proxy_env:+export $proxy_env}" \
       "exec env $muse_env '$sleepcap_run' muse $ctx_args $clean_args --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace \"\$(cat '$prompt')\"" \
       > "$dir/.muse-run.sh"
     chmod +x "$dir/.muse-run.sh"
-    herdr pane run "$pane" "'$dir/.muse-run.sh'" >/dev/null
+    run_prepared "$pane" "$dir/.muse-run.sh"
     ;;
   *) echo "unknown kind $kind" >&2; exit 1 ;;
 esac

@@ -1,7 +1,8 @@
 # Public overlay state: identities, speech feed, camera (mt294)
 
-The audience sees all teams; game agents consume only their own team's feed and the separate
-moderated viewer relay. The public overlay and site projection are **not an agent inbox**: nothing
+The audience sees all teams; game agents consume only their own team's speech and explicit
+contacted-party diplomacy. Viewer chat never reaches playing agents, even after contact.
+The public overlay and site projection are **not an agent inbox**: nothing
 on this page is delivered to an agent. `public_race.project()` and its helpers remain the one
 public allowlist: no paths, errors, tokens, operator requests or private names. Every nested
 structure is rebuilt, never copied through.
@@ -63,12 +64,12 @@ arrives the same way as a chosen one; the roster columns are an alternative, not
 ```
 
 The latest 40 lines, oldest first. `at` is the wall time a line was said (the feed's own stamp for a
-live line, otherwise from its tick), `tick` the game tick, `reply` true when the stream service
-linked a say to a viewer's line.
+live line, otherwise from its tick), `tick` the game tick. `reply` is retained for schema
+compatibility and is always false: playing agents do not read viewers.
 
 | kind | what | on the page |
 |---|---|---|
-| `talk` | a say on the team channel | bubble in the team's colour, padlock, "TO TEAM"; "ANSWERING A VIEWER" when `reply` |
+| `talk` | a say on the team channel | bubble in the team's colour, padlock, "TO TEAM" |
 | `tell` | a tell to teammates (`to`: roster ids of the same team, or `team`) | bubble, padlock, "TO NAME" |
 | `board` | a team-board post or update | compact note under its author |
 | `diplomacy` | an explicit message to one other team (`to_team`) | gold header, both teams' colours |
@@ -96,12 +97,21 @@ the site's team cards. `diplomacy` (the explicit lane) is still published as bef
 
 ## Viewers
 
-`viewers`, `viewer_status`, `viewer_delivery` and `viewer_read` are unchanged (mt290's audience
-aggregator over the team services' already-moderated lanes). The page shows viewer lines in the
-same feed column as their own kind: right-aligned, a source chip (SITE or YOUTUBE), and the
-delivery receipt as ticks ("SENT TO ALL TEAMS", "2 OF 3 TEAMS HAVE IT", "QUEUED"). A receipt is
-shown only when one exists. The page keeps no copy of a viewer line: when the producer drops a
-moderated or expired line, it leaves the screen. Team rows placed in `viewers` are not drawn.
+`viewers`, `viewer_status`, `viewer_delivery` and `viewer_read` keep their field names. A single
+`tools/mt/viewer_inbox.py` process owns the moderated site/YouTube sources, the durable cursor,
+deletion handling and operator inbox under `runs/RUN/op/`. The team stream services receive no
+viewer-source arguments. Scoped `Relay` construction is refused; private-world `viewer_say`
+is also refused in the harness, and the agent response filter removes historic viewer rows.
+
+`POG_MT_VIEWERS=1` enables this operator/display path only. Accepted lines append once to
+`op/viewer-inbox.jsonl`; this JSONL file is the future subscription hook for non-playing narrators.
+No narrator is launched or connected by this change. Moderation, rate limits, hidden-viewer rules,
+deletion tombstones and retry behavior use the main run's existing `viewers.Feed` implementation.
+
+The overlay reads `op/viewers.json` (fresh within 30 seconds) and shows a source chip and
+"TO OPERATOR" or "QUEUED" receipt. Receipt `teams` is always empty. Site chat continues to show
+viewer messages. No agent reply linkage is emitted. The page keeps no copy of a viewer line:
+when the producer drops a moderated or expired line, it leaves the screen.
 
 ## News
 

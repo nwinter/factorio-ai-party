@@ -451,6 +451,10 @@ def team_files(shared):
 def paragraph(kind, name=None, shared=None):
     """The "Your tools" text for AGENTS.md: what the agent has, not what to do with it. shared: the run's team-tools."""
     text = open(os.path.join(ROOT, "agent", "full-tools.md")).read()
+    if os.environ.get('POG_ISOLATED')=='1':
+        text='\n'.join(l for l in text.splitlines() if not l.startswith(('Aethera and Peregrine,','as a source (Nick,')))+'\n'
+        text=text.replace('Designs come from the team: blueprint strings made by viewers or found on the web are not imported, placed or used',
+                          'Make your own designs and coordinate them with your teammate.')
     lines = {}
     for line in text.split("<!-- harness -->", 1)[1].strip().splitlines():
         k, _, v = line.partition(":")
@@ -710,6 +714,8 @@ def grok_sandbox(d):
     - kernel-denied reads and writes: ~/.config/pog, ~/.ssh, runs' key copies (all but this run's own when fh reads
       it), and teammates' private files. These also hold for bin/fh run directly and for subagents.
     POG_GROK_SANDBOX=0 keeps the allowlist (no subagents) instead. Returns the extra flag words."""
+    if os.environ.get('POG_ISOLATED')=='1':
+        return ''  # agent-scope.py enforces the process boundary; avoid nested Seatbelt
     if os.environ.get("POG_GROK_SANDBOX", "1") == "0":
         return ""
     run = os.path.dirname(os.path.abspath(d))

@@ -10,6 +10,26 @@ never chooses a name/persona or overwrites a chosen profile. Other roster IDs ge
 twelve-agent palette. The brief tells each agent to choose its identity in the first minute, introduce itself,
 then build/scout; later shifts preserve that identity. Models remain separate metadata.
 
+## Agent discovery and audience boundary (Nick, d41)
+
+Before first chart/shot contact, agent outputs omit force labels and unknown identities and keep
+ownership generic (`ours`). Describe/typo hints and guessed pact/diplomacy calls reveal no closed
+actions. Unknown force/entity rows are omitted as whole rows, including their locations. After
+contact, only known parties are revealed; an unrelated third force stays hidden. Ordinary prototype
+names such as green-wire and red science are unaffected. Operator/broadcast views retain colors.
+
+Each pair launches in a separate sanitized `play-RANDOM/runs/RUN` tree. Its cooperative brief,
+roster and environment contain no team color or other pair. Colored paths are operator-only
+symlinks. A macOS process scope denies sibling projects, operator files, shared native histories,
+other sockets and network routes; provider requests use only the assigned proxy. HOME is retained.
+Grok/Muse use private native data, and agy resumes only its own returned conversation ID without
+reading shared indexes. Legacy colored workspaces cannot resume through this launcher.
+
+Viewer chat is never game input, including after contact. The operator's moderated JSONL inbox
+and public viewer lane are separate from team streams. Historic viewer rows are removed from
+agent responses as well. See `docs/mt-public-chat-contract.md`; `reply` remains false throughout
+the public speech feed. No viewer text enters the game feed, briefs or alerts through this path.
+
 ## Operator-only feed
 
 `mt_feed {since?, limit?}` returns `lines`, `cursor`, `last_seq`, `first_seq`, `gap` and `tick`. The log keeps2000

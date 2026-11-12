@@ -2285,7 +2285,7 @@ function M.near_actions(name)
   -- a shared word only when nothing is nearer (techologies: technologies, not damage_log for "log")
   local list,weak={},{}
   for n in pairs(handlers) do
-    if type(n)=='string' and n:sub(1,1)~='_' then
+    if type(n)=='string' and n:sub(1,1)~='_' and not (M.pacts and M.pacts.schema[n] and not M.pacts.open_for(M.team_now())) then
       local d=math.abs(#n-#name)<=2 and apart(n,name) or 99
       if d<=2 or (#name>=3 and (n:find(name,1,true) or name:find(n,1,true))) then list[#list+1]={n=n,d=d}
       else for w in n:gmatch('[^_]+') do if #w>2 and name:find(w,1,true) then weak[#weak+1]={n=n,d=d}; break end end end
@@ -18315,7 +18315,9 @@ M.missed=require('missed'){state=state,clock_mode=function() return clock and cl
 -- (d18 batch39 A2) a platform as a wait woken early says it: where it is, and its latest launch up (the cargo ledger)
 function M.platform_recent(name)
   local pl
-  for _,f in pairs(game.forces) do for _,x in pairs(f.platforms) do if x.valid and x.name==name then pl=x end end end
+  for _,f in pairs(M.discovery and M.discovery.active(M.team_now()) and {game.forces[M.team_now()]} or game.forces) do
+    for _,x in pairs(f.platforms) do if x.valid and x.name==name then pl=x end end
+  end
   local parts={}
   if pl then parts[#parts+1]=name..' '..M.freight.where(pl).text end
   local r,surf=M.ledger.latest_to(name)
@@ -18344,6 +18346,8 @@ M.waits=require('waits'){state=state,measure=function(index) return M.measure_ro
 for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
 M.teamfeed=require('teamfeed'){state=state,team_now=function() return M.team_now() end,
   agents=function() return M.board.agents() end,profile=function(index) return M.profiles.get(index) end}
+M.discovery=require('discovery'){state=state,bots=function() return M.bots.list() end,
+  profile=function(index) return M.profiles.get(index) end}
 M.chat=M.chat_module{state=state,on_say=function(p,text)
   M.teamfeed.emit(M.board.who(p),'say','team-private',text);M.profiles.say(p,text)
 end,audience=function() return M.cameras.audience() end,
@@ -18405,6 +18409,7 @@ M.multiteam=require('multiteam'){state=state,
     end
   end}
 M.audience=require('audience'){state=state,post_viewer=function(name,text,source,id) return M.chat.viewer(name,text,source,id) end,
+  viewer_allowed=function(name,text) return M.discovery.viewer(M.team_now(),name,text) end,
   notice=function(from,text) return M.chat.notice(from,text) end,agents=function() return M.board.agents() end,
   director=function(index) return M.is_director(index) end}
 for name,handler in pairs(M.audience.handlers) do handlers[name]=handler end
@@ -19166,7 +19171,7 @@ end
 -- (d24 batch154) the surface name of a platform by its name (argforms.lua), any force's; nil when none
 function M.platform_surface_name(name)
   if type(name)~='string' then return nil end
-  for _,f in pairs(game.forces) do
+  for _,f in pairs(M.discovery and M.discovery.active(M.team_now()) and {game.forces[M.team_now()]} or game.forces) do
     local ok,list=pcall(function() return f.platforms end)
     for _,pl in pairs(ok and list or {}) do
       if pl.valid and pl.name==name and pl.surface and pl.surface.valid then return pl.surface.name end
@@ -19532,11 +19537,19 @@ function M.scrub_forces(v,reader)
 end
 local dispatch_team
 local function dispatch_scrubbed(request)
+  if type(request)=='table' and request.operator~=true and request.reader==nil and M.discovery.active(team_now)
+    and not M.discovery.open(team_now) and type(request.action)=='string'
+    and (request.action:match('^pact') or request.action:match('^diplomacy')) then
+    error('unsupported action; call describe',0)
+  end
   local ok,result=pcall(dispatch_team,request)
   local reader=team_now
   if reader~='player' and type(request)=='table' and request.operator~=true then
-    local oks,scrubbed=pcall(M.scrub_forces,result,reader)
-    if oks then result=scrubbed end
+    if request.reader==nil and M.discovery.active(reader) then
+      local oks,scrubbed=pcall(M.discovery.project,result,reader)
+      if not oks then error('response unavailable',0) end -- fail closed; never return raw data on a projection fault
+      result=scrubbed or (ok and {} or 'request unavailable; call describe')
+    else result=M.scrub_forces(result,reader) end
   end
   if not ok then error(result,0) end
   return result
@@ -19961,7 +19974,8 @@ dispatch_request=function(request)
     error(tostring(args_err)..(ok and hint or '')..(built and built:find('for this call',1,true) and built or (built or '')..M.example_text(view,request.args)),0)
   end
   if request.action=='describe' then return handler(nil,request.args) end
-  if request.action=='profiles' or request.action=='cameras' then return handler() end
+  if request.action=='profiles' then return handler() end
+  if request.action=='cameras' then return handler(M.lookup(request.player or 1)) end
   if M.bots.is_index(request.player) and (request.action=='attach' or request.action=='detach') then
     return {bot=M.bots.record(request.player).name,attached=request.action=='attach',note='bots need no attach'}
   end
@@ -21692,6 +21706,18 @@ function M.combat_scan(p,action,index,tick)
   local e=cached.entity
   if e and e.valid and distance(p.position,e.position)<=action.radius and visible(p,e.position) then return e end
 end
+-- Space-bar fire ignores non-military buildings. An explicit hostile target uses
+-- the engine's selected-entity fire, like aiming Ctrl+C; cease-fires still hold.
+function M.shoot_selected(p,pos)
+  for _,e in pairs(p.surface.find_entities_filtered{position=pos}) do
+    if e.valid and e.health and e.health>0 and e.force and e.force~=p.force and e.force.name~='neutral'
+      and not p.force.get_friend(e.force) and not p.force.get_cease_fire(e.force) and visible(p,e.position) then
+      p.selected=e
+      return defines.shooting.shooting_selected
+    end
+  end
+  return defines.shooting.shooting_enemies
+end
 -- Operator measurement (profile_ticks): the harness tick's own cost, timed
 -- with LuaProfiler and written to the log. Module state on purpose: it never
 -- touches game state, and profiler readings differ between machines anyway.
@@ -22103,7 +22129,8 @@ function M.tick_body(event)
         target=M.melee_guard(p,action,target,event.tick)
         if target then action.fired_tick=event.tick end
       end
-      p.shooting_state={state=target and defines.shooting.shooting_enemies or defines.shooting.not_shooting,position=target or p.position}
+      local mode=target and (action.auto and defines.shooting.shooting_enemies or M.shoot_selected(p,target)) or defines.shooting.not_shooting
+      p.shooting_state={state=mode,position=target or p.position}
     end
   end
   -- Retreats due this tick: the actions end and the agents go back (outside the loops over the tables they change).

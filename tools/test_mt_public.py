@@ -199,7 +199,7 @@ class PublicTest(unittest.TestCase):
         source = (ROOT / 'tools/mt/public_overlay.py').read_text()
         self.assertNotIn('YouTubeChat(', source)
         self.assertNotIn('Feed(', source)
-        out = overlay.audience({'green': {'viewers': [{'id': 'site:8', 'name': 'Guest', 'text': 'How are the furnaces?', 'source': 'site', 't': 99}] }}, {'green': []}, 100)
+        out = overlay.audience({'operator': {'viewers': [{'id': 'site:8', 'name': 'Guest', 'text': 'How are the furnaces?', 'source': 'site', 't': 99}] }}, {'green': []}, 100)
         self.assertEqual(out['viewers'][0]['text'], 'How are the furnaces?')
 
     def test_broadcast_resume_bind(self):

@@ -177,9 +177,10 @@ def cut(h, state, subject=None, smooth=False):
 
 
 def audience(states, teams, now):
-    """Only the already-filtered team feeds; no second reader or relay."""
+    """The single moderated operator feed; no playing-team receipts are accepted."""
     lines, deliveries, cursors = {}, {}, []
     for team, state in states.items():
+        if team!='operator':continue
         for m in list_rows(state.get('viewers')):
             m = obj(m)
             projected = project_viewers([m], now, teams)
@@ -197,14 +198,22 @@ def audience(states, teams, now):
                 deliveries.setdefault(ident[5:], {})[team] = r
     receipts = {}
     for seq, by_team in deliveries.items():
-        statuses = [v if isinstance(v := obj(by_team.get(t)).get('status'), str) else None for t in teams]
-        kind = statuses[0] if len(set(statuses)) == 1 and statuses[0] in ('relayed', 'operator', 'expired', 'not_relayed') else 'held'
-        receipts[seq] = {'s': kind, 'teams': [t for t in teams if obj(by_team.get(t)).get('status') == 'relayed'], 't': now}
+        kind = obj(by_team.get('operator')).get('status')
+        kind = kind if kind in ('operator', 'expired', 'not_relayed') else 'held'
+        receipts[seq] = {'s': kind, 'teams': [], 't': now}
     out = {'viewers': sorted(lines.values(), key=lambda m: m['t'])[-30:],
            'viewer_status': 'on' if states else 'waiting', 'viewer_delivery': receipts}
-    if len(cursors) == len(teams):
+    if cursors:
         out['viewer_read'] = {'after': min(cursors)}
     return out
+
+
+def operator_audience(op, teams, now):
+    try:
+        data=json.loads((Path(op)/'viewers.json').read_text())
+        if not isinstance(data,dict) or not 0<=now-float(data.get('now',0))<=30:raise ValueError('stale')
+    except (OSError,ValueError,TypeError):data=None
+    return audience({'operator':data} if data else {},teams,now)
 
 
 class PublicOverlay:
@@ -256,7 +265,7 @@ class PublicOverlay:
         previous = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.feeds)) as pool:
             while not self.stop.is_set():
-                now, rows, fresh, audience_states = time.time(), [], {}, {}
+                now, rows, fresh = time.time(), [], {}
                 views = read_views(self.op, now)
                 scores = {r['team']: r.get('score') for r in map(obj, list_rows(views.get('teams')))
                           if isinstance(r.get('team'), str) and r['team'] in self.rosters and not obj(r.get('errors')).get('score')}
@@ -267,8 +276,6 @@ class PublicOverlay:
                         row = project(team, data, self.rosters[team], now, scores.get(team))
                         if not row['stale']:
                             fresh[team] = data
-                        if not row['stale']:
-                            audience_states[team] = data
                         previous[team] = row
                     except Exception as e:
                         print(f'feed {team}: {type(e).__name__}', flush=True)
@@ -280,7 +287,7 @@ class PublicOverlay:
                 lines = broadcast(project_feed(views['feed'], rows), rows, now) if isinstance(views.get('feed'), list) else None
                 with self.lock:
                     self.state.update(self.race.update(rows, now, list_rows(views.get('contacts')), list_rows(views.get('pacts')), talks, lines),
-                                      now=now, diplomacy=talks, **audience(audience_states, self.rosters, now))
+                                      now=now, diplomacy=talks, **operator_audience(self.op, self.rosters, now))
                     if self.youtube:
                         self.state['stream'] = {'youtube_video_id': self.youtube}
                 # Private to the director: where each roster agent is and how much it is doing.

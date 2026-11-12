@@ -423,12 +423,10 @@ function feedPump() {
 }
 function clockOf(tick) { if (tick == null) return ''; const sec = Math.floor(tick / 60), h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), ss = String(sec % 60).padStart(2, '0'); return h ? h + ':' + String(m).padStart(2, '0') + ':' + ss : m + ':' + ss; }
 function receipt(it) {
-  let out = it.delivery === 'held' ? 'QUEUED' : it.delivery === 'sent' ? 'SENT' : '';
-  if (it.delivery === 'sent' && it.targets && it.targets.length) out = 'SENT TO ' + (it.targets.includes('all') ? 'ALL TEAMS' : it.targets.map(x => x.toUpperCase()).join(', '));
+  let out = it.delivery === 'held' ? 'QUEUED' : it.delivery === 'operator' ? 'TO OPERATOR' : '';
   const d = it.site && state.viewer_delivery ? state.viewer_delivery[it.site] : null;  // mt290's receipts, by public site sequence
   if (d) {
-    const known = new Set(model.teams.keys()), sent = Array.isArray(d.teams) ? [...new Set(d.teams.filter(x => known.has(x)))] : [];
-    if (sent.length) out = sent.length === known.size ? 'SENT TO ALL TEAMS' : sent.length + ' OF ' + known.size + ' TEAMS HAVE IT';
+    if (d.s === 'operator') out = 'TO OPERATOR';
     else if (d.s === 'held') out = 'QUEUED';
   }
   return out;
@@ -436,7 +434,7 @@ function receipt(it) {
 const BIG = font(23, 600), SMALL = font(18, 600);
 function laneOf(it) {  // who a team line is for; every team line but an answer to a viewer wears the padlock
   if (it.kind === 'tell') return 'TO ' + it.to.map(n => n === 'team' ? 'TEAM' : ((who(it.team, n) || {}).shown || cap(n)).toUpperCase()).join(', ');
-  return it.reply ? 'ANSWERING A VIEWER' : 'TO TEAM';
+  return 'TO TEAM';
 }
 const speaks = it => it.kind !== 'board' && it.kind !== 'identity';  // notes stay compact; speech opens up when newest
 const NOTE = font(16, 600), PERSONA = font(18, 600, 'ui', true);

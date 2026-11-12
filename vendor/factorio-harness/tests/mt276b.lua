@@ -111,7 +111,7 @@ do
   fails(function() R.as_team('red',function() s.board.items[999]={title='mid-call'}; error('boom',0) end) end,'boom')
   eq(R.team_now(),'player'); assert(s.team_stores.red.board.items[999],'the write went to red\'s board')
   assert(not s.board.items[999],'and not the player force\'s')
-  -- Audience copies keep the same limits independently; mute votes affect only this team.
+  -- Unconfigured forces preserve the ordinary-world audience rules.
   game.tick=7200
   eq(op('viewer_say',{name='GuestTest',text='How is the iron?',source='site',id='site:701'},'red').posted,true)
   eq(op('viewer_say',{name='GuestTest',text='How is the iron?',source='site',id='site:701'}).posted,true)
@@ -121,6 +121,13 @@ do
   eq(op('viewer_say',{name='GuestTest',text='How is copper?'},'red').dropped,'muted')
   eq(op('viewer_say',{name='GuestTest',text='How is copper?'}).posted,true)
   eq(R.team_now(),'player')
+  -- A configured private force refuses viewer injection, before AND after contact.
+  s.mt={teams={red={},blue={}},first={}}
+  eq(op('viewer_say',{name='GuestTest',text='Private before',source='site',id='site:703'},'red').dropped,'disabled')
+  s.mt.first['chart red>blue']=7440
+  eq(op('viewer_say',{name='GuestTest',text='Private after',source='youtube',id='yt:704'},'red').dropped,'disabled')
+  assert(not lines(s.team_stores.red.chat):find('Private',1,true))
+  s.mt=nil
   print('mt276 B team stores: board, tells, chat, operator, deliveries: ok')
 
   -- profiles: each team lists its own; a colour too close to another team's is refused without its holder's name

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # (mt277, private) Start a multi-team run on the mt server on the iMac (tools/mt/imac_mt.sh, world imac2): every team's
-# agents in their own folder runs/RUN/TEAM/<agent>, with the team's own roster, prompt, RCON broker sockets, team-tools
-# and carry, launched from the launch tree (tools/mt/launch-tree.sh) with the moderate lockdown (part E).
+# agents in separate anonymous project trees, with their own roster, prompt, RCON broker sockets, team-tools
+# and carry. Colored runs/RUN/TEAM links exist only in the operator checkout.
 #   tools/mt/start-mt.sh RUN_ID MINUTES [TEAMS_FILE]      (default agent/mt/teams-test.tsv: two agents per team)
 # TEAMS_FILE: team<TAB>name<TAB>kind<TAB>route<TAB>model<TAB>effort<TAB>label<TAB>harness; the team is the force
 # (tools/mt/mt_map.py setup made red, blue, green, yellow). Each team's file runs/RUN/TEAM/team.tsv is the usual
@@ -14,7 +14,7 @@
 #   POG_MT_FRESH=1: start from mt275-final; refuses a running server or POG_RESUME.
 #     POG_MT_FRESH_SAVE overrides the local baseline path.
 #   POG_MT_TREE: the launch tree (default worktrees/pog-p, made or updated from HEAD at each start);
-#     POG_MT_TREE=here launches from this checkout (no tree: the agents' tools can read tools/mt and agent/mt).
+#     POG_MT_TREE=here is refused: an unsanitized checkout is never an agent workspace.
 #   POG_MT_TEAMS: only these teams (comma-separated), POG_DRY_RUN=1: the plan only, POG_FULL_TOOLS=1 as start-team,
 #   POG_SEED (default 274274), POG_ENEMIES (default normal), POG_IDLE_NUDGE (default 0: until mt276 part B the board
 #   it names is every team's: B is in now), POG_SCORE_EVERY (default 120 s), POG_MT_CAM (default 1: the camera client
@@ -23,7 +23,7 @@
 #   POG_MT_PUBLIC (default 0; 1: implies POG_MT_STREAM=1, pogwin spectator, public overlay, mt-stream OBS scene,
 #     recording; NEVER starts streaming). POG_MT_YOUTUBE=VIDEO_ID selects the viewer chat broadcast.
 #   POG_MT_HUMANS (default 0; 1: the human team, its freeze, and the server's game password and whitelist),
-#   POG_NETGATE (default 0; 1: Grok's, Muse's and agy's shells through the run's network gate, tools/mt/netgate.py).
+#   Provider traffic always uses the run's network gate (tools/mt/netgate.py).
 # Always: Space Age, real time, POG_BROKER=1 (no key in the run; the broker reaches the iMac, which Claude Code's
 # sandbox would not). Public staging is opt-in; no site publishing, polls, casters or analyst.
 # Lockdown (multiteam-design.md, moderate): POG_WEB_BLOCK (the site, YouTube, GitHub; tools/full_tools.py says per
@@ -39,6 +39,7 @@ world=imac2
 if [ "${POG_MT_PUBLIC:-0}" = 1 ]; then export POG_MT_STREAM=1; fi
 export POG_MT_VIEWERS=${POG_MT_VIEWERS:-${POG_MT_PUBLIC:-0}}
 export POG_GAME_TEST=${POG_GAME_TEST:-${POG_MT_FRESH:-0}}
+export POG_NETGATE=1
 if [ "$POG_MT_VIEWERS" = 1 ]; then export POG_MT_STREAM=1; fi
 case $run in */*|.*|op) echo "RUN_ID: a plain name" >&2; exit 64 ;; esac
 export POG_SPACE_AGE=1 POG_BROKER=1 POG_TIME_MODE=realtime POG_ENEMIES=${POG_ENEMIES:-normal} POG_SEED=${POG_SEED:-274274}
@@ -46,7 +47,7 @@ export POG_KB=${POG_KB:-space-age-2.0.77}
 export POG_FACTORIO_VERSION=${MT_EXPECT_VERSION:-2.0.77}
 # The brief (tools/brief.py): true of the team, nothing about the world's other players (multiteam-design.md: teams
 # start believing their teammates are the only players); the map's starts, patches and nests were placed by the setup.
-export POG_TEAM_LINE='You play in a team of {{TEAM_SIZE}} AI agents'
+export POG_TEAM_LINE='You play cooperatively with {{TEAM_SIZE}} AI agents in all'
 export POG_GOAL="a space platform of the team's reaching the solar system's edge, as soon as you can"
 export POG_MAP_TEXT=$'map settings\nmade for this run'
 export POG_IDENTITY_BRIEF='In your first minute, read profile {}. Choose your own character name and a one-line persona with profile {display_name, persona}; optional pronouns, motto and avatar are yours too. Your seeded color and glyph distinguish you from your teammate; keep them unless you have a reason to change. Do not use a model name plus a number as your identity. Keep the same chosen identity on later shifts. Your stable tool/roster ID stays unchanged; tells accept teammate IDs or chosen names. Introduce yourself to your teammate with say, then get to work.'
@@ -88,7 +89,8 @@ while IFS=$'\t' read -r t name _; do
 done < "$teams_file"
 if [ -n "$resume" ]; then
   [ "$resume" != "$run" ] || { echo "POG_RESUME names this run ($run)" >&2; exit 1; }
-  [ -d "$tree/runs/$resume" ] || { echo "POG_RESUME=$resume: no $tree/runs/$resume" >&2; exit 1; }
+  [ -d "$root/runs/$resume/op" ] || { echo "POG_RESUME=$resume: no operator record" >&2; exit 1; }
+  [ -f "$root/runs/$resume/op/workspaces.json" ] || { echo "refusing legacy coloured workspaces; use a fresh baseline with anonymous workspaces" >&2; exit 1; }
 fi
 # One team's files (tools/start-team.sh's team.tsv and team.txt; written in a dry run too, into a temporary folder)
 team_files() {   # TEAM DIR
@@ -120,7 +122,7 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   echo "2c. camera: $([ "${POG_MT_CAM:-1}" = 1 ] && echo 'pog-cam1 joins on the iMac (tools/mt/imac_cam.py, about 5 GB there) and renders ./shot; copied into shots/' || echo 'off (POG_MT_CAM=0): ./shot fails')"
   echo "3. agents: one Herdr tab per team, each agent's web and network state in the log; supervisors; per-team scores and chat logs in runs/$run/op/TEAM/, the team views in runs/$run/op/views.html; idle nudges $([ "${POG_IDLE_NUDGE:-0}" = 1 ] && echo 'on (per team)' || echo off)"
   if [ "${POG_MT_PUBLIC:-0}" = 1 ]; then
-    echo "4. public staging: team feeds on 8791..., overlay 127.0.0.1:${POG_MT_PUBLIC_PORT:-8790}; one pogwin spectator via reverse SSH/UDP; mt-stream scene; recording ON, streaming OFF; viewer chat through the team services"
+    echo "4. public staging: team feeds on 8791..., overlay 127.0.0.1:${POG_MT_PUBLIC_PORT:-8790}; one pogwin spectator via reverse SSH/UDP; mt-stream scene; recording ON, streaming OFF; viewer chat to the operator inbox/display only"
   fi
   exit 0
 fi
@@ -142,10 +144,14 @@ if [ "$tree" != "$root" ]; then
   scan=$(tools/mt/launch-tree.sh --scan "$tree") || { log "refusing: launch tree $tree: $scan"; exit 1; }
   log "launch tree $tree from $(cat "$tree/.launch-tree"): $scan"
 else
-  log "launching from this checkout (POG_MT_TREE=here): the agents' tools can read tools/mt and agent/mt"
+  log "refusing an unsanitized agent tree"; exit 1
 fi
-echo "$tree" > "$op/launch-tree"
-rundir=$tree/runs/$run
+template=$tree
+python3 tools/mt/workspaces.py "$root" "$template" "$run" $teams
+rundir=$root/runs/$run
+workspace_tree() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]]["tree"])' "$op/workspaces.json" "$1"; }
+previous_dir() { python3 -c 'from pathlib import Path; import sys; p=Path(sys.argv[1]); r=sys.argv[2]; t=sys.argv[3]; b=Path((p/"runs"/r/"op/"/"launch-tree").read_text().strip()); print((b/"runs"/r/t).resolve())' "$root" "$resume" "$1"; }
+export POG_ISOLATED=1
 log "lockdown: web blocked $POG_WEB_BLOCK; reads denied $POG_DENY_READ"
 
 # 1. The server.
@@ -183,8 +189,12 @@ mkdir -p "$rundir"
 # 2. Per team: files, bots in the team's force, the broker, the carry.
 has_agy=0
 for t in $teams; do
-  td=$rundir/$t; mkdir -p "$td"
+  tree=$(workspace_tree "$t"); td=$tree/runs/$run
   team_files "$t" "$td"
+  for name in $(members "$td/team.tsv"); do
+    sock="$td/.sock/$name.sock"
+    [ ${#sock} -le 103 ] || { log "refusing: broker socket exceeds macOS's 103-byte limit"; exit 1; }
+  done
   python3 tools/team_bots.py "$td/team.tsv" "$world" "$t" 2>&1 | while read -r line; do log "$t bot $line"; done
   python3 tools/mt/identities.py "$teams_file" "$t" --world "$world" --execute | while read -r line; do log "$t identity $line"; done
   nohup python3 tools/fh_broker.py --world "$world" --dir "$td/.sock" --log "$td/broker.log" $(members "$td/team.tsv") >"$td/broker.err" 2>&1 &
@@ -194,8 +204,13 @@ for t in $teams; do
   [ -S "$td/.sock/$last.sock" ] || { log "$t broker FAILED: $(tail -2 "$td/broker.err" | tr '\n' ' ' | cut -c1-200)"; exit 1; }
   log "$t broker: pid $(cat "$td/broker.pid"), sockets for $(members "$td/team.tsv" | tr '\n' ' ')"
   if [ -n "$resume" ]; then
-    echo "../$resume/$t" > "$td/resumed-from"
-    python3 "$tree/tools/full_tools.py" carry "$td" "$tree/runs/$resume/$t" $(members "$td/team.tsv") 2>&1 | while read -r line; do log "$t $line"; done || true
+    python3 - "$td" "$(previous_dir "$t")" <<'PY'
+from pathlib import Path
+import os,sys
+folder=Path(sys.argv[1]);previous=Path(sys.argv[2])
+(folder/'resumed-from').write_text(os.path.relpath(previous,folder.parent)+'\n')
+PY
+    python3 "$tree/tools/full_tools.py" carry "$td" "$(previous_dir "$t")" $(members "$td/team.tsv") 2>&1 | while read -r line; do log "$t $line"; done || true
   fi
   if [ "${POG_FULL_TOOLS:-0}" = 1 ]; then
     nohup python3 "$tree/tools/full_tools.py" sync "$td" 5 >>"$td/team-tools-sync.log" 2>&1 &
@@ -230,7 +245,7 @@ fi
 # 2c. The camera client (pog-cam1, a director: spectator in the player force) for ./shot, and its copy into shots/.
 if [ "${POG_MT_CAM:-1}" = 1 ]; then
   python3 tools/mt/imac_cam.py start 2>&1 | while read -r line; do log "camera: $line"; done
-  nohup python3 tools/mt/imac_cam.py sync "$run" --tree "$tree" >"$op/cam-sync.log" 2>&1 &
+  nohup python3 tools/mt/imac_cam.py sync "$run" --tree "$root" >"$op/cam-sync.log" 2>&1 &
   echo $! >> "$op/helpers.pid"
 else
   log "camera: off (POG_MT_CAM=0): ./shot fails"
@@ -267,13 +282,13 @@ fi
 prompt_args=() wanted=0 missing=""
 : >> "$op/panes.txt"
 for t in $teams; do
-  td=$rundir/$t tab=""
-  if [ -n "$resume" ]; then export POG_RESUME=$resume POG_RESUME_DIR=$tree/runs/$resume/$t; fi
+  tree=$(workspace_tree "$t"); td=$tree/runs/$run; tab=""
+  if [ -n "$resume" ]; then export POG_RESUME=$resume POG_RESUME_DIR="$(previous_dir "$t")"; fi
   while IFS=$'\t' read -r name kind route model effort label harness; do
     [ -z "$name" ] || [[ $name == \#* ]] && continue
     wanted=$((wanted + 1))
     if out=$(POG_PROXY="$(proxy_of "$name")" POG_TEAM="$td/team.txt" POG_NO_WAIT=1 POG_TAB="$tab" POG_WS="$name" POG_BOT="$name" \
-          POG_MODEL="$label ($harness)" POG_ROUTE="$route" "$tree/tools/launch-agent.sh" "$run/$t" "$world" "$name" "$minutes" "$kind" "$model" "$effort" \
+          POG_MODEL="$label ($harness)" POG_ROUTE="$route" "$tree/tools/launch-agent.sh" "$run" "$world" "$name" "$minutes" "$kind" "$model" "$effort" \
           2> >(tee "$op/launch-$t-$name.err" >&2)); then
       pane=$(echo "$out" | awk '{print $1}'); tab=$(echo "$out" | awk '{print $2}')
       log "$t agent $name ($label, $kind) in pane $pane tab $tab; $(cat "$td/$name/.web-state" 2>/dev/null || echo 'no .web-state')"
@@ -287,7 +302,8 @@ for t in $teams; do
       missing="$missing $t/$name"
     fi
   done < "$td/team.tsv"
-  { python3 tools/quota_rest.py --at-limit "$td" "$td/team.tsv" ${resume:+--carry "$tree/runs/$resume/$t"} 2>&1 || true; } | while read -r line; do log "$t $line"; done
+  carry_args=(); [ -z "$resume" ] || carry_args=(--carry "$(previous_dir "$t")")
+  { python3 tools/quota_rest.py --at-limit "$td" "$td/team.tsv" "${carry_args[@]}" 2>&1 || true; } | while read -r line; do log "$t $line"; done
 done
 [ ${#prompt_args[@]} -gt 0 ] && tools/clear-prompts.sh 90 "${prompt_args[@]}" | while read -r pane how; do log "pane $pane: $how"; done
 log "started: $(wc -l < "$op/panes.txt" | tr -d ' ')/$wanted agents${missing:+ (not started:$missing; $op/not-started.txt)}; deadline $(cat "$rundir"/*/*/deadline.txt 2>/dev/null | head -1)"
@@ -314,7 +330,7 @@ nohup python3 tools/mt/team_views.py "$run" --every "${POG_VIEWS_EVERY:-5}" >"$o
 echo $! >> "$op/helpers.pid"
 # POG_MT_STREAM=1: the stream service per team (tools/stream/serve.py --team), its overlay at 127.0.0.1:879N (red
 # 8791, then in teams-file order; 8788 is world n's): no camera calls or highlights (pog-cam1 renders the agents'
-# ./shot), no OBS, replays, night lift or image show. Audience relay is separately opt-in. Its run config and state sit in the
+# ./shot), no OBS, replays, night lift or image show. These services never consume viewer chat. Their run config and state sit in the
 # team's folder (its journals, token logs and its own force's facts); the director logs in op/TEAM/.
 if [ "${POG_MT_STREAM:-0}" = 1 ]; then
   : > "$op/streams.txt"
@@ -331,26 +347,25 @@ for line in open(sys.argv[1]):
 json.dump({"title": "Factorio: Space Age", "subtitle": "real time", "space_age": True, "agents": agents, "cameras": [],
            "show": False, "cuts": False, "highlights": False, "replays": False, "night": False}, open(sys.argv[2], "w"), indent=1)
 EOF
-    viewer_args=()
-    if [ "$POG_MT_VIEWERS" = 1 ]; then
-      touch "$td/viewer-relay"
-      viewer_args=(--viewers-relay "$td/viewer-relay" --viewers-broadcast-roster
-        --viewers-hidden "${POG_HIDDEN_VIEWERS:-$root/site/hidden-viewers.json}")
-      if [ -n "${POG_MT_VIEWER_REPLAY:-}" ]; then
-        # Closed smoke only: the real Feed/Relay with a local recorded source.
-        viewer_args+=(--viewers-replay "$POG_MT_VIEWER_REPLAY" --viewers-classifier heuristic)
-      else
-        viewer_args+=(--viewers-site "${POG_MT_SITE_CHAT:-https://player-of-games-live.your-subdomain.workers.dev}")
-        [ -z "${POG_MT_YOUTUBE:-}" ] || viewer_args+=(--viewers-youtube "$POG_MT_YOUTUBE")
-      fi
-    fi
-    nohup python3 tools/stream/serve.py "${viewer_args[@]}" --world "$world" --team "$t" --run "$td/stream.json" --port $port --poll 5 \
+    nohup python3 tools/stream/serve.py --world "$world" --team "$t" --run "$td/stream.json" --port $port --poll 5 \
       --no-camera --no-highlights --no-replays --no-night --no-cuts --log-dir "$op/$t/stream-logs" >"$op/$t/stream-service.log" 2>&1 &
     echo $! >> "$op/helpers.pid"
     echo "$t http://127.0.0.1:$port/" >> "$op/streams.txt"
     log "$t stream: http://127.0.0.1:$port/ (pid $!)"
     port=$((port + 1))
   done
+fi
+if [ "$POG_MT_VIEWERS" = 1 ]; then
+  viewer_args=(--hidden "${POG_HIDDEN_VIEWERS:-$root/site/hidden-viewers.json}")
+  if [ -n "${POG_MT_VIEWER_REPLAY:-}" ]; then
+    viewer_args+=(--replay "$POG_MT_VIEWER_REPLAY" --classifier heuristic)
+  else
+    viewer_args+=(--site "${POG_MT_SITE_CHAT:-https://player-of-games-live.your-subdomain.workers.dev}")
+    [ -z "${POG_MT_YOUTUBE:-}" ] || viewer_args+=(--youtube "$POG_MT_YOUTUBE")
+  fi
+  nohup python3 tools/mt/viewer_inbox.py "$run" --minutes "$minutes" "${viewer_args[@]}" >"$op/viewer-service.log" 2>&1 &
+  echo $! >> "$op/helpers.pid"
+  log "audience: operator inbox and display only; no game relay"
 fi
 if [ "${POG_MT_PUBLIC:-0}" = 1 ]; then
   if python3 tools/mt/public_stream.py start "$run" 2>&1 | tee -a "$op/start.log"; then

@@ -135,6 +135,10 @@ def setup(kind, model, d):
 
 
 def agy_tokens(d):
+    local = os.path.join(d, '.agy-session.json')
+    if os.path.exists(local):
+        try: return int(json.load(open(local)).get('tokens', 0))
+        except (OSError, ValueError, TypeError): return 0
     base = os.path.expanduser("~/.gemini/antigravity-cli")
     try:
         conv = json.load(open(os.path.join(base, "cache", "last_conversations.json")))[os.path.realpath(d)]

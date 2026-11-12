@@ -236,10 +236,8 @@ def team_chat(team, messages, names, private_names=(), now=None, tick=None, keep
             at = now - max(0, tick - said) / 60
         else:
             at = stamp
-        # A say that the stream service linked to a viewer's line: an answer to the audience.
-        reply = kind == 'talk' and (m.get('reply_to') is not None or bool(rows(m.get('replies_to'))))
         out.append({'id': ident, 'team': team, 'name': sender, 'to': to, 'kind': kind, 'text': text,
-                    'tick': said, 't': stamp, 'at': at, 'reply': reply})
+                    'tick': said, 't': stamp, 'at': at, 'reply': False})
     return out[-keep:]
 
 
@@ -314,11 +312,8 @@ def project_viewers(messages, now, teams=()):
         stamp, text = number(m.get('t')), speech(m.get('text'), ('Nick', 'Winter'))
         if not text or stamp is None or stamp != m.get('t') or not -5 <= now - stamp <= 600:
             continue
-        targets = rows(m.get('targets'))
-        # Reject an invalid target set as a whole; never turn a partial receipt
-        # into a false claim that every team received the message.
-        targets = list(dict.fromkeys(targets)) if targets and all(isinstance(t, str) and t in (*teams, 'all') for t in targets) else []
-        delivery = m.get('delivery') if m.get('delivery') in ('sent', 'held', 'not_relayed') else None
+        targets = []
+        delivery = m.get('delivery') if m.get('delivery') in ('operator', 'held', 'not_relayed') else None
         out.append({'name': 'Viewer', 'source': source, 'text': text, 't': stamp,
                     'targets': targets, 'delivery': delivery})
         if source == 'site' and isinstance(m.get('id'), str) and re.fullmatch(r'site:[0-9]{1,20}', m['id']):
@@ -579,11 +574,9 @@ class Race:
                 for r in teams:
                     if r['team'] in (a, b):
                         r['pacts'].append({'id':ident, 'with': b if r['team'] == a else a})
-        # A say the stream service linked to a viewer's line keeps that mark in the ordered feed.
-        answers = {(m['team'], m['name'], m['text'][:60]) for r in teams for m in r['chat'] if m.get('reply')}
         for m in lines or ():
             if m['team'] in known and any(a['name'] == m['name'] for r in teams if r['team'] == m['team'] for a in r['agents']):
-                self.say(dict(m, reply=m['kind'] == 'talk' and (m['team'], m['name'], m['text'][:60]) in answers))
+                self.say(dict(m, reply=False))
         for m in () if self.ordered else diplomacy:
             # Already rebuilt by diplomacy(): explicit cross-team messages, one pair-local sequence each.
             pair = '-'.join(sorted((m['from_team'], m['to_team'])))
