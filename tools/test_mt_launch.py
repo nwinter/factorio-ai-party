@@ -183,8 +183,11 @@ def dry_run():
         assert "team blue" in out.stdout and "team green" in out.stdout and "team red" not in out.stdout, out.stdout
         out = subprocess.run(["bash", sh, "mt9", "30"], env=dict(env, POG_MT_PAUSED_START="1"),
                              capture_output=True, text=True, cwd=ROOT)
-        assert out.returncode == 0 and "world paused after deploy; operator must resume" in out.stdout, out.stderr
+        assert out.returncode == 0 and "world resumed for deploy/camera join, then paused; operator must resume" in out.stdout, out.stderr
         assert "world unpaused" not in out.stdout, out.stdout
+        out = subprocess.run(["bash", sh, "mt9", "30"], env=dict(env, POG_MT_PAUSED_START="1", POG_MT_PUBLIC="1"),
+                             capture_output=True, text=True, cwd=ROOT)
+        assert out.returncode == 0 and "deferred until operator activation/resume" in out.stdout, out.stderr
         out = subprocess.run(["bash", sh, "mt9", "30"], env=dict(env, POG_MT_PAUSED_START="yes"),
                              capture_output=True, text=True, cwd=ROOT)
         assert out.returncode == 64 and "POG_MT_PAUSED_START must be 0 or 1" in out.stderr, out.stderr
@@ -210,13 +213,21 @@ def dry_run():
 
 
 def paused_start():
-    """Execute the real deployment/pause block against fake commands, without a server."""
+    """An already-paused world must tick for deploy/join, then hold even on failure."""
+    import signal
+    import time
     text = open(os.path.join(ROOT, "tools", "mt", "start-mt.sh")).read()
-    block = text[text.index('deployed=$(POG_WORLD='):text.index('log "world:')]
+    block = text[text.index('deploy_runtime() ('):text.index('log "world:')]
     with tempfile.TemporaryDirectory() as tmp:
         os.mkdir(os.path.join(tmp, "bin"))
         fh = os.path.join(tmp, "bin", "fh")
-        open(fh, "w").write('#!/bin/bash\necho deploy >> "$CALLS"\nprintf "{}"\n')
+        open(fh, "w").write('''#!/bin/bash
+echo deploy >> "$CALLS"
+if [ "$(cat "$WORLD_STATE")" = paused ]; then echo stuck-paused >> "$CALLS"; exit 1; fi
+if [ "$DEPLOY_RESULT" = failure ]; then echo '{"ok":false}'; exit 1; fi
+if [ "$DEPLOY_RESULT" = interrupt ]; then echo ready > "$WORLD_STATE.ready"; sleep 30; fi
+echo '{"ok":true}'
+''')
         os.chmod(fh, 0o755)
         stub = r'''
 set -euo pipefail
@@ -225,26 +236,76 @@ paused_start=$PAUSED_START
 log() { echo "$*"; }
 git() { echo test; }
 python3() {
-  if [ "$1" = tools/code_check.py ]; then cat >/dev/null; echo ok; return; fi
-  echo "$*" >> "$CALLS"
-  if [ "$4" = pause ]; then
-    [ "$PAUSE_RESULT" != failure ] || return 1
-    [ "$PAUSE_RESULT" != bad_ack ] || { echo 'Lua error'; return; }
-    echo 'paused at 123'
+  if [ "$1" = tools/code_check.py ]; then
+    [ "$DEPLOY_RESULT" != parser_failure ] || return 1
+    if grep -q '"ok":true'; then echo ok; else echo FAILED; fi
+    return
   fi
+  if [ "$1" = tools/mt/imac_cam.py ]; then
+    echo camera >> "$CALLS"
+    [ "$(cat "$WORLD_STATE")" != paused ] || { echo camera-stuck-paused >> "$CALLS"; return 1; }
+    [ "$CAMERA_RESULT" != failure ] || return 1
+    echo joined; return
+  fi
+  echo "$4" >> "$CALLS"
+  if [ "$4" = pause ]; then result=$PAUSE_RESULT; state=paused
+  else result=$RESUME_RESULT; state=resumed; fi
+  [ "$result" != failure ] || return 1
+  [ "$result" != bad_ack ] || { echo 'Lua error'; return; }
+  echo "$state" > "$WORLD_STATE"
+  echo "$state at 123"
 }
 '''
-        for mode, result, expected, ok in (("0", "ok", "resume", True), ("1", "ok", "pause", True),
-                                           ("1", "failure", "pause", False), ("1", "bad_ack", "pause", False)):
+        cases = [
+            ({"PAUSED_START": "0"}, ["deploy", "resume"], True),
+            ({"PAUSED_START": "0", "DEPLOY_RESULT": "failure"}, ["deploy"], False),
+            ({}, ["resume", "deploy", "pause"], True),
+            ({"INITIAL_STATE": "paused"}, ["resume", "deploy", "pause"], True),
+            ({"INITIAL_STATE": "paused", "POG_MT_CAM": "1"}, ["resume", "deploy", "camera", "pause"], True),
+            ({"POG_MT_CAM": "1", "CAMERA_RESULT": "failure"}, ["resume", "deploy", "camera", "pause"], False),
+            ({"DEPLOY_RESULT": "failure"}, ["resume", "deploy", "pause"], False),
+            ({"DEPLOY_RESULT": "parser_failure"}, ["resume", "deploy", "pause"], False),
+            ({"RESUME_RESULT": "failure"}, ["resume", "pause"], False),
+            ({"RESUME_RESULT": "bad_ack"}, ["resume", "pause"], False),
+            ({"PAUSE_RESULT": "failure"}, ["resume", "deploy", "pause"], False),
+            ({"PAUSE_RESULT": "bad_ack"}, ["resume", "deploy", "pause"], False),
+        ]
+        for overrides, expected, ok in cases:
             calls = os.path.join(tmp, "calls")
+            state = os.path.join(tmp, "state")
             open(calls, "w").close()
-            env = testsafe.env(PAUSED_START=mode, PAUSE_RESULT=result, CALLS=calls)
+            env = testsafe.env(PAUSED_START="1", POG_MT_CAM="0", PAUSE_RESULT="ok", RESUME_RESULT="ok",
+                              DEPLOY_RESULT="ok", CAMERA_RESULT="ok", INITIAL_STATE="resumed", CALLS=calls, WORLD_STATE=state)
+            env.update(overrides)
+            open(state, "w").write(env["INITIAL_STATE"])
             out = subprocess.run(["bash", "-c", stub + block + '\necho clients-ready\n'], cwd=tmp,
-                                 env=env, capture_output=True, text=True)
-            assert (out.returncode == 0) == ok, (mode, result, out.stdout, out.stderr)
-            assert open(calls).read().splitlines() == ["deploy", f"tools/pog.py --world imac2 {expected}"]
+                                 env=env, capture_output=True, text=True, timeout=5)
+            assert (out.returncode == 0) == ok, (overrides, out.stdout, out.stderr)
+            assert open(calls).read().splitlines() == expected, (overrides, open(calls).read(), out.stdout, out.stderr)
             assert ("clients-ready" in out.stdout) == ok, out.stdout
-    print("paused start: deploy precedes pause; failure stops clients; default resumes: ok")
+            if env["PAUSED_START"] == "1" and env["PAUSE_RESULT"] == "ok":
+                assert open(state).read().strip() == "paused", overrides
+        # Interrupt the whole launch process group during a deploy, as operator teardown does.
+        open(calls, "w").close()
+        open(state, "w").write("paused")
+        env.update(PAUSE_RESULT="ok", DEPLOY_RESULT="interrupt")
+        p = subprocess.Popen(["bash", "-c", stub + block + '\necho clients-ready\n'], cwd=tmp, env=env,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+        try:
+            end = time.monotonic() + 3
+            while not os.path.exists(state + ".ready") and p.poll() is None and time.monotonic() < end:
+                time.sleep(.02)
+            assert os.path.exists(state + ".ready"), "fake deployment did not start"
+            os.killpg(p.pid, signal.SIGTERM)
+            stdout, stderr = p.communicate(timeout=3)
+            assert p.returncode != 0 and "clients-ready" not in stdout, (stdout, stderr)
+            assert open(calls).read().splitlines() == ["resume", "deploy", "pause"], open(calls).read()
+            assert open(state).read().strip() == "paused"
+        finally:
+            if p.poll() is None:
+                os.killpg(p.pid, signal.SIGKILL)
+                p.communicate()
+    print("paused start: resume/deploy/join/pause; failures restore hold and stop clients; default unchanged: ok")
 
 
 def team_files():

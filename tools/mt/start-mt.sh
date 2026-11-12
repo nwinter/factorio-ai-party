@@ -13,8 +13,9 @@
 #     which tools/mt/stop-mt.sh's /quit left).
 #   POG_MT_FRESH=1: start from mt275-final; refuses a running server or POG_RESUME.
 #     POG_MT_FRESH_SAVE overrides the local baseline path.
-#   POG_MT_PAUSED_START=1: pause after runtime deployment; the operator resumes after clients/fixture are ready.
-#     Deployment still needs ticks; prepared fixtures must hold production inactive until activation. Default 0.
+#   POG_MT_PAUSED_START=1: resume for runtime deployment and camera join, then pause before agent startup.
+#     The operator resumes after clients/fixture are ready. Prepared fixtures must hold production inactive
+#     during deployment/join ticks. Public staging is deferred until after activation. Default 0.
 #   POG_MT_TREE: the launch tree (default worktrees/pog-p, made or updated from HEAD at each start);
 #     POG_MT_TREE=here is refused: an unsanitized checkout is never an agent workspace.
 #   POG_MT_TEAMS: only these teams (comma-separated), POG_DRY_RUN=1: the plan only, POG_FULL_TOOLS=1 as start-team,
@@ -112,7 +113,7 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   if [ -n "${POG_MT_SAVE:-}" ]; then echo "1. server: started on $POG_MT_SAVE if not running${POG_MT_FRESH:+; fresh mode refuses a running server}"
   elif [ -n "$resume" ]; then echo "1. server: if not running, started on its own saves/mt.zip (the last stop's)"
   else echo "1. server: must be running (or set POG_MT_SAVE)"; fi
-  if [ "$paused_start" = 1 ]; then world_start='world paused after deploy; operator must resume'
+  if [ "$paused_start" = 1 ]; then world_start='world resumed for deploy/camera join, then paused; operator must resume'
   else world_start='world unpaused'; fi
   echo "   runtime deployed from $(git rev-parse --short HEAD); the $world_start; the setup's join lines dropped from the chat"
   if [ "$tree" = "$root" ]; then echo "   agents launch from this checkout (POG_MT_TREE=here)"
@@ -131,6 +132,7 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   echo "3. agents: one Herdr tab per team, each agent's web and network state in the log; supervisors; per-team scores and chat logs in runs/$run/op/TEAM/, the team views in runs/$run/op/views.html; idle nudges $([ "${POG_IDLE_NUDGE:-0}" = 1 ] && echo 'on (per team)' || echo off)"
   if [ "${POG_MT_PUBLIC:-0}" = 1 ]; then
     echo "4. public staging: team feeds on 8791..., overlay 127.0.0.1:${POG_MT_PUBLIC_PORT:-8790}; one pogwin spectator via reverse SSH/UDP; mt-stream scene; recording ON, streaming OFF; viewer chat to the operator inbox/display only"
+    [ "$paused_start" != 1 ] || echo "   deferred until operator activation/resume: python3 tools/mt/public_stream.py start $run"
   fi
   exit 0
 fi
@@ -173,17 +175,39 @@ else
   tools/mt/imac_mt.sh start "$save" 2>&1 | while read -r line; do log "server: $line"; done
   tools/mt/imac_mt.sh status | grep -q '^running' || { log "refusing: the mt server did not start"; exit 1; }
 fi
-deployed=$(POG_WORLD=$world bin/fh deploy --format json 2>/dev/null || true)
-deploy_status=$(printf '%s' "$deployed" | python3 tools/code_check.py --deploy-reply)
-log "runtime deployed from $(git rev-parse --short HEAD): $deploy_status"
-case $deploy_status in ok*) ;; *) exit 1 ;; esac
-if [ "$paused_start" = 1 ]; then
-  pause_reply=$(python3 tools/pog.py --world "$world" pause 2>&1) || { log "refusing: pause failed: $pause_reply"; exit 1; }
-  [[ "$pause_reply" =~ ^paused\ at\ [0-9]+$ ]] || { log "refusing: pause not confirmed: $pause_reply"; exit 1; }
-  log "$pause_reply; operator must resume after clients and fixture are ready"
-else
-  python3 tools/pog.py --world "$world" resume >/dev/null 2>&1 || true
-fi
+# Deployment can stall on a paused save. Keep the ticking window before any model starts;
+# the subshell's EXIT trap restores the hold on failure or interruption as well as success.
+deploy_runtime() (
+  hold_after_deploy() {
+    result=$?
+    trap - EXIT
+    pause_reply=$(python3 tools/pog.py --world "$world" pause 2>&1) || { log "refusing: pause failed: $pause_reply"; exit 1; }
+    [[ "$pause_reply" =~ ^paused\ at\ [0-9]+$ ]] || { log "refusing: pause not confirmed: $pause_reply"; exit 1; }
+    log "$pause_reply; operator must resume after clients and fixture are ready"
+    exit "$result"
+  }
+  if [ "$paused_start" = 1 ]; then
+    trap hold_after_deploy EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    resume_reply=$(python3 tools/pog.py --world "$world" resume 2>&1) || { log "refusing: resume before deploy failed: $resume_reply"; exit 1; }
+    [[ "$resume_reply" =~ ^resumed\ at\ [0-9]+$ ]] || { log "refusing: resume before deploy not confirmed: $resume_reply"; exit 1; }
+    log "$resume_reply for deployment; fixture production must remain held"
+  fi
+  deployed=$(POG_WORLD=$world bin/fh deploy --format json 2>/dev/null || true)
+  deploy_status=$(printf '%s' "$deployed" | python3 tools/code_check.py --deploy-reply)
+  log "runtime deployed from $(git rev-parse --short HEAD): $deploy_status"
+  case $deploy_status in ok*) ;; *) exit 1 ;; esac
+  if [ "$paused_start" = 1 ]; then
+    # A native client join may need ticks too. Only its file sync starts after the hold.
+    if [ "${POG_MT_CAM:-1}" = 1 ]; then
+      python3 tools/mt/imac_cam.py start 2>&1 | while read -r line; do log "camera: $line"; done
+    fi
+  else
+    python3 tools/pog.py --world "$world" resume >/dev/null 2>&1 || true
+  fi
+)
+deploy_runtime
 log "world: $(python3 tools/pog.py --world "$world" rcon "/silent-command rcon.print('tick ' .. game.tick .. (game.tick_paused and ' (paused)' or ''))" 2>&1)"
 # The game's join and leave lines of the setup's team accounts (mt-red, ...) out of the harness chat (multiteam.lua)
 # A character of the player force with no player (mt277: one at red's spawn in mt275-final, left when a setup account
@@ -258,7 +282,9 @@ fi
 
 # 2c. The camera client (pog-cam1, a director: spectator in the player force) for ./shot, and its copy into shots/.
 if [ "${POG_MT_CAM:-1}" = 1 ]; then
-  python3 tools/mt/imac_cam.py start 2>&1 | while read -r line; do log "camera: $line"; done
+  if [ "$paused_start" != 1 ]; then
+    python3 tools/mt/imac_cam.py start 2>&1 | while read -r line; do log "camera: $line"; done
+  fi
   nohup python3 tools/mt/imac_cam.py sync "$run" --tree "$root" >"$op/cam-sync.log" 2>&1 &
   echo $! >> "$op/helpers.pid"
 else
@@ -383,7 +409,10 @@ if [ "$POG_MT_VIEWERS" = 1 ]; then
   log "audience: operator inbox and display only; no game relay"
 fi
 if [ "${POG_MT_PUBLIC:-0}" = 1 ]; then
-  if python3 tools/mt/public_stream.py start "$run" 2>&1 | tee -a "$op/start.log"; then
+  if [ "$paused_start" = 1 ]; then
+    # Public camera framing/rendering needs ticks. Never resume behind running agents.
+    log "public staging deferred until operator activation/resume: python3 tools/mt/public_stream.py start $run"
+  elif python3 tools/mt/public_stream.py start "$run" 2>&1 | tee -a "$op/start.log"; then
     log "public stream staged: mt-stream scene, recording on; OBS streaming remains OFF"
   else
     log "PUBLIC STAGING FAILED: agents and team services remain running; inspect $op/public-stream.log, then retry public_stream.py start $run"
