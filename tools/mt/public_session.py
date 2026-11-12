@@ -69,13 +69,28 @@ def site_state():
         return json.load(r).get('state') or {}
 
 
-def fresh_feed(state, now):
+def roster_of(op):
+    active={line.split()[0] for line in (op/'streams.txt').read_text().splitlines() if line.strip()}
+    expected={team:set() for team in active}
+    for line in (op/'teams.tsv').read_text().splitlines():
+        fields=line.split('\t')
+        if not line.startswith('#') and len(fields)>=2 and fields[0] in expected:
+            expected[fields[0]].add(fields[1])
+    assert expected and all(len(names)>=2 for names in expected.values()), 'missing paired stream roster'
+    return expected
+
+
+def fresh_feed(state, now, expected):
     teams = state.get('teams')
     stamp = state.get('now')
     return (isinstance(stamp, (int, float)) and 0 <= now - stamp <= 60
-            and isinstance(teams, list) and len(teams) == 3
-            and {t.get('team') for t in teams if isinstance(t, dict)} == {'green', 'yellow', 'blue'}
-            and all(not t.get('stale', True) and len(t.get('agents') or []) == 2 for t in teams))
+            and isinstance(teams, list) and len(teams) == len(expected)
+            and all(isinstance(t,dict) for t in teams)
+            and {t.get('team') for t in teams} == set(expected)
+            and all(not t.get('stale', True) and isinstance(t.get('agents'),list)
+                    and len(t['agents']) == len(expected[t['team']])
+                    and {a.get('name') for a in t['agents'] if isinstance(a,dict)} == expected[t['team']]
+                    for t in teams))
 
 
 def owns_site(state, video):
@@ -99,6 +114,7 @@ def supervise(run, minutes):
     ready = read(op/'public-stream.json')
     assert ready['phase'] == 'ready' and ready['run'] == run and ready['root'] == str(ROOT)
     assert os.environ.get('MT_DIR') == '/Users/owner/pog-mt21' and os.environ.get('MT_EXPECT_VERSION') == '2.1.24', 'missing isolated 2.1 pins'
+    expected = roster_of(op)
     state = {'pid':os.getpid(), 'run':run, 'video':receipt['id'], 'phase':'starting', 'started':time.time(), 'deadline':time.time()+minutes*60}
     statefile = op/'public-session.json'
     write(statefile,state)
@@ -145,7 +161,7 @@ def supervise(run, minutes):
                 raise RuntimeError('OBS stream stopped')
             try:
                 with urlopen('http://127.0.0.1:8790/state.json', timeout=5) as response:
-                    healthy = fresh_feed(json.load(response), time.time())
+                    healthy = fresh_feed(json.load(response), time.time(), expected)
             except (OSError, ValueError):
                 healthy = False
             feed_failures = 0 if healthy else feed_failures + 1

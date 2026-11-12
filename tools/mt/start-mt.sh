@@ -38,6 +38,7 @@ teams_file=${3:-agent/mt/teams-test.tsv}
 world=imac2
 if [ "${POG_MT_PUBLIC:-0}" = 1 ]; then export POG_MT_STREAM=1; fi
 export POG_MT_VIEWERS=${POG_MT_VIEWERS:-${POG_MT_PUBLIC:-0}}
+export POG_GAME_TEST=${POG_GAME_TEST:-${POG_MT_FRESH:-0}}
 if [ "$POG_MT_VIEWERS" = 1 ]; then export POG_MT_STREAM=1; fi
 case $run in */*|.*|op) echo "RUN_ID: a plain name" >&2; exit 64 ;; esac
 export POG_SPACE_AGE=1 POG_BROKER=1 POG_TIME_MODE=realtime POG_ENEMIES=${POG_ENEMIES:-normal} POG_SEED=${POG_SEED:-274274}
@@ -245,6 +246,20 @@ if [ "${POG_NETGATE:-0}" = 1 ]; then
   log "netgate: pid $!, log $op/netgate.jsonl"
 fi
 proxy_of() { [ -f "$op/netgate.tsv" ] && awk -v n="$1" '$1 == n {print "http://127.0.0.1:" $2; exit}' "$op/netgate.tsv"; }
+
+# Arm fresh-game objectives before any model starts, while the map still has no contacts.
+if [ "$POG_GAME_TEST" = 1 ]; then
+  nohup python3 tools/mt/game_test.py "$run" --minutes "$minutes" --execute >"$op/game-scenario.log" 2>&1 &
+  game_pid=$!; echo "$game_pid" >> "$op/helpers.pid"
+  ready=0
+  for _ in $(seq 1 30); do
+    if python3 -c 'import json,sys; sys.exit(json.load(open(sys.argv[1])).get("phase") != "running")' "$op/game-scenario.json" 2>/dev/null; then ready=1; break; fi
+    kill -0 "$game_pid" 2>/dev/null || break
+    sleep 1
+  done
+  [ "$ready" = 1 ] || { log "fresh-game objectives failed to arm; see $op/game-scenario.log"; exit 1; }
+  log "fresh-game objectives armed: production and scouting; negotiation/combat after actual contact"
+fi
 
 # 3. Agents: one Herdr tab per team, from the launch tree.
 # A failed launch is logged as not started (op/not-started.txt, launch-agent.sh's last lines) and the others go on, as

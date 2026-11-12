@@ -9,6 +9,7 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools/mt'))
 import identities
+import game_test
 from public_feed import identity,project_feed
 
 class IdentityFeedTests(unittest.TestCase):
@@ -60,5 +61,26 @@ class IdentityFeedTests(unittest.TestCase):
             expanded=identities.seeds(p)
             self.assertEqual(len({r['glyph'] for r in expanded.values()}),12)
             self.assertEqual(len({r['color'] for r in expanded.values()}),12)
+
+    def test_game_objectives_follow_real_contact_only(self):
+        teams={'green':['gemini','gemini2'],'yellow':['grok','grok2'],'blue':['muse','muse2']}
+        self.assertNotIn('blue',game_test.opening(teams['green']))
+        self.assertNotIn('muse',game_test.opening(teams['green']))
+        done=set()
+        self.assertEqual(game_test.events([],teams,done),[])
+        pair={'team':'green','other':'yellow','kind':'chart'}
+        out=game_test.events([pair,dict(pair,team='yellow',other='green')],teams,done)
+        self.assertEqual(len(out),1)
+        self.assertEqual({t for t,_ in out[0][1]},{'green','yellow'})
+        self.assertIn('diplomacy_send',out[0][1][0][1])
+        self.assertEqual(game_test.events([pair],teams,done),[])
+        self.assertEqual(game_test.events([dict(pair,kind='shot',damage=0)],teams,done),[])
+        hit=game_test.events([dict(pair,kind='shot',damage=5)],teams,done)
+        self.assertEqual(len(hit),1)
+        self.assertTrue(hit[0][0].startswith('fight:'))
+        self.assertEqual(game_test.events([dict(pair,other='hidden')],teams,done),[])
+        selected=game_test.roster(ROOT/'agent/mt/teams-test.tsv','green,yellow')
+        self.assertEqual(set(selected),{'green','yellow'})
+        self.assertEqual(game_test.events([dict(pair,other='blue')],selected,set()),[])
 
 if __name__=='__main__':unittest.main()
