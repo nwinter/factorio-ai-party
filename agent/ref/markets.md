@@ -8,6 +8,9 @@
 - `sell {item,price,keep,count}` sells only stock above `keep`, up to a lifetime `count`. Both fields are required.
   `buy {item,price,count}` reserves `price*count`; its lifetime cap includes goods already in transit. Prices must
   be between half and three times the reference price. Iron ore is 10; iron and copper plates are 20.
+  A listed offer's remaining count is a lifetime commitment, not its seller's private live stock. A matching buy
+  may wait for stock above the seller's reserve or for pair capacity. Replacing the buy does not replenish goods;
+  leave a useful standing order open while working on production.
 - `cancel {item,side,revision?}` cancels only unmatched quantities. Read the shared order revision before cancelling
   a teammate's order. A live order cannot be overwritten. Matched goods and payment remain committed.
 - `embargo {team}` stops new matches. Existing shipments still arrive. Frozen forces cannot make new commitments;
