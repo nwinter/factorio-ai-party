@@ -157,7 +157,9 @@ def grok_tokens(d):
     import glob
     import re
     from urllib.parse import quote
-    base = os.path.join(os.path.expanduser("~/.grok/sessions"), quote(os.path.realpath(d), safe=""))
+    local=os.path.join(d,'.grok-home','sessions')
+    sessions=local if os.path.isdir(local) and not os.path.islink(local) else os.path.expanduser('~/.grok/sessions')
+    base = os.path.join(sessions, quote(os.path.realpath(d), safe=""))
     try:
         path = max(glob.glob(os.path.join(base, "*", "updates.jsonl")), key=os.path.getmtime)
         found = re.findall(r'"_meta":\{"totalTokens":(\d+)', "\n".join(tail_lines(path)))

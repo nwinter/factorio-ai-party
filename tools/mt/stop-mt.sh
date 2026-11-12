@@ -8,6 +8,21 @@
 cd "$(dirname "$0")/../.."
 run=${1:?usage: stop-mt.sh RUN_ID} world=imac2 op=runs/$1/op
 [ -d "$op" ] || { echo "no multi-team run runs/$run (no op/)" >&2; exit 1; }
+# Prevent a launcher still waiting for native prompts from creating helpers after
+# teardown has already read helpers.pid. Verify its command before touching a PID.
+python3 - "$op" "$run" <<'PY'
+import json,os,shlex,signal,subprocess,sys
+from pathlib import Path
+try:
+    pid=int(json.loads((Path(sys.argv[1])/'launch-process.json').read_text())['pid'])
+    cmd=shlex.split(subprocess.check_output(['ps','-o','command=','-p',str(pid)],text=True))
+    script=str((Path.cwd()/'tools/mt/start-mt.sh').resolve())
+    i=cmd.index(script)
+    if cmd[i+1]!=sys.argv[2]:raise ValueError('different run')
+    if os.getpgid(pid)==pid:os.killpg(pid,signal.SIGTERM)
+    else:os.kill(pid,signal.SIGTERM)
+except (OSError,ValueError,KeyError,IndexError,subprocess.CalledProcessError):pass
+PY
 # Public output stops first, while feeds still exist. Its persisted ownership is
 # used even if this shell no longer has POG_MT_PUBLIC=1. A live OBS broadcast must
 # be stopped by the operator before teardown can blank its program scene.

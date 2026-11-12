@@ -11,6 +11,8 @@ def main():
     if '-c' in args or '--continue' in args:
         args=[a for a in args if a not in ('-c','--continue')]
         if marker.exists():args=['--conversation',json.loads(marker.read_text())['id'],*args]
+        else:args=['--new-project',*args]
+    else:args=['--new-project',*args]
     p=subprocess.Popen([str(Path.home()/'.local/bin/agy'),'--output-format','stream-json',*args],stdout=subprocess.PIPE,text=True)
     state={}; response=[]
     for line in p.stdout:

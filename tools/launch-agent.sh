@@ -339,7 +339,7 @@ case $kind in
     clean_args=$(python3 "$root/tools/clean-profile.py" muse "$dir")         # -c 'hooks={}'; $muse_env: profile-flags.sh
     # The outer process scope covers native tools and all descendants. macOS
     # refuses a nested sandbox-exec; keep one enforced boundary for this route.
-    [ "${POG_ISOLATED:-0}" != 1 ] || clean_args="$clean_args --no-foreign-personal-context --disable-sandbox"
+    [ "${POG_ISOLATED:-0}" != 1 ] || clean_args="$clean_args -c context.foreign_personal_rules=false -c context.foreign_personal_skills=false --disable-sandbox"
     [ -z "${POG_WEB_BLOCK:-}" ] || clean_args="$clean_args $(python3 "$root/tools/full_tools.py" muse-web-off)"
     pane=$(new_pane)
     printf '%s\n' '#!/usr/bin/env bash' "cd '$dir'" "${proxy_env:+export $proxy_env}" \

@@ -25,7 +25,8 @@ def profile(root,home,proxy=None,native=None):
     # Home contains shell histories, usage dashboards, terminal transcripts and
     # project registries. Only executable installations and native authentication/
     # runtime roots are visible; narrower history denies below still apply.
-    installs=[root,home/'.local/bin',home/'.local/lib',home/'.nvm',home/'.grok/bin',
+    installs=[root,home/'.local/bin',home/'.local/lib',home/'.nvm',home/'.grok/bin',home/'.grok/auth.json',
+              home/'.gemini/config/projects',
               home/'.gemini/antigravity-cli',home/'.cache/antigravity',home/'Library/Keychains',
               home/'Dropbox (Personal)/misc/env/agents']
     allowed=' '.join(f'(subpath {quote(str(p.resolve()))})' for p in installs)
@@ -44,13 +45,18 @@ def profile(root,home,proxy=None,native=None):
     for part in ('.local/share/muse','.config/muse','.codex','.claude','.config/herdr',
                  '.local/share/herdr','.config/ai-session'):
         clauses.append(f'(deny file-read-data file-write* (subpath {quote(str(home/part))}))')
-    clauses.append(f'(deny file-read-data file-write* (require-all (subpath {quote(str(home/".grok"))}) (require-not (subpath {quote(str(home/".grok/bin"))}))))')
+    clauses.append(f'(deny file-read-data file-write* (require-all (subpath {quote(str(home/".grok"))}) (require-not (subpath {quote(str(home/".grok/bin"))})) (require-not (literal {quote(str(home/".grok/auth.json"))}))))')
+    clauses.append(f'(deny file-write* (literal {quote(str(home/".grok/auth.json"))}))')
     agy=home/'.gemini/antigravity-cli'
     for part in ('brain','conversations'):
         parent=agy/part
         clauses.append(f'(deny file-read-data (literal {quote(str(parent))}))')
         for child in parent.iterdir() if parent.exists() else ():
             clauses.append(f'(deny file-read-data file-write* (subpath {quote(str(child))}))')
+    projects=home/'.gemini/config/projects'
+    clauses.append(f'(deny file-read-data (literal {quote(str(projects))}))')
+    for child in projects.iterdir() if projects.exists() else ():
+        clauses.append(f'(deny file-read-data file-write* (subpath {quote(str(child))}))')
     for part in ('cache/last_conversations.json','conversation_summaries.db','conversation_summaries.db-wal',
                  'conversation_summaries.db-shm','jetbox_summaries_proto.pb','annotations','implicit','scratch','presence'):
         clauses.append(f'(deny file-read-data file-write* (subpath {quote(str(agy/part))}))')

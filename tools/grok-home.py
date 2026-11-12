@@ -155,10 +155,11 @@ def setup(d, ensure):
             f.write("\n[toolset.web_search]\nexcluded_domains = [" + ", ".join(json.dumps(h) for h in block) + "]\n")
     link = os.path.join(home, "sessions")
     if not os.path.lexists(link):
-        os.symlink(os.path.join(OWNER, "sessions"), link)
+        if os.environ.get('POG_ISOLATED')=='1':os.mkdir(link)
+        else:os.symlink(os.path.join(OWNER, "sessions"), link)
     # Herdr's own Grok integration (installed by Herdr, reports the session to it; tools/supervise.sh reads the pane's
     # agent state) stays; the owner's local-session-profile hook does not. Neither reaches the model.
-    copy_hooks(home)
+    if os.environ.get('POG_ISOLATED')!='1':copy_hooks(home)
     if owner_token()[1] < ensure and not refresh(ensure):
         print(f"grok-home: the owner's Grok login has {owner_token()[1]} s left and did not refresh", file=sys.stderr)
     # Grok runs the provider only on a sign-in or a refresh; with no credential a headless start just fails ("Not
