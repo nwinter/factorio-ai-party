@@ -6,10 +6,17 @@ import tempfile
 import unittest
 from pathlib import Path
 from market_fixture import instructions, PREPARE, ACTIVATE, FINISH, RELEASE, TARGETS, lua_string
-from market_metrics import summarize, BASELINE, SNAPSHOT
+from market_metrics import summarize, response_in_window, BASELINE, SNAPSHOT
 import json
 
 class Metrics(unittest.TestCase):
+    def test_startup_at_the_same_paused_tick_is_not_a_trial_refusal(self):
+        e={'event':'response','at':'1970-01-01T00:01:30Z','response':{'tick':100,'ok':False}}
+        self.assertFalse(response_in_window(e,100,200,100,200))
+        e['at']='1970-01-01T00:01:40Z';self.assertTrue(response_in_window(e,100,200,100,200))
+        e['response']['tick']=201;self.assertFalse(response_in_window(e,100,200,100,200))
+        e['response']['tick']=150;e['at']='1970-01-01T00:03:21Z';self.assertFalse(response_in_window(e,100,200,100,200))
+
     def test_consumption_is_not_automatically_a_relief_claim(self):
         baseline={'teams':{'green':{'made':{'iron-plate':20},'used':{'iron-plate':5},'stock':{'iron-plate':100}}}}
         s={'tick':100,'started_tick':100,'market':True,'baseline':baseline,'contact':{'chart green>yellow':102},

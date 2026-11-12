@@ -9,6 +9,7 @@ aggregate lower bound subtracts all initial stock and local production before cr
 """
 import argparse
 from collections import Counter
+from datetime import datetime
 import gzip
 import json
 from pathlib import Path
@@ -90,6 +91,7 @@ def summarize(samples):
     assert samples,'no activated snapshots'
     first,last=samples[0],samples[-1];start=first['started_tick'];base=first['baseline']['teams']
     out={'market':last['market'],'start_tick':start,'end_tick':last['tick'],
+         'end_wall':last.get('wall'),
          'minutes':(last['tick']-start)/3600,'targets':TARGETS,'teams':{},'idle':{},'fills':[],
          'measurement_notes':[
              'Idle is sampled no-action/explicit-wait simulation time; model thinking may overlap factory production.',
@@ -137,8 +139,21 @@ def summarize(samples):
     return out
 
 
+def response_in_window(event,start_tick,end_tick,start_wall=None,end_wall=None):
+    r=event.get('response') or {}
+    if event.get('event')!='response' or not start_tick<=r.get('tick',-1)<=end_tick:return False
+    if start_wall is not None or end_wall is not None:
+        try:at=datetime.fromisoformat(event['at'].replace('Z','+00:00')).timestamp()
+        except (KeyError,ValueError,TypeError):return False
+        if start_wall is not None and at<start_wall:return False
+        if end_wall is not None and at>end_wall:return False
+    return True
+
+
 def report(run):
     folder=ROOT/'runs'/run;out=summarize(rows(folder/'op/market-samples.jsonl'));out['run']=run
+    activation=json.loads((folder/'op/market-activate.json').read_text())
+    out['start_wall']=activation['wall_started']
     refusals=Counter();actions=Counter();out['agents']={}
     for line in (folder/'op/teams.tsv').read_text().splitlines():
         if not line or line.startswith('#'):continue
@@ -146,7 +161,7 @@ def report(run):
         if team not in out['teams']:continue
         events=rows(d/'journal.jsonl.gz')+rows(d/'journal.jsonl')
         req={r['request']['id']:r['request'] for r in events if r.get('event')=='request'}
-        res={r['response']['id']:r['response'] for r in events if r.get('event')=='response'}
+        res={r['response']['id']:r['response'] for r in events if response_in_window(r,out['start_tick'],out['end_tick'],out['start_wall'],out['end_wall'])}
         counts=Counter()
         for ident,r in res.items():
             if ident not in req:continue
@@ -154,6 +169,7 @@ def report(run):
             if not r.get('ok'):refusals[(action,(r.get('error') or {}).get('message',''))]+=1
         out['agents'][name]={'team':team,'kind':kind,'route':route,'model':model,'requests':dict(counts)}
     out['actions']=dict(actions);out['refusals']=[{'action':a,'message':m,'count':n} for (a,m),n in refusals.most_common()]
+    out['market_refusals']=[r for r in out['refusals'] if r['action'] in ('market','offer','sell','buy','cancel','embargo')]
     (folder/'op/market-results.json').write_text(json.dumps(out,indent=2)+'\n');return out
 
 
