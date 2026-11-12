@@ -51,6 +51,9 @@ SURFACES = ('nauvis', 'vulcanus', 'gleba', 'fulgora', 'aquilo')
 # A path is a slash that starts a word ("/Users/x", "~/x", "C:\x"); "0.52 / 0.48" is ordinary speech.
 PRIVATE = re.compile(r'(?:https?://|(?:^|[\s("\'=])(?:~/|/(?=[\w.~])|[A-Za-z]:[\\/])|[\w.+-]+@[\w.-]+\.[a-z]{2,}|'
                      r'\b(?:token|password|secret|api[_ -]?key|operator|traceback|exception|multi-?teams?)\b|\bsk-[\w-]+)', re.I)
+# Moderated audience text is addressed to the operator. That ordinary role word
+# is public; keep the stricter operator/private-note exclusion for agent speech.
+VIEWER_PRIVATE = re.compile(PRIVATE.pattern.replace('|operator|', '|'), PRIVATE.flags)
 # Words a chosen display name may not be: staff, sources and marks a viewer could mistake for the broadcast itself.
 RESERVED = {'server', 'operator', 'mod', 'moderator', 'admin', 'caster', 'system', 'host', 'viewer', 'viewers',
             'youtube', 'site', 'wube', 'factorio', 'staff'}
@@ -101,8 +104,8 @@ def prototype(kind, value):
     return icons.key(kind, value) if isinstance(value, str) and len(value) < 100 else None
 
 
-def speech(value, private_names=(), limit=300):
-    if not isinstance(value, str) or PRIVATE.search(value):
+def speech(value, private_names=(), limit=300, *, viewer=False):
+    if not isinstance(value, str) or (VIEWER_PRIVATE if viewer else PRIVATE).search(value):
         return ''
     if any(re.search(r'\b' + re.escape(n) + r'\b', value, re.I) for n in private_names if n):
         return ''
@@ -309,7 +312,7 @@ def project_viewers(messages, now, teams=()):
             continue
         if any(m.get(k) for k in ('agent', 'from', 'tell', 'operator', 'confess', 'team', 'force')):
             continue
-        stamp, text = number(m.get('t')), speech(m.get('text'), ('Nick', 'Winter'))
+        stamp, text = number(m.get('t')), speech(m.get('text'), ('Nick', 'Winter'), viewer=True)
         if not text or stamp is None or stamp != m.get('t') or not -5 <= now - stamp <= 600:
             continue
         targets = []

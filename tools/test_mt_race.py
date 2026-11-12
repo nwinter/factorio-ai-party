@@ -408,6 +408,18 @@ class ConversationTest(unittest.TestCase):
               dict(base,t=-1000),dict(base,t=1000),dict(base,text='Path /Users/private/file'),dict(base,text='Ask Nick')]
         self.assertEqual(race.project_viewers(msgs,100,('green',)),[])
 
+    def test_viewer_can_address_operator_without_exposing_private_notes(self):
+        text='Viewer chat routing check: this test line is for the operator inbox only.'
+        base={'source':'site','id':'site:6103','text':text,'t':95,'delivery':'operator'}
+        out=race.project_viewers([base],100)
+        self.assertEqual(out[0]['text'],text)
+        self.assertEqual(out[0]['delivery'],'operator')
+        self.assertEqual(out[0]['targets'],[])
+        self.assertEqual(race.speech(text),'')
+        self.assertEqual(race.project_viewers([dict(base,operator=True)],100),[])
+        for private in ['Path /Users/private/file','password hello','multi-team mode','token abc']:
+            self.assertEqual(race.project_viewers([dict(base,text='Operator: '+private)],100),[])
+
 
 class FeedTest(unittest.TestCase):
     """One chronological speech feed across teams, built only from each team's own scoped lines."""
