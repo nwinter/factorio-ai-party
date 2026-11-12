@@ -48,3 +48,14 @@ The overlay and its display projections are owned by mt294. Its integration shou
 agent rows and set `state.feed=project_feed(operator_view.get('feed'), state.teams)`, retaining the existing public
 allowlist. No private collector is a dependency of the public site. The site receives the operator's safe state
 and the resulting video through its existing test mode.
+
+## Integration (mt294)
+
+Done as described above, with these specifics. Agent rows take their identity from each team's stream agent
+rows through `public_race.identity()` (stricter than `public_feed.identity`: a name keeps only letters, digits
+and light punctuation and may not be a staff or source word). `state.feed` is
+`public_race.broadcast(project_feed(views.feed, teams), teams, now)`: the same lines with the text passed
+through `public_race.speech()` (300 characters, cut at a word), `say` shown as team talk, `board` as a compact
+note and `identity` as an announcement card. Runs without `views.feed` fall back to each team's chat window.
+`public_feed.PRIVATE` treats a slash as a path only when it starts a word, so "0.52 / 0.48" is speech.
+The page contract is `docs/mt-public-chat-contract.md`.

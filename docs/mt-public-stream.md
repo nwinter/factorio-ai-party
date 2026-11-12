@@ -1,11 +1,11 @@
-# Public test stream (mt289 race view)
+# Public test stream (mt294 broadcast view)
 
-Cp4 fits two agents per team, scoped internal conversations, and a fixed viewer
-chat footer. Missing activity falls back to the roster's model label. Missing maps,
-metrics and empty chat/news are hidden; the viewer footer appears when messages arrive.
-The merged mt290 relay/site integration uses each team's existing moderated
-viewer feed. The projection contract is in `docs/mt-public-chat-contract.md`;
-the overlay starts no separate YouTube reader.
+One 1920×1080 overlay over one game camera: a standings strip that holds every team's roster,
+the camera with the agent on air named in a lower third, a speech feed for all teams
+("team radio": team talk, private tells, team-board notes, diplomacy, viewer chat), a news belt
+and the game clock. Agents appear with the name, persona, colour, glyph and portrait they chose.
+The state the page reads is described in `docs/mt-public-chat-contract.md`; where the identities
+and the ordered speech feed come from is in `docs/mt-identities-feed.md`.
 
 This lives on the `mt/` line only. Public test broadcasts are authorized; the
 mode's implementation still stays off `main`. Nothing here starts streaming or
@@ -55,8 +55,11 @@ Manual hidden-viewers rules and deletions apply before display and delivery.
 Removing TREE/runs/RUN/TEAM/viewer-relay pauses that team's relay.
 
 The public page is http://127.0.0.1:8790/ on this Mac and pogwin; `/state.json`
-is its public projection. The only other routes are `/health`, the fixed `/mapview.js` renderer, and
-manifest-listed `/static/game/{item,tech,place}/*.webp` icons. No files
+is its public projection. The only other routes are `/health`, the page's own files (`/overlay.js`,
+`/avatar.js` from the main stream, `/mapview.js`, five font files under `/fonts/`), and
+manifest-listed `/static/game/{item,tech,place}/*.webp` icons, all from one fixed table
+(`public_overlay.asset`). The fonts are vendored in `tools/mt/fonts` (Titillium Web and Big Shoulders
+Display, SIL OFL, licences beside them), so the page loads nothing from the internet. No files
 from a run tree, paths, quota/account data, or operator request fields are served.
 OBS shows the HTTP page to viewers; no public HTTP server is needed.
 
@@ -98,20 +101,35 @@ The same SSH connection reverse-forwards the overlay and locally forwards
 initiates SSH to pogwin, so no route from 192.168.0.x to 192.168.4.x is needed.
 
 The director considers the existing team feeds every five seconds. A successful cut
-holds for `max(10, min(20, dwell/2))` seconds (15 at the default). Fresh rockets,
-losses, contact, research and builds attract a cut after that minimum; otherwise
-acting agents get preference at the ordinary dwell. At `dwell × max(2, team_count)`
-seconds since a team's last appearance, oldest-first fairness overrides interest.
-This is a target subject to minimum dwell, poll timing, feed freshness and camera
-success. Failed cuts cool down for 30 seconds and never change the on-camera label.
-Stale or paused teams are ineligible. No team is starved by another team's repeated
-news while its feed and chart checks remain healthy.
+holds for `max(10, min(20, dwell/2))` seconds (15 at the default). After that, in order:
 
-The camera frames the first acting agent with a position, then the basemap core,
-then a located agent. Existing `lookcam` chart checks run through
-`Harness('imac2', team)` before each cut, tightening zoom if necessary. No chart
-mutation, full chart read, new Lua, or tick callback was added. It still uses one
-pogwin camera. The iMac screenshot client has no additional work.
+1. Fairness. A team unseen for `dwell × max(2, team_count)` seconds (90 s for three teams) gets the
+   camera, oldest first. A team where nobody has moved for a while waits twice that while another
+   team is working, and its visit is a glance: it ends at the minimum dwell.
+2. Fresh news elsewhere (rocket, loss, contact, pact, research, build), as before.
+3. Action. If nobody on the team on air is acting and someone on another team is, cut there.
+4. At the ordinary dwell: move to another team that is acting; stay with the only team that is;
+   rotate, longest unseen first, when nobody is.
+5. Within the team on air, turn to the teammate who is acting once the agent on air has stopped.
+
+"Acting" comes from `public_race.subjects()`, the director's private reading of each team's feed:
+an action running now counts most (the stream director's fight, build, work and walk classes), a
+request that just changed the map (`did`) and the stream's decaying `interest` keep a builder in
+view between calls, and an agent whose character has stood idle (`idle_s`), rests or is offline
+counts for almost nothing. Nothing from `subjects()` is published except the chosen agent's name.
+
+The shot (`public_overlay.shots`): follow the agent who is doing something, close for fights and
+building, wide for walks (the game eases the view after a walking agent); else the base while its
+labs are running; else the agent who moved most recently, so a character is on screen; else the
+base. The existing `lookcam` chart checks run through `Harness('imac2', team)` before each cut and
+tighten the zoom, and a follow shot that is not charted falls back to the base. No chart mutation,
+full chart read, new Lua, or tick callback. Failed cuts cool down for 30 seconds and never change
+the on-camera label. Stale or paused teams are ineligible. It still uses one pogwin camera.
+
+`tools/mt/camera_eval.py RUN/op` replays a finished run from its own logs and reports, for the
+earlier rule and this one, how much of the time an acting agent was in frame. On t291 and t292 the
+earlier rule showed action 22% and 15% of the time (and an empty frame 38% of t291); this rule
+46% and 33% with no empty frames, at the same cut rate. Someone was acting 51% and 38% of the time.
 
 Human-password/whitelist servers need `pog-director2` admitted and a compatible
 client password before use. The default AI test server requires neither. Camera
@@ -120,16 +138,21 @@ startup times out instead of weakening server authentication.
 ## OBS
 
 The `mt-stream` scene contains only `mt background`, `mt camera`, `mt overlay`.
-The main camera occupies 1280×720 at (24,248). A ranked race strip runs across
-the top; each right-hand team panel contains its activities, map and last two conversation
-messages. A viewer-chat panel occupies the wide footer when messages are present, and the right
-footer shows two recent race events. Mt290 owns relaying viewer messages to agents;
-team conversations are never copied to that relay. The canvas is 1920×1080. The camera is silent in this
-checkpoint; music and caster pipelines are not started.
-All graphics/text are canvas-rendered, retaining mt288's workaround for disappearing
-OBS HTML text. The browser remains transparent over the camera rectangle. Mt289
-was checked offline at 1920×1080, including four teams/twelve agents and a 75-second
-moving replay; its changed rectangle still needs the next operator OBS preview.
+The camera occupies **1408×792 at (16,188)**. That rectangle is `public_overlay.CAMERA_RECT`:
+`setup_obs` gives it to the `mt camera` scene item and the page reads it from `state.layout`, so
+the video and its frame cannot drift apart; change it in that one place. The standings strip runs
+across the top (150 px + margins), the speech feed fills the 464 px to the right of the camera,
+and the show bug, news belt and game clock sit below. The camera is silent; music and caster
+pipelines are not started. All graphics and text are canvas-rendered (mt288: DOM text vanished in
+OBS after about a minute). The page animates at the source's frame rate (30 fps in OBS); one full
+draw is about 0.5 ms of script in Chromium. `?ambient=0` stops the idle motion (belts, lamps) and
+draws only on changes. The page stays transparent over the camera rectangle. Checked offline at
+1920×1080 for 2 to 6 teams and 2 or 3 agents a team; the new rectangle and the fonts still need
+the next operator OBS preview.
+
+The Wube graphics credit appears inside the camera frame for 14 seconds when the page loads (OBS
+reloads the source when the scene becomes active, so at the start of a broadcast) and for 14 seconds
+each hour after that.
 
 Setup refuses if OBS is streaming, saves the prior program scene, selects
 `mt-stream`, starts recording if needed, and waits for recording to become active.
@@ -174,15 +197,18 @@ https://developers.google.com/youtube/data/live/reference/rest/v3/liveBroadcasts
 
 ## Race facts and offline preview
 
-`public_race.project()` is imported as `public_overlay.project()`, retaining the
-single explicit public boundary. The page cannot read raw team state or operator
-files. Numeric fields are finite and bounded, grids contain only map categories,
-technologies/items come from the existing Wube icon manifest, and identities come
-from the launch roster. Actions are built from recognized verbs/item names, never
-arbitrary jobs, notes, errors or action payloads. Roster team-speech and tells with exclusively same-team recipients are kept,
-explicitly tagged and nested under their team. Confession/operator/notice lanes,
-cross-team tells and sensitive-looking speech are excluded. Viewer author identities are not published. Free-form speech filtering
-is conservative; it is not a general-purpose classifier of every possible secret.
+`public_race.project()` is imported as `public_overlay.project()`, retaining the single explicit
+public boundary. The page cannot read raw team state or operator files. Numeric fields are finite
+and bounded, grids contain only map categories, technologies/items come from the existing Wube
+icon manifest. The roster decides who is on a team; the name, persona, colour, glyph, pronouns and
+avatar parts an agent chose (the harness `profile` action) are rebuilt by `public_race.identity()`:
+letters, digits and light punctuation for a name, no staff or source words, `#rrggbb` colours, the
+avatar generator's own part names. Actions are built from recognized verbs and item names, never
+arbitrary jobs, notes, errors or action payloads. Speech is each team's own talk, tells to
+teammates, team-board notes, explicit diplomacy and identity announcements; confession, operator
+and notice lanes, cross-team tells and sensitive-looking speech are excluded. Viewer author
+identities are not published. Free-form speech filtering is conservative; it is not a
+general-purpose classifier of every possible secret.
 
 The standings rank rockets, then completed technologies; ties remain ties. This
 is a visible comparison metric, not a weighted research-cost score or an estimate
@@ -191,32 +217,39 @@ presence of a burner miner, stone furnace, steam engine, lab and assembler.
 A feed with unknown scores is unranked. Current research has its own percentage.
 SPM and its up-to-30-point history reuse the stream's labs-consumption metric.
 
-The existing `op/views.json` supplies building counts and a newer research count
-when applicable. It is read locally every five seconds and ignored after 150s;
-its existing upstream 60s schedule is unchanged. No additional game data calls
+The existing `op/views.json` supplies building counts, a newer research count when applicable,
+contacts, pacts and the ordered speech feed (`feed`, mt290 cp5: written every five seconds). It is
+read locally every five seconds and ignored after 150 s. No additional game data calls
 are introduced. Milestones use safe chronicle/research fields or score changes;
 `~` means the time of observation, not an exact event timestamp. Building counts
 only establish that a building exists, never that power is flowing or that a
-count decrease was destruction. The event ring retains 80 events in memory,
-exposes the latest 12 and shows two; restarting reseeds only available recent
-source events. The minimaps reuse the existing basemap core and the main map's
-category colours/run grouping; missing maps are hidden, with the roster/activity text reclaiming their width. They are factory
-grids, not new cameras. The icon credit is always on screen.
+count decrease was destruction. The event ring retains 80 events in memory and exposes the
+latest 12; the speech ring retains 240 lines and exposes the latest 40; restarting reseeds only
+what the sources still hold. Missing data is not drawn: no placeholders, and an agent with no
+activity read shows its roster model label.
 
 Offline (no game, clients, OBS, broadcast, or operator gate):
 
 ```sh
-python3 tools/mt/public_replay.py --write /absolute/artifacts/synthetic.json
-python3 tools/mt/public_replay.py --write /absolute/artifacts/mtt1-replay.json --mtt1 /absolute/mtt1/op
-python3 tools/mt/public_replay.py --serve /absolute/artifacts/synthetic.json --port 8796
-# Keep the supplied before-mtt1-16m.png in that artifact directory for the composite.
-PLAYWRIGHT=/absolute/node_modules/playwright MT_SOAK=1 node tools/mt/public_replay_check.cjs /absolute/artifacts
+A=/absolute/artifacts
+python3 tools/mt/public_replay.py --write $A/fixtures/synthetic-3x2.json
+python3 tools/mt/public_replay.py --write $A/fixtures/synthetic-4x3.json --teams 4 --agents 3
+python3 tools/mt/public_replay.py --write $A/fixtures/synthetic-3x2-opening.json --fresh
+# A finished run, rebuilt from its own logs (journals in the launch tree op/launch-tree names):
+python3 tools/mt/public_replay.py --write $A/fixtures/t292-replay.json --run /absolute/runs/t292/op
+python3 tools/mt/public_replay.py --serve $A/fixtures/synthetic-3x2.json --port 8796
+PLAYWRIGHT=/absolute/node_modules/playwright node tools/mt/public_replay_check.cjs $A 8796
+python3 tools/mt/camera_eval.py /absolute/runs/t291/op /absolute/runs/t292/op
 python3 tools/test_mt_race.py
 python3 tools/test_mt_public.py
 python3 tools/mt/public_bench.py
 ```
 
-The preview is http://127.0.0.1:8796/. Its fixtures explicitly identify synthetic
-or recorded replay, with a still camera frame. The recorded fixture never invents
-SPM, maps or agent activity missing from the logs. Preview tooling is separate
-from the production HTTP server and is not staged by `public_stream.py`.
+The preview is http://127.0.0.1:8796/ (`?frame=N` on `/state.json` picks a frame). Fixtures say on
+screen what they are. Every frame goes through the production path (project, Race.update,
+audience, Director with subjects). The synthetic cast and lines are invented; a recorded replay
+holds only what the run's logs hold, so SPM, research progress and base maps stay absent there.
+`public_replay_check.cjs` writes `$A/after/*.png` (camera stills from `$A/stills/*.png` when
+present) and `$A/browser-check.json`: no page errors, a transparent camera window, each line drawn
+only under its own team, a removed viewer line gone from the page, the Wube credit at the start and
+hourly, twelve names in a 4×3 strip, and the script time of a draw.

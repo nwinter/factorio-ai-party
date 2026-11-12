@@ -212,6 +212,7 @@ function portrait(a, x, y, size, ring) {
 // ---- model: what the state says, indexed for drawing ----------------------------------------------------------
 let model = {order: [], agents: new Map(), teams: new Map(), cam: null};
 const said = new Map();  // agent key -> when its latest line appeared on the feed
+const flashed = new Map();  // team -> when it last made news
 const who = (team, name) => model.agents.get(team + '/' + name);
 function statusOf(a, t) {
   if (t.stale) return {word: 'DELAYED', color: C.amber};
@@ -278,6 +279,11 @@ function drawCard(t, x, y, w, h) {
     text('PACT', x + rw / 2, y + h - 16, font(12, 700), '#15130f', {align: 'center', ls: 1.2});
   }
   if (on) { ctx.save(); cutPath(x + 1.5, y + 1.5, w - 3, h - 3, 13); ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.shadowColor = col; ctx.shadowBlur = 14; ctx.stroke(); pop(); }
+  const hit = flashed.get(t.team), since = hit == null ? 9 : T() - hit;
+  if (since < 1.6) {  // it just made news: the card lights up once
+    const k = 1 - since / 1.6; ctx.save(); ctx.globalAlpha *= k; cutPath(x, y, w, h, 14); ctx.fillStyle = fade('#ffffff', .16); ctx.fill();
+    cutPath(x + 2, y + 2, w - 4, h - 4, 12); ctx.strokeStyle = mix(col, '#ffffff', .5); ctx.lineWidth = 4; ctx.stroke(); pop(); busy(hit + 1.6);
+  }
   const list = (t.agents || []).slice(0, 6), k = list.length, cx = x + rw + 14, cr = x + w - 14;
   const each = k ? (cr - cx - (k - 1) * 8) / k : 0;
   // rosters: a row of chips when each has room for a name; a column beside the numbers for three agents on a
@@ -324,10 +330,10 @@ function drawCard(t, x, y, w, h) {
     for (const item of STARTUP) { if (fx + 34 > br) break; const have = (t.entities[item] || 0) > 0; ctx.save(); if (!have) ctx.globalAlpha *= .22; slot('item', item, fx, top, 34); pop(); if (have) box(fx, top + 34, 34, 3, col); fx += stacked ? 36 : 40; }
   } else if (r.current) {
     slot('tech', r.current, cx, top, 34);
-    const pf = font(22, 800, 'disp'), pct = r.progress != null ? Math.round(r.progress * 100) + '%' : '', pw = pct ? width(pct, pf) + 8 : 0;
-    text(fit(cap(r.label || r.current), font(17, 700), br - cx - 42 - pw), cx + 42, top + 16, font(17, 700), C.text);
-    if (pct) text(pct, br, top + 17, pf, bright(col), {align: 'right'});
-    if (r.progress != null) belt(cx + 42, top + 24, br - cx - 42, 10, col, r.progress, !t.stale && !t.paused);
+    const pf = font(stacked ? 18 : 22, 800, 'disp'), pct = r.progress != null ? Math.round(r.progress * 100) + '%' : '', pw = pct ? width(pct, pf) + 8 : 0;
+    text(fit(cap(r.label || r.current), font(17, 700), br - cx - 42 - (stacked ? 0 : pw)), cx + 42, top + 16, font(17, 700), C.text);
+    if (pct) text(pct, br, top + (stacked ? 35 : 17), pf, bright(col), {align: 'right'});
+    if (r.progress != null) belt(cx + 42, top + 24, br - cx - 42 - (stacked ? pw : 0), 10, col, r.progress, !t.stale && !t.paused);
   }
   // the roster
   if (mode === 'row') list.forEach((a, i) => drawChip(a, t, cx + i * (each + 8), y + 108, each, col, 48));
@@ -405,6 +411,7 @@ function feedPump() {
   if (feed.queue.length > 10) { for (const r of feed.queue.splice(0, feed.queue.length - 4)) feed.items.push(Object.assign(r, {t0: -1e9})); }
   if (feed.queue.length && (t >= feed.next || settled)) {
     const r = feed.queue.shift(); r.t0 = settled ? -1e9 : t; feed.items.push(r);
+    if (r.kind === 'identity' && !settled) news.banners.push({kind: 'identity', team: r.team, agent: r.name, text: r.title, persona: r.text});
     if (!settled) start('in.' + r.id, 0, 1, .42);  // its slot opens and pushes the older lines up
     if (speaks(r) && r.kind !== 'viewer') said.set(r.team + '/' + r.name, t);
     feed.next = t + (feed.queue.length > 5 ? .45 : feed.queue.length > 1 ? 1.3 : speaks(r) ? clamp(r.text.length / 30, 2.2, 6) : 1.6);
@@ -555,7 +562,7 @@ function newsSync(s) {
   for (const e of events) {
     if (news.seen.has(e.id)) continue; news.seen.add(e.id);
     news.cards.push(Object.assign({}, e, {born: news.first ? -1e9 : T()}));
-    if (!news.first && s.now - (e.at || 0) <= 60) news.banners.push(e);  // fresh: it also gets a banner over the camera
+    if (!news.first && s.now - (e.at || 0) <= 60) { news.banners.push(e); flashed.set(e.team, T()); }  // fresh: a banner over the camera too
   }
   news.first = false; news.cards.sort((a, b) => (a.tick || 0) - (b.tick || 0));
   if (news.cards.length > 10) news.cards.splice(0, news.cards.length - 10);
@@ -666,15 +673,21 @@ function lastLine(team, name) { for (let i = feed.items.length - 1; i >= 0; i--)
 function banner(c) {
   const t = T(); if (!news.banner && news.banners.length) { news.banner = Object.assign({t0: t}, news.banners.shift()); }
   const b = news.banner; if (!b) return; const age = t - b.t0, hold = news.banners.length ? 4.5 : 7;
-  if (age > hold) { news.banner = null; busy(t + .1); return; } busy(b.t0 + hold + .1);
+  if (age > hold || !model.teams.has(b.team)) { news.banner = null; busy(t + .1); return; } busy(b.t0 + hold + .1);
   const k = outBack(clamp(age / .5, 0, 1)), out = clamp((hold - age) / .4, 0, 1), col = teamColor(b.team), tf = font(38, 800, 'disp');
-  const w = clamp(width(b.text.toUpperCase(), tf, 1) + 150, 520, 980), x = c.x + (c.w - w) / 2, y = c.y + 78 - (1 - k) * 60;
+  const a = b.kind === 'identity' ? who(b.team, b.agent) : null, sub = a && b.persona ? '“' + b.persona + '”' : '', sf = font(19, 600, 'ui', true);
+  if (b.kind === 'identity' && !a) { news.banner = null; return; }
+  const w = clamp(Math.max(width(b.text.toUpperCase(), tf, 1), sub ? Math.min(width(sub, sf), 760) : 0) + 150, 520, 980), h = sub ? 118 : 92;
+  const x = c.x + (c.w - w) / 2, y = c.y + 78 - (1 - k) * 60;
   ctx.save(); ctx.globalAlpha = Math.min(clamp(age / .25, 0, 1), out);
-  plate(x, y, w, 92, {cut: 16, corners: 'tl,br', fill: 'rgba(32,30,29,.96)', fill2: 'rgba(20,19,19,.96)'});
-  ctx.save(); cutPath(x, y, w, 92, 16); ctx.clip(); hazard(x, y, w, 7); box(x, y + 85, w, 7, col); pop();
-  slot(b.icon_kind || 'item', b.icon, x + 20, y + 18, 60);
-  const hw = text(b.team.toUpperCase(), x + 96, y + 36, font(15, 700), bright(col), {ls: 1.5}); text('· ' + (KIND[b.kind] || 'NEWS'), x + 104 + hw, y + 36, font(15, 700), C.muted, {ls: 1.5});
-  text(fit(b.text.toUpperCase(), tf, w - 120, 1), x + 96, y + 74, tf, C.ink, {ls: 1});
+  plate(x, y, w, h, {cut: 16, corners: 'tl,br', fill: 'rgba(32,30,29,.96)', fill2: 'rgba(20,19,19,.96)'});
+  ctx.save(); cutPath(x, y, w, h, 16); ctx.clip(); hazard(x, y, w, 7); box(x, y + h - 7, w, 7, col); pop();
+  if (a) portrait(a, x + 20, y + 20, 72, col); else slot(b.icon_kind || 'item', b.icon, x + 20, y + 18, 60);
+  const tx = x + (a ? 108 : 96);
+  const hw = text(b.team.toUpperCase(), tx, y + 36, font(15, 700), bright(col), {ls: 1.5});
+  text('· ' + (a ? 'NEW IDENTITY · ' + (a.model || '').toUpperCase() : KIND[b.kind] || 'NEWS'), tx + 8 + hw, y + 36, font(15, 700), C.muted, {ls: 1.5});
+  text(fit(b.text.toUpperCase(), tf, w - (tx - x) - 24, 1), tx, y + 74, tf, C.ink, {ls: 1});
+  if (sub) text(fit(sub, sf, w - (tx - x) - 24), tx, y + 100, sf, C.text);
   pop();
 }
 function credit(c) {  // Wube's graphics credit: at the start of a clip and briefly each hour
