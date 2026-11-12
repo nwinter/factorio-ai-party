@@ -6,10 +6,17 @@ import tempfile
 import unittest
 from pathlib import Path
 from market_fixture import instructions, PREPARE, ACTIVATE, FINISH, RELEASE, TARGETS, lua_string
-from market_metrics import summarize, response_in_window, BASELINE, SNAPSHOT
+from market_metrics import summarize, response_in_window, minimum_fill_count, BASELINE, SNAPSHOT
 import json
 
 class Metrics(unittest.TestCase):
+    def test_consumed_fill_bound_does_not_credit_every_small_delivery(self):
+        self.assertEqual(minimum_fill_count([100]+[1]*20,100),1)
+        self.assertEqual(minimum_fill_count([100]+[1]*20,119),20)
+        self.assertEqual(minimum_fill_count([100]+[1]*20,120),21)
+        self.assertEqual(minimum_fill_count([100],0),0)
+        with self.assertRaises(ValueError):minimum_fill_count([100],101)
+
     def test_startup_at_the_same_paused_tick_is_not_a_trial_refusal(self):
         e={'event':'response','at':'1970-01-01T00:01:30Z','response':{'tick':100,'ok':False}}
         self.assertFalse(response_in_window(e,100,200,100,200))

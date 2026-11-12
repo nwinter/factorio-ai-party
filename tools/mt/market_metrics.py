@@ -86,6 +86,16 @@ def rows(path):
     return result
 
 
+def minimum_fill_count(delivered,consumed_lower_bound):
+    """Smallest possible contributing-fill count, packing consumption into largest fills first."""
+    if consumed_lower_bound<=0:return 0
+    total=0
+    for count,n in enumerate(sorted(delivered,reverse=True),1):
+        total+=n
+        if total>=consumed_lower_bound:return count
+    raise ValueError('consumed lower bound exceeds delivered goods')
+
+
 def summarize(samples):
     samples=[s for s in samples if s.get('started_tick') is not None and s.get('baseline')]
     assert samples,'no activated snapshots'
@@ -113,10 +123,13 @@ def summarize(samples):
             for leg in tx['legs']:
                 if leg['to']==team:delivered[leg['item']]+=leg['delivered']
         lower={n:min(q,max(0,used.get(n,0)-b.get('stock',{}).get(n,0)-made.get(n,0))) for n,q in delivered.items()}
+        fill_lower={n:minimum_fill_count([l['delivered'] for tx in txs for l in tx['legs']
+            if l['to']==team and l['item']==n and l['delivered']>0],q) for n,q in lower.items()}
         progress={n:{'made':made.get(n,0),'target':q,'fraction':min(1,made.get(n,0)/q)} for n,q in TARGETS.items()}
         out['teams'][team]={'produced':made,'consumed':used,'progress':progress,
             'objective_mean_fraction':sum(p['fraction'] for p in progress.values())/len(progress),
-            'delivered':dict(delivered),'imported_consumption_lower_bound':lower,'poor_ore_left':a['poor_ore']}
+            'delivered':dict(delivered),'imported_consumption_lower_bound':lower,
+            'consumed_fill_count_lower_bound':fill_lower,'poor_ore_left':a['poor_ore']}
     for tx in txs:
         row={k:tx.get(k) for k in ('pair','id','status','tick','eta','ended_tick','item','count','price')};row['legs']=[]
         for i,leg in enumerate(tx['legs']):
