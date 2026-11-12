@@ -335,11 +335,12 @@ def profiles_of(tree, run):
     return out
 
 
-def recorded(op, tree=None, step=5.0, label=None, profiles=None):
-    """Frames every `step` seconds over a finished run. op: runs/RUN/op of the operator's worktree; tree: the
-    launch tree (default: the path op/launch-tree names), whose runs/RUN/TEAM/AGENT/journal.jsonl.gz hold
-    what each agent did and said. profiles: {agent: {display_name, color, glyph, motto, ...}} as the run's
-    feeds carried them (the logs do not record profiles)."""
+def moments(op, tree=None, step=5.0, profiles=None, cores=None):
+    """A finished run as the team feeds would have read every `step` seconds: yields (now, rosters, raws,
+    scores, views). op: runs/RUN/op of the operator's worktree; tree: the launch tree (default: the path
+    op/launch-tree names), whose runs/RUN/TEAM/AGENT/journal.jsonl.gz hold what each agent did and said.
+    profiles: {agent: {display_name, color, glyph, motto, ...}} (default: the agents' own `profile` calls,
+    read from the journals). cores: {team: (x, y)} base centres to give the feeds (the logs hold no base map)."""
     op = Path(op)
     run = op.parent.name
     tree = Path(tree) if tree else Path((op / 'launch-tree').read_text().strip())
@@ -390,7 +391,6 @@ def recorded(op, tree=None, step=5.0, label=None, profiles=None):
         chats[team].sort(key=lambda m: m['tick'])
     scores = {team: [r['score'] for r in jsonl(op / team / 'scores.jsonl') if isinstance(r.get('score'), dict) and r['score'].get('tick') is not None] for team in rosters}
     view = json.loads((op / 'views.json').read_text()) if (op / 'views.json').exists() else {}
-    race, director, frames, camera = Race(), Director(), [], None
     heat = {name: 0.0 for name in calls}
     seen = {name: 0 for name in calls}
     now, end = times[0] + 20, times[-1]
@@ -414,6 +414,9 @@ def recorded(op, tree=None, step=5.0, label=None, profiles=None):
                           'research': {'current': score.get('current_research') if score else None,
                                        'done_count': len(score.get('research_done') or []) if score else None},
                           'space': {'rockets': score.get('rockets') if score else None}}
+            if cores and team in cores:
+                x, y = cores[team]
+                raws[team]['basemap'] = {'core': {'x0': x - 8, 'y0': y - 8, 'w': 4, 'h': 4, 'cell': 4}}
             if score:
                 score_rows[team] = {'tick': score['tick'], 'research': score.get('research_done') or [], 'entities': score.get('entities') or {},
                                     'rockets': score.get('rockets')}
@@ -431,9 +434,16 @@ def recorded(op, tree=None, step=5.0, label=None, profiles=None):
             pacts.append(row)
         views = {'contacts': [c for c in view.get('contacts') or [] if isinstance(c.get('tick'), (int, float)) and c['tick'] <= tick],
                  'pacts': pacts, 'diplomacy': []}
-        frame, camera = assemble(race, director, rosters, raws, score_rows, views, now, camera, label or f'Replay · {run} logs')
-        frames.append(frame)
+        yield now, rosters, raws, score_rows, views
         now += step
+
+
+def recorded(op, tree=None, step=5.0, label=None, profiles=None, cores=None):
+    """Frames every `step` seconds over a finished run (see moments())."""
+    race, director, frames, camera = Race(), Director(), [], None
+    for now, rosters, raws, score_rows, views in moments(op, tree, step, profiles, cores):
+        frame, camera = assemble(race, director, rosters, raws, score_rows, views, now, camera, label or f'Replay · {Path(op).parent.name} logs')
+        frames.append(frame)
     return frames
 
 

@@ -124,19 +124,25 @@ def target(state):
 
 
 def shots(state, subject=None):
-    """What to try, best first: follow the agent who is doing something; else the base, where
-    machines move even when nobody does; else the agent who moved most recently."""
+    """What to try, best first: follow the agent who is doing something; else the base while its labs
+    are running (machines move even when nobody does); else the agent who moved most recently, so a
+    character is on screen rather than a silent base; else the base; else any located agent."""
     out = []
-    if subject and subject['score'] >= 3.0:
-        out.append({'kind': 'follow', 'agent': subject['agent'], 'surface': subject['surface'],
-                    'x': subject['x'], 'y': subject['y'],
-                    'zooms': tuple(z for z in sorted({ZOOMS.get(subject['verb'], 1.0), 1.5, 2.2, 3.0}) if z >= ZOOMS.get(subject['verb'], 1.0))})
+    follow = lambda zooms: {'kind': 'follow', 'agent': subject['agent'], 'surface': subject['surface'],
+                            'x': subject['x'], 'y': subject['y'], 'zooms': zooms}
     core = base_core(state)
-    if core:
-        out.append({'kind': 'base', 'agent': None, 'surface': core[0], 'x': core[1], 'y': core[2], 'zooms': BASE_ZOOMS})
+    base = core and {'kind': 'base', 'agent': None, 'surface': core[0], 'x': core[1], 'y': core[2], 'zooms': BASE_ZOOMS}
+    spm = obj(state.get('science')).get('spm')
+    running = type(spm) in (int, float) and math.isfinite(spm) and spm > 0
+    if subject and subject['score'] >= 3.0:
+        first = ZOOMS.get(subject['verb'], 1.0)
+        out.append(follow(tuple(z for z in sorted({first, 1.5, 2.2, 3.0}) if z >= first)))
+    if base and running:
+        out.append(base)
     if subject and not out:
-        out.append({'kind': 'follow', 'agent': subject['agent'], 'surface': subject['surface'],
-                    'x': subject['x'], 'y': subject['y'], 'zooms': (1.0, 1.5, 2.2, 3.0)})
+        out.append(follow((1.0, 1.5, 2.2, 3.0)))
+    if base and base not in out:
+        out.append(base)
     if not out:
         surface, x, y = target(state)
         out.append({'kind': 'spot', 'agent': None, 'surface': surface, 'x': x, 'y': y, 'zooms': BASE_ZOOMS})

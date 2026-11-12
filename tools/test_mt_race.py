@@ -542,36 +542,44 @@ class DirectorTest(unittest.TestCase):
         d=race.Director();teams=[quiet('green'),quiet('yellow'),row('blue')];d.success('green',100)
         self.assertIsNone(d.choose(teams,[],110))      # the minimum dwell always holds
         self.assertEqual(d.choose(teams,[],115),('blue','Following the action'))
+        # An agent between actions is standing on screen too: the camera leaves for a team that is acting.
+        sub=lambda score:[{'agent':'gemini','surface':'nauvis','x':0,'y':0,'verb':None,'score':score,'idle':0}]
+        d=race.Director();teams=self.teams();d.success('green',100)
+        self.assertEqual(d.choose(teams,[],115,{'green':sub(2.1),'yellow':sub(.3),'blue':sub(8)}),('blue','Following the action'))
+        self.assertIsNone(d.choose(teams,[],115,{'green':sub(2.1),'yellow':sub(.3),'blue':sub(2.4)}))   # nobody is acting: hold
 
     def test_quiet_team_keeps_its_turn_as_a_glance(self):
         d=race.Director();teams=[row('green'),quiet('yellow'),quiet('blue')]
         self.assertEqual(d.choose(teams,[],100),('green','Following the action'));d.success('green',100)
-        # Fairness is unchanged: unseen for dwell x teams, oldest first.
-        self.assertIsNone(d.choose(teams,[],155))
-        self.assertEqual(d.choose(teams,[],160),('yellow','Around the teams'));d.success('yellow',160)
+        # While green works, the standing teams wait twice the usual interval: 180 s here, not 90.
+        self.assertIsNone(d.choose(teams,[],160));self.assertIsNone(d.choose(teams,[],245))
+        self.assertEqual(d.choose(teams,[],250),('yellow','Around the teams'));d.success('yellow',250)
         self.assertTrue(d.glance)
-        self.assertIsNone(d.choose(teams,[],170))
+        self.assertIsNone(d.choose(teams,[],260))
         # Blue is as overdue as yellow was: it gets its own glance, then the camera returns to the team at work
         # after the minimum dwell, well before the ordinary one.
-        self.assertEqual(d.choose(teams,[],175),('blue','Around the teams'));d.success('blue',175)
+        self.assertEqual(d.choose(teams,[],265),('blue','Around the teams'));d.success('blue',265)
         self.assertTrue(d.glance)
-        self.assertEqual(d.choose(teams,[],190),('green','Following the action'));d.success('green',190)
+        self.assertEqual(d.choose(teams,[],280),('green','Following the action'));d.success('green',280)
         self.assertFalse(d.glance)
-        # When the overdue team is itself at work, its visit is an ordinary one.
+        # When the overdue team is itself at work, its turn comes at the usual interval and is an ordinary visit.
         d=race.Director();teams=self.teams();d.choose(teams,[],100);d.success('green',100);d.shown['yellow']=100
         self.assertEqual(d.choose(teams,[],190),('blue','Following the action'));d.success('blue',190)
         self.assertFalse(d.glance)
+        # With nobody working anywhere, the usual interval applies to everyone.
+        d=race.Director();teams=[quiet('green'),quiet('yellow'),quiet('blue')];d.choose(teams,[],100);d.success('green',100);d.shown['yellow']=100
+        self.assertEqual(d.choose(teams,[],190),('blue','Around the teams'))
 
     def test_airtime_follows_action_while_every_team_is_seen(self):
         d=race.Director();teams=[row('green'),quiet('yellow'),quiet('blue')];cuts=[];on=[]
-        for now in range(100,1001,5):
+        for now in range(100,1301,5):
             pick=d.choose(teams,[],now)
             if pick:d.success(pick[0],now);cuts.append((now,pick[0]))
             on.append(d.current)
-        self.assertGreaterEqual(on.count('green')/len(on),.6)
+        self.assertGreaterEqual(on.count('green')/len(on),.8)
         for team in ('yellow','blue'):
-            seen=[100]+[n for n,t in cuts if t==team]+[1000]
-            self.assertLessEqual(max(b-a for a,b in zip(seen,seen[1:])),130,team)   # 90 s target + dwell and poll slack
+            seen=[100]+[n for n,t in cuts if t==team]+[1300]
+            self.assertLessEqual(max(b-a for a,b in zip(seen,seen[1:])),220,team)   # 180 s for a standing team + dwell and poll slack
             visits=[n for n,t in cuts if t==team];self.assertGreaterEqual(len(visits),5)
         stays=[b-a for (a,t),(b,_) in zip(cuts,cuts[1:]) if t!='green']
         self.assertTrue(stays and max(stays)<=20,stays)                               # quiet visits are glances
@@ -657,13 +665,19 @@ class ShotTest(unittest.TestCase):
         walking=dict(self.SUBJECT,verb='walk');h=self.Harness();overlay.cut(h,self.STATE,walking,smooth=True)
         self.assertEqual(h.calls[0],{'player':7,'zoom':.8,'smooth':True,'follow':'gemini2'})
 
-    def test_standing_agents_give_way_to_the_base(self):
-        idle=dict(self.SUBJECT,score=.4,verb=None);h=self.Harness();out=overlay.cut(h,self.STATE,idle)
+    def test_standing_agents_show_the_base_only_while_it_runs(self):
+        idle=dict(self.SUBJECT,score=.4,verb=None)
+        # Labs running: the base is the better picture when nobody is acting.
+        alive=dict(self.STATE,science={'spm':4.4});h=self.Harness();out=overlay.cut(h,alive,idle)
         self.assertEqual(h.calls,[{'player':7,'zoom':.6,'smooth':False,'surface':'nauvis','position':{'x':120,'y':210}}])
         self.assertEqual((out['kind'],out['agent']),('base',None))
-        # No base map yet: the least idle agent is still better than nothing.
-        h=self.Harness();out=overlay.cut(h,{'agents':[]},idle)
-        self.assertEqual(h.calls[0]['follow'],'gemini2');self.assertEqual(out['kind'],'follow')
+        # A silent base: stay with a character, the one who moved most recently.
+        for dead in (self.STATE,dict(self.STATE,science={'spm':0}),dict(self.STATE,science={'spm':'x'}),{'agents':[]}):
+            h=self.Harness();out=overlay.cut(h,dead,idle)
+            self.assertEqual(h.calls[0],{'player':7,'zoom':1.0,'smooth':False,'follow':'gemini2'});self.assertEqual(out['kind'],'follow')
+        # An agent at work is followed whatever the base is doing; with no agent located, the base is shown.
+        h=self.Harness();self.assertEqual(overlay.cut(h,alive,self.SUBJECT)['kind'],'follow')
+        h=self.Harness();self.assertEqual(overlay.cut(h,self.STATE)['kind'],'base')
         with self.assertRaises(ValueError):overlay.cut(self.Harness(),{'agents':[]})
 
     def test_uncharted_follow_tightens_then_falls_back_to_the_base(self):

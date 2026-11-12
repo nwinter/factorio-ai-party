@@ -634,13 +634,14 @@ def subjects(state, names, now):
 
 
 class Director:
-    """Minimum dwell, then where agents are doing things; hard oldest-first fairness, successful cuts only.
+    """Minimum dwell, then where agents are doing things; oldest-first fairness, successful cuts only.
 
     Order of rules, after the minimum dwell: (1) a team unseen for dwell x max(2, teams) gets the
-    camera, oldest first; (2) fresh news elsewhere; (3) leave a quiet shot for a team that is acting;
-    (4) at the ordinary dwell move to another acting team, or stay with the only one acting, or rotate
-    when nobody is; (5) within the team on air, turn to the agent who is acting.
-    A quiet team's fairness visit is a glance: it ends at the minimum dwell while others are working.
+    camera, oldest first; (2) fresh news elsewhere; (3) leave a shot where nobody is acting for a team
+    where someone is; (4) at the ordinary dwell move to another acting team, or stay with the only one
+    acting, or rotate when nobody is; (5) within the team on air, turn to the agent who is acting.
+    A team where nobody has moved for a while still gets its turn, at twice the interval while other
+    teams are working, and that visit is a glance: it ends at the minimum dwell.
     """
     def __init__(self, dwell=30):
         self.minimum = max(10, min(20, dwell / 2))
@@ -684,10 +685,12 @@ class Director:
         if not others:
             return (eligible[0]['team'], why(eligible[0])) if self.current is None else self.retarget(scout)
         age = lambda r: now - self.shown.get(r['team'], self.started - self.dwell)
-        overdue = [r for r in others if age(r) >= self.dwell * max(2, len(teams))]
+        busy = any(v >= ACTION for v in heat.values())
+        # Standing teams wait twice as long for their turn while someone else is at work.
+        overdue = [r for r in others if age(r) >= self.dwell * max(2, len(teams)) * (2 if busy and hot(r) < WARM else 1)]
         if overdue:
             pick = max(overdue, key=age)
-            self.pending = (pick['team'], hot(pick) < WARM and any(v >= ACTION for v in heat.values()))
+            self.pending = (pick['team'], hot(pick) < WARM and busy)
             return pick['team'], why(pick)
         def news(r):
             recent = [e for e in events if e['team'] == r['team'] and now - e['at'] <= 40 and e['at'] > self.shown.get(r['team'], -1)]
@@ -699,7 +702,7 @@ class Director:
         if self.current is None:
             return hottest['team'], why(hottest)
         here, held = heat.get(self.current), now - self.since
-        if hot(hottest) >= ACTION and (self.glance or here is None or here < WARM or held >= self.dwell):
+        if hot(hottest) >= ACTION and (self.glance or here is None or here < ACTION or held >= self.dwell):
             return hottest['team'], 'Following the action'
         if held >= self.dwell and (here is None or here < ACTION):
             # Nobody is clearly at work: keep moving, warmer teams first, then the longest unseen.
