@@ -24,6 +24,38 @@ def fixture(now=100):
 
 
 class TestContract(unittest.TestCase):
+    def test_chat_ui_enters_and_leaves_test_mode(self):
+        from test_sitechat import LIVE_CHAT_JS
+        driver=LIVE_CHAT_JS.replace("require(process.argv[2]);", "eval(fs.readFileSync(process.argv[2], 'utf8').replace('  tick();\\n})();', '  globalThis.modeForTest = showTestMode; globalThis.repliesForTest = () => replyLines;\\n  tick();\\n})();'));")
+        driver=driver.replace("out.html = kids['#vchat'].innerHTML;", """out.html = kids['#vchat'].innerHTML;
+          out.testMode = [kids['#team-test-chat-help'].hidden, kids['#vchat-game-help'].hidden, kids['#vchat-replies-label'].hidden];
+          out.testReplies = repliesForTest().map(r => r.by);
+          modeForTest(false);
+          out.normalMode = [kids['#team-test-chat-help'].hidden, kids['#vchat-game-help'].hidden, kids['#vchat-replies-label'].hidden];
+          out.normalReplies = repliesForTest().map(r => r.by);
+          modeForTest(true);""")
+        now=time.time();s=contract.public_state(fixture(now),now=now)
+        s['viewer_replies']=[{'seq':1,'by':'gemini','text':'A historical agent answer','t':now-1},
+                             {'seq':2,'by':'operator','text':'An operator answer','t':now-1}]
+        with tempfile.TemporaryDirectory() as tmp:
+            js=Path(tmp)/'check.js';state=Path(tmp)/'state.json'
+            js.write_text(driver);state.write_text(json.dumps(s))
+            out=json.loads(subprocess.check_output(['node',str(js),str(Path(__file__).parent/'static/live.js'),str(state)],text=True))
+        self.assertEqual(out['testMode'],[False,True,True])
+        self.assertEqual(out['normalMode'],[True,False,False])
+        self.assertEqual(out['testReplies'],['operator'])
+        self.assertEqual(out['normalReplies'],['gemini','operator'])
+
+    def test_only_operator_receipts_in_tests(self):
+        s=fixture();s['viewer_delivery']={'1':{'s':'operator','teams':['green'],'t':100},
+                                         '2':{'s':'relayed','teams':['green'],'t':100},
+                                         '3':{'s':'held','teams':['green'],'t':100}}
+        receipts=contract.public_state(s,now=100)['viewer_delivery']
+        self.assertEqual(set(receipts),{'1','3'})
+        self.assertEqual(receipts['1']['to'],'')
+        self.assertEqual(receipts['1']['why'],"to the operator's inbox")
+        self.assertNotIn('team',receipts['3']['why'])
+
     def test_allowlist_and_moderation(self):
         s=fixture();r=s['teams'][0]
         r['operator']={'path':'/home/private'};r['agents'][0]['notes']='NOT PUBLIC'

@@ -872,10 +872,12 @@ to 24 characters, never a staff or source word), `persona` (one line), `glyph`,
 A chat line told to named teammates carries `to` (roster names of the same team, or
 `team`). Arbitrary fields, paths, credentials and non-roster speakers are omitted.
 The existing site chat endpoint, moderation and limits remain unchanged. The
-operator's relay determines delivery; a receipt says delivered only after every
-participating team confirms it. Naming a team in viewer chat is a conversational
-cue; accepted audience messages are visible to every team. "Viewers only" remains
-outside the game relay and stream overlay.
+operator's audience service determines delivery to the operator inbox. Playing
+agents never receive viewer chat during team tests, including after contact.
+Receipts carry no team recipients; old game-relay receipts are discarded. The
+test page explains this routing and hides agent-reply controls and imported agent
+replies until test mode ends. "Viewers only" remains site-only, outside the inbox
+and stream overlay. Normal-run chat behavior is unchanged.
 
 `POG_YOUTUBE` supplies the video ID when `--youtube` is omitted. Keep the exact
 broadcast ID for an unlisted test; channel discovery is not required. Only the
