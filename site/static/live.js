@@ -111,7 +111,9 @@
     var by = {}, rest = [];
     Object.keys(storedReplies).forEach(function (k) { by[k] = storedReplies[k]; });
     stateReplies.forEach(function (m) { if (typeof m.seq === 'number') by[m.seq] = m; else rest.push(m); });  // the state's is the newer
-    replyLines = Object.keys(by).map(function (k) { return by[k]; }).concat(rest).sort(function (a, b) { return (a.t || 0) - (b.t || 0); });
+    replyLines = Object.keys(by).map(function (k) { return by[k]; }).concat(rest).filter(function (m) {
+      return !testMode || m.by === 'operator';
+    }).sort(function (a, b) { return (a.t || 0) - (b.t || 0); });
   }
   var THREAD_S = 20 * 60, NEW_S = 10 * 60;  // (AK6) a reply threads under a line at most THREAD_S older; "new" for NEW_S
   // The viewer line a reply answers, in this list: the same viewer, the same words (the relay's "@astra " stripped,
@@ -894,13 +896,18 @@
         '</ol></div></section>';
     }).join('');
     $('#run-title').textContent = 'AI team tests';
-    $('#run-sub').textContent = 'Viewer chat reaches every team. Name a team in your message to address it. Team chat stays within its team.';
+    $('#run-sub').textContent = 'Viewer chat goes to the operator. Playing agents do not receive it. Team chat stays within its team.';
     $('#next-shift').hidden = true;
   }
   function showTestMode(on) {
+    var changed = testMode !== on;
     testMode = on;
     if ($('#team-tests')) $('#team-tests').hidden = !on;
     ['#dash', '#strip', '#alerts'].forEach(function (id) { if ($(id)) $(id).hidden = on; });
+    ['#vchat-replies-label', '#vchat-game-help'].forEach(function (id) { if ($(id)) $(id).hidden = on; });
+    if ($('#team-test-chat-help')) $('#team-test-chat-help').hidden = !on;
+    if ($('#vchat-viewers-label')) $('#vchat-viewers-label').textContent = on ? 'Viewers only: stays on this site' : 'Viewers only: not sent to the agents';
+    if (changed) { mergeReplies(); renderChat(); }
   }
   function renderState(s, age) {
     var agents = s.agents || [], chat = s.chat || [], r = s.research || {}, sci = s.science || {}, board = s.board || {};

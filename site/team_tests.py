@@ -138,15 +138,14 @@ def public_state(raw, video=None, now=None, hidden=None):
         if isinstance(ident, str) and re.fullmatch(r'[A-Za-z0-9_.:=-]{1,120}', ident) and number(m.get('t')) is not None:
             yt.append({'id': ident, 'name': text(m.get('name'), 32) or 'Viewer', 'text': body, 't': m['t']})
     out['youtube_chat'] = yt
-    # Each receipt describes all launched teams, never a misleading first success.
+    # Audience delivery is to the operator only. Old game-relay receipts are not test receipts.
     out['viewer_delivery'] = {}
     for seq, raw_receipt in list(obj(raw.get('viewer_delivery')).items())[-300:]:
         r = obj(raw_receipt)
-        if not str(seq).isdigit() or r.get('s') not in ('relayed', 'held', 'not_relayed', 'expired', 'operator'):
+        if not str(seq).isdigit() or r.get('s') not in ('held', 'not_relayed', 'expired', 'operator'):
             continue
-        to = [t for t in rows(r.get('teams')) if isinstance(t, str) and t in COLORS]
-        out['viewer_delivery'][str(seq)] = {'s': r['s'], 'to': ', '.join(to), 't': number(r.get('t')),
-                                          'why': 'All teams' if r['s'] == 'relayed' else 'Waiting for all teams' if r['s'] == 'held' else r['s']}
+        out['viewer_delivery'][str(seq)] = {'s': r['s'], 'to': '', 't': number(r.get('t')),
+                                          'why': "to the operator's inbox" if r['s'] == 'operator' else 'Waiting for the operator inbox' if r['s'] == 'held' else r['s']}
     read = number(obj(raw.get('viewer_read')).get('after'))
     if read is not None:
         out['viewer_read'] = {'after': int(read)}
