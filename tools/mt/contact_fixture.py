@@ -18,6 +18,19 @@ sys.path[:0]=[str(ROOT/'tools/stream'),str(ROOT/'tools/mt')]
 from harness import Harness,lua_string,one_line
 
 
+def instructions(roster,call):
+    objectives={
+      'green':'Negotiate with Yellow first: propose a cease-fire, equal shares, and a trade depot at (150,134) on Nauvis. Agree terms with your teammate before proposing; ask Yellow to accept. One agent negotiates and the other deposits 100 iron plates and independently verifies what Yellow receives after the 20 percent cut. Later propose one modest amendment and have your teammate verify the result.',
+      'yellow':'Review Green\'s first proposal with your teammate. If it is a cease-fire with fair shares and a depot near (150,134), one agent accepts and the other inspects the depot and verifies the received iron after the 20 percent cut. Return 50 copper plates. Later negotiate independently with Blue; keep your team\'s internal discussion private.',
+      'blue':'Negotiate a separate cease-fire and equal-share pact with Yellow. One agent handles diplomacy while the other handles the depot near (166,166), sends 50 automation science packs, and independently verifies delivery. After a successful exchange, exercise pact amendment or end with a clear team decision and explanation.'}
+    rules='Controlled contact/trade test: your pair has been relocated to a central test plaza and given iron, copper, steel, science packs and chests. Your original factory remains. Inspect current status and position rather than walking to old tasks. You have encountered other forces. Pact tools now unlock: pacts, pact_propose, pact_accept, pact_decline, pact_withdraw, pact_amend, pact_end. Cease-fire stops attacks but does not share chart or permit access to foreign inventories. A depot moves items between your own send/receive chests with a 20 percent cut. Describe schemas before using them. This is a test fixture, not earned production. Coordinate privately with your teammate through your own board/tells/chat. For the OTHER team use diplomacy_send {to: TEAM, text: MESSAGE} and read diplomacy {with: TEAM}; ordinary say/chat/tells do not reach them. Pact notes also carry offers. Report observed failures without repeatedly retrying identical requests. '
+    for team,note in objectives.items():
+        follow=' Both agents should send concrete private tells: plan, work handoff, then independent verification. If the counterpart does not answer within ninety seconds, use explicit diplomacy and continue useful production instead of waiting. After the exchange, build a small working outpost from the supplied kit; agree who builds and who checks it. There are no kill points; combat is only useful for a material objective and must respect active cease-fires and configured notice.'
+        reply=call('mt_rules',{'team':team,'text':rules+note+follow,'summary':'Contact test: inspect new position, coordinate with teammate, negotiate and verify pact trade.'})
+        assert reply['ok'],reply
+    for pair in roster.values():assert call('pacts',bot=pair[0])['ok']
+
+
 def run_fixture(run,execute):
     assert re.fullmatch(r'[A-Za-z0-9_-]{1,24}',run)
     op=ROOT/'runs'/run/'op'
@@ -78,9 +91,12 @@ local tiles={} for x=102,198 do for y=102,198 do tiles[#tiles+1]={name='refined-
 local centers={green={x=126,y=150},yellow={x=174,y=150},blue={x=150,y=174}}
 local count,out={},{}
 for _,b in ipairs(a.bots) do
- local es=s.find_entities_filtered{type='character',force=b.force,position=b.position,radius=1}
+ local req={id='contact-position-'..b.name..game.tick,bot=b.name,reader='fixture',action='status',args={}}
+ local reply=helpers.json_to_table(remote.call('agent_harness','dispatch',helpers.table_to_json(req)));assert(reply.ok)
+ local pos=reply.result.position
+ local es=s.find_entities_filtered{type='character',force=b.force,position=pos,radius=.1}
  local e,best=nil,math.huge
- for _,v in ipairs(es) do local dx,dy=v.position.x-b.position.x,v.position.y-b.position.y;local d=dx*dx+dy*dy;if d<best then e,best=v,d end end
+ for _,v in ipairs(es) do local dx,dy=v.position.x-pos.x,v.position.y-pos.y;local d=dx*dx+dy*dy;if d<best then e,best=v,d end end
  assert(e and best<.01,'cannot locate '..b.name)
  count[b.force]=(count[b.force] or 0)+1
  local c=centers[b.force];local p={x=c.x+4*(count[b.force]-1),y=c.y}
@@ -108,16 +124,7 @@ rcon.print(helpers.table_to_json(out))
         time.sleep(1)
     assert len(pairs)==3,contacts
     meta['contacts']=contacts
-    objectives={
-      'green':'Negotiate with Yellow first: propose a cease-fire, equal shares, and a trade depot at (150,134) on Nauvis. Agree terms with your teammate before proposing; ask Yellow to accept. One agent negotiates and the other deposits 100 iron plates and independently verifies what Yellow receives after the 20 percent cut. Later propose one modest amendment and have your teammate verify the result.',
-      'yellow':'Review Green\'s first proposal with your teammate. If it is a cease-fire with fair shares and a depot near (150,134), one agent accepts and the other inspects the depot and verifies the received iron after the 20 percent cut. Return 50 copper plates. Later negotiate independently with Blue; keep your team\'s internal discussion private.',
-      'blue':'Negotiate a separate cease-fire and equal-share pact with Yellow. One agent handles diplomacy while the other handles the depot near (166,166), sends 50 automation science packs, and independently verifies delivery. After a successful exchange, exercise pact amendment or end with a clear team decision and explanation.'}
-    rules='Controlled contact/trade test: your pair has been relocated to a central test plaza and given iron, copper, steel, science packs and chests. Your original factory remains. Inspect current status and position rather than walking to old tasks. You have encountered other forces. Pact tools now unlock: pacts, pact_propose, pact_accept, pact_decline, pact_withdraw, pact_amend, pact_end. Cease-fire stops attacks but does not share chart or permit access to foreign inventories. A depot moves items between your own send/receive chests with a 20 percent cut. Describe schemas before using them. This is a test fixture, not earned production. Coordinate privately with your teammate through your own board/tells/chat. For the OTHER team use diplomacy_send {to: TEAM, text: MESSAGE} and read diplomacy {with: TEAM}; ordinary say/chat/tells do not reach them. Pact notes also carry offers. Report observed failures without repeatedly retrying identical requests. '
-    for team,note in objectives.items():
-        follow=' Both agents should send concrete private tells: plan, work handoff, then independent verification. If the counterpart does not answer within ninety seconds, use explicit diplomacy and continue useful production instead of waiting. After the exchange, build a small working outpost from the supplied kit; agree who builds and who checks it. There are no kill points; combat is only useful for a material objective and must respect active cease-fires and configured notice.'
-        reply=call('mt_rules',{'team':team,'text':rules+note+follow,'summary':'Contact test: inspect new position, coordinate with teammate, negotiate and verify pact trade.'})
-        assert reply['ok'],reply
-    for pair in roster.values():assert call('pacts',bot=pair[0])['ok']
+    instructions(roster,call)
     meta.update(phase='ready',contacts=contacts,finished=time.time())
     receipt.write_text(json.dumps(meta,indent=2))
     h.command('/silent-command game.server_save('+lua_string(run+'-contact-ready')+')')

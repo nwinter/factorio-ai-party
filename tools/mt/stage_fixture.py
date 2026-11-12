@@ -70,10 +70,12 @@ for _,name in ipairs{'Freight Store','Freight Lab'} do
  out.platforms[#out.platforms+1]={name=pl.name,surface=pl.surface.name,hub=hub.position,iron=hub.get_item_count('iron-plate')}
 end
 for i,b in ipairs(a.bots) do
- local surface=game.surfaces[b.surface or 'nauvis']
- local es=surface.find_entities_filtered{type='character',force=f,position=b.position,radius=1}
+ local req={id='stage-position-'..b.name..game.tick,bot=b.name,reader='fixture',action='status',args={}}
+ local reply=helpers.json_to_table(remote.call('agent_harness','dispatch',helpers.table_to_json(req)));assert(reply.ok)
+ local pos=reply.result.position;local surface=game.surfaces[reply.result.surface]
+ local es=surface.find_entities_filtered{type='character',force=f,position=pos,radius=.1}
  local e,best=nil,math.huge
- for _,v in ipairs(es) do local dx,dy=v.position.x-b.position.x,v.position.y-b.position.y;local d=dx*dx+dy*dy;if d<best then e,best=v,d end end
+ for _,v in ipairs(es) do local dx,dy=v.position.x-pos.x,v.position.y-pos.y;local d=dx*dx+dy*dy;if d<best then e,best=v,d end end
  assert(e and best<.01,'cannot locate '..b.name)
  assert(e.teleport({x-1+3*i,y},s))
  local given={}
