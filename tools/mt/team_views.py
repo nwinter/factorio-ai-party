@@ -43,6 +43,12 @@ class Reader:
     def bots(self):
         return json.loads(self.rcon.command('/silent-command rcon.print(remote.call("agent_harness","bots"))')).get("bots") or []
 
+    def profiles(self, agent):
+        req={"id":"views-"+uuid.uuid4().hex[:12],"bot":agent,"reader":"broadcast","action":"profiles","args":{}}
+        reply=json.loads(self.rcon.command(f'/silent-command rcon.print(remote.call("agent_harness","dispatch",{lua_long(json.dumps(req))}))'))
+        if not reply.get('ok'):raise RuntimeError('profile read failed')
+        return reply['result'].get('profiles') or []
+
     def score(self, force):
         lua = " ".join(l.strip() for l in pog.for_force(pog.SCORE_LUA, force).strip().splitlines())
         return json.loads(self.rcon.command("/silent-command " + lua))
@@ -98,6 +104,15 @@ def refusals(op, names):
 
 def collect(r, op):
     view = {"t": time.strftime("%Y-%m-%d %H:%M:%S"), "teams": [], "errors": {}}
+    labels={}
+    for line in open(os.path.join(op,'teams.tsv')):
+        f=line.rstrip('\n').split('\t')
+        if not line.startswith('#') and len(f)>=8:labels[f[1]]=f[6]
+    try:
+        feed=r.op('mt_feed',{'limit':500})
+        view.update(feed=feed.get('lines') or [],feed_cursor=feed.get('cursor'),feed_first_seq=feed.get('first_seq'))
+    except Exception:
+        view['feed']=[]
     try:
         bots = {b["name"]: b for b in r.bots()}
     except Exception as e:
@@ -120,11 +135,17 @@ def collect(r, op):
         view["freeze"] = None   # no human team (mt_humans not set up)
     for team, names in teams_of(op):
         col = {"team": team, "agents": [], "errors": {}}
+        try:
+            profiles={p['name']:p for p in r.profiles(names[0]) if p.get('name') in names}
+        except Exception:
+            profiles={}
         for n in names:
             b = bots.get(n) or {}
             p = b.get("position") or {}
             col["agents"].append({"name": n, "force": b.get("force"), "alive": b.get("alive"),
-                                  "at": f"{p.get('x', 0):.0f},{p.get('y', 0):.0f}" if p else None})
+                                  "at": f"{p.get('x', 0):.0f},{p.get('y', 0):.0f}" if p else None,
+                                  "model":labels.get(n),**{k:v for k,v in profiles.get(n,{}).items()
+                                  if k in ('display_name','persona','color','glyph','motto','pronouns','avatar')}})
         try:
             s = r.score(team)
             col["score"] = {"tick": s.get("tick"), "research": s.get("research_done") or [],

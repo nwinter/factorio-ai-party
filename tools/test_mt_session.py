@@ -3,6 +3,7 @@
 import sys
 from pathlib import Path
 import threading
+import tempfile
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parent/'mt'))
 import public_session as session
@@ -20,14 +21,30 @@ class Api:
 
 class TestSession(unittest.TestCase):
     def test_stale_or_partial_roster_cannot_look_healthy(self):
-        state={'now':100,'teams':[{'team':t,'stale':False,'agents':[{},{}]} for t in ('green','yellow','blue')]}
-        self.assertTrue(session.fresh_feed(state,110))
-        self.assertFalse(session.fresh_feed(state,161))
+        expected={t:{t+'1',t+'2'} for t in ('green','yellow','blue')}
+        state={'now':100,'teams':[{'team':t,'stale':False,'agents':[{'name':n} for n in sorted(expected[t])]} for t in expected]}
+        self.assertTrue(session.fresh_feed(state,110,expected))
+        self.assertFalse(session.fresh_feed(state,161,expected))
         state['teams'][1]['stale']=True
-        self.assertFalse(session.fresh_feed(state,110))
+        self.assertFalse(session.fresh_feed(state,110,expected))
         state['teams'][1]['stale']=False
+        state['teams'][0]['agents'][0]['name']='another-agent'
+        self.assertFalse(session.fresh_feed(state,110,expected))
+        state['teams'][0]['agents'][0]['name']='green1'
         state['teams'][0]['agents'].pop()
-        self.assertFalse(session.fresh_feed(state,110))
+        self.assertFalse(session.fresh_feed(state,110,expected))
+
+    def test_selected_roster_controls_health_check(self):
+        with tempfile.TemporaryDirectory() as d:
+            op=Path(d)
+            (op/'streams.txt').write_text('green http://localhost:8791/\nyellow http://localhost:8792/\n')
+            (op/'teams.tsv').write_text('# roster\ngreen\tg1\ngreen\tg2\nyellow\ty1\nyellow\ty2\nblue\tb1\nblue\tb2\n')
+            expected=session.roster_of(op)
+        self.assertEqual(expected,{'green':{'g1','g2'},'yellow':{'y1','y2'}})
+        state={'now':100,'teams':[{'team':t,'stale':False,'agents':[{'name':n} for n in names]} for t,names in expected.items()]}
+        self.assertTrue(session.fresh_feed(state,110,expected))
+        state['teams'].append(state['teams'][0])
+        self.assertFalse(session.fresh_feed(state,110,expected))
 
     def test_never_clear_another_publication(self):
         self.assertFalse(session.owns_site({'mode':'team-tests','stream':{'youtube_video_id':'other'}},'ours'))

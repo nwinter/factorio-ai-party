@@ -435,7 +435,7 @@ class LiveSource:
             p = profiles.get(name, {})
             st = self.status_cache.get(name, {})
             a = {"name": name, "kind": p.get("kind") or cfg.get("kind", "bot")}
-            for key in ("display_name", "color", "glyph", "motto", "voice", "voice_description", "avatar", "position",
+            for key in ("display_name", "color", "glyph", "persona", "motto", "voice", "voice_description", "avatar", "position",
                         "last_said", "alive", "active", "pronouns", "surface", "platform", "where", "travel"):
                 if p.get(key) is not None:
                     a[key] = p[key]

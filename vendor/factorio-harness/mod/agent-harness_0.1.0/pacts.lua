@@ -150,6 +150,7 @@ return function(api)
     recent[#recent+1]=game.tick;s.diplomacy_sent[team]=recent
     local m={kind='diplomacy',seq=c.next,tick=game.tick,from_team=team,to_team=a.to,agent=who,text=text}
     c.next=c.next+1;c.messages[#c.messages+1]=m
+    if api.on_message then api.on_message(m) end
     while #c.messages>100 do table.remove(c.messages,1) end
     local line='Diplomacy '..team..' ('..who..') -> '..a.to..': '..text
     fact(team,line,false);fact(a.to,line,true)

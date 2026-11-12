@@ -234,6 +234,7 @@ M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(in
 M.cameras=require('cameras'){state=state,bot=function(name) return M.bots.named(name) end,
   controlled=function(index) return state().controlled and state().controlled[index]~=nil end}
 M.profiles=require('profiles'){state=state,team_now=function() return M.team_now() end,team_of=function(index) return M.team_of_index(index) end,is_bot=function(p) return M.bots.is(p) end,director=function(index) return M.cameras.director(index) end,
+  on_identity=function(p,pr) if M.teamfeed then M.teamfeed.emit(p.name,'identity','public',pr.display_name..': '..pr.persona) end end,
   bots=function() return M.bots.list() end,active=function(index) local a=M.active(index); return a and a.kind or false end,
   on_apply=function(p) if M.bots.is(p) then M.nametags.refresh(M.bots.record(p.index)) end end,bubble_y=function(index) return M.nametags.bubble_y(index) end}
 M.nametags=require('nametags'){state=state,bots=function() return M.bots.list() end,profile=function(index) return M.profiles.get(index) end,
@@ -18341,7 +18342,11 @@ M.waits=require('waits'){state=state,measure=function(index) return M.measure_ro
   -- what is open for the sleeper (open.lua), on the sleep's first and last replies
   open_line=function(p) return M.open.line(M.board.who(p),p.force,{surface=p.surface.name,position=p.position},p.index) end}
 for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
-M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
+M.teamfeed=require('teamfeed'){state=state,team_now=function() return M.team_now() end,
+  agents=function() return M.board.agents() end,profile=function(index) return M.profiles.get(index) end}
+M.chat=M.chat_module{state=state,on_say=function(p,text)
+  M.teamfeed.emit(M.board.who(p),'say','team-private',text);M.profiles.say(p,text)
+end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,
   on_viewer=function(m) M.board.on_viewer(m) end,on_reply=function(index,seq) return M.owed and M.owed.ack(index,seq) end,
   owed_held=function(index,text) return M.owed and M.owed.held(index,text) end,
@@ -18355,6 +18360,7 @@ for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 M.humans=require('humans'){state=state}
 -- (mt281, private) pacts between teams (pacts.lua): open for a team at its first contact; facts to both teams' agents
 M.pacts=require('pacts'){state=state,team_now=function() return M.team_now() end,who=function(p) return M.board.who(p) end,
+  on_message=function(m) M.teamfeed.emit(m.agent,'diplomacy','diplomacy',m.text,{m.to_team},m.seq) end,
   as_team=function(t,fn,...) return M.as_team(t,fn,...) end,
   fact=function(team,text,wake) M.as_team(team,function()
     for _,ag in ipairs(M.board.agents()) do M.board.deliver(ag.index,{seq='pact',tick=game.tick,from='pact',text=text,wake=wake or nil,fyi=not wake or nil}) end
@@ -18407,6 +18413,7 @@ for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
 -- Bots are never directors (and game.get_player refuses their indices).
 function M.is_director(index) return not M.bots.is_index(index) and M.cameras.director(index) end
 M.board=require('board'){wall=function() return M.wall_ms end,state=state,team_now=function() return M.team_now() end,cause_text=function(c,own) return M.cause_text(c,own) end,rest_label=function(name) local r=M.rests and M.rests.get(name); return r and M.rests.label(r) or nil end,on_update=function(by,item,removed) return M.progress and M.progress.on_update(by,item,removed) end,check_lines=function(id) return M.checks and M.checks.item_lines(id) end,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
+  on_event=function(e) M.teamfeed.emit(e.by,'board','team-private',string.format('#%s %s: %s%s',e.id,e.change,e.title or '',e.text and ' — '..e.text or ''),nil,e.seq) end,
   lesson_score=function(i) if M.lessonbook then return M.lessonbook.score(i) end end,lesson_extra=function(i) return M.lessonbook and M.lessonbook.extra(i) end,
   lesson_fields=function(a,i) return M.lessonbook and M.lessonbook.fields(a,i) end,lesson_surfaced=function(index,list,action) if M.lessonbook then M.lessonbook.surfaced(index,list,action) end end,claims=M.claims,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
   profile=function(index) return M.profiles.get(index) end,validate_plan=function(a) return scheduler.validate(a) end,
@@ -18473,6 +18480,7 @@ M.rests=require('rests'){state=state,resolve=M.board.resolve,
     return c and not c.peeked and c.call_tick or nil
   end}
 M.tells=require('tells'){state=state,resolve=M.board.resolve,resting=function(name) return M.rests.tell_line(name) end,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,read_tells=M.board.tells_read,
+  on_send=function(t) M.teamfeed.emit(t.from,'tell','team-private',t.text,t.to,t.seq) end,
   on_reply=function(index,seq) return M.owed.ack(index,seq) end,
   owed_left=function(index,names,text) if text then return M.owed.held(index,text) end return M.owed.held_for(index,names) end,
   where_from=function(me) return M.where.from(me) end,
@@ -19635,7 +19643,7 @@ function M.dispatch_inner(request)
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.factory_digest.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action] or M.chronicle.operator[request.action]
         or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.rests.operator[request.action] or M.lessonbook.operator[request.action] or M.bplibrary_operator[request.action]
         or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action]) or (M.chart and M.chart.operator[request.action]) or M.multiteam.operator[request.action] or M.humans.operator[request.action] or M.pacts.operator[request.action]
-      relay=relay or (M.disclosure and M.disclosure.operator[request.action])
+      relay=relay or M.teamfeed.operator[request.action] or (M.disclosure and M.disclosure.operator[request.action])
       relay=relay or (M.platformmetrics and M.platformmetrics.operator[request.action])
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
