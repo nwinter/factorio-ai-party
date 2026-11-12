@@ -695,6 +695,7 @@ return function(api)
           fact(t,'Trading Post at ('..pos.x..','..pos.y..'). Call status {} for stock and item swaps; research {technology="mt-coinage"} opens priced orders.',true)
         end
       end
+      if s.post and s.post.valid then s.post.destructible=config('destructible') end
       if tech and tech.researched and not s.granted then
         s.granted=true;s.wallet=s.wallet+10000;state().issuance=state().issuance+10000
         fact(t,'Coinage: 10,000 coin granted once. Call market {} for the book and exact accepting calls. Money never scores.',true)
@@ -731,6 +732,9 @@ return function(api)
         if type(a.get)~='table' then fail('get: {item,count}') end
         get={item=item(a.get.item),count=integer(a.get.count,1,10000,'get.count')}
         if get.item==name then fail('swap needs different items') end
+        if give.count/prototypes.item[give.item].stack_size+get.count/prototypes.item[get.item].stack_size>config('pair_stacks') then
+          fail('swap exceeds pair capacity; use smaller give/get counts')
+        end
         for k in pairs(a.give) do if k~='item' and k~='count' then fail('give: only item,count') end end
         for k in pairs(a.get) do if k~='item' and k~='count' then fail('get: only item,count') end end
       else
@@ -744,13 +748,14 @@ return function(api)
       end
       if side=='buy' and n*price>s.wallet-s.reserved then fail('insufficient available coin; lower count or sell surplus') end
       local o={id=s.next,team=t,side=side,item=name,other=other,count=n,price=price,keep=keep,give=give,get=get,
-        matched=0,status='open',revision=1,tick=game.tick}
+        matched=0,status='open',revision=old and old.revision+1 or 1,tick=game.tick}
       s.next=s.next+1;s.orders[key]=o
       if side=='buy' then s.reserved=s.reserved+n*price end
       return {order=order_view(o),next={action='status',args={}}}
     end
     local function cancel(t,a)
       local name=item(a.item)
+      if K.rung(t)==1 and a.side~='offer' then fail('side: offer') end
       if a.side~='buy' and a.side~='sell' and a.side~='offer' then fail('side: buy, sell or offer') end
       local other=counter(t,a.team);local o=team(t).orders[order_key(a.side,name,other)]
       if not o or o.status~='open' then fail('no unmatched live order') end
@@ -765,7 +770,10 @@ return function(api)
     local function accepting(t,o,remaining)
       local a,action
       if o.side=='offer' then action='offer';a={give=copy(o.get),get=copy(o.give)}
-      elseif o.side=='sell' then action='buy';a={item=o.item,price=o.price,count=remaining}
+      elseif o.side=='sell' then
+        local s=team(t);local n=math.min(remaining,math.floor((s.wallet-s.reserved)/o.price))
+        if n<1 then return false end
+        action='buy';a={item=o.item,price=o.price,count=n}
       else action='sell';a={item=o.item,price=o.price,count=remaining,keep=0} end
       if #contacts(t)>1 then a[action=='buy' and 'from' or 'to']=o.team end
       return {action=action,args=a}
@@ -773,7 +781,8 @@ return function(api)
     function K.status(t)
       if K.rung(t)==0 then return nil end
       local s=team(t);local p=s.post
-      local out={fault=copy(state().fault),rung=K.rung(t)==2 and 'coinage' or 'swap',post=p and p.valid and {position=copy(p.position),surface=p.surface.name} or false,
+      local out={fault=state().fault and {state='quarantined',next={action='status',args={}}} or nil,
+        rung=K.rung(t)==2 and 'coinage' or 'swap',post=p and p.valid and {position=copy(p.position),surface=p.surface.name} or false,
         stock={},orders={},offers={},inbound={},fills={},transit_seconds=config('transit_ticks')/60,pair_stacks_per_minute=config('pair_stacks')}
       if K.rung(t)==2 then out.wallet=s.wallet;out.reserved=s.reserved;out.available=s.wallet-s.reserved;out.reference_prices=copy(PRICES) end
       for _,n in ipairs(keys(PRICES)) do local nstock=amount(t,n);if nstock>0 then out.stock[n]=nstock end end
@@ -790,6 +799,7 @@ return function(api)
           if o.status~='cancelled' and (o.other=='*' or o.other==t) and remaining>0 and (o.side=='offer' or K.rung(t)==2) then
             -- No peer wallet, stock, global order id, rival coordinates, or unrelated fill count.
             local row={id=book_id(pairdata,o),side=o.side,item=o.item,price=o.price,give=copy(o.give),get=copy(o.get),accept=accepting(t,o,remaining)}
+            if row.accept==false then row.blocked='no available coin; sell surplus first';row.next={action='status',args={}} end
             if #contacts(t)>1 then row.team=u end
             out.offers[#out.offers+1]=row
           end
@@ -828,6 +838,7 @@ return function(api)
     function K.schema(t)
       local schemas={}
       for n,schema in pairs(BASE_SCHEMA) do if K.open_action(t,n) then schemas[n]=copy(schema) end end
+      if K.rung(t)==1 and schemas.cancel then schemas.cancel.side='offer' end
       if #contacts(t)>1 then
         if schemas.offer then schemas.offer.to='optional contacted team' end
         if schemas.sell then schemas.sell.to='optional contacted team' end
@@ -893,8 +904,8 @@ return function(api)
     end
     local function emit_fill(p,tx)
       local l=tx.legs[1]
-      local line=tx.price and string.format('%s sells %d %s to %s at %d; arrival in 90 seconds',l.from,l.count,l.item,l.to,tx.price)
-        or string.format('%s swaps %d %s with %s; arrival in 90 seconds',l.from,l.count,l.item,l.to)
+      local line=tx.price and string.format('%s sells %d %s to %s at %d; arrival in %d seconds',l.from,l.count,l.item,l.to,tx.price,config('transit_ticks')/60)
+        or string.format('%s swaps %d %s with %s; arrival in %d seconds',l.from,l.count,l.item,l.to,config('transit_ticks')/60)
       fact(p.a,line,true);fact(p.b,line,true)
       if api.on_market then api.on_market({kind='fill',a=p.a,b=p.b,id=tx.id,tick=game.tick,text=line}) end
     end
@@ -1017,6 +1028,7 @@ return function(api)
     end
     function K.tick(tick)
       if not mt() or not next(teams()) or not config('enabled') or tick%60~=0 then return end
+      if mt().market and mt().market.fault then return end
       for _,t in ipairs(mt().order) do if K.rung(t)>0 then K.sync(t);deposit(t) end end
       -- A single deterministic pass shares the actual Post stock and reserved balance across pairs.
       local list={}
@@ -1059,7 +1071,10 @@ return function(api)
         for k,v in pairs(a.config) do
           assert(CFG[k]~=nil,'unknown market setting')
           if type(CFG[k])=='boolean' then assert(type(v)=='boolean','boolean setting')
-          else integer(v,1,216000,k) end
+          else
+            integer(v,1,216000,k)
+            if k=='batch_ticks' or k=='transit_ticks' then assert(v%60==0,'timings must be whole seconds') end
+          end
         end
         if a.config.enabled==false then
           for _,p in pairs(s.pairs) do for _,tx in ipairs(p.transactions) do assert(tx.status=='delivered','cannot disable with unsettled cargo') end end

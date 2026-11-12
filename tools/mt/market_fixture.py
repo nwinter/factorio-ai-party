@@ -19,7 +19,7 @@ sys.path[:0]=[str(ROOT/'tools/stream'),str(ROOT/'tools/mt')]
 from harness import Harness,lua_string,one_line
 
 TEAMS=('green','yellow')
-TARGETS={'electronic-circuit':1800,'iron-gear-wheel':900,'automation-science-pack':600}
+TARGETS={'electronic-circuit':1800,'iron-gear-wheel':1500,'automation-science-pack':600}
 PREPARE=r'''
 assert(script.active_mods.base=='2.1.24','wrong engine')
 assert(not storage.mt296_fixture,'fixture already exists')
@@ -47,7 +47,9 @@ for k,name in ipairs{'green','yellow'} do
   supplied={},entities={},poor_patch_ore=1200,poor_patch_expected_minutes=10}
  fxt.teams[#fxt.teams+1]=row
  local function make(n,dx,dy,d)
+  assert(sf.can_place_entity{name=n,position={x+dx,y+dy},force=f,direction=d},'fixture collision: '..n..' at '..dx..','..dy)
   local e=assert(sf.create_entity{name=n,position={x+dx,y+dy},force=f,direction=d},n)
+  if n=='inserter' then assert(e.pickup_position.x<e.drop_position.x,'fixture inserter must carry west to east') end
   row.entities[#row.entities+1]={name=n,position=e.position,unit=e.unit_number};return e
  end
  local function put(e,n,count)
@@ -75,7 +77,7 @@ for k,name in ipairs{'green','yellow'} do
  -- 1,200 ore mined at 120/minute: the patch runs dry in about ten minutes.
  for j=1,12 do
   local rich=j<=8;local ore=rich and row.rich or row.poor
-  local dx=-43+math.floor((j-1)/4)*13;local dy=-40+((j-1)%4)*10
+  local dx=-43+math.floor((j-1)/4)*13;local dy=-41+((j-1)%4)*10
   for xx=-2,2 do for yy=-2,2 do sf.create_entity{name=ore,position={x+dx+xx,y+dy+yy},amount=rich and 2000 or 12} end end
   make('electric-mining-drill',dx,dy,defines.direction.east)
   make('steel-chest',dx+2,dy)
@@ -95,13 +97,15 @@ for k,name in ipairs{'green','yellow'} do
   cell('automation-science-pack',4,12,{['iron-gear-wheel']=20,['copper-plate']=20}),
   cell('automation-science-pack',4,20,{['iron-gear-wheel']=20,['copper-plate']=20}),
   cell('automation-science-pack',4,28,{['iron-gear-wheel']=20,['copper-plate']=20})}
- make('lab',17,18);make('lab',22,18)
+ make('lab',24,30);make('lab',30,30)
  local kit=make('steel-chest',12,0);row.kit=kit.position
  for n,c in pairs{['transport-belt']=400,inserter=100,['small-electric-pole']=50,['wooden-chest']=20,
    ['assembling-machine-1']=8,['stone-furnace']=12,['electric-mining-drill']=4,coal=1000,['repair-pack']=20} do put(kit,n,c) end
  row.expected_target_inputs={['iron-plate']=4800,['copper-plate']=3300}
- row.initial_metal_equivalent={['iron-plate']=2020,['copper-plate']=710}
- row.expected_shortfall=k==1 and 1390 or 1580
+ -- Supplied gears do not reduce the target of 1,500 NEW gears. Do not double-count
+ -- gears used in red science as additional production or iron demand.
+ row.initial_metal_equivalent={['iron-plate']=1900,['copper-plate']=710}
+ row.expected_shortfall=k==1 and 1390 or 1700
  row.grant_fraction=10000/(row.expected_shortfall*20)
  f.chart(sf,area)
 end
@@ -119,6 +123,7 @@ local fxt=assert(storage.mt296_fixture,'prepare first');assert(not fxt.activated
 assert(not next(storage.agent_harness.mt.first or {}),'contact must begin at activation')
 game.tick_paused=true
 local on=MARKET;fxt.market=on;fxt.started_tick=game.tick;fxt.activated=true
+BASELINE
 local held={}
 if on then
  for _,row in ipairs(fxt.teams) do
@@ -162,20 +167,21 @@ class Client:
 
 
 def instructions(row,on):
-    return ("Prepared factory experiment: your buildings, power supply, technology and initial items are supplied fixtures, not earned progress. "
-        "You have a working smelting yard, cable/circuit/gear/red-science cells, two labs, and a construction kit. "
-        f"Your stock {'Trading Post' if on else 'chest'} is at {json.dumps(row['stock_position'])}; kit at {json.dumps(row['kit'])}. "
-        f"Your rich resource is {row['rich']}; the small {row['poor']} patch runs out in about ten minutes. "
-        "Race objective: manufacture 1,800 electronic circuits, 900 iron gears and 600 automation science packs after the start. "
-        "Production counts are the measure; money and trade volume do not score. Your teammate should split work with you: "
-        "one maintains smelting, input logistics and expansion; the other connects and supplies the production cells, then verifies output. "
-        "Build belts/inserters to automate the input and output chests. Keep machines producing and keep working while waiting for supplies. "
-        +("Coinage is researched. market {} shows your 10,000 coin grant, reference prices, standing orders and accepting calls. "
-          "Deposit rich-metal surplus in the Post, sell with a safe keep and finite count, and buy the scarce metal within your budget. "
-          "You will need to sell to keep buying. Matches run every ten seconds and delivery takes ninety seconds. "
-          "Your shared orders operate while you build; coordinate once with your teammate to avoid duplicate orders. " if on else "")
-        +"Use brief teammate tells for handoffs. Record concrete blockers and observed refusals. Do not repeatedly poll unchanged state. "
-        +"Production cell input/output positions: "+json.dumps(row['production'],separators=(',',':')))
+    pos=lambda v:json.dumps(v,separators=(',',':'))
+    cells='; '.join(v['recipe']+' input '+pos(v['input'])+' output '+pos(v['output']) for v in row['production'])
+    text=("Prepared factory: power, technology, buildings and initial items are supplied, not earned. "
+        f"Stock {'Post' if on else 'chest'} {pos(row['stock_position'])}; construction kit {pos(row['kit'])}. "
+        f"Rich {row['rich']}; small {row['poor']} patch should run out around minute ten. "
+        "Race: manufacture 1,800 electronic circuits, 1,500 iron gears and 600 automation science packs after contact. "
+        "Production counts score; supplied items, money and trade volume do not. Split work: one maintains smelting, "
+        "input logistics and expansion; one supplies/connects production cells and verifies output. "
+        "Automate input/output chests with belts and inserters. Keep useful work running while supplies arrive. "
+        +("Coinage is researched. market {} shows the 10,000 coin grant, orders and accepting calls. Put surplus rich metal "
+          "in the Post, sell with a safe keep/finite count, and buy scarce metal. Selling funds further buying. "
+          "Orders are shared: coordinate once to avoid duplicates. Batches every 10s; delivery 90s. " if on else "")
+        +"Use brief teammate handoffs; report concrete blockers/refusals; do not poll unchanged state. Cells: "+cells)
+    assert len(text.encode())<=2000,'fixture brief exceeds harness limit'
+    return text
 
 
 def main():
@@ -194,8 +200,9 @@ def main():
             receipt['fixture']=c.lua(PREPARE.replace('TARGETS',lua_string(json.dumps(TARGETS))))
             c.h.command('/silent-command game.server_save('+lua_string(a.run+'-base')+')')
         elif a.action=='activate':
+            from market_metrics import BASELINE
             c.call('mt_market',{'config':{'enabled':a.market=='on'}})
-            receipt['start']=c.lua(ACTIVATE.replace('MARKET','true' if a.market=='on' else 'false'))
+            receipt['start']=c.lua(ACTIVATE.replace('MARKET','true' if a.market=='on' else 'false').replace('BASELINE',BASELINE))
             c.h.command('/silent-command game.tick_paused=false')
             for _ in range(20):
                 contacts=c.call('mt_contacts').get('contacts') or []

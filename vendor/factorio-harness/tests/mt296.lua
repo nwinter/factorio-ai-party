@@ -151,8 +151,9 @@ prototypes.item['iron-ore'].get_spoil_ticks=function() return 600 end
 refused(function() sell('red','iron-ore',1) end,'item unavailable')
 -- Swaps count both legs toward pair capacity.
 reset(true,false);stock('red','iron-plate',600);stock('blue','copper-plate',600)
-call('red','offer',{give={item='iron-plate',count=600},get={item='copper-plate',count=600}})
-call('blue','offer',{give={item='copper-plate',count=600},get={item='iron-plate',count=600}});tick(600);eq(firsttx(),nil)
+refused(function() call('red','offer',{give={item='iron-plate',count=600},get={item='copper-plate',count=600}}) end,'pair capacity')
+call('red','offer',{give={item='iron-plate',count=500},get={item='copper-plate',count=500}})
+call('blue','offer',{give={item='copper-plate',count=500},get={item='iron-plate',count=500}});tick(600);ok(firsttx())
 -- New commitments between duplicate tick notifications wait for the next batch.
 reset(true,true);stock('red','iron-ore',100);tick(600);sell('red','iron-ore',100);buy('blue','iron-ore',100);tick(600)
 eq(firsttx(),nil);tick(1200);eq(firsttx().count,100)
@@ -162,3 +163,53 @@ local view=K.operator.mt_market{}
 eq(#view.markers,1);eq(view.last_prices[1].thin,true);eq(view.markers[1].count,100);eq(view.markers[1].arrival_tick,6000)
 tick(6000);view=K.operator.mt_market{};eq(#view.markers,0)
 print('mt296 total assertions: '..checks)
+-- Operator risk switch applies to existing Posts, without creating a new treasury/grant.
+local oldpost=s.mt.market.teams.red.post
+K.operator.mt_market{config={destructible=true}};eq(oldpost.destructible,true);eq(s.mt.market.issuance,20000)
+-- Failed custody mutations quarantine all later custody, including deposits after reload.
+reset(true,true)
+surface.spill_item_stack=function() return {} end
+refused(function() K.on_died{entity=s.mt.market.teams.red.post} end,'coin spill incomplete')
+eq(s.mt.market.teams.red.wallet,7500);eq(s.mt.market.teams.red.spills['1'].status,'quarantined')
+stock('blue','mt-coin',1);reload();tick(60);eq(count('blue','mt-coin'),1);eq(s.mt.market.teams.blue.wallet,10000)
+-- One seller's public stock cannot be dispatched twice to different pairs.
+reset(true,true);s.mt.first['chart red>green']=1;tick(60);stock('red','iron-ore',120)
+sell('red','iron-ore',200,10,20);buy('blue','iron-ore',100);buy('green','iron-ore',100);tick(600)
+eq(count('red','iron-ore'),20);eq(totalgoods('iron-ore'),120)
+local dispatched=0;for _,p in pairs(s.mt.market.pairs) do for _,t in ipairs(p.transactions) do dispatched=dispatched+t.count end end
+eq(dispatched,100);audit()
+-- Best price precedes age; equal-time resting-price ties use force index.
+reset(true,true);s.mt.first['chart red>green']=1;tick(60);stock('red','iron-ore',10)
+sell('red','iron-ore',10,20)
+call('red','sell',{item='iron-ore',count=10,price=10,keep=0,to='blue'})
+buy('blue','iron-ore',10,30);tick(600);eq(firsttx().price,10)
+reset(true,true);stock('red','iron-ore',1);buy('blue','iron-ore',1,20);sell('red','iron-ore',1,10);tick(600)
+eq(firsttx().price,10,'lower force index sets resting price at equal tick')
+-- Human commands use the same shared-order race/refusal and freeze validators.
+reset(true,true);local printed={};local pl={name='human',force=forces.red}
+pl.force.print=function(v) printed[#printed+1]=v end;game.get_player=function() return pl end
+helpers={json_to_table=function() return {item='iron-ore',price=10,keep=0,count=5} end,table_to_json=function(v) return v.order and 'order' or 'status' end}
+s.mt.humans={team='red',state='active',players={human=true}}
+K.on_console_chat{player_index=1,message='!market sell {}'};eq(printed[1],'[market] order')
+K.on_console_chat{player_index=1,message='!market sell {}'};ok(printed[2]:find('shared order',1,true))
+eq(s.mt.market.teams.red.next,2);eq(s.mt.market.chat_seq,2)
+s.mt.humans.state='frozen';K.on_console_chat{player_index=1,message='!market sell {}'};ok(printed[3]:find('frozen',1,true))
+print('mt296 final assertions: '..checks)
+-- Accepting calls honor the observer's available budget; zero funds never advertises an invalid buy.
+reset(true,true);sell('red','iron-ore',100000,30)
+eq(K.status('blue').offers[1].accept.args.count,333)
+buy('blue','copper-ore',1000,10);local opportunity=K.status('blue').offers[1]
+eq(opportunity.accept,false);eq(opportunity.next.action,'status')
+print('mt296 all assertions: '..checks)
+-- Replacing a cancelled/filled order cannot reuse its revision and accept a stale teammate cancellation.
+reset(true,true);local original=sell('red','iron-ore',10).order
+call('red','cancel',{item='iron-ore',side='sell',revision=original.revision})
+local replacement=sell('red','iron-ore',20).order;ok(replacement.revision>original.revision)
+refused(function() call('red','cancel',{item='iron-ore',side='sell',revision=original.revision}) end,'order changed')
+eq(K.status('red').orders[1].status,'open')
+reset(true,false);eq(K.schema('red').cancel.side,'offer')
+refused(function() call('red','cancel',{item='iron-ore',side='buy'}) end,'side: offer')
+-- Unrelated fault details/transaction ids never enter agent projections.
+reset(true,true);s.mt.market.fault={transaction=1337,error='green hidden coordinate 900,900'}
+eq(K.status('red').fault.transaction,nil);eq(K.status('red').fault.error,nil)
+print('mt296 comprehensive assertions: '..checks)

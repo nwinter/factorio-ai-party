@@ -44,8 +44,9 @@ They invoke the same validators and use saved human request sequence numbers.
 Prepared fixture: tools/mt/market_fixture.py prepare / activate / brief. Use one paused saved map for both arms.
 Green has eight rich iron cells and four small copper cells; Yellow mirrors them. Each has twelve drills/furnaces,
 seven production cells, labs and a labelled power fixture. Poor ore totals 1,200 and should deplete near ten minutes
-at four drills' nominal 120/minute. Objective: 1,800 circuits, 900 gears and 600 red packs produced after activation.
-Expected missing plates are 1,390/1,580; a 10,000 grant buys 500 plates, about one third. These are fixture design
+at four drills' nominal 120/minute. Objective: 1,800 circuits, 1,500 gears and 600 red packs produced after activation.
+The gears consumed by red science count within the 1,500, not as extra iron demand. Supplied gears are not newly
+produced gears. Expected missing plates are 1,390/1,700; a 10,000 grant buys 500 plates (36%/29%). These are fixture design
 estimates until engine throughput is measured. The same stock position and items are preserved in the control.
 
 The original pact depot remains pending real-engine swap acceptance. Retire it and its cut only after that gate;
