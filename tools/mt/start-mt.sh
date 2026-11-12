@@ -13,6 +13,8 @@
 #     which tools/mt/stop-mt.sh's /quit left).
 #   POG_MT_FRESH=1: start from mt275-final; refuses a running server or POG_RESUME.
 #     POG_MT_FRESH_SAVE overrides the local baseline path.
+#   POG_MT_PAUSED_START=1: pause after runtime deployment; the operator resumes after clients/fixture are ready.
+#     Deployment still needs ticks; prepared fixtures must hold production inactive until activation. Default 0.
 #   POG_MT_TREE: the launch tree (default worktrees/pog-p, made or updated from HEAD at each start);
 #     POG_MT_TREE=here is refused: an unsanitized checkout is never an agent workspace.
 #   POG_MT_TEAMS: only these teams (comma-separated), POG_DRY_RUN=1: the plan only, POG_FULL_TOOLS=1 as start-team,
@@ -36,6 +38,8 @@ cd "$root"
 run=${1:?usage: start-mt.sh RUN_ID MINUTES [TEAMS_FILE]} minutes=${2:?usage: start-mt.sh RUN_ID MINUTES [TEAMS_FILE]}
 teams_file=${3:-agent/mt/teams-test.tsv}
 world=imac2
+paused_start=${POG_MT_PAUSED_START:-0}
+case $paused_start in 0|1) ;; *) echo "POG_MT_PAUSED_START must be 0 or 1" >&2; exit 64 ;; esac
 if [ "${POG_MT_PUBLIC:-0}" = 1 ]; then export POG_MT_STREAM=1; fi
 export POG_MT_VIEWERS=${POG_MT_VIEWERS:-${POG_MT_PUBLIC:-0}}
 export POG_GAME_TEST=${POG_GAME_TEST:-${POG_MT_FRESH:-0}}
@@ -106,7 +110,9 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   if [ -n "${POG_MT_SAVE:-}" ]; then echo "1. server: started on $POG_MT_SAVE if not running${POG_MT_FRESH:+; fresh mode refuses a running server}"
   elif [ -n "$resume" ]; then echo "1. server: if not running, started on its own saves/mt.zip (the last stop's)"
   else echo "1. server: must be running (or set POG_MT_SAVE)"; fi
-  echo "   runtime deployed from $(git rev-parse --short HEAD); the world unpaused; the setup's join lines dropped from the chat"
+  if [ "$paused_start" = 1 ]; then world_start='world paused after deploy; operator must resume'
+  else world_start='world unpaused'; fi
+  echo "   runtime deployed from $(git rev-parse --short HEAD); the $world_start; the setup's join lines dropped from the chat"
   if [ "$tree" = "$root" ]; then echo "   agents launch from this checkout (POG_MT_TREE=here)"
   else echo "   agents launch from $tree (tools/mt/launch-tree.sh from $(git rev-parse --short HEAD), then its scan)"; fi
   echo "   web blocked: $POG_WEB_BLOCK; reads denied: $POG_DENY_READ"
@@ -169,7 +175,13 @@ deployed=$(POG_WORLD=$world bin/fh deploy --format json 2>/dev/null || true)
 deploy_status=$(printf '%s' "$deployed" | python3 tools/code_check.py --deploy-reply)
 log "runtime deployed from $(git rev-parse --short HEAD): $deploy_status"
 case $deploy_status in ok*) ;; *) exit 1 ;; esac
-python3 tools/pog.py --world "$world" resume >/dev/null 2>&1 || true
+if [ "$paused_start" = 1 ]; then
+  pause_reply=$(python3 tools/pog.py --world "$world" pause 2>&1) || { log "refusing: pause failed: $pause_reply"; exit 1; }
+  [[ "$pause_reply" =~ ^paused\ at\ [0-9]+$ ]] || { log "refusing: pause not confirmed: $pause_reply"; exit 1; }
+  log "$pause_reply; operator must resume after clients and fixture are ready"
+else
+  python3 tools/pog.py --world "$world" resume >/dev/null 2>&1 || true
+fi
 log "world: $(python3 tools/pog.py --world "$world" rcon "/silent-command rcon.print('tick ' .. game.tick .. (game.tick_paused and ' (paused)' or ''))" 2>&1)"
 # The game's join and leave lines of the setup's team accounts (mt-red, ...) out of the harness chat (multiteam.lua)
 # A character of the player force with no player (mt277: one at red's spawn in mt275-final, left when a setup account

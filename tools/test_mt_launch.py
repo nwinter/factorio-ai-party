@@ -172,6 +172,7 @@ def dry_run():
         sh = os.path.join(ROOT, "tools", "mt", "start-mt.sh")
         out = subprocess.run(["bash", sh, "mt9", "30", "agent/mt/teams-four.tsv"], env=env, capture_output=True, text=True, cwd=ROOT)
         assert out.returncode == 0, out.stderr
+        assert "world unpaused" in out.stdout, out.stdout
         for team, names in (("red", "astra sol terra"), ("blue", "opus sonnet haiku"), ("green", "argon gemini gemini2"),
                             ("yellow", "grok muse grok2")):
             assert re.search(rf"2\. team {team} \(force {team}\): {names} -> /\S+/runs/mt9/{team}/<name>", out.stdout), out.stdout
@@ -180,6 +181,13 @@ def dry_run():
         out = subprocess.run(["bash", sh, "mt9", "30", "agent/mt/teams-four.tsv"], env=dict(env, POG_MT_TEAMS="blue,green"),
                              capture_output=True, text=True, cwd=ROOT)
         assert "team blue" in out.stdout and "team green" in out.stdout and "team red" not in out.stdout, out.stdout
+        out = subprocess.run(["bash", sh, "mt9", "30"], env=dict(env, POG_MT_PAUSED_START="1"),
+                             capture_output=True, text=True, cwd=ROOT)
+        assert out.returncode == 0 and "world paused after deploy; operator must resume" in out.stdout, out.stderr
+        assert "world unpaused" not in out.stdout, out.stdout
+        out = subprocess.run(["bash", sh, "mt9", "30"], env=dict(env, POG_MT_PAUSED_START="yes"),
+                             capture_output=True, text=True, cwd=ROOT)
+        assert out.returncode == 64 and "POG_MT_PAUSED_START must be 0 or 1" in out.stderr, out.stderr
         fresh = os.path.join(tmp, "baseline.zip")
         open(fresh, "wb").close()
         out = subprocess.run(["bash", sh, "mt9", "25"], env=dict(env, POG_MT_FRESH="1", POG_MT_FRESH_SAVE=fresh),
@@ -199,6 +207,44 @@ def dry_run():
     finally:
         shutil.rmtree(tmp)
     print("dry run: ok")
+
+
+def paused_start():
+    """Execute the real deployment/pause block against fake commands, without a server."""
+    text = open(os.path.join(ROOT, "tools", "mt", "start-mt.sh")).read()
+    block = text[text.index('deployed=$(POG_WORLD='):text.index('log "world:')]
+    with tempfile.TemporaryDirectory() as tmp:
+        os.mkdir(os.path.join(tmp, "bin"))
+        fh = os.path.join(tmp, "bin", "fh")
+        open(fh, "w").write('#!/bin/bash\necho deploy >> "$CALLS"\nprintf "{}"\n')
+        os.chmod(fh, 0o755)
+        stub = r'''
+set -euo pipefail
+world=imac2
+paused_start=$PAUSED_START
+log() { echo "$*"; }
+git() { echo test; }
+python3() {
+  if [ "$1" = tools/code_check.py ]; then cat >/dev/null; echo ok; return; fi
+  echo "$*" >> "$CALLS"
+  if [ "$4" = pause ]; then
+    [ "$PAUSE_RESULT" != failure ] || return 1
+    [ "$PAUSE_RESULT" != bad_ack ] || { echo 'Lua error'; return; }
+    echo 'paused at 123'
+  fi
+}
+'''
+        for mode, result, expected, ok in (("0", "ok", "resume", True), ("1", "ok", "pause", True),
+                                           ("1", "failure", "pause", False), ("1", "bad_ack", "pause", False)):
+            calls = os.path.join(tmp, "calls")
+            open(calls, "w").close()
+            env = testsafe.env(PAUSED_START=mode, PAUSE_RESULT=result, CALLS=calls)
+            out = subprocess.run(["bash", "-c", stub + block + '\necho clients-ready\n'], cwd=tmp,
+                                 env=env, capture_output=True, text=True)
+            assert (out.returncode == 0) == ok, (mode, result, out.stdout, out.stderr)
+            assert open(calls).read().splitlines() == ["deploy", f"tools/pog.py --world imac2 {expected}"]
+            assert ("clients-ready" in out.stdout) == ok, out.stdout
+    print("paused start: deploy precedes pause; failure stops clients; default resumes: ok")
 
 
 def team_files():
@@ -485,6 +531,7 @@ if __name__ == "__main__":
     claude_settings()
     grok_sandbox()
     dry_run()
+    paused_start()
     team_files()
     web_block()
     launch_tree()
