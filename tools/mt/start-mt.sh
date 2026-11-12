@@ -303,7 +303,7 @@ for t in $teams; do
     fi
   done < "$td/team.tsv"
   carry_args=(); [ -z "$resume" ] || carry_args=(--carry "$(previous_dir "$t")")
-  { python3 tools/quota_rest.py --at-limit "$td" "$td/team.tsv" "${carry_args[@]}" 2>&1 || true; } | while read -r line; do log "$t $line"; done
+  { python3 tools/quota_rest.py --at-limit "$td" "$td/team.tsv" ${carry_args[@]+"${carry_args[@]}"} 2>&1 || true; } | while read -r line; do log "$t $line"; done
 done
 [ ${#prompt_args[@]} -gt 0 ] && tools/clear-prompts.sh 90 "${prompt_args[@]}" | while read -r pane how; do log "pane $pane: $how"; done
 log "started: $(wc -l < "$op/panes.txt" | tr -d ' ')/$wanted agents${missing:+ (not started:$missing; $op/not-started.txt)}; deadline $(cat "$rundir"/*/*/deadline.txt 2>/dev/null | head -1)"

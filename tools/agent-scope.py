@@ -26,7 +26,7 @@ def profile(root,home,proxy=None,native=None):
     # project registries. Only executable installations and native authentication/
     # runtime roots are visible; narrower history denies below still apply.
     installs=[root,home/'.local/bin',home/'.local/lib',home/'.nvm',home/'.grok/bin',
-              home/'.gemini/antigravity-cli',home/'.cache/antigravity',
+              home/'.gemini/antigravity-cli',home/'.cache/antigravity',home/'Library/Keychains',
               home/'Dropbox (Personal)/misc/env/agents']
     allowed=' '.join(f'(subpath {quote(str(p.resolve()))})' for p in installs)
     clauses.append(f'(deny file-read-data file-write* (require-all (subpath {quote(str(home))}) (require-not (require-any {allowed}))))')
