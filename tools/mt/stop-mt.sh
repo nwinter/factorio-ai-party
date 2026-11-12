@@ -38,12 +38,6 @@ python3 tools/pog.py --world "$world" pause || true
 saved=1
 python3 tools/pog.py --world "$world" rcon "/silent-command game.server_save('$run')" >/dev/null 2>&1 || saved=0
 python3 tools/pog.py --world "$world" save >/dev/null 2>&1 || true
-python3 - "$rundir" <<'PY'
-import glob, gzip, os, shutil, sys
-for j in glob.glob(f"{sys.argv[1]}/*/*/journal.jsonl"):
-    with open(j, "rb") as src, gzip.open(j + ".gz", "wb") as g: shutil.copyfileobj(src, g)
-    os.remove(j)
-PY
 rm -rf "$rundir"/*/.keys
 # The agents' panes (as tools/shift-change.sh closes a shift's); a process left after that (mt-smoke1: a Grok shell's
 # fh call, its parent gone) is listed by PID for the operator, not killed here.
@@ -56,6 +50,14 @@ if [ -f "$op/panes.txt" ]; then
   left=$(pgrep -f "$rundir/" | tr '\n' ' ')
   [ -z "$left" ] || echo "still running with $rundir in their command line (PIDs): $left" >&2
 fi
+# Wait until native clients have closed before compressing their journals. A
+# final failed socket call can otherwise recreate journal.jsonl after gzip.
+python3 - "$rundir" <<'PY'
+import glob, gzip, os, shutil, sys
+for j in glob.glob(f"{sys.argv[1]}/*/*/journal.jsonl"):
+    with open(j, "rb") as src, gzip.open(j + ".gz", "ab") as g: shutil.copyfileobj(src, g)
+    os.remove(j)
+PY
 python3 tools/mt/imac_cam.py stop || true   # the camera client (start-mt.sh, POG_MT_CAM)
 if [ "${POG_STOP_WORLD:-0}" = 1 ]; then tools/mt/imac_mt.sh stop || true; fi
 [ $saved = 1 ] && echo "stopped $run; world $world saved as $run (and /server-save)" || { echo "stopped $run; world $world NOT saved as $run" >&2; exit 3; }
