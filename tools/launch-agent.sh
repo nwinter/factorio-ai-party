@@ -342,8 +342,14 @@ case $kind in
     [ "${POG_ISOLATED:-0}" != 1 ] || clean_args="$clean_args -c context.foreign_personal_rules=false -c context.foreign_personal_skills=false --disable-sandbox"
     [ -z "${POG_WEB_BLOCK:-}" ] || clean_args="$clean_args $(python3 "$root/tools/full_tools.py" muse-web-off)"
     pane=$(new_pane)
+    muse_client=muse
+    muse_prompt="\"\$(cat '$prompt')\""
+    if [ "${POG_ISOLATED:-0}" = 1 ]; then
+      muse_client="python3 '$root/tools/muse-local.py' '$prompt'"
+      muse_prompt=""
+    fi
     printf '%s\n' '#!/usr/bin/env bash' "cd '$dir'" "${proxy_env:+export $proxy_env}" \
-      "exec env $muse_env '$sleepcap_run' muse $ctx_args $clean_args --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace \"\$(cat '$prompt')\"" \
+      "exec env $muse_env '$sleepcap_run' $muse_client $ctx_args $clean_args --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace $muse_prompt" \
       > "$dir/.muse-run.sh"
     chmod +x "$dir/.muse-run.sh"
     run_prepared "$pane" "$dir/.muse-run.sh"

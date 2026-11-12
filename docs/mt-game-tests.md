@@ -31,3 +31,11 @@ During the run, verify visible building, movement, teammate messages, real
 contact, explicit diplomacy, and (if chosen under the rules) actual damage.
 Preserve per-agent action counts and the final save. Report missing milestones
 honestly; do not turn a stalled run into a manufactured success.
+
+Scoped Muse launches use native `muse exec`, which supports excluding foreign
+personal context, inside the same outer process scope as the other clients.
+The deadline-controlled wrapper stops on a native error (including provider
+limits); it never retries one in a loop. Native context and compaction last for
+each turn. If Muse finishes before the game deadline, a fresh conversation
+recovers from its own notes and keeps its chosen identity. No shared session
+index is read. Main-run interactive Muse launches are unchanged.
