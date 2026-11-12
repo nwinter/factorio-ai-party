@@ -61,7 +61,7 @@ for _,name in ipairs{'Freight Store','Freight Lab'} do
  assert(pl.apply_starter_pack(true))
  pl.schedule={current=1,records={{station='nauvis',wait_conditions={{type='time',compare_type='and',ticks=360000}}}}};pl.paused=false
  local hub=assert(pl.hub);hub.providing_to_other_platforms=false
- local sec=hub.get_logistic_sections().add_section('Fixture storage')
+ local sec=hub.get_logistic_sections().add_section('Fixture storage: '..name)
  for i,item in ipairs(a.manifest) do
   sec.set_slot(i,{value={type='item',name=item,quality='normal',comparator='='},min=0,max=1000,request_from='planet',import_from='nauvis'})
  end
