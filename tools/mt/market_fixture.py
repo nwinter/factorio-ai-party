@@ -20,6 +20,12 @@ from harness import Harness,lua_string,one_line
 
 TEAMS=('green','yellow')
 TARGETS={'electronic-circuit':1800,'iron-gear-wheel':1500,'automation-science-pack':600}
+CLAIM=Path('/Users/owner/code/pog-operator/server-claim.txt')
+
+def require_claim(owner, path=CLAIM):
+    assert owner in ('eng-mt296','eng-mt290'),'unknown server owner'
+    assert path.exists() and owner in path.read_text(),owner+' server claim required'
+
 PREPARE=r'''
 assert(script.active_mods.base=='2.1.24','wrong engine')
 assert(not storage.mt296_fixture,'fixture already exists')
@@ -212,10 +218,11 @@ def instructions(row,on):
 def main():
     ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('action',choices=['prepare','activate','brief'])
     ap.add_argument('run');ap.add_argument('--market',choices=['on','off'],default='on');ap.add_argument('--execute',action='store_true')
+    ap.add_argument('--claim-owner',choices=['eng-mt296','eng-mt290'],default='eng-mt296',
+                    help='existing server claimant; eng-mt290 owns approved public launches')
     a=ap.parse_args();assert re.fullmatch(r'[A-Za-z0-9_-]{1,16}',a.run)
     if not a.execute:print(f'Plan: {a.action} {a.run}, market {a.market}; use the claimed imac2 server only.');return
-    claim=Path('/Users/owner/code/pog-operator/server-claim.txt')
-    assert claim.exists() and 'eng-mt296' in claim.read_text(),'eng-mt296 server claim required'
+    require_claim(a.claim_owner)
     op=ROOT/'runs'/a.run/'op';op.mkdir(parents=True,exist_ok=True)
     out=op/('market-'+a.action+'.json');assert not out.exists(),'receipt exists; inspect rather than retry'
     c=Client();receipt={'action':a.action,'run':a.run,'phase':'preparing','wall_started':time.time()}

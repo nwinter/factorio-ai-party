@@ -14,7 +14,7 @@ import gzip
 import json
 from pathlib import Path
 import time
-from market_fixture import Client, ROOT, TARGETS
+from market_fixture import Client, ROOT, TARGETS, require_claim
 
 SNAPSHOT=r'''
 local h=storage.agent_harness;local fxt=assert(storage.mt296_fixture,'no prepared fixture')
@@ -188,9 +188,10 @@ def report(run):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('action',choices=['watch','report','compare']);p.add_argument('run')
-    p.add_argument('control',nargs='?');p.add_argument('--minutes',type=float,default=45);a=p.parse_args()
+    p.add_argument('control',nargs='?');p.add_argument('--minutes',type=float,default=45)
+    p.add_argument('--claim-owner',choices=['eng-mt296','eng-mt290'],default='eng-mt296');a=p.parse_args()
     if a.action=='watch':
-        claim=Path('/Users/owner/code/pog-operator/server-claim.txt');assert claim.exists() and 'eng-mt296' in claim.read_text()
+        require_claim(a.claim_owner)
         op=ROOT/'runs'/a.run/'op';op.mkdir(parents=True,exist_ok=True);c=Client();end=time.time()+a.minutes*60
         while time.time()<end:
             try:

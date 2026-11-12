@@ -5,11 +5,20 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from market_fixture import instructions, PREPARE, ACTIVATE, FINISH, RELEASE, TARGETS, lua_string
+from market_fixture import instructions, require_claim, PREPARE, ACTIVATE, FINISH, RELEASE, TARGETS, lua_string
 from market_metrics import summarize, response_in_window, minimum_fill_count, BASELINE, SNAPSHOT
 import json
 
 class Metrics(unittest.TestCase):
+    def test_fixture_uses_the_selected_existing_server_claim(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'claim.txt'
+            with self.assertRaises(AssertionError):require_claim('eng-mt290',path)
+            path.write_text('eng-mt290 owns imac2 for the approved market public run')
+            require_claim('eng-mt290',path)
+            with self.assertRaises(AssertionError):require_claim('eng-mt296',path)
+            with self.assertRaises(AssertionError):require_claim('unknown',path)
+
     def test_consumed_fill_bound_does_not_credit_every_small_delivery(self):
         self.assertEqual(minimum_fill_count([100]+[1]*20,100),1)
         self.assertEqual(minimum_fill_count([100]+[1]*20,119),20)
