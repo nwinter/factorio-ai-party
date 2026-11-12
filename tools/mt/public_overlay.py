@@ -20,7 +20,8 @@ sys.path.insert(0, str(HERE.parent / 'stream'))
 from harness import Harness
 import lookcam
 from public_race import (project, Race, Director, read_views, icons, speech, project_viewers, diplomacy,
-                         subjects, rows as list_rows, obj)
+                         subjects, broadcast, rows as list_rows, obj)
+from public_feed import project_feed
 
 CAMERA = 'pog-director2'
 # The one camera rectangle, in overlay pixels. The OBS scene item (public_stream.setup_obs) and the
@@ -268,8 +269,11 @@ class PublicOverlay:
                         row = dict(previous.get(team) or project(team, {}, self.rosters[team], now), stale=True)
                     rows.append(row)
                 talks = diplomacy(views.get('diplomacy'), rows)
+                # The operator's ordered feed, when this run's harness keeps one (views.json.feed): every team's
+                # say, tell, board note, diplomacy and identity announcement on one sequence.
+                lines = broadcast(project_feed(views['feed'], rows), rows, now) if isinstance(views.get('feed'), list) else None
                 with self.lock:
-                    self.state.update(self.race.update(rows, now, list_rows(views.get('contacts')), list_rows(views.get('pacts')), talks),
+                    self.state.update(self.race.update(rows, now, list_rows(views.get('contacts')), list_rows(views.get('pacts')), talks, lines),
                                       now=now, diplomacy=talks, **audience(audience_states, self.rosters, now))
                     if self.youtube:
                         self.state['stream'] = {'youtube_video_id': self.youtube}

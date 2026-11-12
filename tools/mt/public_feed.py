@@ -6,7 +6,7 @@ watch the broadcast: ordinary team speech stays team-private.
 """
 import re
 
-PRIVATE=re.compile(r'(?:https?://|(?:^|[\s(=:])(?:/|~/|[A-Za-z]:[\\/])|[\w.+-]+@[\w.-]+\.[a-z]{2,}|'
+PRIVATE=re.compile(r'(?:https?://|(?:^|[\s(=:])(?:~/|/(?=[\w.~])|[A-Za-z]:[\\/])|[\w.+-]+@[\w.-]+\.[a-z]{2,}|'
                    r'\b(?:Nick(?:Winter)?|Winter|token|password|secret|api[_ -]?key|operator|traceback|exception|multi-?teams?)\b|'
                    r'\b(?:tools|runs|vendor|agent|site|docs|mt|port21|eng)/|\bsk-[\w-]+)',re.I)
 AVATAR={'base':{'engineer','robot','biter','drone'},'helmet':{'none','hardhat','armor','power','crest','hood'},

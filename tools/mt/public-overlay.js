@@ -161,6 +161,10 @@ function tag(s, x, y, color, o = {}) {  // a skewed stencil label; returns its w
   text(s, x + 9, y + h - (h - (o.size || 12)) / 2 - 2, f, o.solid ? (o.ink || C.dark) : color, {ls});
   return w;
 }
+function padlock(x, y, color) {  // 10 x 12: this line stays inside its team
+  ctx.strokeStyle = color; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(x + 5, y + 4.5, 3, Math.PI, 0); ctx.lineTo(x + 8, y + 6); ctx.moveTo(x + 2, y + 4.5); ctx.lineTo(x + 2, y + 6); ctx.stroke();
+  box(x, y + 5.5, 10, 6.5, color);
+}
 function lamp(x, y, r, color, pulse) {
   if (pulse) { const k = .5 + .5 * Math.sin(T() * 4.2); ctx.beginPath(); ctx.arc(x, y, r + 2 + 3 * k, 0, 7); ctx.fillStyle = fade(color, .28 * (1 - k)); ctx.fill(); }
   ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = color; ctx.fill();
@@ -218,7 +222,12 @@ function statusOf(a, t) {
   if (a.activity === 'idle') return {word: 'STANDING BY' + (a.idle_s >= 60 ? ' ' + Math.floor(a.idle_s / 60) + 'M' : ''), color: C.dim};
   return {word: {resting: 'BETWEEN TURNS', offline: 'OFFLINE', dead: 'DOWN'}[a.activity], color: LAMP[a.activity]};
 }
+let clockTop = null;
 function ingest(s) {
+  // An older save was loaded (the game clock went back): news and speech from after it no longer happened.
+  const ticks = (s.teams || []).filter(t => !t.stale && t.tick != null).map(t => t.tick), top = ticks.length ? Math.max(...ticks) : null;
+  if (top != null && clockTop != null && top < clockTop - 1800) rewind();
+  if (top != null) clockTop = top;
   state = s; lost = false;
   if (s.layout && Array.isArray(s.layout.camera) && s.layout.camera.length === 4 && s.layout.camera.every(Number.isFinite)) R = rects(s.layout.camera);
   const agents = new Map(), teams = new Map();
@@ -231,6 +240,11 @@ function ingest(s) {
   feedSync(s); newsSync(s);
   document.getElementById('summary').textContent = order.map(t => `${t.team}${t.rank != null ? ': ' + t.gap : ''}${t.research && t.research.done_count != null ? ', ' + t.research.done_count + ' technologies' : ''}. ` +
     (t.agents || []).map(a => { const st = statusOf(a, t); return a.shown + (st.word ? ': ' + st.word.toLowerCase() : ''); }).join('. ')).join(' / ');
+}
+
+function rewind() {
+  feed.items.length = 0; feed.queue.length = 0; feed.known.clear(); feed.first = true;
+  news.cards.length = 0; news.seen.clear(); news.first = true; news.banners.length = 0; news.banner = null; said.clear();
 }
 
 // ---- the standings strip: one card a team, rosters inside ------------------------------------------------------
@@ -284,24 +298,28 @@ function drawCard(t, x, y, w, h) {
     text(s.u, right, base, uf, C.muted, {align: 'right', ls: 1}); text(s.v, right - width(s.u, uf, 1) - 5, base - jolt, vf, C.ink, {align: 'right'});
   };
   const sw = s => width(s.v, vf) + 5 + width(s.u, uf, 1);
+  // the standing comes first (a delayed feed, the leader, the gap); then as many numbers as fit, the ranked one first
+  const flag = t.stale ? 'FEED DELAYED' : t.leader && t.rank != null ? (t.gap === 'Joint lead' ? 'JOINT LEAD' : 'LEADER') : '';
+  const gw = !flag ? gapWord(t) : '', flagW = flag ? width(flag, font(13, 700), 1) + 22 : gw ? width(gw, font(16, 700), .5) : 0;
   let gx = ir;
   if (stacked) { let sx = cx; for (const s of stats) { if (sx + sw(s) > ir) break; stat(s, sx + sw(s), y + 84); sx += sw(s) + 14; } }
   else {
-    for (let i = stats.length - 1; i >= 0; i--) { if (gx - sw(stats[i]) < nx + (i ? 60 : 0)) break; stat(stats[i], gx, y + 44); gx -= sw(stats[i]) + 16; }
-    if (w >= 560 && t.science && (t.science.series || []).length > 1 && gx - nx > 200) { spark(t.science.series, gx - 96, y + 18, 96, 24, col); gx -= 112; }
+    const keep = []; let used = 0;
+    for (const s of stats) { const need = sw(s) + 16; if (nx + (t.stale ? flagW + 14 : 0) + used + need > ir) break; keep.push(s); used += need; }
+    for (let i = keep.length - 1; i >= 0; i--) { stat(keep[i], gx, y + 44); gx -= sw(keep[i]) + 16; }
+    if (w >= 560 && t.science && (t.science.series || []).length > 1 && gx - nx - flagW > 130) { spark(t.science.series, gx - 96, y + 18, 96, 24, col); gx -= 112; }
   }
-  if (t.stale) hazardTag('FEED DELAYED', nx, y + 22, gx - nx);
-  else if (t.leader && t.rank != null) hazardTag(t.gap === 'Joint lead' ? 'JOINT LEAD' : 'LEADER', nx, y + 22, gx - nx);
-  else { const gw = gapWord(t); if (gw && gx - nx > width(gw, font(16, 700), .5) + 4) text(gw, nx, y + 42, font(16, 700), bright(col), {ls: .5}); }
+  if (flag) hazardTag(flag, nx, y + 22, gx - nx);
+  else if (gw && gx - nx > flagW + 4) text(gw, nx, y + 42, font(16, 700), bright(col), {ls: .5});
   // research, or the opening foundations, and the factory's size
   const top = stacked ? y + 104 : y + 58, r = t.research || {}; let br = ir;
   const counts = t.entities ? FACTORY.map(names => [names[0], names.reduce((sum, key) => sum + (t.entities[key] || 0), 0)]).filter(c => c[1] > 0) : [];
-  if (counts.length && !t.startup && !stacked && (w >= 560 || !r.current)) {
+  if (counts.length && (!t.startup || r.current) && !stacked && (w >= 560 || !r.current)) {
     const n = Math.min(counts.length, 4), fw = n * 56; let fx = r.current ? br - fw : cx;
     for (const [item, count] of counts.slice(0, n)) { icon('item', item, fx, top + 3, 28); text(String(count), fx + 31, top + 25, font(19, 700), C.text); fx += 56; }
     if (r.current) br -= fw + 12;
   }
-  if (t.startup && t.entities) {
+  if (t.startup && t.entities && !r.current) {
     let fx = cx; if (!stacked) { text('OPENING', cx, top + 23, font(12, 700), C.muted, {ls: 1}); fx += 74; }
     for (const item of STARTUP) { if (fx + 34 > br) break; const have = (t.entities[item] || 0) > 0; ctx.save(); if (!have) ctx.globalAlpha *= .22; slot('item', item, fx, top, 34); pop(); if (have) box(fx, top + 34, 34, 3, col); fx += stacked ? 36 : 40; }
   } else if (r.current) {
@@ -352,12 +370,13 @@ function feedRows(s) {
   const rowsOut = [];
   for (const m of s.feed || []) {
     const t = model.teams.get(m.team), a = t && who(m.team, m.name);
-    if (!a || !['talk', 'tell', 'diplomacy'].includes(m.kind) || typeof m.text !== 'string' || !m.text) continue;
+    if (!a || !['talk', 'tell', 'diplomacy', 'board', 'identity'].includes(m.kind) || typeof m.text !== 'string') continue;
+    if (m.kind === 'identity' ? typeof m.title !== 'string' || !m.title : !m.text) continue;
     // Drawn only under its own team; a tell must name teammates, diplomacy another launched team.
     const names = new Set(t.agents.map(x => x.name));
     if (m.kind === 'tell' && !(Array.isArray(m.to) && m.to.length && m.to.every(n => n === 'team' || names.has(n)))) continue;
     if (m.kind === 'diplomacy' && (!model.teams.has(m.to_team) || m.to_team === m.team)) continue;
-    rowsOut.push({id: 'a:' + m.id, kind: m.kind, team: m.team, name: m.name, to: m.to || [], to_team: m.to_team, text: m.text, tick: m.tick, at: m.at || 0, reply: !!m.reply});
+    rowsOut.push({id: 'a:' + m.id, kind: m.kind, team: m.team, name: m.name, to: m.to || [], to_team: m.to_team, text: m.text, title: m.title, tick: m.tick, at: m.at || 0, reply: !!m.reply});
   }
   // The audience lane stays its own kind even if a malformed producer puts team rows here.
   for (const m of s.viewers || []) {
@@ -387,8 +406,8 @@ function feedPump() {
   if (feed.queue.length && (t >= feed.next || settled)) {
     const r = feed.queue.shift(); r.t0 = settled ? -1e9 : t; feed.items.push(r);
     if (!settled) start('in.' + r.id, 0, 1, .42);  // its slot opens and pushes the older lines up
-    if (r.kind !== 'viewer') said.set(r.team + '/' + r.name, t);
-    feed.next = t + (feed.queue.length > 5 ? .45 : feed.queue.length > 1 ? 1.3 : clamp(r.text.length / 30, 2.2, 6));
+    if (speaks(r) && r.kind !== 'viewer') said.set(r.team + '/' + r.name, t);
+    feed.next = t + (feed.queue.length > 5 ? .45 : feed.queue.length > 1 ? 1.3 : speaks(r) ? clamp(r.text.length / 30, 2.2, 6) : 1.6);
   }
   if (feed.queue.length) busy(feed.next + .05);
   feed.items = feed.items.filter(it => !(it.leaving && tween('in.' + it.id, 0, .4) < .01));
@@ -407,12 +426,15 @@ function receipt(it) {
   return out;
 }
 const BIG = font(23, 600), SMALL = font(18, 600);
-function laneOf(it) {
-  if (it.kind === 'diplomacy') return 'DIPLOMACY → ' + String(it.to_team).toUpperCase();
-  if (it.kind === 'tell') { const names = it.to.map(n => n === 'team' ? 'TEAM' : ((who(it.team, n) || {}).shown || cap(n)).toUpperCase()); return 'TEAM RADIO → ' + names.join(', '); }
-  return it.reply ? 'ANSWERING A VIEWER' : 'TEAM RADIO';
+function laneOf(it) {  // who a team line is for; every team line but an answer to a viewer wears the padlock
+  if (it.kind === 'tell') return 'TO ' + it.to.map(n => n === 'team' ? 'TEAM' : ((who(it.team, n) || {}).shown || cap(n)).toUpperCase()).join(', ');
+  return it.reply ? 'ANSWERING A VIEWER' : 'TO TEAM';
 }
+const speaks = it => it.kind !== 'board' && it.kind !== 'identity';  // notes stay compact; speech opens up when newest
+const NOTE = font(16, 600), PERSONA = font(18, 600, 'ui', true);
 function measure(it, w, big) {
+  if (it.kind === 'board') return 30 + wrap(it.text, NOTE, w - 62, 2).length * 21;
+  if (it.kind === 'identity') return 66 + (it.text ? wrap('“' + it.text + '”', PERSONA, w - 96, 2).length * 23 + 4 : 0);
   if (it.kind === 'viewer') {
     const tw = w - 56 - 28, n = wrap(it.text, big ? font(21, 600) : SMALL, tw, big ? 6 : 2).length;
     return 34 + n * (big ? 28 : 24) + (receipt(it) ? 22 : 0) + 10;
@@ -427,7 +449,28 @@ function typed(lines, it) {  // the newest line is typed out as it arrives
   for (const l of lines) { if (left <= 0) break; out.push(l.slice(0, Math.ceil(left))); left -= l.length; }
   return out;
 }
+function drawNote(it, x, y, w, h) {
+  const a = who(it.team, it.name), col = teamColor(it.team);
+  if (it.kind === 'board') {  // the team board: a plan, note or step, pinned under its author
+    plate(x + 22, y, w - 22, h, {cut: 8, corners: 'tr,bl', fill: '#262524', fill2: '#201f1e', bevel: false}); box(x + 22, y, 3, h - 8, fade(col, .8));
+    portrait(a, x + 34, y + 8, 24, col);
+    const nw = text(fit(a.shown, font(15, 700), w * .4), x + 66, y + 22, font(15, 700), bright(col));
+    text('TEAM BOARD', x + 74 + nw, y + 21, font(11, 700), C.dim, {ls: 1}); text(clockOf(it.tick), x + w - 12, y + 21, font(12, 600), C.dim, {align: 'right'});
+    wrap(it.text, NOTE, w - 62, 2).forEach((l, i) => text(l, x + 34, y + 45 + i * 21, NOTE, C.muted));
+    return;
+  }
+  // an agent has chosen who it is: name and persona, announced once
+  plate(x, y, w, h, {cut: 12, corners: 'tr,bl', fill: mix('#35322c', col, .1), fill2: '#28261f'});
+  ctx.save(); cutPath(x, y, w, h, 12, 'tr,bl'); ctx.clip(); hazard(x, y, w, 5, .9); pop(); box(x, y + 5, 6, h - 17, col);
+  portrait(a, x + 18, y + 16, 48, col);
+  text('NEW IDENTITY', x + 78, y + 28, font(12, 700), C.gold, {ls: 1.5});
+  const tw2 = width('NEW IDENTITY', font(12, 700), 1.5);
+  text(it.team.toUpperCase() + ' · ' + (a.model || cap(it.name)).toUpperCase(), x + 88 + tw2, y + 28, font(11, 700), C.dim, {ls: 1});
+  text(fit(it.title.toUpperCase(), font(30, 800, 'disp'), w - 96, .5), x + 78, y + 58, font(30, 800, 'disp'), C.ink, {ls: .5});
+  if (it.text) wrap('“' + it.text + '”', PERSONA, w - 96, 2).forEach((l, i) => text(l, x + 78, y + 82 + i * 23, PERSONA, C.text));
+}
 function drawBubble(it, x, y, w, h, e, life) {
+  if (!speaks(it)) { ctx.save(); ctx.globalAlpha *= clamp(life * 1.4 - .2, 0, 1); drawNote(it, x, y, w, h); pop(); return; }
   ctx.save(); ctx.globalAlpha *= clamp(life * 1.4 - .2, 0, 1);
   const big = e > .5, body = ctx.globalAlpha * clamp(Math.abs(e - .5) * 4, 0, 1);  // the two layouts cross-fade inside one plate
   if (it.kind === 'viewer') {
@@ -453,7 +496,7 @@ function drawBubble(it, x, y, w, h, e, life) {
     const fw2 = text(it.team.toUpperCase(), ax, y + 17, tf, bright(col), {ls: 1}); text('→', ax + fw2 + 7, y + 17, tf, C.gold); text(String(it.to_team).toUpperCase(), ax + fw2 + 26, y + 17, tf, bright(other), {ls: 1});
     top = y + 26;
   }
-  const stamp = clockOf(it.tick), lane = dip ? '' : laneOf(it), quiet = it.kind === 'tell';
+  const stamp = clockOf(it.tick), lane = dip ? '' : laneOf(it);
   ctx.globalAlpha = body;
   if (big) {
     portrait(a, x + 18, top + 12, 72, col);
@@ -462,13 +505,13 @@ function drawBubble(it, x, y, w, h, e, life) {
     text(fit(a.shown.toUpperCase(), nf, room - ox - width(stamp, font(14, 600)) - 10, .5), nx + ox, top + 40, nf, C.ink, {ls: .5});
     text(stamp, x + w - 14, top + 38, font(14, 600), C.dim, {align: 'right'});
     const tw2 = tag(it.team.toUpperCase(), nx, top + 50, col, {solid: true});
-    if (lane) text(fit(lane.replace('TEAM RADIO', quiet ? 'PRIVATE' : 'TEAM RADIO'), font(13, 700), room - tw2 - 10, .8), nx + tw2 + 8, top + 65, font(13, 700), it.reply ? C.cyan : C.muted, {ls: .8});
+    if (lane) { const lx = nx + tw2 + 10, locked = !it.reply; if (locked) padlock(lx, top + 53, C.muted); text(fit(lane, font(13, 700), room - tw2 - 26, .8), lx + (locked ? 16 : 0), top + 65, font(13, 700), it.reply ? C.cyan : C.muted, {ls: .8}); }
     typed(wrap(it.text, BIG, w - 34, 7), it).forEach((l, i) => text(l, x + 20, top + 96 + 23 + i * 30, BIG, C.ink));
   } else {
     portrait(a, x + 16, top + 10, 48, col);
     const nx = x + 76, room = x + w - 14 - nx, nf = font(17, 700), sw = width(stamp, font(13, 600));
     const nw = text(fit(a.shown, nf, room * .55), nx, top + 25, nf, bright(col));
-    if (lane) text(fit(lane.replace('TEAM RADIO → ', '→ ').replace('TEAM RADIO', ''), font(12, 700), room - nw - sw - 24, .8), nx + nw + 12, top + 24, font(12, 700), it.reply ? C.cyan : C.muted, {ls: .8});
+    if (lane) { const lx = nx + nw + 12, locked = !it.reply; if (locked) padlock(lx, top + 13, C.dim); text(fit(lane, font(12, 700), room - nw - sw - 40, .8), lx + (locked ? 15 : 0), top + 24, font(12, 700), it.reply ? C.cyan : C.muted, {ls: .8}); }
     text(stamp, x + w - 14, top + 24, font(13, 600), C.dim, {align: 'right'});
     wrap(it.text, SMALL, w - 90, dip ? 3 : 2).forEach((l, i) => text(l, nx, top + 49 + i * 24, SMALL, C.text));
   }
@@ -478,12 +521,14 @@ function drawRail() {
   const r = R.rail; plate(r.x, r.y, r.w, r.h, {cut: 14, corners: 'tr,bl', fill: '#242322', fill2: '#1c1b1a'});
   hazard(r.x + 1, r.y + 1, 10, 42); box(r.x + 11, r.y + 1, r.w - 12 - 14, 42, '#2f2d2c'); box(r.x + 1, r.y + 43, r.w - 2, 2, 'rgba(0,0,0,.6)');
   text('TEAM RADIO', r.x + 24, r.y + 33, font(30, 800, 'disp'), C.ink, {ls: 1.5});
-  text('PRIVATE TALK · DIPLOMACY · VIEWERS', r.x + r.w - 20, r.y + 28, font(11, 700), C.muted, {align: 'right', ls: 1});
+  const lf = font(11, 700), legendText = 'TEAM ONLY · DIPLOMACY · VIEWERS', lw = width(legendText, lf, 1);
+  padlock(r.x + r.w - 20 - lw - 16, r.y + 17, C.muted); text(legendText, r.x + r.w - 20, r.y + 28, lf, C.muted, {align: 'right', ls: 1});
   feedPump();
-  const x = r.x + 10, w = r.w - 20, top = r.y + 50, bottom = r.y + r.h - 10, gap = 8, items = feed.items, last = items.length - 1;
+  const x = r.x + 10, w = r.w - 20, top = r.y + 50, bottom = r.y + r.h - 10, gap = 8, items = feed.items;
+  let last = items.length - 1; while (last >= 0 && !speaks(items[last])) last--;
   ctx.save(); ctx.beginPath(); ctx.rect(r.x + 2, top, r.w - 4, bottom - top + 6); ctx.clip();
   let y = bottom; const shown = [];
-  for (let i = last; i >= 0; i--) {
+  for (let i = items.length - 1; i >= 0; i--) {
     const it = items[i], e = tween('e.' + it.id, i === last ? 1 : 0, .38), life2 = tween('in.' + it.id, it.leaving ? 0 : 1, .42);
     const hh = lerp(measure(it, w, false), measure(it, w, true), e);
     y -= (hh + gap) * life2;
@@ -548,7 +593,7 @@ function drawBand() {
     const key = 'news.' + e.id;
     if (!tweens.get(key)) { if (e.born > 0) { start(key, x1 + 30, px, .85); news.last = T(); } else tween(key, px, .85); }
     const before = tweens.get(key).to, cxp = tween(key, px, .85); if (before !== px) news.last = T();
-    drawNews(e, cxp, b.y + 11, widths[i], b.h - 22); px += widths[i] + 10;
+    if (cxp + widths[i] > x0 && cxp < x1) drawNews(e, cxp, b.y + 11, widths[i], b.h - 22); px += widths[i] + 10;
   });
   pop();
   if (total > bw) { const g2 = ctx.createLinearGradient(x0, 0, x0 + 70, 0); g2.addColorStop(0, '#191817'); g2.addColorStop(1, 'rgba(25,24,23,0)'); ctx.fillStyle = g2; ctx.fillRect(x0, b.y + 2, 70, b.h - 4); }
@@ -617,7 +662,7 @@ function lowerThird(c, cam, team, col, slide) {
   text(title, x + 26, yy + 50, nf, C.ink, {ls: 1});
   counts.forEach(([item, n], i) => { icon('item', item, x + 26 + i * 78, yy + 60, 32); text(String(n), x + 62 + i * 78, yy + 85, font(22, 700), C.text); });
 }
-function lastLine(team, name) { for (let i = feed.items.length - 1; i >= 0; i--) { const it = feed.items[i]; if (it.team === team && it.name === name) return it; } return null; }
+function lastLine(team, name) { for (let i = feed.items.length - 1; i >= 0; i--) { const it = feed.items[i]; if (it.team === team && it.name === name && speaks(it)) return it; } return null; }
 function banner(c) {
   const t = T(); if (!news.banner && news.banners.length) { news.banner = Object.assign({t0: t}, news.banners.shift()); }
   const b = news.banner; if (!b) return; const age = t - b.t0, hold = news.banners.length ? 4.5 : 7;

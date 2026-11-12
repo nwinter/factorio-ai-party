@@ -238,6 +238,13 @@ class ProjectionTest(unittest.TestCase):
             source=(ROOT/'tools/mt'/name).read_text()
             self.assertNotIn('innerHTML',source);self.assertNotIn('https://',source);self.assertNotIn('http://',source)
             self.assertNotIn('eval(',source);self.assertNotIn('document.write',source)
+            # OBS's browser source can be as old as Chrome 103: nothing newer than that in the page.
+            for newer in ('structuredClone','.toSorted(','.toReversed(','.findLast(','.with(','Object.groupBy','Array.fromAsync',
+                          '.roundRect(',':has(','color-mix','@container','.at(-','??=','||=','&&=','.replaceAll('):
+                self.assertNotIn(newer,source,newer)
+        js=(ROOT/'tools/mt/public-overlay.js').read_text()
+        self.assertIn("'letterSpacing' in ctx",js)       # Chrome 99+: used only where present
+        self.assertIn('Graphics copyright Wube Software',js);self.assertIn('CREDIT_EVERY = 3600',js)
 
 
 class IdentityTest(unittest.TestCase):
@@ -430,6 +437,61 @@ class FeedTest(unittest.TestCase):
         r.update([green,yellow],100)
         older=self.team('green',('gemini',),[],105,3000)
         self.assertEqual([m['text'] for m in r.update([older,yellow],105)['feed']],['Yellow line'])
+
+
+class OrderedFeedTest(unittest.TestCase):
+    """The operator's ordered feed (mt_feed, via views.json.feed): one sequence across teams, notes and announcements."""
+    def setUp(self):
+        mk=lambda team,names:race.project(team,{'now':100,'tick':6000,'research':{'done_count':0},'space':{'rockets':0},
+            'chat':[{'seq':9,'tick':5900,'from':names[0],'text':'We split it: I feed the labs.','lane':'talk','reply_to':3,'t':99}]},
+            [{'name':n,'model':'Model '+team} for n in names],100)
+        self.teams=[mk('green',('gemini','gemini2')),mk('yellow',('grok','grok2'))]
+        self.line={'seq':2,'tick':5700,'team':'green','agent':'gemini','kind':'tell','scope':'team-private','text':'Build the smelter while I mine.',
+                   'to':['gemini2'],'identity':{'display_name':'Forge','persona':'A patient builder.','color':'#3CB44B','glyph':'⚙'},'internal':'PRIVATE'}
+
+    def lines(self,raw):
+        return race.broadcast(overlay.project_feed(raw,self.teams),self.teams,100)
+
+    def test_every_kind_in_sequence_with_its_own_shape(self):
+        raw=[dict(self.line,seq=5,kind='identity',scope='public',to={},text='Forge: A patient builder.'),
+             self.line,dict(self.line,seq=1,kind='say',to={},text='We split it: I feed the labs.'),
+             dict(self.line,seq=3,kind='board',to=[],text='#4 posted: Iron smelting — two drills a furnace'),
+             dict(self.line,seq=4,kind='diplomacy',scope='diplomacy',to=['yellow'],text='Cease-fire, equal shares?'),self.line]
+        out=self.lines(raw)
+        self.assertEqual([(m['id'],m['kind']) for m in out],[('f:1','talk'),('f:2','tell'),('f:3','board'),('f:4','diplomacy'),('f:5','identity')])
+        self.assertEqual(out[1]['to'],['gemini2']);self.assertEqual(out[3]['to_team'],'yellow')
+        self.assertEqual(out[2]['text'],'posted: Iron smelting — two drills a furnace')
+        self.assertEqual((out[4]['title'],out[4]['text']),('Forge','A patient builder.'))
+        self.assertEqual(out[1]['at'],95.0)                       # 300 ticks before the newest team clock
+        self.assertEqual(set(out[0]),{'id','team','name','to','kind','text','tick','at','reply'})
+        self.assertNotIn('PRIVATE',json.dumps(out))
+
+    def test_scope_roster_and_text_rules(self):
+        bad=[dict(self.line,to=['grok']),dict(self.line,scope='public'),dict(self.line,agent='grok'),dict(self.line,team='hidden'),
+             dict(self.line,operator=True),dict(self.line,source='site'),dict(self.line,kind='confess'),dict(self.line,seq=True),
+             dict(self.line,tick=-1),dict(self.line,kind='diplomacy',scope='diplomacy',to=['green']),
+             dict(self.line,kind='identity',scope='public',to=[],identity={'display_name':'/Users/private'}),
+             dict(self.line,kind='identity',scope='public',to=[],identity={'display_name':'Moderator'})]
+        bad+=[dict(self.line,text=t) for t in ('/Users/private/file','the operator fixed it','multi-team','ask Nick','password=abc','https://private.invalid')]
+        self.assertEqual(self.lines(bad),[])
+        ok=self.lines([dict(self.line,text='Shares green 0.52 / yellow 0.48, 50 iron/hr')])
+        self.assertEqual([m['text'] for m in ok],['Shares green 0.52 / yellow 0.48, 50 iron/hr'])     # an ordinary slash is speech
+        long=self.lines([dict(self.line,text='word '*900)])[0]['text']
+        self.assertLessEqual(len(long),300);self.assertTrue(long.endswith('…'))
+
+    def test_ordered_feed_replaces_the_chat_windows_and_keeps_viewer_answers(self):
+        r=race.Race()
+        raw=[dict(self.line,seq=1,kind='say',to={},text='We split it: I feed the labs.'),dict(self.line,seq=2,team='yellow',agent='grok',to=['grok2'])]
+        feed=r.update(self.teams,100,lines=self.lines(raw))['feed']
+        self.assertEqual([(m['id'],m['team'],m['reply']) for m in feed],[('f:1','green',True),('f:2','yellow',False)])   # no chat-window copies
+        # A poll without the operator feed (a stale views file) adds nothing twice; the feed resumes when it returns.
+        self.assertEqual(len(r.update(self.teams,105)['feed']),2)
+        self.assertEqual(len(r.update(self.teams,110,lines=self.lines(raw+[dict(self.line,seq=3)]))['feed']),3)
+        # A line whose sender is not on the projected roster is not adopted.
+        ghost={'id':'f:9','team':'green','name':'ghost','to':[],'kind':'talk','text':'GHOST','tick':5990,'at':99,'reply':False}
+        self.assertNotIn('GHOST',json.dumps(r.update(self.teams,115,lines=[ghost])['feed']))
+        # Without an operator feed at all, speech still comes from each team's own chat window.
+        self.assertEqual([m['id'] for m in race.Race().update(self.teams,100)['feed']],['green:9','yellow:9'])
 
 
 class DirectorTest(unittest.TestCase):

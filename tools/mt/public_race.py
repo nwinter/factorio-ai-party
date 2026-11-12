@@ -179,8 +179,8 @@ def identity(agent, live, private_names=()):
             'glyph': glyph(live.get('glyph')) or glyph(agent.get('glyph')) or (None if icon else glyph(agent.get('icon'))),
             'icon': icon,
             # The agent's own words first (a persona, else its motto), then a roster seed.
-            'persona': (speech(live.get('persona'), private_names, 120) or speech(live.get('motto'), private_names, 80)
-                        or speech(agent.get('persona'), private_names, 120)),
+            'persona': (speech(live.get('persona'), private_names, 160) or speech(live.get('motto'), private_names, 80)
+                        or speech(agent.get('persona'), private_names, 160)),
             'pronouns': pronouns if PRONOUNS.fullmatch(pronouns) else None,
             'avatar': avatar_spec(live.get('avatar')) or avatar_spec(agent.get('avatar'))}
 
@@ -260,6 +260,41 @@ def diplomacy(messages, teams):
             out.append({'from_team':sender, 'to_team':recipient, 'agent':agent, 'text':body,
                         'seq':m['seq'], 'tick':tick, 'time':clock(tick)})
     return out[-12:]
+
+
+KINDS = {'say': 'talk', 'tell': 'tell', 'diplomacy': 'diplomacy', 'board': 'board', 'identity': 'identity'}
+
+
+def broadcast(lines, teams, now):
+    """Feed rows from the operator's ordered feed, after public_feed.project_feed has checked each line's
+    team, roster sender, scope and recipients. One global sequence orders every team's speech; a tell
+    names teammates, diplomacy one other team, a board note and an identity announcement nobody.
+    The text passes this module's speech() as well; an identity line is rebuilt from label() and speech()."""
+    latest = max((t.get('tick') or 0 for t in teams), default=0)
+    known = {t['team'] for t in teams}
+    out = []
+    for m in map(obj, rows(lines)):
+        kind, seq, tick, team, to = KINDS.get(m.get('kind')), m.get('seq'), number(m.get('tick')), m.get('team'), rows(m.get('to'))
+        text = speech(m.get('text'), ('Nick', 'Winter'))
+        if not kind or type(seq) is not int or tick is None or team not in known or not isinstance(m.get('agent'), str) or not text:
+            continue
+        row = {'id': f'f:{seq}', 'team': team, 'name': m['agent'], 'to': [n for n in to if isinstance(n, str)] if kind == 'tell' else [],
+               'kind': kind, 'text': text, 'tick': tick, 'at': now - max(0, latest - tick) / 60, 'reply': False}
+        if kind == 'diplomacy':
+            if len(to) != 1 or to[0] not in known or to[0] == team:
+                continue
+            row['to_team'] = to[0]
+        elif kind == 'identity':
+            who = obj(m.get('identity'))
+            name, persona = label(who.get('display_name'), ('Nick', 'Winter')), speech(who.get('persona'), ('Nick', 'Winter'), 160)
+            # An announcement needs something chosen: a name that is not the roster default, or a persona.
+            if not name or (name.lower() == m['agent'].lower() and not persona):
+                continue
+            row.update(title=name, text=persona)
+        elif kind == 'board':
+            row['text'] = re.sub(r'^#\d+\s+', '', text)
+        out.append(row)
+    return out
 
 
 def project_viewers(messages, now, teams=()):
@@ -452,6 +487,7 @@ class Race:
         self.previous, self.events, self.seen = {}, deque(maxlen=80), deque(maxlen=400)
         self.built = {}
         self.said = {}  # feed id -> line, in arrival order: speech outlives the team services' short chat windows
+        self.ordered = False  # the operator's ordered feed has been seen: it is the only source from then on
 
     def add(self, team, kind, text, tick, now, icon=None, icon_kind='item', observed=False, other=None):
         key = (team, kind, text, tick)
@@ -469,7 +505,10 @@ class Race:
             while len(self.said) > 240:
                 self.said.pop(next(iter(self.said)))
 
-    def update(self, teams, now, contacts=(), pacts=(), diplomacy=()):
+    def update(self, teams, now, contacts=(), pacts=(), diplomacy=(), lines=None):
+        """lines: broadcast() rows from the operator's ordered feed, or None when this run has none
+        (then speech comes from each team's own chat window and the diplomacy lane)."""
+        self.ordered = self.ordered or lines is not None
         for r in teams:
             if r['stale']:
                 continue
@@ -490,7 +529,7 @@ class Race:
                     self.add(t, e['kind'], e['text'], e['tick'], now - (tick - e['tick']) / 60, e['icon'], e['icon_kind'], e['observed'])
             for m in r['chat']:
                 # Scoped team lines only; each carries its own team tag and was rebuilt by team_chat().
-                if m.get('team') == t and m.get('kind') in ('talk', 'tell'):
+                if m.get('team') == t and m.get('kind') in ('talk', 'tell') and not self.ordered:
                     self.say({k: m.get(k) for k in ('id', 'team', 'name', 'to', 'kind', 'text', 'tick', 'at', 'reply')})
             if old and tick is not None:
                 before, after = old['research']['done_count'], r['research']['done_count']
@@ -540,7 +579,12 @@ class Race:
                 for r in teams:
                     if r['team'] in (a, b):
                         r['pacts'].append({'id':ident, 'with': b if r['team'] == a else a})
-        for m in diplomacy:
+        # A say the stream service linked to a viewer's line keeps that mark in the ordered feed.
+        answers = {(m['team'], m['name'], m['text'][:60]) for r in teams for m in r['chat'] if m.get('reply')}
+        for m in lines or ():
+            if m['team'] in known and any(a['name'] == m['name'] for r in teams if r['team'] == m['team'] for a in r['agents']):
+                self.say(dict(m, reply=m['kind'] == 'talk' and (m['team'], m['name'], m['text'][:60]) in answers))
+        for m in () if self.ordered else diplomacy:
             # Already rebuilt by diplomacy(): explicit cross-team messages, one pair-local sequence each.
             pair = '-'.join(sorted((m['from_team'], m['to_team'])))
             self.say({'id': f"dip:{pair}:{m['seq']}", 'team': m['from_team'], 'name': m['agent'], 'to': [],

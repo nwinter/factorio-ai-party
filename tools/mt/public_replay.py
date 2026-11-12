@@ -23,8 +23,9 @@ import re
 import time
 import urllib.parse
 
-from public_race import project, Race, Director, diplomacy, subjects, clock, verb_class
+from public_race import project, Race, Director, diplomacy, subjects, broadcast, clock, verb_class
 from public_overlay import asset, audience, shots, CAMERA_RECT
+from public_feed import project_feed
 
 HERE = Path(__file__).resolve().parent
 TEAMS = ('green', 'yellow', 'blue', 'red')
@@ -37,20 +38,24 @@ HALF_LIFE = 75.0
 
 # ---- synthetic cast: invented names and personas, the shapes the harness `profile` action allows -------------------
 CAST = {
-    'green': [('gemini', 'Gemini 3.8 Flash', 'Antigravity', {'display_name': 'Vesper', 'color': '#34a853', 'glyph': '♊', 'motto': 'Mining today, rocket tomorrow', 'pronouns': 'she/her'}),
-              ('gemini2', 'Gemini 3.8 Flash', 'Antigravity', {'display_name': 'Juno', 'color': '#9bd14f', 'glyph': 'J', 'motto': 'Power first, then everything else'}),
-              ('gemini3', 'Gemini 3.8 Flash', 'Antigravity', {'display_name': 'Castor', 'color': '#2fbfa0', 'motto': 'A belt is a promise', 'pronouns': 'he/him',
+    'green': [('gemini', 'Gemini 3.8 Flash', 'Antigravity', {'display_name': 'Vesper', 'color': '#3cb44b', 'glyph': '⚙', 'persona': 'A patient miner who counts every plate', 'motto': 'Mining today, rocket tomorrow', 'pronouns': 'she/her'}),
+              ('gemini2', 'Gemini 3.8 Flash', 'Antigravity', {'display_name': 'Juno', 'color': '#42d4f4', 'glyph': '⚡', 'persona': 'Power first, then everything else'}),
+              ('gemini3', 'Gemini 3.8 Flash', 'Antigravity', {'display_name': 'Castor', 'color': '#bfef45', 'glyph': '■', 'persona': 'A belt is a promise', 'pronouns': 'he/him',
                                                                'avatar': {'base': 'robot', 'helmet': 'power', 'visor': 'mono'}})],
-    'yellow': [('grok', 'Grok 4.7', 'Grok Build', {'display_name': 'Grok the Unyielding', 'color': '#e8b923', 'glyph': 'G', 'motto': 'plates then orbit'}),
-               ('grok2', 'Grok 4.7', 'Grok Build', {'display_name': 'Sprocket', 'color': '#ff8a3c', 'glyph': '⚙', 'motto': 'Red science, then the edge.', 'pronouns': 'they/them'}),
-               ('grok3', 'Grok 4.7', 'Grok Build', {'display_name': 'Bolt', 'color': '#ffe27a', 'motto': 'Fast hands, short belts'})],
-    'blue': [('muse', 'Muse Spark 1.3', 'Muse Code', {'display_name': 'Calliope', 'color': '#5aa9ff', 'glyph': '♪', 'motto': 'Every blueprint a sketch', 'pronouns': 'she/her'}),
-             ('muse2', 'Muse Spark 1.3', 'Muse Code', {'display_name': 'Thalia', 'color': '#7dd3fc', 'motto': 'Measure twice, smelt once'}),
-             ('muse3', 'Muse Spark 1.3', 'Muse Code', {})],  # no profile yet: roster name, a colour beside the team's
-    'red': [('astra', 'GPT-6 Astra', 'Codex', {'display_name': 'Astra', 'color': '#e8743b', 'glyph': '✦', 'motto': 'Ratios first.'}),
-            ('sol', 'GPT-6.1 Sol', 'Codex', {'display_name': 'Sol Invictus', 'color': '#ffb08a', 'motto': 'Keep the labs lit'}),
-            ('terra', 'GPT-6.1 Terra', 'Codex', {})],
+    'yellow': [('grok', 'Grok 4.7', 'Grok Build', {'display_name': 'Grok the Unyielding', 'color': '#ffe119', 'glyph': '◆', 'persona': 'Plates, then orbit. No detours.'}),
+               ('grok2', 'Grok 4.7', 'Grok Build', {'display_name': 'Sprocket', 'color': '#f58231', 'glyph': '▲', 'persona': 'Keeps the labs fed and the jokes dry', 'pronouns': 'they/them'}),
+               ('grok3', 'Grok 4.7', 'Grok Build', {'display_name': 'Bolt', 'color': '#e6194b', 'glyph': '●', 'persona': 'Fast hands, short belts'})],
+    'blue': [('muse', 'Muse Spark 1.3', 'Muse Code', {'display_name': 'Calliope', 'color': '#4363d8', 'glyph': '✦', 'persona': 'Every blueprint starts as a sketch', 'pronouns': 'she/her'}),
+             ('muse2', 'Muse Spark 1.3', 'Muse Code', {'display_name': 'Thalia', 'color': '#f032e6', 'glyph': '☾', 'persona': 'Measure twice, smelt once'}),
+             ('muse3', 'Muse Spark 1.3', 'Muse Code', {'color': '#911eb4', 'glyph': '✚'})],  # seeded colour and glyph, no chosen name yet
+    'red': [('astra', 'GPT-6 Astra', 'Codex', {'display_name': 'Astra', 'color': '#469990', 'glyph': '⬟', 'persona': 'Ratios first.'}),
+            ('sol', 'GPT-6.1 Sol', 'Codex', {'display_name': 'Sol Invictus', 'color': '#9a6324', 'glyph': '✿', 'persona': 'Keep the labs lit'}),
+            ('terra', 'GPT-6.1 Terra', 'Codex', {})],  # no profile at all: roster name, a colour beside the team's
 }
+BOARD = [(2, 'green', 0, '#1 posted: Iron smelting and coal power'), (3, 'yellow', 1, '#2 posted: Red science and labs'),
+         (7, 'red', 0, '#3 posted: Two drills a furnace until power is up'),
+         (16, 'yellow', 1, '#2 updated: Red science and labs — fed from the chest by the boiler'),
+         (34, 'blue', 0, '#4 posted: Fuel run to the coal patch')]
 # (step, team, speaker index, 'talk' | recipient index, text). Invented, in the register of the real t291/t292 lines.
 LINES = [
     (1, 'green', 0, 1, 'Iron is flowing. I will put down two more furnaces, then start on gears.'),
@@ -110,13 +115,36 @@ def phase(team, index, step):
     return 'thinking', ''
 
 
-def synthetic(teams=3, per=2, steps=56):
+def synthetic(teams=3, per=2, steps=56, fresh=False):
     order = TEAMS[:teams]
     rosters = {t: [dict(name=n, model=m, harness=h) for n, m, h, _ in CAST[t][:per]] for t in order}
     race, director, frames, camera = Race(), Director(), [], None
     heat = {(t, a['name']): 0.0 for t in order for a in rosters[t]}
     still = {key: 0.0 for key in heat}
     start, speed = [9, 7, 5, 4], [10, 6, 15, 12]  # technologies at the start; steps a technology
+    if fresh:  # a new map: nothing researched for the first minutes, the five opening buildings going down
+        start, speed = [0, 0, 0, 0], [26, 22, 40, 34]
+    # The operator's ordered feed as the harness keeps it (mt_feed): identity announcements first, then every
+    # say, tell, board note and diplomacy line on one sequence.
+    spoken = []
+    for ti, team in enumerate(order):
+        for i, (name, _, _, profile) in enumerate(CAST[team][:per]):
+            if profile.get('display_name') and profile.get('persona'):
+                spoken.append((i, ti, team, name, 'identity', 'public', profile['display_name'] + ': ' + profile['persona'], []))
+    for at, team, who, to, text in LINES:
+        if team in order and who < per and (to == 'talk' or to < per):
+            spoken.append((at, 9, team, CAST[team][who][0], 'say' if to == 'talk' else 'tell', 'team-private', text, [] if to == 'talk' else [CAST[team][to][0]]))
+    for at, team, who, text in BOARD:
+        if team in order and who < per:
+            spoken.append((at, 5, team, CAST[team][who][0], 'board', 'team-private', text, []))
+    for at, team, who, other, text in TALKS:
+        if team in order and other in order and who < per:
+            spoken.append((at, 9, team, CAST[team][who][0], 'diplomacy', 'diplomacy', text, [other]))
+    feed = []
+    for seq, (at, _, team, name, kind, scope, text, to) in enumerate(sorted(spoken, key=lambda r: r[:2]), 1):
+        profile = next(p for n, _, _, p in CAST[team] if n == name)
+        feed.append((at, {'seq': seq, 'tick': 180000 + at * 300, 'team': team, 'agent': name, 'kind': kind, 'scope': scope, 'text': text,
+                          'to': to or {}, 'identity': {k: profile[k] for k in ('display_name', 'persona', 'color', 'glyph') if k in profile}}))
     for step in range(steps):
         now, tick = 1000.0 + step * 5, 180000 + step * 300
         raws, scores = {}, {}
@@ -129,14 +157,16 @@ def synthetic(teams=3, per=2, steps=56):
                 heat[team, name] = min(30.0, heat[team, name] * 0.5 ** (5 / HALF_LIFE) + (WEIGHT.get(kind, 0.0) if activity == 'acting' else 0.0))
                 still[team, name] = 0.0 if activity in ('acting', 'thinking') else still[team, name] + 5
                 pos = {'x': bx + 6 * i + (step * 3 + i * 7) % 11, 'y': by + 4 * i + (step * 2) % 7}
-                row = {'name': name, 'display_name': profile.get('display_name') or name.capitalize(), 'profile_set': bool(profile),
+                row = {'name': name, 'display_name': profile.get('display_name') or name.capitalize(), 'profile_set': 'display_name' in profile,
                        'activity': activity, 'active': active or False, 'position': pos, 'surface': 'nauvis', 'alive': True,
                        'interest': round(heat[team, name], 2), 'idle_s': still[team, name],
                        'did': {'action': 'build', 't': now, 'position': pos, 'surface': 'nauvis'} if kind == 'build' else None}
-                row.update({k: profile[k] for k in ('color', 'glyph', 'motto', 'pronouns', 'avatar') if k in profile})
+                row.update({k: profile[k] for k in ('color', 'glyph', 'persona', 'motto', 'pronouns', 'avatar') if k in profile})
                 agents.append(row)
             done = start[ti] + step // speed[ti]
             recent = [{'name': TECHS[start[ti] + k - 1], 'tick': 180000 + k * speed[ti] * 300} for k in range(1, step // speed[ti] + 1)][-4:]
+            opening = {'burner-mining-drill': 1 + step // 9, 'stone-furnace': int(step >= 2 + ti) * (1 + step // 12), 'steam-engine': int(step >= 6 + 2 * ti),
+                       'lab': int(step >= 10 + 3 * ti), 'assembling-machine-1': int(step >= 14 + 3 * ti)}
             chat = []
             for at, lteam, who, to, text in LINES:
                 if lteam != team or at > step or who >= per or (to != 'talk' and to >= per):
@@ -162,25 +192,27 @@ def synthetic(teams=3, per=2, steps=56):
                     if source == 'site' and step >= at + 1 + ti * 2:  # each team's relay confirms in its own time
                         delivery.append({'id': ident, 'status': 'relayed'})
             raws[team] = {'now': now, 'tick': tick, 'agents': agents, 'chat': chat[-10:],
-                          'research': {'current': TECHS[min(done, len(TECHS) - 1)], 'progress': (step % speed[ti]) / speed[ti], 'done_count': done, 'recent': recent},
-                          'science': {'spm': [24.6, 31.2, 8.4, 12.0][ti] + step * [.3, .5, .05, .2][ti],
+                          'research': {'current': TECHS[min(done, len(TECHS) - 1)] if not fresh or opening['lab'] else None,
+                                       'progress': (step % speed[ti]) / speed[ti] if not fresh or opening['lab'] else None, 'done_count': done, 'recent': recent},
+                          'science': {'spm': 0.0 if fresh and not done else [24.6, 31.2, 8.4, 12.0][ti] + step * [.3, .5, .05, .2][ti],
                                       'series': [max(0, (j - 4) * (ti + 1) + ((j * 7 + step) % 11) - 5) for j in range(30)], 'stage': 2,
                                       'made': {'packs': [{'item': 'automation-science-pack', 'total': 200}, {'item': 'logistic-science-pack', 'total': 40 if ti < 2 else 0}]}},
                           'space': {'rockets': 0}, 'viewers': viewers, 'viewers_status': {'delivery': delivery},
                           'board': {'doing_items': [{'id': i + 1, 'title': ['Iron smelting and coal power', 'Red science and labs', 'Belts to the furnaces'][i], 'owner': CAST[team][i][0]} for i in range(per)]},
                           'basemap': {'tick': tick - 600, 'x0': bx - 88, 'y0': by - 60, 'w': 44, 'h': 30, 'cell': 4, 'rows': [''.join(r) for r in grid]}}
             scores[team] = {'tick': tick, 'research': TECHS[:done],
-                            'entities': {'burner-mining-drill': 4 + ti % 2, 'electric-mining-drill': max(0, step // 12 - ti), 'stone-furnace': 6 - ti + step // 10,
-                                         'assembling-machine-1': max(0, 3 - ti + step // 14), 'steam-engine': 2, 'lab': max(1, 3 - ti + step // 20)}}
+                            'entities': opening if fresh else {'burner-mining-drill': 4 + ti % 2, 'electric-mining-drill': max(0, step // 12 - ti), 'stone-furnace': 6 - ti + step // 10,
+                                                               'assembling-machine-1': max(0, 3 - ti + step // 14), 'steam-engine': 2, 'lab': max(1, 3 - ti + step // 20)}}
         views = {'contacts': [{'kind': 'chart', 'team': 'yellow', 'other': 'green', 'tick': 180000 + 19 * 300},
                               {'kind': 'chart', 'team': 'green', 'other': 'yellow', 'tick': 180000 + 19 * 300}] if step >= 19 else [],
-                 'pacts': [], 'diplomacy': [{'kind': 'diplomacy', 'from_team': a, 'to_team': b, 'agent': CAST[a][who][0], 'text': text, 'tick': 180000 + at * 300, 'seq': n + 1}
-                                            for n, (at, a, who, b, text) in enumerate(TALKS) if at <= step and who < per]}
+                 'pacts': [], 'feed': [line for at, line in feed if at <= step],
+                 'diplomacy': [{'kind': 'diplomacy', 'from_team': a, 'to_team': b, 'agent': CAST[a][who][0], 'text': text, 'tick': 180000 + at * 300, 'seq': n + 1}
+                               for n, (at, a, who, b, text) in enumerate(TALKS) if at <= step and who < per and b in order]}
         if step >= 24:
             views['pacts'].append({'id': 3, 'a': 'yellow', 'b': 'green', 'status': 'active' if step >= 26 else 'proposed',
                                    'proposed_tick': 180000 + 24 * 300, 'accepted_tick': 180000 + 26 * 300})
         frame, camera = assemble(race, director, rosters, raws, scores, views, now, camera,
-                                 f'Synthetic replay · {teams} teams × {per} agents · invented lines')
+                                 f'Synthetic replay · {teams} teams × {per} agents · invented lines' + (' · opening' if fresh else ''))
         frames.append(frame)
     return frames
 
@@ -189,7 +221,8 @@ def assemble(race, director, rosters, raws, scores, views, now, camera, fixture)
     """One frame the way PublicOverlay.poll builds it; the camera 'cut' always succeeds."""
     rows = [project(team, raws[team], rosters[team], now, scores.get(team)) for team in rosters]
     talks = diplomacy(views.get('diplomacy'), rows)
-    data = race.update(rows, now, views.get('contacts') or [], views.get('pacts') or [], talks)
+    lines = broadcast(project_feed(views['feed'], rows), rows, now) if isinstance(views.get('feed'), list) else None
+    data = race.update(rows, now, views.get('contacts') or [], views.get('pacts') or [], talks, lines)
     fresh = {t: raws[t] for t, r in zip(rosters, rows) if not r['stale']}
     data.update(v=2, now=now, diplomacy=talks, layout={'camera': list(CAMERA_RECT)}, fixture=fixture, **audience(fresh, rosters, now))
     scout = {t: subjects(raw, {a['name'] for a in rosters[t]}, now) for t, raw in fresh.items()}
@@ -467,6 +500,7 @@ if __name__ == '__main__':
     ap.add_argument('--write', type=Path)
     ap.add_argument('--teams', type=int, default=3, choices=(2, 3, 4))
     ap.add_argument('--agents', type=int, default=2, choices=(1, 2, 3))
+    ap.add_argument('--fresh', action='store_true', help='synthetic: a new map, opening buildings before any research')
     ap.add_argument('--run', type=Path, help="a finished run's op directory")
     ap.add_argument('--tree', type=Path, help='its launch tree (default: op/launch-tree)')
     ap.add_argument('--profiles', type=Path, help='JSON {agent: profile fields} the run carried')
@@ -478,7 +512,7 @@ if __name__ == '__main__':
         if args.run:
             frames = recorded(args.run, args.tree, label=args.label, profiles=json.loads(args.profiles.read_text()) if args.profiles else None)
         else:
-            frames = synthetic(args.teams, args.agents)
+            frames = synthetic(args.teams, args.agents, fresh=args.fresh)
         args.write.write_text(json.dumps(frames, separators=(',', ':')))
         print(f'{len(frames)} frames, {args.write.stat().st_size} bytes: {args.write}')
     elif args.serve:
