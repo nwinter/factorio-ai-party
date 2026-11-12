@@ -873,15 +873,24 @@
     var box = $('#team-tests');
     if (!box) return;
     box.innerHTML = (s.teams || []).map(function (t) {
-      var r = t.research || {}, pct = Math.round((r.progress || 0) * 100);
+      var r = t.research || {}, pct = Math.round((r.progress || 0) * 100), shown = {};
+      (t.agents || []).forEach(function (a) { shown[a.name] = a.display_name || label(a.name); });  // no chosen name: the roster name, capitalised
       return '<section class="fx-panel live-card" style="border-top:3px solid ' + (safeColor(t.color) || '#999999') + '">' +
         '<header class="fx-panel-title">' + esc(label(t.team)) + (t.stale ? ' · data delayed' : '') + '</header><div class="card-body">' +
         '<p>' + esc(r.done_count == null ? '–' : r.done_count) + ' technologies · ' + esc(t.rockets == null ? '–' : t.rockets) + ' rockets · ' +
         esc(t.spm == null ? '–' : Math.round(t.spm)) + ' SPM</p>' +
         (r.label ? '<p>Research: ' + esc(r.label) + ' · ' + pct + '%</p>' : '') +
-        '<ul>' + (t.agents || []).map(function (a) { return '<li><strong>' + esc(a.name) + '</strong> · ' + esc(a.model) + ' · ' + esc(a.activity) + '</li>'; }).join('') + '</ul>' +
-        '<h3>Team board</h3><ul>' + (t.board || []).map(function (m) { return '<li>' + esc(m.title) + (m.owner ? ' · ' + esc(m.owner) : '') + '</li>'; }).join('') + '</ul>' +
-        '<h3>Team chat</h3><ol class="team-test-chat">' + (t.chat || []).map(function (m) { return '<li><strong>' + esc(m.name) + '</strong>: ' + esc(m.text) + '</li>'; }).join('') +
+        '<ul class="team-test-agents">' + (t.agents || []).map(function (a) {
+          // the character the agent chose (name, glyph, colour, persona); its model stays beside it
+          var mark = a.glyph ? '<span class="tt-glyph" style="color:' + acColor(a.color) + '" aria-hidden="true">' + esc(a.glyph) + '</span> ' : '';
+          return '<li>' + mark + '<strong>' + esc(shown[a.name]) + '</strong>' + (a.pronouns ? ' <span class="fx-muted small">' + esc(a.pronouns) + '</span>' : '') +
+            ' · ' + esc(a.model) + ' · ' + esc(a.activity) + (a.persona ? '<div class="tt-persona small fx-muted">“' + esc(a.persona) + '”</div>' : '') + '</li>';
+        }).join('') + '</ul>' +
+        '<h3>Team board</h3><ul>' + (t.board || []).map(function (m) { return '<li>' + esc(m.title) + (m.owner ? ' · ' + esc(shown[m.owner] || m.owner) : '') + '</li>'; }).join('') + '</ul>' +
+        '<h3>Team chat</h3><ol class="team-test-chat">' + (t.chat || []).map(function (m) {
+          var to = Array.isArray(m.to) && m.to.length ? ' → ' + m.to.map(function (n) { return esc(n === 'team' ? 'team' : shown[n] || n); }).join(', ') : '';
+          return '<li><strong>' + esc(shown[m.name] || m.name) + '</strong>' + to + ': ' + esc(m.text) + '</li>';
+        }).join('') +
         '</ol></div></section>';
     }).join('');
     $('#run-title').textContent = 'AI team tests';
