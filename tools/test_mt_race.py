@@ -753,6 +753,32 @@ class ReplayTest(unittest.TestCase):
         self.assertEqual([t for t in replay.TECHS if not race.prototype('tech',t)],[])     # every fixture technology has its icon
         json.dumps(frames,allow_nan=False)
 
+    def test_one_operator_view_is_enough_for_identities_and_the_ordered_feed(self):
+        # The shape the 2.1 engine writes (mt290 cp5): identities on the team rows, an ordered feed, empty `to` as {}.
+        who=lambda name,shown,color,glyph:{'name':name,'force':'x','alive':True,'at':'-646,-650','model':'Model','display_name':shown,'color':color,
+                                           'glyph':glyph,'persona':'A curious builder who verifies each handoff.','pronouns':'they/them','path':'PRIVATE'}
+        line=lambda seq,team,agent,kind,scope,text,to:{'seq':seq,'tick':13563,'team':team,'agent':agent,'kind':kind,'scope':scope,'text':text,'to':to,
+                                                         'identity':{'display_name':'Forge','persona':'A curious builder who verifies each handoff.'}}
+        view={'t':'2026-11-11 17:36:00','errors':{},'contacts':[],'pacts':[],'diplomacy':[],
+              'teams':[{'team':'green','agents':[who('gemini','Forge','#3cb44b','⚙'),who('gemini2','Fern','#42d4f4','⚡')],'score':{'tick':13563,'research':[],'entities':{}}},
+                       {'team':'yellow','agents':[who('grok','Rivet','#ffe119','◆')],'score':{'tick':13563,'research':[],'entities':{}}},{'team':'ghost','agents':[]}],
+              'feed':[line(16,'green','gemini','identity','public','Forge: A curious builder who verifies each handoff.',{}),
+                      line(22,'green','gemini','say','team-private','green private introduction.',{}),
+                      line(23,'green','gemini2','tell','team-private','green private handoff.',['gemini']),
+                      line(24,'green','gemini','board','team-private','#2 posted: green production plan — Build and keep moving.',{}),
+                      line(25,'yellow','grok','tell','team-private','to another team',['gemini'])]}
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d)/'views.json').write_text(json.dumps(view));frames=replay.from_views(Path(d)/'views.json')
+        self.assertEqual(len(frames),6)                         # no speech, then one more line a frame
+        self.assertEqual([len(f['feed']) for f in frames],[0,1,2,3,4,4])     # the cross-team tell never appears
+        last=frames[-1]
+        self.assertEqual([(m['id'],m['kind']) for m in last['feed']],[('f:16','identity'),('f:22','talk'),('f:23','tell'),('f:24','board')])
+        self.assertEqual({t['team'] for t in last['teams']},{'green','yellow'})
+        forge=last['teams'][0]['agents'][0]
+        self.assertEqual((forge['display_name'],forge['color'],forge['glyph'],forge['pronouns'],forge['model']),('Forge','#3cb44b','⚙','they/them','Model'))
+        self.assertIsNone(forge['activity']);self.assertEqual(forge['position'],{'x':-646.0,'y':-650.0})
+        self.assertNotIn('PRIVATE',json.dumps(frames))
+
     def test_recorded_run_is_rebuilt_from_its_own_logs(self):
         at=lambda s:time.strftime('%Y-%m-%dT%H:%M:%S',time.gmtime(1794380000+s))+'.000Z'
         def calls(rows):

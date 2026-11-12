@@ -657,8 +657,8 @@ function lowerThird(c, cam, team, col, slide) {
     let nx = x + 112; if (a.icon) { icon('item', a.icon, nx, y + 16, 32); nx += 40; } else if (a.glyph) nx += text(a.glyph, nx, y + 46, font(30, 700), bright(a.tone)) + 10;
     const nw = text(fit(name, nf, w - (nx - x) - 20, 1), nx, y + 50, nf, C.ink, {ls: 1});
     text(fit(meta, font(15, 600), w - (nx - x) - nw - 34), nx + nw + 14, y + 48, font(15, 600), C.muted);
-    if (a.activity) lamp(x + 120, y + 67, 6, LAMP[a.activity] || C.dim, a.activity === 'acting');
-    text(fit(st.word, font(15, 700), w - 150, 1), x + (a.activity ? 134 : 112), y + 72, font(15, 700), st.color, {ls: 1});
+    // with no activity read, the model beside the name already says all the roster knows
+    if (a.activity || team.stale || team.paused) { if (a.activity) lamp(x + 120, y + 67, 6, LAMP[a.activity] || C.dim, a.activity === 'acting'); text(fit(st.word, font(15, 700), w - 150, 1), x + (a.activity ? 134 : 112), y + 72, font(15, 700), st.color, {ls: 1}); }
     if (sub) text(fit(sub, font(19, 600, 'ui', true), w - 130), x + 112, y + 94, font(19, 600, 'ui', true), quote ? C.ink : C.text);
     if (quote) busy(spoke + 9.1);
     return;

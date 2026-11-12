@@ -237,6 +237,8 @@ python3 tools/mt/public_replay.py --write $A/fixtures/synthetic-4x3.json --teams
 python3 tools/mt/public_replay.py --write $A/fixtures/synthetic-3x2-opening.json --fresh
 # A finished run, rebuilt from its own logs (journals in the launch tree op/launch-tree names):
 python3 tools/mt/public_replay.py --write $A/fixtures/t292-replay.json --run /absolute/runs/t292/op
+# One operator view alone (identities from its team rows, its ordered feed one line a frame):
+python3 tools/mt/public_replay.py --write $A/fixtures/view.json --views /absolute/runs/RUN/op/views.json
 python3 tools/mt/public_replay.py --serve $A/fixtures/synthetic-3x2.json --port 8796
 PLAYWRIGHT=/absolute/node_modules/playwright node tools/mt/public_replay_check.cjs $A 8796
 python3 tools/mt/camera_eval.py /absolute/runs/t291/op /absolute/runs/t292/op

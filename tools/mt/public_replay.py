@@ -4,6 +4,7 @@
   python tools/mt/public_replay.py --write FIXTURE.json                        # synthetic, 3 teams x 2 agents
   python tools/mt/public_replay.py --write FIXTURE.json --teams 4 --agents 3   # synthetic, 4 teams x 3 agents
   python tools/mt/public_replay.py --write FIXTURE.json --run /abs/runs/t292/op --tree /abs/launch-tree
+  python tools/mt/public_replay.py --write FIXTURE.json --views /abs/runs/RUN/op/views.json
   python tools/mt/public_replay.py --serve FIXTURE.json --port 8796
 
 Every frame goes through the production path: raw team feeds -> public_race.project -> Race.update ->
@@ -447,6 +448,40 @@ def recorded(op, tree=None, step=5.0, label=None, profiles=None, cores=None):
     return frames
 
 
+def from_views(path, label=None):
+    """Frames from one operator views.json alone, with no team stream states: rosters and chosen identities
+    from its team rows, standings from its scores, speech from its ordered feed, one more line a frame.
+    What a views file does not hold (activity, research progress, SPM, base maps) stays absent."""
+    view = json.loads(Path(path).read_text())
+    now = datetime.strptime(view['t'], '%Y-%m-%d %H:%M:%S').timestamp()
+    rosters, raws, scores = {}, {}, {}
+    for t in view.get('teams') or []:
+        team, score = t.get('team'), t.get('score') if isinstance(t.get('score'), dict) else {}
+        agents = [a for a in t.get('agents') or [] if isinstance(a, dict) and isinstance(a.get('name'), str)]
+        if not isinstance(team, str) or not agents:
+            continue
+        rosters[team] = [{'name': a['name'], 'model': a.get('model') or ''} for a in agents]
+        rows_ = []
+        for a in agents:
+            at = re.fullmatch(r'(-?[0-9]+),(-?[0-9]+)', str(a.get('at') or ''))
+            row = {k: a[k] for k in ('name', 'display_name', 'persona', 'color', 'glyph', 'motto', 'pronouns', 'avatar') if a.get(k) is not None}
+            row.update(alive=a.get('alive') is not False, surface='nauvis', position={'x': float(at.group(1)), 'y': float(at.group(2))} if at else None)
+            rows_.append(row)
+        raws[team] = {'tick': score.get('tick'), 'agents': rows_, 'research': {'current': score.get('researching'), 'done_count': len(score.get('research') or [])},
+                      'space': {'rockets': score.get('rockets')}}
+        scores[team] = {'tick': score.get('tick'), 'research': score.get('research') or [], 'entities': score.get('entities') or {}, 'rockets': score.get('rockets')}
+    lines = [m for m in view.get('feed') or [] if isinstance(m, dict)]
+    race, director, frames, camera = Race(), Director(), [], None
+    for shown in range(len(lines) + 1):
+        at = now + shown * 2
+        for raw in raws.values():
+            raw['now'] = at
+        views = {'contacts': view.get('contacts') or [], 'pacts': view.get('pacts') or [], 'diplomacy': view.get('diplomacy') or [], 'feed': lines[:shown]}
+        frame, camera = assemble(race, director, rosters, raws, scores, views, at, camera, label or 'Replay · one operator view')
+        frames.append(frame)
+    return frames
+
+
 def serve(path, port):
     frames = json.loads(path.read_text())
     start = time.monotonic()
@@ -514,12 +549,15 @@ if __name__ == '__main__':
     ap.add_argument('--run', type=Path, help="a finished run's op directory")
     ap.add_argument('--tree', type=Path, help='its launch tree (default: op/launch-tree)')
     ap.add_argument('--profiles', type=Path, help='JSON {agent: profile fields} the run carried')
+    ap.add_argument('--views', type=Path, help='one operator views.json: frames from it alone, its feed one line a frame')
     ap.add_argument('--label')
     ap.add_argument('--serve', type=Path)
     ap.add_argument('--port', type=int, default=8796)
     args = ap.parse_args()
     if args.write:
-        if args.run:
+        if args.views:
+            frames = from_views(args.views, args.label)
+        elif args.run:
             frames = recorded(args.run, args.tree, label=args.label, profiles=json.loads(args.profiles.read_text()) if args.profiles else None)
         else:
             frames = synthetic(args.teams, args.agents, fresh=args.fresh)
