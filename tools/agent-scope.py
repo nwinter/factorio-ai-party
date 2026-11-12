@@ -35,6 +35,10 @@ def profile(root,home,proxy=None,native=None):
         exceptions=[root,home/'Dropbox (Personal)/misc/env/agents',home/'.profiles/agents']
         allowed=' '.join(f'(subpath {quote(str(p.resolve()))})' for p in exceptions)
         clauses.append(f'(deny file-read-data file-write* (require-all (subpath {quote(str(path.resolve()))}) (require-not (require-any {allowed}))))')
+    # Closed test trees and recordings live on the external disk. Moving them
+    # must not make another pair's old notes or spectator footage agent inputs.
+    for path in ('/Volumes/POG Media/pog-runs','/Volumes/POG Media/pog-recordings'):
+        clauses.append(f'(deny file-read* file-write* (subpath {quote(path)}))')
     clauses.append(f'(deny file-read* file-write* (subpath {quote(str(home/".config/pog"))}))')
     if native:
         clauses.append(f'(deny file-read-data file-write* (require-all (subpath "/private/tmp") (require-not (literal "/private/tmp")) (require-not (subpath {quote(str(native))}))))')

@@ -39,3 +39,32 @@ limits); it never retries one in a loop. Native context and compaction last for
 each turn. If Muse finishes before the game deadline, a fresh conversation
 recovers from its own notes and keeps its chosen identity. No shared session
 index is read. Main-run interactive Muse launches are unchanged.
+
+## Bounded follow-up fixtures
+
+For a separate contact exercise, start a fresh save with `POG_GAME_TEST=0` and
+run `python3 tools/mt/contact_fixture.py RUN --execute` after all six agents
+exist. It saves first, preserves their factories and identities, supplies a
+documented trade kit and triggers real engine chart contact in an empty plaza.
+Each pair divides negotiation and independent verification, uses explicit
+diplomacy for outsiders, and builds an outpost after trading instead of waiting.
+No pact is accepted on behalf of an agent.
+
+For the subsequent later-stage exercise, resume that contacted save and notes
+with `POG_GAME_TEST=0`, then run
+`python3 tools/mt/stage_fixture.py RUN --execute`. It requires all three actual
+pair contacts, saves first, and supplies separate powered yards, robot networks,
+ready silos and two orbital platforms per pair. Original bases and pacts stay.
+The exercise covers mixed cargo beyond twenty kinds, partial quality/spoilable
+handling, actual rocket delivery, platform request-source preservation, actual
+platform freight, simultaneous chest circuit requests/readout, fluid readout and
+a working gear line. Supplied technology and items must be reported as fixtures.
+Settings acceptance alone does not establish actual delivery. Agents execute
+and cross-check the actions; the fixture does not do those actions for them.
+
+Inspect the prepared fixture receipt and six feeds before starting the usual
+bounded public guardian. Each exercise uses only the pinned isolated server;
+finish and verify teardown before launching the next. Closed run trees and
+recordings on `/Volumes/POG Media/pog-runs` and `pog-recordings` are denied to
+native agents as well as the internal operator checkout. Archive only closed
+trees through the existing verified process.

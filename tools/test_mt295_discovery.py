@@ -59,4 +59,15 @@ class DiscoveryTests(unittest.TestCase):
             feed=viewers.Feed({},inbox=str(p),operator_only=True)
             self.assertIsNone(feed.relay)
 
+    @unittest.skipUnless(sys.platform=='darwin' and Path('/Volumes/POG Media/pog-runs').is_dir(),
+                         'macOS archive disk required')
+    def test_closed_external_archive_is_not_an_agent_input(self):
+        with tempfile.TemporaryDirectory(dir='/Volumes/POG Media/pog-runs',prefix='.scope-test-') as tmp:
+            secret=Path(tmp)/'private-notes';secret.write_text('another pair historical notes')
+            with tempfile.TemporaryDirectory() as local:
+                policy=Path(local)/'scope.sb';policy.write_text(scope.profile(ROOT,Path.home()))
+                denied=subprocess.run(['/usr/bin/sandbox-exec','-f',str(policy),'/bin/cat',str(secret)],capture_output=True)
+                self.assertNotEqual(denied.returncode,0)
+                self.assertFalse(denied.stdout)
+
 if __name__=='__main__':unittest.main()
