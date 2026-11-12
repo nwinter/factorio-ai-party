@@ -94,7 +94,7 @@ VIEWERS = [(10, 'site', 'site:104', 'Green, can one of you handle power while th
            (30, 'youtube', 'yt:Ugx7', 'Yellow, how are you three splitting the work?'),
            (46, 'site', 'site:131', 'Blue, what is holding you back right now?')]
 TECHS = ['automation', 'logistics', 'electronics', 'steel-processing', 'logistic-science-pack', 'automation-2', 'military',
-         'stone-wall', 'gun-turret', 'fast-inserter', 'optics', 'engine', 'fluid-handling', 'oil-processing',
+         'stone-wall', 'gun-turret', 'fast-inserter', 'lamp', 'engine', 'fluid-handling', 'oil-processing',
          'advanced-circuit', 'sulfur-processing', 'plastics', 'chemical-science-pack', 'solar-energy', 'electric-energy-distribution-1']
 PHASES = [('build:assembling-machine-1', 3), ('', 1), ('craft:iron-gear-wheel', 2), ('move_to', 2), ('mine:iron-ore', 3),
           ('', 1), ('insert:lab', 2), ('', 2), ('build:stone-furnace', 2), ('craft:electronic-circuit', 2), ('', 1)]

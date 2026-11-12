@@ -750,6 +750,7 @@ class ReplayTest(unittest.TestCase):
         self.assertTrue({'Vesper','Grok the Unyielding','Muse3','Terra'}<=names)
         self.assertTrue(all(f['camera'] and f['layout']=={'camera':list(overlay.CAMERA_RECT)} for f in frames))
         self.assertIn('follow',{f['camera']['kind'] for f in frames})
+        self.assertEqual([t for t in replay.TECHS if not race.prototype('tech',t)],[])     # every fixture technology has its icon
         json.dumps(frames,allow_nan=False)
 
     def test_recorded_run_is_rebuilt_from_its_own_logs(self):
