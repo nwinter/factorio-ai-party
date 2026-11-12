@@ -1268,3 +1268,6 @@ ol.techs li { display: flex; align-items: center; gap: 6px; }
 .team-tests[hidden], .live-dash[hidden], .live-strip[hidden], .live-alerts[hidden] { display:none; }
 .team-test-chat { padding-left:1.2rem; overflow-wrap:anywhere; }
 .team-test-chat li { margin:.6rem 0; }
+.team-test-agents { padding-left:1.2rem; overflow-wrap:anywhere; }
+.team-test-agents li { margin:.35rem 0; }
+.team-test-agents .tt-persona { font-style:italic; }

@@ -39,6 +39,26 @@ class TestContract(unittest.TestCase):
         self.assertEqual([v['id'] for v in out['youtube_chat']],['yt:2'])
         self.assertTrue(out['active']);self.assertEqual(out['stream']['youtube_video_id'],'abcdefghijk')
 
+    def test_chosen_identity_and_tell_recipients(self):
+        s=fixture();r=s['teams'][0]
+        r['agents'][0].update(display_name='Vesper',persona='A patient miner who counts every plate',glyph='⚙',color='#3CB44B',pronouns='she/her',notes='NOT PUBLIC')
+        r['agents'][1].update(display_name='Gemini2',persona='see /home/private/notes',glyph='<b>',color='red',pronouns='not a pronoun')
+        r['chat']=[{'name':'gemini','text':'Bring coal.','kind':'tell','to':['gemini2']},{'name':'gemini2','text':'On my way.','kind':'tell','to':['team']},
+                   {'name':'gemini','text':'Labs are up.','kind':'talk','to':['gemini2']},{'name':'gemini','text':'Foreign.','kind':'tell','to':['grok']},
+                   {'name':'gemini','text':'Mixed.','kind':'tell','to':['gemini2',{'x':1}]}]
+        out=contract.public_state(s,now=100)['teams'][0]
+        self.assertEqual(out['agents'][0],{'name':'gemini','model':'Gemini Flash','activity':'acting','display_name':'Vesper',
+                                           'persona':'A patient miner who counts every plate','glyph':'⚙','color':'#3cb44b','pronouns':'she/her'})
+        self.assertEqual(out['agents'][1],{'name':'gemini2','model':'','activity':'thinking'})    # nothing chosen survives: the roster entry alone
+        self.assertEqual([m.get('to') for m in out['chat']],[['gemini2'],['team'],None,None,None])
+        self.assertNotIn('NOT PUBLIC',json.dumps(out))
+        for bad in ('Operator','The Moderator','YouTube','/home/private','<b>x</b>','x','https://private.example','key@example.com','x'*201,7,None):
+            r['agents'][0]['display_name']=bad
+            self.assertNotIn('display_name',contract.public_state(s,now=100)['teams'][0]['agents'][0],bad)
+        self.assertEqual(contract.chosen_name('Sprocket ⚙️ the  Great!!'),'Sprocket the Great!!')
+        self.assertEqual(contract.chosen_name('Grok the Unyielding'),'Grok the Unyielding')
+        self.assertEqual([contract.glyph(g) for g in ('G2','♊','👩‍🚀',' ','a b','too long glyph',5)],['G2','♊','👩‍🚀','','','',''])
+
     def test_stale_off_and_malformed(self):
         self.assertFalse(contract.public_state(fixture(),now=131)['active'])
         self.assertFalse(contract.public_state(dict(fixture(),active=False),now=100)['active'])

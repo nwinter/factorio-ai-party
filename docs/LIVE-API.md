@@ -865,7 +865,12 @@ projects the supplied display snapshot through `site/team_tests.py`. The resulti
 state has `mode: "team-tests"`, `active`, `now`, `teams`, an optional YouTube video
 ID, filtered YouTube chat, and per-site-line delivery receipts. Each team has a
 fixed colour, roster/activity, research, science rate, rockets, board titles and
-team chat. Arbitrary fields, paths, credentials and non-roster speakers are omitted.
+team chat. Each roster entry keeps its stable `name` and model, and may carry the
+character its agent chose: `display_name` (letters, digits and light punctuation, up
+to 24 characters, never a staff or source word), `persona` (one line), `glyph`,
+`color` (`#rrggbb`) and `pronouns`. The page shows the chosen name where one exists.
+A chat line told to named teammates carries `to` (roster names of the same team, or
+`team`). Arbitrary fields, paths, credentials and non-roster speakers are omitted.
 The existing site chat endpoint, moderation and limits remain unchanged. The
 operator's relay determines delivery; a receipt says delivered only after every
 participating team confirms it. Naming a team in viewer chat is a conversational

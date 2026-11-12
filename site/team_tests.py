@@ -5,6 +5,7 @@ No game or local service discovery. Inputs may come from any operator collector.
 import math
 import re
 import time
+import unicodedata
 from build import clean, keep_line
 
 COLORS = {'green': '#71c98c', 'yellow': '#e6c85d', 'blue': '#6cacf0', 'red': '#ed7a7a'}
@@ -36,6 +37,38 @@ def identity(v):
     return v if isinstance(v, str) and re.fullmatch(r'[a-z][a-z0-9_-]{0,15}', v) and text(v) else None
 
 
+# Words a chosen character name may not be: a reader could take them for the site or its staff.
+STAFF = {'server', 'operator', 'mod', 'moderator', 'admin', 'caster', 'system', 'host', 'viewer', 'viewers',
+         'youtube', 'site', 'staff'}
+
+
+def chosen_name(v):
+    """A character name an agent chose: letters, digits and light punctuation, 2 to 24 characters."""
+    if not isinstance(v, str) or len(v) > 200 or not text(v, 200) or re.search(r'[<>{}\[\]\\]', v):
+        return ''
+    kept = ''
+    for c in unicodedata.normalize('NFC', v):
+        if unicodedata.category(c)[0] in 'LN' or c in ".'’-&!":
+            kept += c
+        elif c.isspace() or c == '_':
+            kept += ' '
+    kept = re.sub(r'\s+', ' ', kept).strip(" .'’-&")[:24].strip(" .'’-&")
+    if len(kept) < 2 or any(w in STAFF for w in re.findall(r'[a-z]+', kept.lower())):
+        return ''
+    return kept
+
+
+def glyph(v):
+    """One or two characters or an emoji shown beside a name; never spaces, markup or control characters."""
+    if not isinstance(v, str) or not 1 <= len(v) <= 8:
+        return ''
+    for c in v:
+        cat = unicodedata.category(c)
+        if cat[0] in 'CZ' and c not in '\u200d\ufe0f' or c in '<>&"\'\\/':
+            return ''
+    return v
+
+
 def public_state(raw, video=None, now=None, hidden=None):
     now = time.time() if now is None else now
     raw = obj(raw)
@@ -53,14 +86,31 @@ def public_state(raw, video=None, now=None, hidden=None):
             n = identity(a.get('name'))
             if not n or any(x['name'] == n for x in agents):
                 continue
-            agents.append({'name': n, 'model': text(a.get('model'), 60),
-                           'activity': a.get('activity') if isinstance(a.get('activity'), str) and a.get('activity') in ACTIVITY else 'unknown'})
+            agent = {'name': n, 'model': text(a.get('model'), 60),
+                     'activity': a.get('activity') if isinstance(a.get('activity'), str) and a.get('activity') in ACTIVITY else 'unknown'}
+            # The character the agent chose to be. The roster id above stays the stable name.
+            shown, color, pronouns = chosen_name(a.get('display_name')), a.get('color'), a.get('pronouns')
+            if shown and shown.lower() != n:
+                agent['display_name'] = shown
+            for key, value in (('persona', text(a.get('persona'), 160)), ('glyph', glyph(a.get('glyph')))):
+                if value:
+                    agent[key] = value
+            if isinstance(color, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', color):
+                agent['color'] = color.lower()
+            if isinstance(pronouns, str) and re.fullmatch(r'(?:he|she|they|it|xe|ze|ey|fae)(?:/[a-z]{2,8}){0,2}', pronouns):
+                agent['pronouns'] = pronouns
+            agents.append(agent)
         members = {a['name'] for a in agents}
         chat = []
         for m in map(obj, rows(r.get('chat'))[-12:]):
             body = text(m.get('text'), 500)
             if isinstance(m.get('name'), str) and m.get('name') in members and body:
-                chat.append({'name': m['name'], 'text': body, 'tick': number(m.get('tick'))})
+                line = {'name': m['name'], 'text': body, 'tick': number(m.get('tick'))}
+                # A line told to named teammates (or the whole team); otherwise ordinary team talk.
+                to = rows(m.get('to'))
+                if m.get('kind') == 'tell' and to and all(isinstance(t, str) and (t in members or t == 'team') for t in to):
+                    line['to'] = list(dict.fromkeys(to))[:8]
+                chat.append(line)
         board = []
         for m in map(obj, rows(r.get('board'))[:12]):
             title = text(m.get('title'))
