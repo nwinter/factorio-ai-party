@@ -94,25 +94,22 @@ rcon.print(helpers.table_to_json(out))
 
 def instruction(names,prepared):
     ent=prepared['entities'];pos=lambda name:json.dumps(ent[name]['position'],separators=(',',':'))
-    return (f'Controlled later-stage Factorio 2.1 exercise: your pair was relocated to a supplied yard with power, robots, '
-        f'a ready silo at {pos("rocket-silo")}, and two of your own orbital platforms Freight Store and Freight Lab. '
-        'The technology, structures and items are supplied test fixtures, not earned progress. Your previous base and pacts remain. '
-        f'{names[0]} handles cargo/platforms; {names[1]} handles circuits, then independently cross-check each other. '
-        'Send concrete private tells agreeing the plan, handing off work and reporting measured results; use the board. '
-        'Read describe schemas before new calls. Cargo task: use cargo to weigh one each of '+', '.join(PAYLOAD)+'. '
-        'Load those 26 kinds with load_silo, inspect the actual native rocket inventory, then unload three kinds to verify the changing slots. '
-        'Also load four supplied rare agricultural science packs; verify quality and that their freshness is not reset. '
-        'Launch to Freight Lab with the normal launch action and have your partner verify receipt. This tests dynamic 2.1 cargo, not just a settings echo. '
-        'Platform task: enable providing_to_other_platforms on Freight Store; on Freight Lab request 10 iron plates with request_from:platforms '
-        'and min_payload:1. Change only the minimum once, and toggle construction_requests off/on: verify the platform source and payload survive. '
-        'Use shipment and actual hub counts to distinguish settings accepted from goods delivered. '
-        f'Circuit task: wire the constant combinator at {pos("constant-combinator")} to the requester chest at {pos("requester-chest")}; '
-        'set a 20-iron signal. On the chest enable set_requests and read.contents simultaneously with separate input/output wire selections; '
-        'verify the settings and actual robot delivery from the supplied provider. '
-        f'The water tank is at {pos("storage-tank")}: test contents/temperature readout, then segment-contents mode, and read back the settings. '
-        'If a call fails, read its error/schema and change the request; report any unresolved defect without looping. '
-        'After these checks, use remaining supplies to build a small working automated gear line and have your partner verify output. '
-        'Keep doing useful work until the deadline; no kill rewards or market features are part of this exercise.')
+    return (f'Supplied Factorio 2.1 exercise: your pair moved to a powered yard with robots and a ready silo at {pos("rocket-silo")}. '
+        'Technology, structures and items are supplied, not earned; previous bases/pacts remain. '
+        f'{names[0]} handles cargo/platforms; {names[1]} circuits. Agree plans in private tells/board and cross-check results. '
+        'Read describe schemas; fix errors rather than repeating failed calls. '
+        'Cargo: weigh/load one each of '+', '.join(PAYLOAD)+'. '
+        'Inspect the native rocket inventory (26 kinds); unload three kinds and verify changed slots. '
+        'Load four supplied rare agricultural science packs; check quality/freshness is preserved. '
+        'Launch to your Freight Lab platform; partner verifies actual receipt. '
+        'Enable providing_to_other_platforms on your Freight Store platform; Freight Lab requests10 iron with request_from:platforms,min_payload:1. '
+        'Edit only minimum and toggle construction_requests off/on; verify source/payload survive. Check shipment and actual hub counts, not just settings. '
+        f'Circuits: wire constant {pos("constant-combinator")} to requester {pos("requester-chest")}; set20 iron signal. '
+        'Enable set_requests and read.contents together, with separate input/output wire selections; verify settings and robot delivery. '
+        f'Tank {pos("storage-tank")}: test contents/temperature, then segment-contents readout; verify settings. '
+        'Finish a working automated gear line and have your partner check output. Continue useful work until deadline; report unresolved defects. '
+        'No kill rewards or market features in this exercise.')
+
 
 
 def main():
