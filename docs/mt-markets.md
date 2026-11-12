@@ -51,3 +51,11 @@ estimates until engine throughput is measured. The same stock position and items
 
 The original pact depot remains pending real-engine swap acceptance. Retire it and its cut only after that gate;
 cease-fire, shares and obligations remain, with delivered market goods counted toward delivery obligations.
+
+The canonical fixture holds production machines/inserters inactive until activation. Startup may tick to deploy the
+runtime, but cannot consume supplied inputs. POG_MT_PAUSED_START keeps models from starting before the operator
+signal; the opening instruction permits profile/identity only. Activation asserts unchanged production/consumption
+counts and stock before forcing contact. Enemy cease-fire is symmetric in both arms to isolate the production
+mechanism; this trial does not test enemy pressure or combat. The independent QA run releases the held machines
+for ten accelerated simulation minutes, verifies every line produces and the small patch depletes, then discards
+that loaded state. Both trials restore the exact canonical paused save, at normal game speed.

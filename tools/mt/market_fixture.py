@@ -26,10 +26,11 @@ assert(not storage.mt296_fixture,'fixture already exists')
 local h=storage.agent_harness;assert(h and h.mt and not next(h.mt.first or {}),'requires fresh pre-contact map')
 local sf=game.surfaces.nauvis;game.tick_paused=true;sf.always_day=true
 h.mt.teams={green=true,yellow=true};h.mt.order={'green','yellow'};h.mt.market=nil
-local fxt={version=1,prepared_tick=game.tick,teams={},targets=helpers.json_to_table(TARGETS),market=false}
+local fxt={version=1,prepared_tick=game.tick,teams={},targets=helpers.json_to_table(TARGETS),market=false,enemy_cease_fire=true}
 storage.mt296_fixture=fxt
 for k,name in ipairs{'green','yellow'} do
  local f=game.forces[name];local x,y=2000*k+.5,2000.5
+ f.set_cease_fire(game.forces.enemy,true);game.forces.enemy.set_cease_fire(f,true)
  local area={{x-55,y-55},{x+55,y+55}}
  sf.request_to_generate_chunks({x,y},3);sf.force_generate_chunk_requests()
  for _,e in pairs(sf.find_entities_filtered{area=area}) do assert(e.force.name=='neutral' or e.force.name=='enemy','owned entity in fixture yard') end
@@ -50,7 +51,9 @@ for k,name in ipairs{'green','yellow'} do
   assert(sf.can_place_entity{name=n,position={x+dx,y+dy},force=f,direction=d},'fixture collision: '..n..' at '..dx..','..dy)
   local e=assert(sf.create_entity{name=n,position={x+dx,y+dy},force=f,direction=d},n)
   if n=='inserter' then assert(e.pickup_position.x<e.drop_position.x,'fixture inserter must carry west to east') end
-  row.entities[#row.entities+1]={name=n,position=e.position,unit=e.unit_number};return e
+  local held=({['assembling-machine']=true,furnace=true,['mining-drill']=true,inserter=true,lab=true,['electric-energy-interface']=true})[e.type]
+  if held then e.active=false end
+  row.entities[#row.entities+1]={name=n,position=e.position,unit=e.unit_number,held=held};return e
  end
  local function put(e,n,count)
   local v=e.insert{name=n,count=count};assert(v==count,n..' insert short')
@@ -107,6 +110,11 @@ for k,name in ipairs{'green','yellow'} do
  row.initial_metal_equivalent={['iron-plate']=1900,['copper-plate']=710}
  row.expected_shortfall=k==1 and 1390 or 1700
  row.grant_fraction=10000/(row.expected_shortfall*20)
+ local stats=f.get_item_production_statistics(sf)
+ row.prepared_counts={made={},used={}}
+ for _,n in ipairs{'iron-plate','copper-plate','copper-cable','electronic-circuit','iron-gear-wheel','automation-science-pack'} do
+  row.prepared_counts.made[n]=stats.get_input_count(n);row.prepared_counts.used[n]=stats.get_output_count(n)
+ end
  f.chart(sf,area)
 end
 -- An isolated shared contact marker reveals neither base nor its distance.
@@ -121,6 +129,13 @@ local fxt=assert(storage.mt296_fixture,'prepare first');assert(not fxt.activated
 assert(not next(storage.agent_harness.mt.first or {}),'contact must begin at activation')
 game.tick_paused=true
 local on=MARKET;fxt.market=on;fxt.started_tick=game.tick;fxt.activated=true
+for _,row in ipairs(fxt.teams) do
+ local st=game.forces[row.team].get_item_production_statistics(game.surfaces.nauvis)
+ for n,v in pairs(row.prepared_counts.made) do assert(st.get_input_count(n)==v,'production before start: '..row.team..' '..n) end
+ for n,v in pairs(row.prepared_counts.used) do assert(st.get_output_count(n)==v,'consumption before start: '..row.team..' '..n) end
+ local e=assert(game.get_entity_by_unit_number(row.stock_unit));local i=e.get_inventory(defines.inventory.chest)
+ assert(i.get_item_count('iron-plate')==1750 and i.get_item_count('copper-plate')==500,'stock moved before start')
+end
 BASELINE
 local held={}
 if on then
@@ -149,7 +164,13 @@ for _,row in ipairs(fxt.teams) do
  end
 end
 fxt.held=nil
+RELEASE
 rcon.print(helpers.table_to_json(fxt))
+'''
+RELEASE=r'''
+for _,row in ipairs(storage.mt296_fixture.teams) do for _,v in ipairs(row.entities) do if v.held then
+ local e=assert(game.get_entity_by_unit_number(v.unit),'fixture machine missing before activation');e.active=true
+end end end
 '''
 
 class Client:
@@ -211,7 +232,7 @@ def main():
             else:raise RuntimeError('real chart contact did not occur')
             c.h.command('/silent-command game.tick_paused=true')
             c.call('mt_market')
-            receipt['fixture']=c.lua(FINISH)
+            receipt['fixture']=c.lua(FINISH.replace('RELEASE',RELEASE))
             c.call('mt_market')
             c.h.command('/silent-command game.tick_paused=false')
         else:

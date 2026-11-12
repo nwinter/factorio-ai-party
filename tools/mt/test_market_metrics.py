@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from market_fixture import instructions, PREPARE, ACTIVATE, FINISH, TARGETS, lua_string
+from market_fixture import instructions, PREPARE, ACTIVATE, FINISH, RELEASE, TARGETS, lua_string
 from market_metrics import summarize, BASELINE, SNAPSHOT
 import json
 
@@ -36,7 +36,7 @@ class Metrics(unittest.TestCase):
 
     def test_embedded_lua_compiles(self):
         chunks=[PREPARE.replace('TARGETS',lua_string(json.dumps(TARGETS))),
-                ACTIVATE.replace('MARKET','true').replace('BASELINE',BASELINE),FINISH,SNAPSHOT]
+                ACTIVATE.replace('MARKET','true').replace('BASELINE',BASELINE),FINISH.replace('RELEASE',RELEASE),SNAPSHOT]
         with tempfile.TemporaryDirectory() as d:
             for i,chunk in enumerate(chunks):
                 path=Path(d)/f'{i}.lua';path.write_text(chunk)

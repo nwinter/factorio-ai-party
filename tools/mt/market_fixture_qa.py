@@ -8,7 +8,7 @@ import argparse
 import json
 from pathlib import Path
 import time
-from market_fixture import Client, ROOT
+from market_fixture import Client, ROOT, RELEASE
 from market_metrics import SNAPSHOT
 
 def main():
@@ -21,7 +21,7 @@ def main():
         c.lua('''assert(storage.mt296_fixture and not storage.mt296_fixture.activated)
 assert(not next(storage.agent_harness.bots and storage.agent_harness.bots.by_index or {}),'QA requires no agents')
 assert(not next(storage.agent_harness.mt.first or {}),'QA must stay pre-contact')
-game.speed=20;game.tick_paused=false;rcon.print('{}')''')
+'''+RELEASE+'''game.speed=20;game.tick_paused=false;rcon.print('{}')''')
         first=c.lua(SNAPSHOT);out['samples'].append(first)
         for elapsed in (60,600):
             deadline=time.time()+240
