@@ -377,6 +377,11 @@ function feedRows(s) {
   const rowsOut = [];
   for (const m of s.feed || []) {
     const t = model.teams.get(m.team), a = t && who(m.team, m.name);
+    if (m.kind === 'market') {
+      if (t && m.system === true && m.name === 'Trading Post' && model.teams.has(m.to_team) && m.to_team !== m.team && typeof m.text === 'string' && m.text)
+        rowsOut.push({id: 'a:' + m.id, kind: 'market', team: m.team, to_team: m.to_team, text: m.text, tick: m.tick, at: m.at || 0});
+      continue;
+    }
     if (!a || !['talk', 'tell', 'diplomacy', 'board', 'identity'].includes(m.kind) || typeof m.text !== 'string') continue;
     if (m.kind === 'identity' ? typeof m.title !== 'string' || !m.title : !m.text) continue;
     // Drawn only under its own team; a tell must name teammates, diplomacy another launched team.
@@ -436,9 +441,10 @@ function laneOf(it) {  // who a team line is for; every team line but an answer 
   if (it.kind === 'tell') return 'TO ' + it.to.map(n => n === 'team' ? 'TEAM' : ((who(it.team, n) || {}).shown || cap(n)).toUpperCase()).join(', ');
   return 'TO TEAM';
 }
-const speaks = it => it.kind !== 'board' && it.kind !== 'identity';  // notes stay compact; speech opens up when newest
+const speaks = it => !['board', 'identity', 'market'].includes(it.kind);  // system facts never impersonate an agent
 const NOTE = font(16, 600), PERSONA = font(18, 600, 'ui', true);
 function measure(it, w, big) {
+  if (it.kind === 'market') return 35 + wrap(it.text, SMALL, w - 32, 3).length * 24 + 12;
   if (it.kind === 'board') return 30 + wrap(it.text, NOTE, w - 62, 2).length * 21;
   if (it.kind === 'identity') return 66 + (it.text ? wrap('“' + it.text + '”', PERSONA, w - 96, 2).length * 23 + 4 : 0);
   if (it.kind === 'viewer') {
@@ -476,6 +482,15 @@ function drawNote(it, x, y, w, h) {
   if (it.text) wrap('“' + it.text + '”', PERSONA, w - 96, 2).forEach((l, i) => text(l, x + 78, y + 82 + i * 23, PERSONA, C.text));
 }
 function drawBubble(it, x, y, w, h, e, life) {
+  if (it.kind === 'market') {
+    ctx.save(); ctx.globalAlpha *= clamp(life * 1.4 - .2, 0, 1);
+    plate(x, y, w, h, {cut: 10, fill: '#34312a', fill2: '#25241f'});
+    box(x, y + 6, 5, h - 12, teamColor(it.team)); box(x + w - 5, y + 6, 5, h - 12, teamColor(it.to_team));
+    text('TRADING POST · SYSTEM', x + 16, y + 24, font(14, 700), C.gold, {ls: .8});
+    text(clockOf(it.tick), x + w - 16, y + 24, font(13, 600), C.muted, {align: 'right'});
+    wrap(it.text, SMALL, w - 32, 3).forEach((l, i) => text(l, x + 16, y + 54 + i * 24, SMALL, C.text));
+    pop(); return;
+  }
   if (!speaks(it)) { ctx.save(); ctx.globalAlpha *= clamp(life * 1.4 - .2, 0, 1); drawNote(it, x, y, w, h); pop(); return; }
   ctx.save(); ctx.globalAlpha *= clamp(life * 1.4 - .2, 0, 1);
   const big = e > .5, body = ctx.globalAlpha * clamp(Math.abs(e - .5) * 4, 0, 1);  // the two layouts cross-fade inside one plate
@@ -698,6 +713,46 @@ function credit(c) {  // Wube's graphics credit: at the start of a clip and brie
   pop();
 }
 
+// Display-only market facts: sampled shipment coordinates, never a wealth standing or camera target.
+function drawMarket() {
+  const data = state.market || {}, markers = Array.isArray(data.markers) ? data.markers : [], prices = Array.isArray(data.last_prices) ? data.last_prices : [];
+  if (!markers.length && !prices.length) { debug.market = null; return; }
+  const surface = (markers[0] || {}).surface, ships = markers.filter(m => m.surface === surface).slice(0, 3), ps = prices.slice(0, 2);
+  const c = R.cam, w = 390, x = c.x + c.w - w - 18, y = c.y + 74, h = 44 + (ships.length ? 134 : 0) + ps.length * 45;
+  plate(x, y, w, h, {cut: 12, fill: 'rgba(33,31,27,.95)', fill2: 'rgba(22,21,19,.95)'});
+  text('TRADING POST', x + 16, y + 28, font(24, 800, 'disp'), C.gold, {ls: 1});
+  text(ships.length ? cap(surface).toUpperCase() : 'LAST TRADES', x + w - 16, y + 27, font(12, 700), C.muted, {align: 'right'});
+  let py = y + 44;
+  if (ships.length) {
+    const points = ships.map(m => [m.x, m.y]);
+    for (const t of model.teams.values()) { const m = t.map; if (surface === 'nauvis' && m) points.push([m.x0, m.y0], [m.x0 + m.w * m.cell, m.y0 + m.h * m.cell]); }
+    const x0 = Math.floor(Math.min(...points.map(p => p[0])) / 256) * 256 - 32, y0 = Math.floor(Math.min(...points.map(p => p[1])) / 256) * 256 - 32;
+    const span = Math.max(256, Math.max(...points.map(p => p[0])) - x0 + 32, Math.max(...points.map(p => p[1])) - y0 + 32);
+    const mx = x + 12, my = py, size = 114;
+    box(mx, my, size, size, C.well);
+    for (let i = 1; i < 4; i++) { box(mx + i * size / 4, my, 1, size, '#33332e'); box(mx, my + i * size / 4, size, 1, '#33332e'); }
+    ships.forEach((m, i) => {
+      const px = mx + (m.x - x0) / span * size, qy = my + (m.y - y0) / span * size;
+      box(px - 6, qy - 6, 12, 12, teamColor(m.to)); box(px - 4, qy - 4, 8, 8, teamColor(m.from));
+      text(String(i + 1), px + 8, qy + 4, font(12, 700), C.ink);
+      const lx = x + 140, ly = py + 12 + i * 39, eta = Math.max(0, Math.ceil((m.arrival_tick - (clockTop || data.tick)) / 60));
+      const status = m.state === 'waiting' ? 'WAITING FOR SPACE' : m.state === 'quarantined' ? 'HELD' : eta ? eta + 's TO ARRIVAL' : 'ARRIVING';
+      text(fit((i + 1) + '. ' + m.from.toUpperCase() + ' → ' + m.to.toUpperCase() + ' · ' + status, font(11, 700), w - 154), lx, ly, font(11, 700), C.muted);
+      text(fit(m.count + ' ' + cap(m.item) + ' · ' + Math.round(m.x) + ',' + Math.round(m.y), font(16, 600), w - 154), lx, ly + 19, font(16, 600), C.text);
+    });
+    text('SAMPLED POSITIONS' + (markers.length > ships.length ? ' · +' + (markers.length - ships.length) + ' MORE' : ''), mx, py + 127, font(10, 700), C.dim, {ls: .5});
+    py += 134;
+  }
+  ps.forEach(p => {
+    box(x + 12, py, w - 24, 1, C.seam);
+    text(fit(cap(p.item) + ' · ' + p.price + ' coin each', font(17, 600), w - 30), x + 15, py + 20, font(17, 600), C.ink);
+    const detail = p.a.toUpperCase() + ' ↔ ' + p.b.toUpperCase() + ' · ' + p.count + ' units · ' + (p.thin ? 'THIN: ONE PRINT' : p.prints + ' PRINTS') + ' · ' + clockOf(p.tick);
+    text(fit(detail, font(11, 700), w - 30), x + 15, py + 36, font(11, 700), p.thin ? C.amber : C.muted);
+    py += 45;
+  });
+  debug.market = {markers: ships.length, prices: ps.length, surface};
+}
+
 // ---- frame ------------------------------------------------------------------------------------------------------------
 const debug = {feed: [], frames: 0};
 function draw() {
@@ -707,7 +762,7 @@ function draw() {
   const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, C.void0); g.addColorStop(1, C.void1); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = treadFill; ctx.fillRect(0, 0, W, H);
   ctx.clearRect(R.cam.x, R.cam.y, R.cam.w, R.cam.h);
-  drawStrip(); drawRail(); drawBand(); drawCamera();
+  drawStrip(); drawRail(); drawBand(); drawMarket(); drawCamera();
   debug.frames++; if (debug.frames % 600 === 0) prune();
 }
 let queued = 0, lastDraw = 0;
