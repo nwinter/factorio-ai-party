@@ -229,3 +229,7 @@ reset(true,true);K.on_died{entity=s.mt.market.teams.blue.post};stock('red','mt-c
 K.on_died{entity=s.mt.market.teams.red.post}
 eq(s.mt.market.teams.red.wallet,9375);eq(K.audit().physical,3125);eq(count('red','mt-coin'),0);audit()
 print('mt296 final total: '..checks)
+-- mt_setup's saved MapPosition may be an array; the Post offset normalizes both forms.
+reset(false,false);s.mt.spawns.red.nauvis={100,200};s.mt.first['chart red>blue']=1;tick(60)
+eq(s.mt.market.teams.red.post.position.x,104);eq(s.mt.market.teams.red.post.position.y,200)
+print('mt296 engine regression total: '..checks)

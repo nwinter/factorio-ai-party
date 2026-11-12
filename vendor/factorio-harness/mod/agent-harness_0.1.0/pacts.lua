@@ -690,6 +690,7 @@ return function(api)
       if not (s.post and s.post.valid) then
         local home=(mt().spawns or {})[t] or {};local surf=game.get_surface('nauvis')
         local at=s.home or home.nauvis or f.get_spawn_position(surf)
+        at={x=at.x or at[1],y=at.y or at[2]}
         local pos=surf.find_non_colliding_position(POST,{x=at.x+4,y=at.y},32,.5)
         if pos then
           s.post=assert(surf.create_entity{name=POST,position=pos,force=f},'Trading Post creation failed')

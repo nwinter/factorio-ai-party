@@ -176,7 +176,7 @@ end end end
 class Client:
     def __init__(self): self.h=Harness('imac2')
     def lua(self,code):
-        raw=self.h.command('/silent-command '+one_line('\n'.join(l for l in code.splitlines() if not l.lstrip().startswith('--'))))
+        raw=self.h.command('/silent-command __agent-harness__ '+one_line('\n'.join(l for l in code.splitlines() if not l.lstrip().startswith('--'))))
         try:return json.loads(raw)
         except ValueError:raise RuntimeError(raw[:1800]) from None
     def call(self,action,args=None,bot=None,ident=None):

@@ -43,7 +43,11 @@ def main():
         engine=c.lua('rcon.print(helpers.table_to_json{version=script.active_mods.base,tick=game.tick,paused=game.tick_paused})')
         assert engine['version']=='2.1.24';record('engine',engine)
         if a.phase=='begin':
+            have=c.lua('rcon.print(remote.call("agent_harness","bots"))').get('bots') or []
+            have={b['name']:b for b in have}
             for name,team in BOTS.items():
+                if name in have:
+                    assert have[name]['force']==team and have[name]['alive'];continue
                 r=c.lua('rcon.print(remote.call("agent_harness","bot_create",{name='+lua_string(name)+',force='+lua_string(team)+'}))')
                 assert r.get('ok'),r
             for action in ('market','offer','buy','sell','cancel','embargo'):
