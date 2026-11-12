@@ -9,9 +9,12 @@
 @font-face{font-family:"Titillium Web";font-weight:600;font-style:italic;font-display:block;src:url(/fonts/titillium-web-600-italic.woff2) format("woff2")}
 @font-face{font-family:"Big Shoulders Display";font-weight:100 900;font-display:block;src:url(/fonts/big-shoulders-display-var.woff2) format("woff2")}
 *{box-sizing:border-box}html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:transparent}canvas{position:absolute;inset:0;width:1920px;height:1080px}#summary{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+body #voice{left:32px;width:1376px;top:842px}body #voice .cap{max-width:1260px}
 </style>
 <canvas id="race" width="1920" height="1080" aria-label="Factory race standings, team rosters, agent speech, news and the camera"></canvas><div id="summary" aria-live="polite"></div>
 <script src="/mapview.js"></script>
 <script src="/avatar.js"></script>
+<script src="/playback-clock.js"></script>
 <script src="/overlay.js"></script>
+<script>if(new URLSearchParams(location.search).get('audio')==='1'){const s=document.createElement('script');s.src='/audio.js';document.body.appendChild(s);}</script>
 </html>

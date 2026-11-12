@@ -24,10 +24,12 @@
 #   POG_MT_STREAM (default 0; 1: the stream service per team on this Mac, overlays at 127.0.0.1:8791...),
 #   POG_MT_PUBLIC (default 0; 1: implies POG_MT_STREAM=1, pogwin spectator, public overlay, mt-stream OBS scene,
 #     recording; NEVER starts streaming). POG_MT_YOUTUBE=VIDEO_ID selects the viewer chat broadcast.
+#     Public staging includes the music bed and a caster (POG_MT_TTS default eleven-fast, local say fallback).
+#     Only filtered overlay events/radio are spoken; viewer chat and game audio stay silent.
 #   POG_MT_HUMANS (default 0; 1: the human team, its freeze, and the server's game password and whitelist),
 #   Provider traffic always uses the run's network gate (tools/mt/netgate.py).
 # Always: Space Age, real time, POG_BROKER=1 (no key in the run; the broker reaches the iMac, which Claude Code's
-# sandbox would not). Public staging is opt-in; no site publishing, polls, casters or analyst.
+# sandbox would not). Public staging is opt-in; no site publishing, polls or analyst.
 # Lockdown (multiteam-design.md, moderate): POG_WEB_BLOCK (the site, YouTube, GitHub; tools/full_tools.py says per
 # harness what that does), POG_DENY_READ (this checkout, every mt/ worktree, the operator's folder) for the Claude Code
 # and Grok sandboxes, which also deny the other teams' folders (tools/launch-agent.sh). The operator's files (this log,
