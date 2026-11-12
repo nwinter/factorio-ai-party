@@ -652,6 +652,9 @@ return function(api)
       return h and h.team==t and h.state=='frozen' or false
     end
     local function fail(msg,call) error(msg..'; call '..(call or 'status {}'),0) end
+    local function news(t,u,kind,text,id)
+      if api.on_market then api.on_market({kind=kind,a=t,b=u,id=id,tick=game.tick,text=text}) end
+    end
     local function integer(n,lo,hi,label)
       if type(n)~='number' or n~=n or n<lo or n>hi or n~=math.floor(n) then fail(label..': integer '..lo..'..'..hi) end
       return n
@@ -681,7 +684,7 @@ return function(api)
     end
     -- First contact enables red science per force. Creation and grants never run during on_load.
     function K.sync(t)
-      if K.rung(t)==0 then return end
+      if K.rung(t)==0 or mt().market and mt().market.fault then return end
       local s=team(t);local f=game.forces[t];local tech=f.technologies[TECH]
       if tech then tech.enabled=true;tech.visible_when_disabled=false end
       if not (s.post and s.post.valid) then
@@ -699,6 +702,7 @@ return function(api)
       if tech and tech.researched and not s.granted then
         s.granted=true;s.wallet=s.wallet+10000;state().issuance=state().issuance+10000
         fact(t,'Coinage: 10,000 coin granted once. Call market {} for the book and exact accepting calls. Money never scores.',true)
+        news(t,nil,'coinage',t..' researches Coinage: the fixed 10,000 coin grant opens priced orders.')
       end
     end
     local function canonical(v)
@@ -783,7 +787,7 @@ return function(api)
       local s=team(t);local p=s.post
       local out={fault=state().fault and {state='quarantined',next={action='status',args={}}} or nil,
         rung=K.rung(t)==2 and 'coinage' or 'swap',post=p and p.valid and {position=copy(p.position),surface=p.surface.name} or false,
-        stock={},orders={},offers={},inbound={},fills={},transit_seconds=config('transit_ticks')/60,pair_stacks_per_minute=config('pair_stacks')}
+        stock={},orders={},offers={},inbound={},fills={},embargoed={},transit_seconds=config('transit_ticks')/60,pair_stacks_per_minute=config('pair_stacks')}
       if K.rung(t)==2 then out.wallet=s.wallet;out.reserved=s.reserved;out.available=s.wallet-s.reserved;out.reference_prices=copy(PRICES) end
       for _,n in ipairs(keys(PRICES)) do local nstock=amount(t,n);if nstock>0 then out.stock[n]=nstock end end
       for _,key in ipairs(keys(s.orders)) do
@@ -793,6 +797,12 @@ return function(api)
       end
       for _,u in ipairs(contacts(t)) do
         local pairdata=pair(t,u);local us=state().teams[u]
+        local blocked=pairdata.embargo and next(pairdata.embargo)~=nil
+        if blocked then
+          local r={by_us=pairdata.embargo[t]==true,by_counterparty=pairdata.embargo[u]==true}
+          if #contacts(t)>1 then r.team=u end
+          out.embargoed[#out.embargoed+1]=r
+        end
         for _,key in ipairs(keys(us and us.orders or {})) do
           local o=us.orders[key]
           local remaining=o.count-(pairdata.filled_by_order[o.team..'/'..o.id] or 0)
@@ -800,6 +810,7 @@ return function(api)
             -- No peer wallet, stock, global order id, rival coordinates, or unrelated fill count.
             local row={id=book_id(pairdata,o),side=o.side,item=o.item,price=o.price,give=copy(o.give),get=copy(o.get),accept=accepting(t,o,remaining)}
             if row.accept==false then row.blocked='no available coin; sell surplus first';row.next={action='status',args={}} end
+            if blocked then row.accept=false;row.blocked='new matches stopped by embargo';row.next={action='status',args={}} end
             if #contacts(t)>1 then row.team=u end
             out.offers[#out.offers+1]=row
           end
@@ -811,7 +822,7 @@ return function(api)
             for _,leg in ipairs(tx.legs) do if leg.to==t then
               local r=copy(row);r.item=leg.item;r.count=leg.count-leg.delivered;r.delivered=leg.delivered
               if r.count>0 then
-                r.next={action='collect',args={position=out.post and out.post.position,count=100}}
+                r.next=tx.status=='waiting' and out.post and {action='collect',args={position=out.post.position,count=100}} or {action='status',args={}}
                 out.inbound[#out.inbound+1]=r
               end
             end end
@@ -863,7 +874,13 @@ return function(api)
         if action=='cancel' then return cancel(t,a) end
         if action=='embargo' then
           if type(a.team)~='string' or not M.contacted(t,a.team) or not teams()[a.team] or a.team==t then fail('counterparty unavailable') end
-          local p=pair(t,a.team);p.embargo=p.embargo or {};p.embargo[t]=true;return {embargo=true}
+          local p=pair(t,a.team);p.embargo=p.embargo or {}
+          if not p.embargo[t] then
+            p.embargo[t]=true
+            local line=t..' embargoes '..a.team..': new matches stop; committed cargo still arrives.'
+            fact(t,line,true);fact(a.team,line,true);news(t,a.team,'embargo',line)
+          end
+          return {embargo=true}
         end
         return add_order(t,action,a)
       end)
@@ -907,7 +924,7 @@ return function(api)
       local line=tx.price and string.format('%s sells %d %s to %s at %d; arrival in %d seconds',l.from,l.count,l.item,l.to,tx.price,config('transit_ticks')/60)
         or string.format('%s swaps %d %s with %s; arrival in %d seconds',l.from,l.count,l.item,l.to,config('transit_ticks')/60)
       fact(p.a,line,true);fact(p.b,line,true)
-      if api.on_market then api.on_market({kind='fill',a=p.a,b=p.b,id=tx.id,tick=game.tick,text=line}) end
+      news(p.a,p.b,'fill',line,tx.id)
     end
     local function fill(p,ask,bid)
       local price=(ask.tick<bid.tick or ask.tick==bid.tick and game.forces[ask.team].index<game.forces[bid.team].index) and ask.price or bid.price
@@ -995,11 +1012,16 @@ return function(api)
     end
     -- The wallet includes unmatched buy reserves. A raid cancels bids if needed to free the stolen amount;
     -- matched purchases have already left that wallet into payment escrow and are irrevocable.
+    local deposit
     function K.on_died(event)
       local e=event.entity
       if not (mt() and e and e.valid and e.name==POST) then return end
       local t=e.force.name;local s=state().teams[t]
       if not s or not s.post or s.post.unit_number~=e.unit_number or s.spills[tostring(e.unit_number)] then return end
+      if state().fault then return end
+      -- Coins just inserted since the last one-second pass already belong to this team.
+      -- Credit them before chest destruction can erase their physical stack.
+      deposit(t)
       local n=math.floor(s.wallet*.25)
       local rec={unit=e.unit_number,count=n,status='preparing',tick=game.tick};s.spills[tostring(e.unit_number)]=rec
       transact(rec,function()
@@ -1013,8 +1035,9 @@ return function(api)
         assert(actual==n,'coin spill incomplete: quarantined');rec.status='spilled'
       end)
       fact(t,'Home Trading Post destroyed: '..n..' coin spilled in the wreck.',true)
+      news(t,nil,'raid',t..' home Trading Post destroyed: '..n..' coin spilled in the wreck.')
     end
-    local function deposit(t)
+    deposit=function(t)
       local i=inv(t);if not i then return end
       local n=i.get_item_count{name=COIN,quality='normal'}
       if n<=0 then return end

@@ -1,0 +1,5 @@
+# team	name	kind	route	model	effort	label	harness
+green	gemini	agy	agy	gemini-3.8-flash-high	-	Gemini 3.8 Flash	Antigravity
+green	gemini2	agy	agy	gemini-3.8-flash-high	-	Gemini 3.8 Flash	Antigravity
+yellow	grok	grok	grok	grok-4.7	low	Grok 4.7	Grok Build
+yellow	grok2	grok	grok	grok-4.7	low	Grok 4.7	Grok Build

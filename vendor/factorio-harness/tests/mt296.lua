@@ -3,7 +3,7 @@ local checks=0
 local function eq(a,b,m) checks=checks+1;assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function ok(v,m) checks=checks+1;assert(v,m) end
 local function refused(fn,msg) local fine,e=pcall(fn);ok(not fine,'expected refusal');ok(tostring(e):find(msg,1,true),tostring(e));return tostring(e) end
-local s,P,K,teamname,requestid,serial,made,spilled,forces,surface
+local s,P,K,teamname,requestid,serial,made,spilled,forces,surface,news
 local function inventory()
  local i={items={},capacity=100000}
  i.get_item_count=function(q) return i.items[q.name..'@'..(q.quality or 'normal')] or 0 end
@@ -16,10 +16,11 @@ local function inventory()
 end
 local function reload()
  P=dofile('mod/agent-harness_0.1.0/pacts.lua'){state=function() return s end,team_now=function() return teamname end,
- request_id=function() return requestid end,as_team=function(t,fn) local prev=teamname;teamname=t;local r=fn();teamname=prev;return r end,fact=function() end};K=P.market
+ request_id=function() return requestid end,on_market=function(e) news[#news+1]=e end,
+ as_team=function(t,fn) local prev=teamname;teamname=t;local r=fn();teamname=prev;return r end,fact=function() end};K=P.market
 end
 local function reset(contact,coinage)
- defines={inventory={chest=1}};prototypes={item={}};forces={};made={};spilled={};serial=0;requestid='initial';teamname='red'
+ defines={inventory={chest=1}};prototypes={item={}};forces={};made={};spilled={};news={};serial=0;requestid='initial';teamname='red'
  surface={index=1,name='nauvis',find_non_colliding_position=function(_,at) return at end}
  surface.create_entity=function(a)
   local i=inventory();local e={name=a.name,valid=true,position=a.position,force=a.force,surface=surface,unit_number=#made+1}
@@ -213,3 +214,18 @@ refused(function() call('red','cancel',{item='iron-ore',side='buy'}) end,'side: 
 reset(true,true);s.mt.market.fault={transaction=1337,error='green hidden coordinate 900,900'}
 eq(K.status('red').fault.transaction,nil);eq(K.status('red').fault.error,nil)
 print('mt296 comprehensive assertions: '..checks)
+-- Authoritative moments are emitted once; blocked books never recommend new orders.
+reset(true,true);eq(#news,2);eq(news[1].kind,'coinage');eq(news[1].b,nil)
+sell('blue','iron-ore',10);call('red','embargo',{team='blue'});eq(#news,3);eq(news[3].kind,'embargo')
+call('red','embargo',{team='blue'});eq(#news,3)
+eq(K.status('red').offers[1].accept,false);eq(#K.status('red').embargoed,1)
+K.on_died{entity=s.mt.market.teams.red.post};eq(#news,4);eq(news[4].kind,'raid')
+local feed=dofile('mod/agent-harness_0.1.0/teamfeed.lua'){state=function() return s end}
+feed.market(news[1]);feed.market(news[3]);local lines=feed.operator.mt_feed{}.lines
+eq(#lines[1].to,0);eq(lines[1].event,'coinage');eq(lines[1].source_seq,1);eq(lines[2].to[1],'blue')
+print('mt296 acceptance assertions: '..checks)
+-- Coins inserted immediately before a raid are credited before the chest disappears.
+reset(true,true);K.on_died{entity=s.mt.market.teams.blue.post};stock('red','mt-coin',2500)
+K.on_died{entity=s.mt.market.teams.red.post}
+eq(s.mt.market.teams.red.wallet,9375);eq(K.audit().physical,3125);eq(count('red','mt-coin'),0);audit()
+print('mt296 final total: '..checks)

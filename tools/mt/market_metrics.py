@@ -143,6 +143,7 @@ def report(run):
     for line in (folder/'op/teams.tsv').read_text().splitlines():
         if not line or line.startswith('#'):continue
         team,name,kind,route,model,*_=line.split('\t');d=folder/team/name
+        if team not in out['teams']:continue
         events=rows(d/'journal.jsonl.gz')+rows(d/'journal.jsonl')
         req={r['request']['id']:r['request'] for r in events if r.get('event')=='request'}
         res={r['response']['id']:r['response'] for r in events if r.get('event')=='response'}

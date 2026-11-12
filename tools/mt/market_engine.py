@@ -72,7 +72,9 @@ rcon.print('{}')''')
             matched=wait(c,lambda s:txn(s) is not None,15);t=txn(matched);assert t['eta']-t['tick']==5400
             assert sum(l['removed'] for l in t['legs'])==180;record('matched_swap',t)
             c.lua('''local i=storage.agent_harness.mt.market.teams.yellow.post.get_inventory(defines.inventory.chest)
-assert(i.is_empty());i.set_bar(2);assert(i.insert{name='iron-plate',count=99}==99);rcon.print('{}')''')
+assert(i.is_empty())
+for j=1,#i do i[j].set_stack{name='stone',count=prototypes.item.stone.stack_size} end
+i[1].set_stack{name='iron-plate',count=prototypes.item['iron-plate'].stack_size-1};rcon.print('{}')''')
             # Evict the generic 256-entry mutation cache before the real save/load replay.
             c.lua('''for i=1,300 do
 local q={id='engine-cache-'..i,bot='mg1',action='market',args={}}
@@ -92,7 +94,7 @@ rcon.print('{}')''')
             c.h.command('/silent-command game.tick_paused=false')
             partial=wait(c,lambda s:txn(s)['status']=='waiting');t=txn(partial)
             legs={l['to']:l for l in t['legs']};assert legs['yellow']['delivered']==1 and legs['green']['delivered']==80;record('exact_partial_swap_after_load',t)
-            c.lua('''storage.agent_harness.mt.market.teams.yellow.post.get_inventory(defines.inventory.chest).set_bar()
+            c.lua('''storage.agent_harness.mt.market.teams.yellow.post.get_inventory(defines.inventory.chest)[2].clear()
 rcon.print('{}')''')
             done=wait(c,lambda s:txn(s)['status']=='delivered',10);assert not done['audit']['faults'];record('swap_complete',done['audit'])
             # Force-specific technology research grants once, not once per Post or request.
@@ -106,8 +108,9 @@ rcon.print('{}')''')
             assert x['error']['message']==y['error']['message'];record('unknown_counterparty_identical',x['error'])
             c.lua('''local t=storage.agent_harness.mt.market.teams
 assert(t.green.post.insert{name='iron-ore',count=100}==100)
-local i=t.yellow.post.get_inventory(defines.inventory.chest);i.clear();i.set_bar(2)
-assert(i.insert{name='iron-ore',count=99}==99)
+local i=t.yellow.post.get_inventory(defines.inventory.chest);i.clear()
+for j=1,#i do i[j].set_stack{name='stone',count=prototypes.item.stone.stack_size} end
+i[1].set_stack{name='iron-ore',count=prototypes.item['iron-ore'].stack_size-1}
 rcon.print('{}')''')
             assert raw('sell',{'item':'iron-ore','price':10,'keep':0,'count':100})['ok']
             assert raw('buy',{'item':'iron-ore','price':20,'count':100},bot='my1',ident='engine-durable-buy')['ok']
@@ -126,7 +129,8 @@ rcon.print('{}')''')
             assert t['legs'][0]['delivered']==1 and t['escrow']==990 and state['teams']['green']['wallet']==10010;record('exact_partial_coin_and_freeze',t)
             c.call('mt_freeze',{'stop':True})
             c.lua('''storage.agent_harness.mt.humans=nil
-storage.agent_harness.mt.market.teams.yellow.post.get_inventory(defines.inventory.chest).set_bar()
+local i=storage.agent_harness.mt.market.teams.yellow.post.get_inventory(defines.inventory.chest)
+i[2].clear();i[3].clear()
 rcon.print('{}')''')
             state=wait(c,lambda s:s['pairs']['green>yellow']['transactions'][1]['status']=='delivered',10)
             assert state['teams']['green']['wallet']==11000 and state['teams']['yellow']['wallet']==9000;record('coin_settled',state['audit'])
@@ -140,6 +144,8 @@ local p=t.green.post;p.destructible=true;assert(p.die(game.forces.yellow));rcon.
 assert(t.post and t.post.valid);t.post.destructible=true;assert(t.post.die(game.forces.yellow));rcon.print('{}')''')
             state=wait(c,lambda s:s['audit']['physical']==6125,10);assert state['teams']['green']['wallet']==7875;record('second_raid',state['audit'])
             coins=c.lua('''local m=storage.agent_harness.mt.market;local f=game.forces.green;local home=storage.agent_harness.mt.spawns.green.nauvis
+local dst=m.teams.yellow.post.get_inventory(defines.inventory.chest)
+for j=1,#dst do if dst[j].valid_for_read and dst[j].name=='stone' then dst[j].clear() end end
 local n=0
 for _,e in ipairs(game.surfaces.nauvis.find_entities_filtered{type='item-entity',position=home,radius=64}) do
  if e.stack.valid_for_read and e.stack.name=='mt-coin' then

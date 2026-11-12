@@ -30,7 +30,7 @@ return function(api)
     local s=store();if not s then return end
     s.seq=s.seq+1
     s.lines[#s.lines+1]={seq=s.seq,tick=e.tick,team=e.a,agent='Trading Post',kind='market',scope='market',
-      text=e.text,to={e.b},source_seq=e.id,system=true}
+      text=e.text,to=e.b and {e.b} or {},source_seq=e.id or s.seq,system=true,event=e.kind or 'fill'}
     while #s.lines>KEEP do table.remove(s.lines,1) end
   end
   function M.operator.mt_feed(a)

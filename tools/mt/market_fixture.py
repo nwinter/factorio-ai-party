@@ -113,8 +113,6 @@ end
 local c={x=150.5,y=150.5};sf.request_to_generate_chunks(c,2);sf.force_generate_chunk_requests()
 for _,e in pairs(sf.find_entities_filtered{area={{148,148},{156,154}}}) do assert(e.force.name=='neutral' or e.force.name=='enemy');e.destroy() end
 sf.set_tiles{{name='grass-1',position={150,150}},{name='grass-1',position={153,150}}}
-assert(sf.create_entity{name='steel-chest',position=c,force='green'})
-assert(sf.create_entity{name='steel-chest',position={153.5,150.5},force='yellow'})
 fxt.contact_area={{148,148},{156,154}}
 rcon.print(helpers.table_to_json(fxt))
 '''
@@ -131,6 +129,8 @@ if on then
   held[row.team]=inv.get_contents();e.destroy()
  end
 end
+assert(game.surfaces.nauvis.create_entity{name='steel-chest',position={150.5,150.5},force='green'})
+assert(game.surfaces.nauvis.create_entity{name='steel-chest',position={153.5,150.5},force='yellow'})
 for _,row in ipairs(fxt.teams) do game.forces[row.team].chart(game.surfaces.nauvis,fxt.contact_area) end
 -- Contact events are processed by the real engine on the next simulation tick.
 storage.mt296_fixture.held=held
@@ -172,7 +172,7 @@ def instructions(row,on):
     text=("Prepared factory: power, technology, buildings and initial items are supplied, not earned. "
         f"Stock {'Post' if on else 'chest'} {pos(row['stock_position'])}; construction kit {pos(row['kit'])}. "
         f"Rich {row['rich']}; small {row['poor']} patch should run out around minute ten. "
-        "Race: manufacture 1,800 electronic circuits, 1,500 iron gears and 600 automation science packs after contact. "
+        "For this experiment, replace the edge goal with: manufacture 1,800 electronic circuits, 1,500 iron gears and 600 red science packs after contact. "
         "Production counts score; supplied items, money and trade volume do not. Split work: one maintains smelting, "
         "input logistics and expansion; one supplies/connects production cells and verifies output. "
         "Automate input/output chests with belts and inserters. Keep useful work running while supplies arrive. "
