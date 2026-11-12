@@ -27,7 +27,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 sys.path.insert(0, str(HERE.parent / 'stream'))
 from obsws import OBS
-from public_overlay import PublicOverlay, CAMERA
+from public_overlay import PublicOverlay, CAMERA, CAMERA_RECT
 from udp_bridge import Bridge
 
 SCENE = 'mt-stream'
@@ -76,7 +76,7 @@ def setup_obs(obs, url, receipt):
     specs = [
         ('mt background', 'color_source_v3', {'color': 0xff201810, 'width': 1920, 'height': 1080}, (0, 0, 1920, 1080)),
         ('mt camera', 'game_capture', {'capture_mode': 'window', 'window': f"Factorio {os.environ.get('MT_EXPECT_VERSION', '2.0.77')}:Factorio:factorio-mtcam.exe",
-                                     'priority': 2, 'capture_cursor': False, 'allow_transparency': False}, (24, 248, 1280, 720)),
+                                     'priority': 2, 'capture_cursor': False, 'allow_transparency': False}, CAMERA_RECT),
         ('mt overlay', 'browser_source', {'url': url, 'width': 1920, 'height': 1080, 'fps': 30,
                                         'shutdown': False, 'restart_when_active': True}, (0, 0, 1920, 1080))]
     names = [i['inputName'] for i in obs.call('GetInputList')['inputs']]

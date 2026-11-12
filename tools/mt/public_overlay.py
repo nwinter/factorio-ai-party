@@ -1,4 +1,4 @@
-"""Read-only public projection of team stream services; one camera, event-aware race director.
+"""Read-only public projection of team stream services; one camera, activity-aware race director.
 
 No Relay, viewer_say, inbox writes, or HTTP mutation routes. The camera controller
 is operator-only and reuses the stream harness and lookcam chart checks.
@@ -19,9 +19,41 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / 'stream'))
 from harness import Harness
 import lookcam
-from public_race import project, Race, Director, read_views, icons, speech, project_viewers, diplomacy, rows as list_rows, obj
+from public_race import (project, Race, Director, read_views, icons, speech, project_viewers, diplomacy,
+                         subjects, rows as list_rows, obj)
 
 CAMERA = 'pog-director2'
+# The one camera rectangle, in overlay pixels. The OBS scene item (public_stream.setup_obs) and the
+# page (state.layout) both read it from here, so the video and its frame cannot drift apart.
+CAMERA_RECT = (16, 188, 1408, 792)
+# Game zoom by what the agent on air is doing: close for fights and building, wide for walks
+# (the stream director's zoom_* x main_scale). A base shot starts wide and tightens to its chart.
+ZOOMS = {'fight': 1.5, 'build': 1.4, 'work': 1.25, 'walk': 0.8, None: 1.0}
+BASE_ZOOMS = (0.6, 0.9, 1.5, 3.0)
+STATIC = {'/': ('public-overlay.html', 'text/html; charset=utf-8'),
+          '/overlay.html': ('public-overlay.html', 'text/html; charset=utf-8'),
+          '/overlay.js': ('public-overlay.js', 'text/javascript; charset=utf-8'),
+          '/mapview.js': ('../../site/static/mapview.js', 'text/javascript; charset=utf-8'),
+          # The main stream's own avatar generator: original pixel art, no game sprites.
+          '/avatar.js': ('../stream/static/avatar.js', 'text/javascript; charset=utf-8')}
+FONTS = {'titillium-web-400.woff2', 'titillium-web-600.woff2', 'titillium-web-700.woff2',
+         'titillium-web-600-italic.woff2', 'big-shoulders-display-var.woff2'}
+
+
+def asset(path):
+    """(body, mime) for one of the page's fixed files, or None. The production server and the
+    offline replay share this table; nothing from a run tree is reachable through it."""
+    path = path.split('?')[0]
+    if path in STATIC:
+        name, mime = STATIC[path]
+        return (HERE / name).read_bytes(), mime
+    if path.startswith('/fonts/') and path[7:] in FONTS:
+        return (HERE / 'fonts' / path[7:]).read_bytes(), 'font/woff2'
+    if re.fullmatch(r'/static/game/(item|tech|place)/[a-z0-9-]+\.webp', path):
+        _, _, _, kind, filename = path.split('/')
+        if filename[:-5] in icons.INDEX.get(kind, set()):
+            return (icons.GAME / kind / filename).read_bytes(), 'image/webp'
+    return None
 
 
 def feeds(op):
@@ -47,12 +79,31 @@ def fetch(url):
 
 
 def roster(tree, run, team):
-    agents = []
+    """The launch roster: name, model label and harness, plus any identity seeds the launcher
+    adds after the seven fixed columns. A `# name<TAB>kind...` header names those columns
+    (color, glyph or icon, display_name, persona); without one they are ignored."""
+    agents, extra = [], []
     for line in (tree / 'runs' / run / team / 'team.tsv').read_text().splitlines():
-        if line and not line.startswith('#'):
-            name, kind, route, model, effort, label, harness = line.split('\t')
-            agents.append({'name': name, 'model': label, 'harness': harness})
+        if line.startswith('#'):
+            cols = [c.strip().lower() for c in line.lstrip('# ').split('\t')]
+            extra = cols[7:] if cols[:1] == ['name'] else extra
+        elif line:
+            fields = line.split('\t')
+            name, kind, route, model, effort, label, harness = fields[:7]
+            agent = {'name': name, 'model': label, 'harness': harness}
+            for key, value in zip(extra, fields[7:]):
+                key = {'colour': 'color', 'display': 'display_name', 'emoji': 'glyph'}.get(key, key)
+                if key in ('color', 'glyph', 'icon', 'display_name', 'persona') and value.strip() not in ('', '-'):
+                    agent[key] = value.strip()
+            agents.append(agent)
     return agents
+
+
+def base_core(state):
+    base = (state.get('basemap') or {}).get('core') or state.get('basemap') or {}
+    if all(isinstance(base.get(k), (int, float)) for k in ('x0', 'y0', 'w', 'h', 'cell')) and base['w'] > 0 and base['h'] > 0:
+        return 'nauvis', base['x0'] + base['w'] * base['cell'] / 2, base['y0'] + base['h'] * base['cell'] / 2
+    return None
 
 
 def target(state):
@@ -61,9 +112,9 @@ def target(state):
         p = a.get('position') or {}
         if a.get('activity') == 'acting' and a.get('surface') and all(type(p.get(k)) in (int, float) for k in ('x', 'y')):
             return a['surface'], p['x'], p['y']
-    base = (state.get('basemap') or {}).get('core') or state.get('basemap') or {}
-    if all(isinstance(base.get(k), (int, float)) for k in ('x0', 'y0', 'w', 'h', 'cell')) and base['w'] > 0 and base['h'] > 0:
-        return 'nauvis', base['x0'] + base['w'] * base['cell'] / 2, base['y0'] + base['h'] * base['cell'] / 2
+    core = base_core(state)
+    if core:
+        return core
     for a in state.get('agents') or []:
         p = a.get('position') or {}
         if a.get('surface') and all(isinstance(p.get(k), (int, float)) for k in ('x', 'y')):
@@ -71,24 +122,50 @@ def target(state):
     raise ValueError('no base or agent position yet')
 
 
-def cut(h, state):
-    surface, x, y = target(state)
-    if not all(math.isfinite(n) for n in (x, y)):
+def shots(state, subject=None):
+    """What to try, best first: follow the agent who is doing something; else the base, where
+    machines move even when nobody does; else the agent who moved most recently."""
+    out = []
+    if subject and subject['score'] >= 3.0:
+        out.append({'kind': 'follow', 'agent': subject['agent'], 'surface': subject['surface'],
+                    'x': subject['x'], 'y': subject['y'],
+                    'zooms': tuple(z for z in sorted({ZOOMS.get(subject['verb'], 1.0), 1.5, 2.2, 3.0}) if z >= ZOOMS.get(subject['verb'], 1.0))})
+    core = base_core(state)
+    if core:
+        out.append({'kind': 'base', 'agent': None, 'surface': core[0], 'x': core[1], 'y': core[2], 'zooms': BASE_ZOOMS})
+    if subject and not out:
+        out.append({'kind': 'follow', 'agent': subject['agent'], 'surface': subject['surface'],
+                    'x': subject['x'], 'y': subject['y'], 'zooms': (1.0, 1.5, 2.2, 3.0)})
+    if not out:
+        surface, x, y = target(state)
+        out.append({'kind': 'spot', 'agent': None, 'surface': surface, 'x': x, 'y': y, 'zooms': BASE_ZOOMS})
+    return out
+
+
+def cut(h, state, subject=None, smooth=False):
+    plans = shots(state, subject)
+    if not all(math.isfinite(n) for s in plans for n in (s['x'], s['y'])):
         raise ValueError('invalid camera target')
     player = h.lua(f"local p=game.get_player('{CAMERA}') rcon.print(helpers.table_to_json{{index=p and p.connected and p.index or false}})")
     if not player.get('index'):
         raise ValueError('public camera is not connected')
-    # Tighten the frame if the base is near the team's chart edge. No charting,
+    # Tighten the frame if it is near the team's chart edge. No charting,
     # highlights, surface scans, or gameplay changes for the public camera.
-    for zoom in (0.6, 0.9, 1.5, 3.0):
-        hw, hh = lookcam.frame_half(zoom, 1.0)
-        chart = h.lua(lookcam.chart_lua(surface, x, y, hw, hh))
-        if chart.get('center') and chart.get('charted') == chart.get('chunks'):
-            reply = h.camera({'player': player['index'], 'surface': surface, 'position': {'x': x, 'y': y},
-                              'zoom': zoom, 'smooth': False})
-            if not reply.get('ok'):
-                raise RuntimeError('camera command refused')
-            return {'team': h.team, 'surface': surface, 'x': x, 'y': y, 'zoom': zoom}
+    for shot in plans:
+        for zoom in shot['zooms']:
+            hw, hh = lookcam.frame_half(zoom, 1.0)
+            chart = h.lua(lookcam.chart_lua(shot['surface'], shot['x'], shot['y'], hw, hh))
+            if chart.get('center') and chart.get('charted') == chart.get('chunks'):
+                body = {'player': player['index'], 'zoom': zoom, 'smooth': bool(smooth)}
+                if shot['kind'] == 'follow':
+                    body['follow'] = shot['agent']  # the game eases the view after a walking agent
+                else:
+                    body.update(surface=shot['surface'], position={'x': shot['x'], 'y': shot['y']})
+                reply = h.camera(body)
+                if not reply.get('ok'):
+                    raise RuntimeError('camera command refused')
+                return {'team': h.team, 'surface': shot['surface'], 'x': shot['x'], 'y': shot['y'], 'zoom': zoom,
+                        'kind': shot['kind'], 'agent': shot['agent']}
     raise ValueError('camera frame is not fully charted by this team')
 
 
@@ -131,7 +208,8 @@ class PublicOverlay:
         self.rosters = {t: roster(tree, run, t) for t, _ in self.feeds}
         self.harnesses = {t: Harness('imac2', t) for t, _ in self.feeds} if camera else {}
         self.stop = threading.Event()
-        self.state = {'teams': [], 'camera': None, 'viewers': [], 'viewer_status': 'off', 'now': 0, 'events': [], 'ranking': 'Awaiting scores'}
+        self.state = {'v': 2, 'teams': [], 'camera': None, 'viewers': [], 'viewer_status': 'off', 'now': 0, 'events': [],
+                      'feed': [], 'ranking': 'Awaiting scores', 'layout': {'camera': list(CAMERA_RECT)}}
         self.lock = threading.Lock()
         self.dwell = dwell
         owner = self
@@ -142,25 +220,14 @@ class PublicOverlay:
                     with owner.lock:
                         body = json.dumps(owner.state).encode()
                     mime = 'application/json'
-                elif self.path.split('?')[0] in ('/', '/overlay.html'):
-                    body = (HERE / 'public-overlay.html').read_bytes()
-                    mime = 'text/html; charset=utf-8'
-                elif self.path.split('?')[0] == '/mapview.js':
-                    body = (HERE.parents[1] / 'site/static/mapview.js').read_bytes()
-                    mime = 'text/javascript; charset=utf-8'
-                elif re.fullmatch(r'/static/game/(item|tech|place)/[a-z0-9-]+\.webp', self.path.split('?')[0]):
-                    _, _, _, kind, filename = self.path.split('?')[0].split('/')
-                    name = filename[:-5]
-                    if name not in icons.INDEX.get(kind, set()):
-                        self.send_error(404)
-                        return
-                    body = (icons.GAME / kind / filename).read_bytes()
-                    mime = 'image/webp'
                 elif self.path == '/health':
                     body, mime = b'ok', 'text/plain'
                 else:
-                    self.send_error(404)
-                    return
+                    found = asset(self.path)
+                    if not found:
+                        self.send_error(404)
+                        return
+                    body, mime = found
                 self.send_response(200)
                 self.send_header('Content-Type', mime)
                 self.send_header('Cache-Control', 'no-store')
@@ -200,21 +267,26 @@ class PublicOverlay:
                         print(f'feed {team}: {type(e).__name__}', flush=True)
                         row = dict(previous.get(team) or project(team, {}, self.rosters[team], now), stale=True)
                     rows.append(row)
+                talks = diplomacy(views.get('diplomacy'), rows)
                 with self.lock:
-                    self.state.update(self.race.update(rows, now, list_rows(views.get('contacts')), list_rows(views.get('pacts'))), now=now,
-                                      diplomacy=diplomacy(views.get('diplomacy'), rows), **audience(audience_states, self.rosters, now))
+                    self.state.update(self.race.update(rows, now, list_rows(views.get('contacts')), list_rows(views.get('pacts')), talks),
+                                      now=now, diplomacy=talks, **audience(audience_states, self.rosters, now))
                     if self.youtube:
                         self.state['stream'] = {'youtube_video_id': self.youtube}
-                choice = self.director.choose(rows, self.state['events'], now) if self.harnesses else None
+                # Private to the director: where each roster agent is and how much it is doing.
+                scout = {t: subjects(data, {a['name'] for a in self.rosters[t]}, now) for t, data in fresh.items()}
+                choice = self.director.choose(rows, self.state['events'], now, scout) if self.harnesses else None
                 if choice:
                     team, reason = choice
                     try:
-                        camera = cut(self.harnesses[team], fresh[team])
+                        camera = cut(self.harnesses[team], fresh[team], self.director.best(scout.get(team)),
+                                     smooth=team == self.director.current)
                         since = time.time()
-                        self.director.success(team, since)
+                        self.director.success(team, since, camera['agent'])
                         with self.lock:
                             surface = camera['surface'] if camera['surface'] in ('nauvis', 'vulcanus', 'gleba', 'fulgora', 'aquilo') else 'factory'
-                            self.state['camera'] = {'team': team, 'surface': surface, 'since': since, 'reason': reason}
+                            self.state['camera'] = {'team': team, 'surface': surface, 'since': since, 'reason': reason,
+                                                    'agent': camera['agent'], 'kind': camera['kind']}
                         print(f'camera: {team} {camera}', flush=True)
                     except Exception as e:
                         print(f'camera {team}: {type(e).__name__}', flush=True)

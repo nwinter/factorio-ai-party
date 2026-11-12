@@ -2,14 +2,20 @@
 
 Reuses stream science, chronicle and basemap snapshots and the site's icon index.
 Only this module's constructed records may cross the public HTTP boundary.
+
+mt294: agent identities (chosen name, persona, colour, glyph, avatar parts), one
+chronological speech feed across teams, and a camera director that prefers agents
+doing things. `subjects()` is the director's private input and is never published.
 """
 from collections import deque
 from datetime import datetime
+import hashlib
 import importlib.util
 import json
 import math
 from pathlib import Path
 import re
+import unicodedata
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('mt_gameicons', ROOT / 'site/gameicons.py')
@@ -21,16 +27,51 @@ ACTIONS = {'mine': 'Mining', 'craft': 'Crafting', 'build': 'Building', 'build_bl
            'walk': 'Moving', 'move': 'Moving', 'insert': 'Supplying', 'take': 'Collecting',
            'research': 'Starting research', 'shoot': 'Fighting', 'attack': 'Fighting', 'kite': 'Fighting',
            'guard': 'On guard', 'repair': 'Repairing', 'rotate': 'Rotating machines', 'wait': 'Waiting',
-           'wait_until': 'Waiting', 'drive': 'Driving', 'launch': 'Launching'}
+           'wait_until': 'Waiting', 'drive': 'Driving', 'launch': 'Launching',
+           # Kinds the 2.1 feeds actually carry (status.active.kind), seen in the t291/t292 journals.
+           'move_to': 'Moving', 'path': 'Moving', 'follow': 'Moving', 'place': 'Building', 'construct': 'Building',
+           'blueprint': 'Placing a blueprint', 'build_path': 'Building', 'deconstruct': 'Clearing',
+           'feed': 'Supplying', 'gather': 'Collecting', 'collect': 'Collecting', 'pickup': 'Collecting',
+           'fuel': 'Refuelling', 'refuel': 'Refuelling', 'transfer': 'Moving items', 'configure': 'Setting up machines'}
+# The stream director's own classes (tools/stream/director.py FIGHT/BUILD/WORK/WALK), plus the 2.1 kinds above.
+VERBS = {'fight': {'shoot', 'attack', 'kite'},
+         'build': {'build', 'place', 'construct', 'blueprint', 'build_blueprint', 'build_path', 'rotate', 'repair',
+                   'deconstruct'},
+         'work': {'mine', 'craft', 'insert', 'take', 'feed', 'gather', 'research', 'fuel', 'refuel', 'transfer',
+                  'collect', 'pickup', 'configure', 'launch'},
+         'walk': {'walk', 'path', 'move_to', 'follow', 'move', 'drive'}}
 BUILDINGS = ('burner-mining-drill', 'electric-mining-drill', 'stone-furnace', 'steel-furnace',
              'electric-furnace', 'assembling-machine-1', 'assembling-machine-2', 'assembling-machine-3',
              'lab', 'biolab', 'steam-engine', 'solar-panel', 'oil-refinery', 'chemical-plant', 'rocket-silo')
 STARTUP = ('burner-mining-drill', 'stone-furnace', 'steam-engine', 'lab', 'assembling-machine-1')
 PACKS = ('automation-science-pack', 'logistic-science-pack', 'chemical-science-pack',
          'production-science-pack', 'utility-science-pack', 'space-science-pack')
+SURFACES = ('nauvis', 'vulcanus', 'gleba', 'fulgora', 'aquilo')
 # Free-form public chat remains public speech, never notes, jobs, confessions or errors.
-PRIVATE = re.compile(r'(?:https?://|(?:^|\s)(?:/|~/|[A-Za-z]:[\\/])|[\w.+-]+@[\w.-]+\.[a-z]{2,}|'
+# A path is a slash that starts a word ("/Users/x", "~/x", "C:\x"); "0.52 / 0.48" is ordinary speech.
+PRIVATE = re.compile(r'(?:https?://|(?:^|[\s("\'=])(?:~/|/(?=[\w.~])|[A-Za-z]:[\\/])|[\w.+-]+@[\w.-]+\.[a-z]{2,}|'
                      r'\b(?:token|password|secret|api[_ -]?key|operator|traceback|exception|multi-?teams?)\b|\bsk-[\w-]+)', re.I)
+# Words a chosen display name may not be: staff, sources and marks a viewer could mistake for the broadcast itself.
+RESERVED = {'server', 'operator', 'mod', 'moderator', 'admin', 'caster', 'system', 'host', 'viewer', 'viewers',
+            'youtube', 'site', 'wube', 'factorio', 'staff'}
+HEX = re.compile(r'#[0-9a-fA-F]{6}')
+PRONOUNS = re.compile(r'(?:he|she|they|it|xe|ze|ey|fae)(?:/[a-z]{2,8}){0,2}')
+PACT_TEXT = {'proposed': 'Pact #{id} proposed to {other}', 'active': 'Pact #{id} signed with {other}',
+             'ended': 'Pact #{id} with {other} ended', 'declined': 'Pact #{id} with {other} declined',
+             'withdrawn': 'Pact #{id} with {other} withdrawn', 'expired': 'Pact #{id} with {other} expired'}
+
+
+def _avatar_options():
+    """The part lists of the main stream's avatar generator (strict JSON between its markers)."""
+    try:
+        text = (ROOT / 'tools/stream/static/avatar.js').read_text(encoding='utf-8')
+        body = text.split('/*@parts*/', 1)[1].split('/*@end*/', 1)[0]
+        return json.loads(body[body.index('{'): body.rindex('}') + 1])['options']
+    except (OSError, ValueError, KeyError, IndexError):
+        return {}
+
+
+AVATAR = _avatar_options()
 
 
 def obj(v):
@@ -60,23 +101,102 @@ def prototype(kind, value):
     return icons.key(kind, value) if isinstance(value, str) and len(value) < 100 else None
 
 
-def speech(value, private_names=()):
+def speech(value, private_names=(), limit=300):
     if not isinstance(value, str) or PRIVATE.search(value):
         return ''
     if any(re.search(r'\b' + re.escape(n) + r'\b', value, re.I) for n in private_names if n):
         return ''
-    return re.sub(r'\s+', ' ', re.sub(r'\[/?[a-z-]+(?:=[^\]]*)?\]', '', value)).strip()[:300]
+    text = re.sub(r'\s+', ' ', re.sub(r'\[/?[a-z-]+(?:=[^\]]*)?\]', '', value)).strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit - 1]
+    space = cut.rfind(' ')
+    return (cut[:space] if space >= limit // 2 else cut).rstrip(' ,;:-') + '…'
 
 
-def team_chat(team, messages, names, private_names=()):
+def label(value, private_names=(), limit=24):
+    """A chosen display name: letters, digits and light punctuation only. '' when unusable."""
+    if not isinstance(value, str) or len(value) > 200 or PRIVATE.search(value) or re.search(r'[<>{}\[\]\\]', value):
+        return ''
+    kept = ''
+    for c in unicodedata.normalize('NFC', value):
+        cat = unicodedata.category(c)
+        if cat[0] in 'LN' or c in ".'’-&!" or (cat[0] == 'M' and c != '\ufe0f' and kept and unicodedata.category(kept[-1])[0] in 'LM'):
+            kept += c
+        elif cat == 'Zs' or c == '_':
+            kept += ' '
+    kept = re.sub(r'\s+', ' ', kept).strip(" .'’-&")[:limit].strip(" .'’-&")
+    if len(kept) < 2 or speech(kept, private_names) != kept:
+        return ''
+    return '' if any(w in RESERVED for w in re.findall(r'[a-z]+', kept.lower())) else kept
+
+
+def glyph(value):
+    """One or two characters or an emoji beside a name. Never markup, spaces or control characters."""
+    if not isinstance(value, str):
+        return None
+    value = unicodedata.normalize('NFC', value).strip()
+    if not value or len(value) > 8:
+        return None
+    for c in value:
+        cat = unicodedata.category(c)
+        if cat in ('Cc', 'Cs', 'Co', 'Cn', 'Zl', 'Zp', 'Zs') or (cat == 'Cf' and c not in '\u200d\ufe0f') or c in '<>&"\'\\/':
+            return None
+    return value
+
+
+def avatar_spec(value):
+    """Only the avatar generator's own part names; anything else follows from the agent's name."""
+    out = {}
+    for k, v in obj(value).items():
+        if k == 'accent' and isinstance(v, str) and HEX.fullmatch(v):
+            out[k] = v.lower()
+        elif isinstance(k, str) and isinstance(v, str) and v in AVATAR.get(k, ()):
+            out[k] = v
+    return out or None
+
+
+def verb_class(kind):
+    return next((name for name, kinds in VERBS.items() if kind in kinds), None)
+
+
+def identity(agent, live, private_names=()):
+    """Who an agent is on air. The roster names the agent and seeds colour and icon; the agent's own
+    profile (the harness `profile` action, carried by its team's feed) supplies its chosen name,
+    persona, pronouns and avatar parts. Every field is rebuilt here; nothing is copied through."""
+    live = obj(live)
+    chosen = label(live.get('display_name'), private_names)
+    seeded = label(agent.get('display_name'), private_names)
+    plain = agent['name'].capitalize()
+    pronouns = live.get('pronouns').strip().lower() if isinstance(live.get('pronouns'), str) else ''
+    icon = prototype('item', agent.get('icon'))
+    return {'display_name': chosen or seeded or plain,
+            # True only when the name is the agent's own choice, not the roster default.
+            'named': bool(chosen and chosen.lower() != plain.lower()),
+            'color': next((c.lower() for c in (live.get('color'), agent.get('color'))
+                           if isinstance(c, str) and HEX.fullmatch(c)), None),
+            # A roster icon is a game item when the icon manifest knows it, otherwise a glyph.
+            'glyph': glyph(live.get('glyph')) or glyph(agent.get('glyph')) or (None if icon else glyph(agent.get('icon'))),
+            'icon': icon,
+            # The agent's own words first (a persona, else its motto), then a roster seed.
+            'persona': (speech(live.get('persona'), private_names, 120) or speech(live.get('motto'), private_names, 80)
+                        or speech(agent.get('persona'), private_names, 120)),
+            'pronouns': pronouns if PRONOUNS.fullmatch(pronouns) else None,
+            'avatar': avatar_spec(live.get('avatar')) or avatar_spec(agent.get('avatar'))}
+
+
+def team_chat(team, messages, names, private_names=(), now=None, tick=None, keep=12):
     """Team talk and internal tells only. Never a global feed or relay input.
 
     Main stream tells use {agent, from, lane: tell, to: [...], body, text};
     text/to_shown contain presentation names and are deliberately ignored.
+    Lane `log` is the same team talk restored at a service start. `at` is the wall
+    time a line was said (the feed's own stamp for a live line, else from its tick),
+    so the overlay can order lines from every team on one clock.
     """
     aliases = {alias: n for n in names for alias in (n, 'pog-' + n)}
     out = []
-    for m in map(obj, rows(messages)[-60:]):
+    for m in map(obj, rows(messages)[-80:]):
         if m.get('kind') == 'diplomacy' or m.get('from_team') or m.get('to_team'):
             continue
         if any(m.get(k) for k in ('operator', 'confess', 'notice', 'viewer', 'source')):
@@ -99,14 +219,28 @@ def team_chat(team, messages, names, private_names=()):
             to = sorted({aliases.get(n, 'team') for n in recipients})
             text = speech(m.get('body'), private_names)
             kind = 'tell'
-        elif lane in (None, 'talk') and not m.get('to'):
+        elif lane in (None, 'talk', 'log') and not m.get('to'):
             to, text, kind = [], speech(m.get('text'), private_names), 'talk'
         else:
             continue
-        if text:
-            out.append({'team': team, 'name': sender, 'to': to, 'kind': kind, 'text': text,
-                        'tick': number(m.get('tick')), 't': number(m.get('t'))})
-    return out[-6:]
+        if not text:
+            continue
+        said, stamp, seq = number(m.get('tick')), number(m.get('t')), m.get('seq')
+        if type(seq) is int and 0 <= seq < 1e12 or isinstance(seq, str) and re.fullmatch(r't?[0-9]{1,12}', seq):
+            ident = f'{team}:{seq}'
+        else:
+            ident = f'{team}:' + hashlib.sha1(f'{sender}|{kind}|{said}|{text}'.encode()).hexdigest()[:12]
+        if stamp is not None and lane != 'log' and now is not None and -5 <= now - stamp <= 6 * 3600:
+            at = stamp
+        elif said is not None and tick is not None and now is not None:
+            at = now - max(0, tick - said) / 60
+        else:
+            at = stamp
+        # A say that the stream service linked to a viewer's line: an answer to the audience.
+        reply = kind == 'talk' and (m.get('reply_to') is not None or bool(rows(m.get('replies_to'))))
+        out.append({'id': ident, 'team': team, 'name': sender, 'to': to, 'kind': kind, 'text': text,
+                    'tick': said, 't': stamp, 'at': at, 'reply': reply})
+    return out[-keep:]
 
 
 def diplomacy(messages, teams):
@@ -184,7 +318,8 @@ def read_views(op, now):
 
 
 def project(team, state, agents, now, score=None):
-    """Deliberate allowlist; identities come only from the launch roster, not the feed."""
+    """Deliberate allowlist. The roster decides who is on a team; names, colours and personas the
+    agents chose are rebuilt by identity(), never copied from the feed."""
     state, score = obj(state), obj(score)
     research, science, space = (obj(state.get(k)) for k in ('research', 'science', 'space'))
     current = {a.get('name'): a for a in rows(state.get('agents')) if isinstance(a, dict) and isinstance(a.get('name'), str)}
@@ -199,6 +334,14 @@ def project(team, state, agents, now, score=None):
     if isinstance(score_done, (list, dict)) and (done is None or number(score.get('tick'), 0) >= (tick or 0)):
         done = len(score_done)
     tech = prototype('tech', research.get('current'))
+    board, tasks = [], {}
+    b = obj(state.get('board'))
+    for m in map(obj, rows(b.get('doing_items')) + rows(b.get('open_items')) + rows(b.get('claims'))):
+        owner, title_text = m.get('owner'), speech(m.get('title'), private_names)
+        if title_text and (owner is None or owner == '' or isinstance(owner, str) and owner in public_names):
+            board.append({'title': title_text, 'owner': owner or '', 'id': number(m.get('id'))})
+            if owner:
+                tasks.setdefault(owner, title_text[:80])
     out_agents = []
     for a in agents:
         live = obj(current.get(a['name']))
@@ -214,16 +357,18 @@ def project(team, state, agents, now, score=None):
                             'dead': 'Waiting to respawn'}.get(activity, 'Working in the factory' if activity == 'acting' else None)
         p = obj(live.get('position'))
         pos = {k: number(p.get(k), lo=-1e7, hi=1e7) for k in ('x', 'y')}
-        out_agents.append({'name': a['name'], 'display_name': a['name'].capitalize(),
-                           'model': speech(a.get('model'))[:60], 'activity': activity, 'action': action,
-                           'position': pos if all(v is not None for v in pos.values()) and live.get('surface', 'nauvis') == 'nauvis' else None})
-    chat = team_chat(team, state.get('chat'), public_names, private_names)
-    board = []
-    b = obj(state.get('board'))
-    for m in map(obj, rows(b.get('open_items')) + rows(b.get('doing_items')) + rows(b.get('claims'))):
-        owner, title_text = m.get('owner'), speech(m.get('title'), private_names)
-        if title_text and (owner is None or owner == '' or isinstance(owner, str) and owner in public_names):
-            board.append({'title': title_text, 'owner': owner or '', 'id': number(m.get('id'))})
+        idle = number(live.get('idle_s'), hi=86400)
+        row = {'name': a['name'], 'model': speech(a.get('model'))[:60], 'activity': activity, 'action': action,
+               # What kind of action is running (fight, build, work, walk): an icon and the camera's interest.
+               'verb': verb_class(verb) if activity == 'acting' else None,
+               'item': item if activity == 'acting' else None,
+               'idle_s': None if idle is None else int(idle),
+               'task': tasks.get(a['name']),
+               'surface': live.get('surface') if live.get('surface') in SURFACES else 'platform' if live.get('on_platform') is True else None,
+               'position': pos if all(v is not None for v in pos.values()) and live.get('surface', 'nauvis') == 'nauvis' else None}
+        row.update(identity(a, live, private_names))
+        out_agents.append(row)
+    chat = team_chat(team, state.get('chat'), public_names, private_names, now, tick)
 
     entities = {k: int(number(obj(score.get('entities')).get(k), 0)) for k in BUILDINGS} if score else None
     bm = obj(state.get('basemap'))
@@ -241,7 +386,7 @@ def project(team, state, agents, now, score=None):
         elif kind == 'rocket':
             text, icon = 'Rocket launched', 'rocket-part'
         elif kind == 'death' and isinstance(e.get('agent'), str) and e['agent'] in public_names:
-            text = e['agent'].capitalize() + ' was lost'
+            text = next(a['display_name'] for a in out_agents if a['name'] == e['agent']) + ' was lost'
         elif kind == 'platform_lost':
             text, icon = 'Space platform lost', 'space-platform-hub'
         if text and et is not None:
@@ -306,17 +451,25 @@ class Race:
     def __init__(self):
         self.previous, self.events, self.seen = {}, deque(maxlen=80), deque(maxlen=400)
         self.built = {}
+        self.said = {}  # feed id -> line, in arrival order: speech outlives the team services' short chat windows
 
-    def add(self, team, kind, text, tick, now, icon=None, icon_kind='item', observed=False):
+    def add(self, team, kind, text, tick, now, icon=None, icon_kind='item', observed=False, other=None):
         key = (team, kind, text, tick)
         if key in self.seen:
             return
         self.seen.append(key)
-        self.events.append({'team': team, 'kind': kind, 'text': text, 'tick': tick,
+        ident = hashlib.sha1(f'{team}|{kind}|{text}|{tick}'.encode()).hexdigest()[:12]
+        self.events.append({'id': ident, 'team': team, 'kind': kind, 'text': text, 'tick': tick,
                             'time': clock(tick), 'at': now, 'icon': icon, 'icon_kind': icon_kind,
-                            'observed': observed})
+                            'observed': observed, 'other': other})
 
-    def update(self, teams, now, contacts=(), pacts=()):
+    def say(self, line):
+        if line['id'] not in self.said:
+            self.said[line['id']] = line
+            while len(self.said) > 240:
+                self.said.pop(next(iter(self.said)))
+
+    def update(self, teams, now, contacts=(), pacts=(), diplomacy=()):
         for r in teams:
             if r['stale']:
                 continue
@@ -326,6 +479,7 @@ class Race:
             if old and tick is not None and old['tick'] is not None and tick < old['tick']:
                 self.events = deque((e for e in self.events if e['team'] != t), maxlen=80)
                 self.seen = deque((k for k in self.seen if k[0] != t), maxlen=400)
+                self.said = {k: m for k, m in self.said.items() if m['team'] != t}
                 self.built.pop(t, None)
                 old = None
             built = self.built.setdefault(t, set())
@@ -334,6 +488,10 @@ class Race:
             for e in r['events']:
                 if tick is not None and 0 <= tick - e['tick'] <= 36000:
                     self.add(t, e['kind'], e['text'], e['tick'], now - (tick - e['tick']) / 60, e['icon'], e['icon_kind'], e['observed'])
+            for m in r['chat']:
+                # Scoped team lines only; each carries its own team tag and was rebuilt by team_chat().
+                if m.get('team') == t and m.get('kind') in ('talk', 'tell'):
+                    self.say({k: m.get(k) for k in ('id', 'team', 'name', 'to', 'kind', 'text', 'tick', 'at', 'reply')})
             if old and tick is not None:
                 before, after = old['research']['done_count'], r['research']['done_count']
                 if before is not None and after is not None and after > before and not any(e['kind'] == 'research' and e['tick'] > (old['tick'] or 0) for e in r['events']):
@@ -357,68 +515,158 @@ class Race:
                             built.add(item)
             self.previous[t] = r
         known = {r['team'] for r in teams}
+        latest = max((r['tick'] or 0 for r in teams), default=0)
         for c in contacts:
             c = obj(c)
             team, other = c.get('team'), c.get('other')
             if isinstance(team, str) and isinstance(other, str) and team in known and other in known and number(c.get('tick')) is not None and c.get('kind') in ('chart', 'shot'):
                 text = ('First shots at ' if c['kind'] == 'shot' else 'First contact with ') + other.capitalize()
-                latest = max((r['tick'] or 0 for r in teams), default=0)
                 if c['tick'] <= latest:
-                    self.add(team, 'contact', text, c['tick'], now - (latest - c['tick']) / 60, 'radar')
-        latest = max((r['tick'] or 0 for r in teams), default=0)
+                    self.add(team, 'contact', text, c['tick'], now - (latest - c['tick']) / 60, 'radar', other=other)
         for r in teams:
             r['pacts'] = []
         for p in pacts:
             p = obj(p)
             a, b, status, ident = p.get('a'), p.get('b'), p.get('status'), p.get('id')
             if not (isinstance(a, str) and isinstance(b, str) and a in known and b in known and a != b
-                    and type(ident) is int and ident > 0 and status in ('proposed', 'active', 'ended', 'declined', 'withdrawn', 'expired')):
+                    and type(ident) is int and ident > 0 and status in PACT_TEXT):
                 continue
             key = 'accepted_tick' if status == 'active' else 'proposed_tick' if status == 'proposed' else 'ended_tick'
             tick = number(p.get(key))
             if tick is not None and 0 <= tick <= latest:
-                self.add(a, 'pact', f'Pact #{ident} with {b.capitalize()}: {status}', tick, now - (latest - tick) / 60, 'steel-chest')
+                self.add(a, 'pact', PACT_TEXT[status].format(id=ident, other=b.capitalize()), tick,
+                         now - (latest - tick) / 60, 'steel-chest', other=b)
             if status == 'active':
                 for r in teams:
                     if r['team'] in (a, b):
                         r['pacts'].append({'id':ident, 'with': b if r['team'] == a else a})
+        for m in diplomacy:
+            # Already rebuilt by diplomacy(): explicit cross-team messages, one pair-local sequence each.
+            pair = '-'.join(sorted((m['from_team'], m['to_team'])))
+            self.say({'id': f"dip:{pair}:{m['seq']}", 'team': m['from_team'], 'name': m['agent'], 'to': [],
+                      'to_team': m['to_team'], 'kind': 'diplomacy', 'text': m['text'], 'tick': m['tick'],
+                      'at': now - max(0, latest - m['tick']) / 60, 'reply': False})
         basis = rank(teams)
-        return {'teams': teams, 'events': sorted(self.events, key=lambda e: e['tick'] or 0, reverse=True)[:12], 'ranking': basis}
+        feed = sorted(self.said.values(), key=lambda m: (m['at'] or 0, m['tick'] or 0))[-40:]
+        return {'teams': teams, 'events': sorted(self.events, key=lambda e: e['tick'] or 0, reverse=True)[:12],
+                'ranking': basis, 'feed': feed}
+
+
+# ---- camera -------------------------------------------------------------------------------------------------------
+ACTION, WARM = 3.0, 1.5  # a subject at ACTION is doing something now; under WARM it has stood for a while
+DOING = {'fight': 10.0, 'build': 8.0, 'work': 5.0, 'walk': 3.0}
+NEWS = {'rocket': 10, 'death': 9, 'platform_lost': 9, 'contact': 8, 'pact': 8, 'research': 6, 'build': 4}
+
+
+def subjects(state, names, now):
+    """The director's private view of one team's raw feed: where each roster agent is and how much
+    it is doing. Never published; only the chosen agent's name reaches the camera label.
+
+    A running action counts most (the stream director's own classes); a request that just changed
+    the map (`did`) and the stream's decaying `interest` keep a builder in view between calls; an
+    agent whose character has stood idle (`idle_s`), rests or is offline counts for almost nothing.
+    """
+    out = []
+    for a in map(obj, rows(obj(state).get('agents'))):
+        name, surface, p = a.get('name'), a.get('surface'), obj(a.get('position'))
+        x, y = (number(p.get(k), lo=-1e7, hi=1e7) for k in ('x', 'y'))
+        if (not isinstance(name, str) or name not in names or a.get('alive') is False or x is None or y is None
+                or not isinstance(surface, str) or not re.fullmatch(r'[a-z0-9_-]{1,40}', surface)):
+            continue
+        activity = a.get('activity') if a.get('activity') in ACTIVITY else None
+        kind = verb_class(str(a.get('active') or '').partition(':')[0]) if isinstance(a.get('active'), str) else None
+        if a.get('combat') is True:
+            kind = 'fight'
+        doing = DOING.get(kind, 3.0 if activity == 'acting' else 0.0) if activity in ('acting', None) or kind == 'fight' else 0.0
+        did = obj(a.get('did'))
+        age = now - did['t'] if number(did.get('t')) is not None else None
+        fresh = 6.0 * 0.5 ** (age / 20) if age is not None and 0 <= age <= 90 else 0.0
+        idle = number(a.get('idle_s'), hi=86400)
+        still = activity in ('idle', 'resting', 'offline', 'dead') or (idle is not None and idle >= 20 and not doing)
+        warm = min(number(a.get('interest'), 0.0, hi=30), 15.0) * 0.3 * (0.25 if still else 1.0)
+        out.append({'agent': name, 'surface': surface, 'x': x, 'y': y, 'verb': kind,
+                    'score': round(doing + fresh + warm, 3), 'idle': idle})
+    return out
 
 
 class Director:
-    """Minimum dwell + event interest; hard oldest-first fairness, successful cuts only."""
+    """Minimum dwell, then where agents are doing things; hard oldest-first fairness, successful cuts only.
+
+    Order of rules, after the minimum dwell: (1) a team unseen for dwell x max(2, teams) gets the
+    camera, oldest first; (2) fresh news elsewhere; (3) leave a quiet shot for a team that is acting;
+    (4) at the ordinary dwell move to another acting team, or stay with the only one acting, or rotate
+    when nobody is; (5) within the team on air, turn to the agent who is acting.
+    A quiet team's fairness visit is a glance: it ends at the minimum dwell while others are working.
+    """
     def __init__(self, dwell=30):
         self.minimum = max(10, min(20, dwell / 2))
         self.dwell = dwell
         self.current, self.since = None, 0
         self.shown, self.retry, self.started = {}, {}, None
+        self.subject, self.glance, self.pending = None, False, None
 
-    def choose(self, teams, events, now):
+    @staticmethod
+    def best(subs):
+        return max(subs, key=lambda s: s['score']) if subs else None
+
+    @staticmethod
+    def heat(row, subs=None):
+        if subs is not None:
+            return max((s['score'] for s in subs), default=0.0)
+        return max((DOING.get(a.get('verb'), 3.0) if a['activity'] == 'acting' else 0.0 for a in row['agents']), default=0.0)
+
+    def retarget(self, scout):
+        subs = scout.get(self.current) or []
+        top = self.best(subs)
+        if not top or top['agent'] == self.subject or top['score'] < ACTION:
+            return None
+        on_air = next((s for s in subs if s['agent'] == self.subject), None)
+        if on_air and on_air['score'] >= WARM:
+            return None  # the agent on air is still at it
+        return self.current, 'Following the action'
+
+    def choose(self, teams, events, now, scout=None):
         if self.started is None:
             self.started = now
+        scout = scout or {}
         eligible = [r for r in teams if not r['stale'] and not r['paused'] and now >= self.retry.get(r['team'], 0)]
         if not eligible or (self.current and now - self.since < self.minimum):
             return None
+        heat = {r['team']: self.heat(r, scout.get(r['team'])) for r in eligible}
+        hot = lambda r: heat[r['team']]
+        why = lambda r: 'Following the action' if hot(r) >= ACTION else 'Around the teams'
         others = [r for r in eligible if r['team'] != self.current]
+        self.pending = None
         if not others:
-            return (eligible[0]['team'], 'Following the action') if self.current is None else None
+            return (eligible[0]['team'], why(eligible[0])) if self.current is None else self.retarget(scout)
         age = lambda r: now - self.shown.get(r['team'], self.started - self.dwell)
         overdue = [r for r in others if age(r) >= self.dwell * max(2, len(teams))]
         if overdue:
-            return max(overdue, key=age)['team'], 'Around the teams'
-        def interest(r):
+            pick = max(overdue, key=age)
+            self.pending = (pick['team'], hot(pick) < WARM and any(v >= ACTION for v in heat.values()))
+            return pick['team'], why(pick)
+        def news(r):
             recent = [e for e in events if e['team'] == r['team'] and now - e['at'] <= 40 and e['at'] > self.shown.get(r['team'], -1)]
-            weight = max(({'rocket': 10, 'death': 9, 'platform_lost': 9, 'contact': 8, 'pact': 8, 'research': 6, 'build': 4}.get(e['kind'], 0) for e in recent), default=0)
-            return weight + 2 * any(a['activity'] == 'acting' for a in r['agents']), weight
-        best = max(others, key=lambda r: (interest(r)[0], age(r)))
-        score, event = interest(best)
-        if self.current is None or now - self.since >= self.dwell or event:
-            return best['team'], 'New milestone' if event else 'Following the action' if score else 'Around the teams'
-        return None
+            return max((NEWS.get(e['kind'], 0) for e in recent), default=0)
+        newsy = max(others, key=lambda r: (news(r), hot(r), age(r)))
+        if news(newsy):
+            return newsy['team'], 'New milestone'
+        hottest = max(others, key=lambda r: (hot(r), age(r)))
+        if self.current is None:
+            return hottest['team'], why(hottest)
+        here, held = heat.get(self.current), now - self.since
+        if hot(hottest) >= ACTION and (self.glance or here is None or here < WARM or held >= self.dwell):
+            return hottest['team'], 'Following the action'
+        if held >= self.dwell and (here is None or here < ACTION):
+            # Nobody is clearly at work: keep moving, warmer teams first, then the longest unseen.
+            pick = max(others, key=lambda r: (hot(r) >= WARM, age(r)))
+            return pick['team'], 'Around the teams'
+        return self.retarget(scout)
 
-    def success(self, team, now):
-        self.current, self.since = team, now
+    def success(self, team, now, agent=None):
+        self.glance = bool(self.pending and self.pending[0] == team and self.pending[1])
+        self.pending = None
+        self.current, self.since, self.subject = team, now, agent
         self.shown[team] = now
 
     def failed(self, team, now):
