@@ -131,3 +131,12 @@ patches exhausted within the ten-minute probe. The saved, production-held baseli
 production/stock drift. Real chart contact then placed both Posts exactly at the stock chests, preserved stock,
 and issued exactly 20,000 total coin. The canonical save is unpaused only to permit runtime deployment; cp20
 pauses before clients start. The paired runs release production only at operator activation.
+
+## mt296 checkpoint 10 (private): reference launch and contact gates
+
+Native graphical startup caught and fixed the Coinage icon path. Workspace startup then caught a missing reference
+topic registration before any model ran. Markets are now omitted from startup briefs and the visible reference
+files/index; fh help/describe materializes them from the caller's live schema, adding Coinage and addressing only
+at their rungs. Unsupported market calls carry no guessed reference hints. Ordinary typo hints remain. The
+expanded full harness suite passes 787/787; full launch, brief and disclosure suites pass. Both failed startups
+are preserved as zero-agent attempts; production was held throughout.

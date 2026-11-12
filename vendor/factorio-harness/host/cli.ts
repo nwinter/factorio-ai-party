@@ -24,7 +24,7 @@ import { bundleRuntime } from './bundle.js';
 import { startSession, stopSession, sessionConnection, connectSession, type SessionConnection } from './session.js';
 import { BridgeClient, BridgeOutcomeUnknown } from './bridge.js';
 import { BrokerTransport } from './broker.js';
-import { refDir, topicText, topicsLine, commandTopics, addReference, topicUnits, openTopic } from './reference.js';
+import { refDir, topicText, topicsLine, commandTopics, addReference, topicUnits, openTopic, syncMarketReference } from './reference.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const modPath = resolve(root, 'mod/agent-harness_0.1.0');
@@ -835,12 +835,16 @@ async function main() {
   const { values, positionals } = parseCli();
   if (positionals[0] === 'call' && CALL_SUBCOMMANDS.includes(positionals[1] ?? '')) positionals.shift();
   let command = positionals[0];
+  let generalHelp = false;
   // fh help ACTION (or fh call ACTION --help): that action's arguments, about 1 KB.
   if (values.help && command === 'call' && positionals[1]) { command = 'help'; positionals.splice(0, 2, 'help', positionals[1]); }
   if (!command || (values.help && command !== 'help') || (command === 'help' && !positionals[1])) {
     const dir = refDir();
-    process.stdout.write(help + (dir ? topicsLine(dir) : ''));
-    return;
+    if (!dir || !topicUnits(dir, 'markets')) {
+      process.stdout.write(help + (dir ? topicsLine(dir) : ''));
+      return;
+    }
+    generalHelp = true; command = 'help';
   }
   // fh help TOPIC: the workspace's reference topic (no game call); journaled, so lookups can be counted.
   if (command === 'help') {
@@ -1379,7 +1383,10 @@ async function main() {
     const cached = readDescribeCache(describeCache);
     if (cached) {
       const reply = await execute('describe',{if_bundle:cached.bundle});
-      if (reply.ok && reply.result?.unchanged === true && reply.result?.bundle === cached.bundle) return {...reply, result:cached.describe};
+      if (reply.ok && reply.result?.unchanged === true && reply.result?.bundle === cached.bundle) {
+        syncMarketReference(refDir(), cached.describe.actions ?? {});
+        return {...reply, result:cached.describe};
+      }
       if (reply.ok && reply.result?.actions) { keepDescribe(describeCache, reply.result); return reply; }
     }
     const reply = await execute('describe',{});
@@ -2116,6 +2123,7 @@ async function main() {
       throw error;
     }
     // Sent again with the same ID across a drop (harness.ts requestRetrying, A1): said once, on this reply.
+    if (action === 'describe' && reply.ok && reply.result?.actions) syncMarketReference(refDir(), reply.result.actions);
     if (reply.retried && reply.result && typeof reply.result === 'object') {
       const r = reply.retried;
       reply.result = {...reply.result, retried:`the game did not answer at first (${r.first_error}); sent again with the same ID ${r.attempts - 1} time${r.attempts === 2 ? '' : 's'} over ${r.waited_s} s: this is the game's one answer to it (an ID it had applied is answered from its record, never run twice)`};
@@ -2355,6 +2363,14 @@ async function main() {
       output({ok:ready,result:{bridge:bridge.result,player:player?.result?.player},
         ...(ready ? {} : {error:bridge.error ?? player?.error ?? {code:'player_not_ready',message:bridge.result?.in_game ? 'The player has no character (dead, spectating, or in a cutscene)' : 'The client is not in a multiplayer game'}})});
       if (!ready) process.exitCode=1;
+    } else if (generalHelp) {
+      const read = await helpDescribe();
+      if (!read.ok) syncMarketReference(refDir(), {});
+      process.stdout.write(help + topicsLine(refDir()!));
+    } else if (command === 'help' && positionals[1] === 'markets' && refDir() && topicUnits(refDir()!, 'markets')) {
+      const read = await helpDescribe();
+      const text = syncMarketReference(refDir(), read.ok ? read.result?.actions ?? {} : {});
+      process.stdout.write(text ?? 'unsupported action; call describe\n');
     } else if (command === 'help' && refDir() && topicUnits(refDir()!, positionals[1] ?? '')) {
       // (d28 batch317) a disclosure run's topic: the head and the entries open for your team now
       const units = topicUnits(refDir()!, positionals[1]!)!;
@@ -2368,7 +2384,7 @@ async function main() {
       else {
         const dir = refDir(), topic = dir ? commandTopics(dir).get(positionals[1] ?? '') : undefined;
         const locked = typeof reply.result?.locked?.[positionals[1] ?? ''] === 'string';
-        process.stdout.write(actionHelp(reply.result, positionals[1] ?? '') + (topic && topic !== 'core' && !locked ? `documented in: ./fh help ${topic}\n` : ''));
+        process.stdout.write(actionHelp(reply.result, positionals[1] ?? '') + (topic && topic !== 'core' && !locked && reply.result?.actions?.[positionals[1] ?? ''] ? `documented in: ./fh help ${topic}\n` : ''));
       }
     } else if (command === 'doctor') {
       const runtime = await execute('describe',{});

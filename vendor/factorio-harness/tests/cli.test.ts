@@ -4,7 +4,7 @@ import { createServer, type Socket } from 'node:net';
 import { once } from 'node:events';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, mkdir, readFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { tempDir } from './tmp.js';
@@ -44,6 +44,38 @@ function cli(port:number,args:string[]) {
 test('CLI help works without a server or credentials',async()=>{
   const {stdout}=await exec(process.execPath,['dist/host/cli.js','--help']);
   assert.match(stdout,/queue submit/);assert.match(stdout,/blueprint import/);
+});
+test('market reference follows contact, Coinage and second-contact schemas even without general disclosure',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'fh-market-ref-'));
+  await mkdir(join(dir,'.units'));
+  await writeFile(join(dir,'commands.tsv'),'status\tcore\n');
+  const entries={offer:'swap instructions',market:'coinage wallet',sell:'priced orders',cancel:'cancel unmatched',
+    embargo:'embargo orders','sell-2':'addressed counterparty','your-home-post-holds':'raid wallet'};
+  await writeFile(join(dir,'.units','markets.json'),JSON.stringify({head:'# markets\n',items:Object.entries(entries).map(([id,text])=>({id:'markets#'+id,text}))}));
+  let rung=0;
+  const actions=()=>rung===0?{status:{}}:{status:{},offer:rung===3?{to:'team'}:{},cancel:{},...(rung>=2?{market:{},sell:{},buy:{},embargo:{}}:{})};
+  try {
+    await engine(req=>req.action==='describe'?{ok:true,result:{actions:actions(),bundle:'rung-'+rung}}:
+      {ok:false,error:{code:'action_failed',message:'unsupported action; call describe'}},async port=>{
+      const env={...process.env,FACTORIO_RCON_PASSWORD:'test-only',FH_REF_DIR:dir,FH_DESCRIBE_CACHE:join(dir,'cache.json')};
+      const run=(args:string[])=>exec(process.execPath,['dist/host/cli.js','--port',String(port),...args],{env});
+      assert.doesNotMatch((await run(['help'])).stdout,/markets/);
+      assert.equal((await run(['help','markets'])).stdout,'unsupported action; call describe\n');
+      await assert.rejects(access(join(dir,'markets.md')));
+      assert.doesNotMatch(await readFile(join(dir,'commands.tsv'),'utf8'),/market|offer|buy|sell/);
+      await assert.rejects(run(['call','market']),e=>{assert.doesNotMatch(String((e as any).stdout),/reference:|similar:/);return true;});
+      rung=1;
+      const swap=(await run(['help','markets'])).stdout;
+      assert.match(swap,/swap instructions/);assert.doesNotMatch(swap,/coinage|priced|addressed|raid/);
+      assert.match((await run(['help'])).stdout,/markets/);
+      rung=2;
+      const coin=(await run(['help','markets'])).stdout;
+      assert.match(coin,/coinage wallet/);assert.match(coin,/raid wallet/);assert.doesNotMatch(coin,/addressed/);
+      rung=3;assert.match((await run(['help','markets'])).stdout,/addressed counterparty/);
+      rung=0;assert.doesNotMatch((await run(['help'])).stdout,/markets/);
+      await assert.rejects(access(join(dir,'markets.md')));
+    });
+  } finally {await rm(dir,{recursive:true,force:true});}
 });
 test('trace lane-facts coverage and paging options survive first-page output truncation',async()=>{
   const coverage='lane_facts: 32 of 300 walked lane tiles included, 268 omitted (limit 32, offset 0); lane_facts_limit=256 (maximum 256); lane_facts_offset=32 reads the next page';

@@ -11,6 +11,7 @@
    "humans": "human players may join (co-op)"
   },
   "event": {
+   "second_contact": "the force has encountered a second distinct team; opens explicit counterparty addressing",
    "resource_depleted": "a resource entity of a patch mined out by the force's drill or hand (on_resource_depleted: needs one more forwarded event in control.lua, a mod version change)",
    "enemy_seen": "an enemy unit, worm or nest charted or within 64 tiles of the force's entities (threat.lua's nest news and attack groups per force)",
    "spitters": "a spitter or medium-or-larger biter seen (on_entity_damaged/on_entity_died causes, threat.lua)",
@@ -573,11 +574,11 @@
 {"id":"arg:describe.if_bundle","kind":"argument","action":"describe","condition":{"world":[],"any":["with:action:describe"]},"advanced":false,"bytes":133},
 {"id":"arg:describe.action","kind":"argument","action":"describe","condition":{"world":[],"any":["with:action:describe"]},"advanced":false,"bytes":148},
 {"id":"action:detach","kind":"action","condition":{"world":[],"any":["never"]},"bytes":2},
-{"id":"action:diplomacy","kind":"action","condition":{"world":[],"any":["UNASSIGNED"]},"bytes":260},
+{"id":"action:diplomacy","kind":"action","condition":{"world":[],"any":["event:contact"]},"bytes":260},
 {"id":"arg:diplomacy.limit","kind":"argument","action":"diplomacy","condition":{"world":[],"any":["with:action:diplomacy"]},"advanced":false,"bytes":51},
 {"id":"arg:diplomacy.since","kind":"argument","action":"diplomacy","condition":{"world":[],"any":["with:action:diplomacy"]},"advanced":false,"bytes":64},
 {"id":"arg:diplomacy.with","kind":"argument","action":"diplomacy","condition":{"world":[],"any":["with:action:diplomacy"]},"advanced":false,"bytes":29},
-{"id":"action:diplomacy_send","kind":"action","condition":{"world":[],"any":["UNASSIGNED"]},"bytes":306},
+{"id":"action:diplomacy_send","kind":"action","condition":{"world":[],"any":["event:contact"]},"bytes":306},
 {"id":"arg:diplomacy_send.text","kind":"argument","action":"diplomacy_send","condition":{"world":[],"any":["with:action:diplomacy_send"]},"advanced":false,"bytes":95},
 {"id":"arg:diplomacy_send.to","kind":"argument","action":"diplomacy_send","condition":{"world":[],"any":["with:action:diplomacy_send"]},"advanced":false,"bytes":83},
 {"id":"action:disclosure","kind":"action","condition":{"world":[],"any":["never"]},"bytes":242},

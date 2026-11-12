@@ -26,6 +26,7 @@ def copy_brief_tree(tmp):
         if f.endswith(".md"):
             shutil.copy(os.path.join(ROOT, "agent", f), os.path.join(tmp, "agent"))
     shutil.copytree(os.path.join(ROOT, "agent", "ref"), os.path.join(tmp, "agent", "ref"))
+    shutil.copytree(os.path.join(ROOT, "tools", "disclosure"), os.path.join(tmp, "tools", "disclosure"))
 
 
 def mt_env():

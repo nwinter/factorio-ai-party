@@ -32,6 +32,7 @@ WORLD = {
 
 # Each event: how it is detected and what it costs (docs/DISCLOSURE.md, "Triggers").
 EVENTS = {
+    "second_contact": "the force has encountered a second distinct team; opens explicit counterparty addressing",
     "resource_depleted": "a resource entity of a patch mined out by the force's drill or hand (on_resource_depleted: "
                          "needs one more forwarded event in control.lua, a mod version change)",
     "enemy_seen": "an enemy unit, worm or nest charted or within 64 tiles of the force's entities (threat.lua's nest "
@@ -185,6 +186,7 @@ ACTIONS = {
     "pact_propose": ["event:contact"], "pact_accept": ["with:pact_propose"], "pact_decline": ["with:pact_propose"],
     "pact_withdraw": ["with:pact_propose"], "pact_amend": ["with:pact_propose"], "pact_end": ["with:pact_propose"],
     "pacts": ["with:pact_propose"],
+    "diplomacy": ["event:contact"], "diplomacy_send": ["event:contact"],
     "offer": ["event:contact"], "cancel": ["event:contact"],
     "market": ["research:mt-coinage"], "sell": ["research:mt-coinage"],
     "buy": ["research:mt-coinage"], "embargo": ["research:mt-coinage"],

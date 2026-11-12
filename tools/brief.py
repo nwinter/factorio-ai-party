@@ -169,6 +169,9 @@ def core(player, time_text, coop, mate="", mate_notes="", role="", open_=None, e
     if os.environ.get("POG_OPENING_BRIEF"):
         text += "\n\n## This shift's opening\n\n" + os.environ["POG_OPENING_BRIEF"].strip() + "\n"
     text = text.rstrip("\n") + "\n\n" + (open_index(open_) if open_ else index_text()).rstrip("\n")
+    # Runtime contact gates apply even when general progressive disclosure is off.
+    # fh help/describe materializes the reference only from the caller's live schema.
+    text = re.sub(r"(?m)^- `markets`[^\n]*\n?", "", text)
     text += "\n\n## Compact instructions\n\n" + open(os.path.join(AGENT, "compact.md")).read()
     if open_:
         line = DISCLOSURE_LINE.rstrip("\n") + (REFUSE_LINE if open_.get("refuse") else "") + "\n"
@@ -210,7 +213,7 @@ def topic_units(player, open_=None):
             continue
         when = when_of[topic]
         head = f"# {topic} (`./fh help {topic}`)\n\nRead it {when}.\n\n"
-        if open_ is None:
+        if open_ is None and topic != "markets":
             body = open(os.path.join(REF, topic + ".md")).read().rstrip("\n")
             if topic == "space-age" and sa_on:
                 sa = open(os.path.join(AGENT, "spaceage.md")).read().strip().split("\n", 1)[1].strip()
@@ -222,7 +225,8 @@ def topic_units(player, open_=None):
                 items += [(f"spaceage.md#{n}", t if t.startswith("- ") else t + "\n")
                           for f, n, t in _disclosure().brief_items() if f == "spaceage.md" and not t.startswith("#")]
             items += [(f"{topic}#{n}", t) for n, t in _disclosure().topic_items(topic)]
-            body = "".join(t for i, t in items if i not in open_["docs_shut"] and i not in open_["brief_shut"]).rstrip("\n")
+            visible = open_ or {"docs_shut": set(), "brief_shut": set()}
+            body = "".join(t for i, t in items if i not in visible["docs_shut"] and i not in visible["brief_shut"]).rstrip("\n")
         text = head + body + "\n"
 
         def done(x):
@@ -253,13 +257,18 @@ def write(d, player, time_text, coop, mate="", mate_notes="", role=""):
     ref = os.path.join(d, "ref")
     os.makedirs(ref, exist_ok=True)
     for topic, (text, units) in topic_units(player, open_).items():
-        open(os.path.join(ref, topic + ".md"), "w").write(text)
+        path = os.path.join(ref, topic + ".md")
+        if topic != "markets":
+            open(path, "w").write(text)
+        elif os.path.exists(path):
+            os.remove(path)
         if units is not None:
             os.makedirs(os.path.join(ref, ".units"), exist_ok=True)
             json.dump(units, open(os.path.join(ref, ".units", topic + ".json"), "w"))
     with open(os.path.join(ref, "commands.tsv"), "w") as f:
         for name, topic in sorted(commands().items()):
-            f.write(f"{name}\t{topic}\n")
+            if topic != "markets":
+                f.write(f"{name}\t{topic}\n")
 
 
 def harness_note(text, kind):
