@@ -13,6 +13,10 @@ assert(out.text=='green-wire and red-wire' and out.profiles[1].color=='#3cb44b' 
 assert(original.force=='green' and #original.entities==2,'projection must not alter stored facts')
 assert(D.project({name='grok',position={x=12,y=9}},'green')==nil,'unknown identity must not leave coordinates')
 assert(D.project({from='Nova',text='I am at 120,30'},'green')==nil,'unknown display name row is private')
+names[2]='forge'
+assert(D.project({from='Forge',text='My own chosen name.'},'green').from=='Forge','a hidden alias collision cannot suppress own speech')
+assert(D.project({force='yellow',from='Forge',text='Unknown force row.'},'green')==nil)
+names[2]='Rivet'
 assert(not D.viewer('green','Guest','Nice furnace!'),'viewer input disabled before contact')
 state.mt.first['chart yellow>green']=100
 assert(D.open('green') and D.known('green','yellow') and not D.known('green','blue'))

@@ -19,13 +19,20 @@ return function(api)
     return text:lower():find('%f[%w_%-]'..name:lower():gsub('([^%w])','%%%1')..'%f[^%w_%-]')~=nil
   end
   local function hidden(reader)
-    local names={}
+    local names,known_names={},{}
+    for _,b in ipairs(api.bots and api.bots() or {}) do
+      if M.known(reader,b.force) then
+        known_names[b.name:lower()]=true
+        local p=api.profile and api.profile(b.index) or {}
+        if p.display_name and p.display_name~='' then known_names[p.display_name:lower()]=true end
+      end
+    end
     for name in pairs(teams()) do if name~=reader and not M.known(reader,name) then names[#names+1]=name end end
     for _,b in ipairs(api.bots and api.bots() or {}) do
       if b.force~=reader and teams()[b.force] and not M.known(reader,b.force) then
-        names[#names+1]=b.name
+        if not known_names[b.name:lower()] then names[#names+1]=b.name end
         local p=api.profile and api.profile(b.index) or {}
-        if p.display_name and p.display_name~='' then names[#names+1]=p.display_name end
+        if p.display_name and p.display_name~='' and not known_names[p.display_name:lower()] then names[#names+1]=p.display_name end
       end
     end
     return names
