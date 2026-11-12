@@ -20,7 +20,7 @@ sys.path.insert(0, str(HERE.parent / 'stream'))
 from harness import Harness
 import lookcam
 from public_race import (project, Race, Director, read_views, icons, speech, project_viewers, diplomacy,
-                         subjects, broadcast, rows as list_rows, obj)
+                         subjects, broadcast, project_market, rows as list_rows, obj)
 from public_feed import project_feed
 
 CAMERA = 'pog-director2'
@@ -287,7 +287,8 @@ class PublicOverlay:
                 lines = broadcast(project_feed(views['feed'], rows), rows, now) if isinstance(views.get('feed'), list) else None
                 with self.lock:
                     self.state.update(self.race.update(rows, now, list_rows(views.get('contacts')), list_rows(views.get('pacts')), talks, lines),
-                                      now=now, diplomacy=talks, **operator_audience(self.op, self.rosters, now))
+                                      now=now, diplomacy=talks, market=project_market(views.get('market'), rows),
+                                      **operator_audience(self.op, self.rosters, now))
                     if self.youtube:
                         self.state['stream'] = {'youtube_video_id': self.youtube}
                 # Private to the director: where each roster agent is and how much it is doing.

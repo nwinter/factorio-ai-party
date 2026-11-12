@@ -58,7 +58,9 @@ def teams_of(op):
     """[(team, [names])] from op/teams.tsv (start-mt.sh's copy of the teams file), in file order: the teams this run
     launched (an op/TEAM/ folder each; POG_MT_TEAMS can leave some out)."""
     out = {}
-    for line in open(os.path.join(op, "teams.tsv")):
+    with open(os.path.join(op, "teams.tsv")) as f:
+        lines = f.readlines()
+    for line in lines:
         f = line.rstrip("\n").split("\t")
         if line.strip() and not line.startswith("#") and len(f) >= 2 and os.path.isdir(os.path.join(op, f[0])):
             out.setdefault(f[0], []).append(f[1])
@@ -104,8 +106,11 @@ def refusals(op, names):
 
 def collect(r, op):
     view = {"t": time.strftime("%Y-%m-%d %H:%M:%S"), "teams": [], "errors": {}}
+    feed = {}
     labels={}
-    for line in open(os.path.join(op,'teams.tsv')):
+    with open(os.path.join(op,'teams.tsv')) as f:
+        lines = f.readlines()
+    for line in lines:
         f=line.rstrip('\n').split('\t')
         if not line.startswith('#') and len(f)>=8:labels[f[1]]=f[6]
     try:
@@ -113,6 +118,15 @@ def collect(r, op):
         view.update(feed=feed.get('lines') or [],feed_cursor=feed.get('cursor'),feed_first_seq=feed.get('first_seq'))
     except Exception:
         view['feed']=[]
+    try:
+        market=r.op('mt_market',{})
+        # Keep the display contract, not operator wallets, orders, audit or internal pair state.
+        view['market']={k:market.get(k) or [] for k in ('markers','last_prices')}
+        view['market']['tick']=feed.get('tick')
+    except Exception as e:
+        view['market']={}  # Older harnesses have no markets; no placeholder on screen.
+        if 'unsupported action' not in str(e):
+            view['errors']['market']=str(e)
     try:
         bots = {b["name"]: b for b in r.bots()}
     except Exception as e:

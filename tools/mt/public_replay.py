@@ -24,7 +24,7 @@ import re
 import time
 import urllib.parse
 
-from public_race import project, Race, Director, diplomacy, subjects, broadcast, clock, verb_class
+from public_race import project, Race, Director, diplomacy, subjects, broadcast, clock, verb_class, project_market
 from public_overlay import asset, audience, shots, CAMERA_RECT
 from public_feed import project_feed
 
@@ -222,6 +222,7 @@ def assemble(race, director, rosters, raws, scores, views, now, camera, fixture)
     talks = diplomacy(views.get('diplomacy'), rows)
     lines = broadcast(project_feed(views['feed'], rows), rows, now) if isinstance(views.get('feed'), list) else None
     data = race.update(rows, now, views.get('contacts') or [], views.get('pacts') or [], talks, lines)
+    data['market'] = project_market(views.get('market'), rows)
     fresh = {t: raws[t] for t, r in zip(rosters, rows) if not r['stale']}
     data.update(v=2, now=now, diplomacy=talks, layout={'camera': list(CAMERA_RECT)}, fixture=fixture, **audience({'operator':next(iter(fresh.values()))} if fresh else {}, rosters, now))
     scout = {t: subjects(raw, {a['name'] for a in rosters[t]}, now) for t, raw in fresh.items()}
@@ -474,7 +475,7 @@ def from_views(path, label=None):
         at = now + shown * 2
         for raw in raws.values():
             raw['now'] = at
-        views = {'contacts': view.get('contacts') or [], 'pacts': view.get('pacts') or [], 'diplomacy': view.get('diplomacy') or [], 'feed': lines[:shown]}
+        views = {'contacts': view.get('contacts') or [], 'pacts': view.get('pacts') or [], 'diplomacy': view.get('diplomacy') or [], 'feed': lines[:shown], 'market': view.get('market')}
         frame, camera = assemble(race, director, rosters, raws, scores, views, at, camera, label or 'Replay · one operator view')
         frames.append(frame)
     return frames

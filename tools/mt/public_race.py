@@ -263,7 +263,7 @@ def diplomacy(messages, teams):
     return out[-12:]
 
 
-KINDS = {'say': 'talk', 'tell': 'tell', 'diplomacy': 'diplomacy', 'board': 'board', 'identity': 'identity'}
+KINDS = {'say': 'talk', 'tell': 'tell', 'diplomacy': 'diplomacy', 'board': 'board', 'identity': 'identity', 'market': 'market'}
 
 
 def broadcast(lines, teams, now):
@@ -281,7 +281,18 @@ def broadcast(lines, teams, now):
             continue
         row = {'id': f'f:{seq}', 'team': team, 'name': m['agent'], 'to': [n for n in to if isinstance(n, str)] if kind == 'tell' else [],
                'kind': kind, 'text': text, 'tick': tick, 'at': now - max(0, latest - tick) / 60, 'reply': False}
-        if kind == 'diplomacy':
+        if kind == 'market':
+            event = m.get('event', 'fill')
+            if (m.get('system') is not True or m['agent'] != 'Trading Post' or m.get('scope') != 'market'
+                    or event not in ('fill', 'coinage', 'raid', 'embargo')
+                    or type(m.get('source_seq')) is not int or m['source_seq'] < 1):
+                continue
+            if event in ('fill', 'embargo'):
+                if len(to) != 1 or to[0] not in known or to[0] == team: continue
+                row['to_team'] = to[0]
+            elif to: continue
+            row.update(system=True, event=event, source_seq=m['source_seq'])
+        elif kind == 'diplomacy':
             if len(to) != 1 or to[0] not in known or to[0] == team:
                 continue
             row['to_team'] = to[0]
@@ -295,6 +306,51 @@ def broadcast(lines, teams, now):
         elif kind == 'board':
             row['text'] = re.sub(r'^#\d+\s+', '', text)
         out.append(row)
+    return out
+
+
+def project_market(raw, teams):
+    """Operator shipment/print facts only. Never export balances, orders or audit state."""
+    raw = obj(raw)
+    known = {t['team'] for t in teams}
+    latest = max((t.get('tick') or 0 for t in teams), default=0)
+    out = {'markers': [], 'last_prices': []}
+    def finite(v, lo=0, hi=1e12, integer=False):
+        return type(v) in (int, float) and math.isfinite(v) and lo <= v <= hi and (not integer or v == int(v))
+    def pair(a, b):
+        return isinstance(a, str) and isinstance(b, str) and a in known and b in known and a != b
+    def item(v):
+        return 'coin' if v == 'mt-coin' else prototype('item', v)
+    tick = raw.get('tick')
+    if not finite(tick, integer=True) or not -300 <= latest - tick <= 900:
+        return out
+    out['tick'] = tick
+    seen = set()
+    for m in map(obj, rows(raw.get('markers'))[-120:]):
+        a, b, name = m.get('from'), m.get('to'), item(m.get('item'))
+        if (not pair(a, b) or not name or not finite(m.get('id'), 1, integer=True)
+            or not finite(m.get('count'), 1, integer=True) or not finite(m.get('arrival_tick'), integer=True)
+            or not all(finite(m.get(k), -1e7, 1e7) for k in ('x', 'y'))
+            or m.get('surface') not in ('nauvis', 'vulcanus', 'gleba', 'fulgora', 'aquilo')
+            or m.get('state') not in ('in_transit', 'waiting', 'quarantined')):
+            continue
+        key = (a, b, m['id'], name)  # Fill ids are pair-local; swaps have two legs.
+        if key in seen: continue
+        seen.add(key)
+        out['markers'].append({**{k: m[k] for k in ('id', 'from', 'to', 'count', 'x', 'y', 'surface', 'state', 'arrival_tick')}, 'item': name})
+    seen = set()
+    for p in sorted(rows(raw.get('last_prices')), key=lambda v: obj(v).get('tick') if finite(obj(v).get('tick')) else -1, reverse=True):
+        p = obj(p); a, b, name = p.get('a'), p.get('b'), item(p.get('item'))
+        if (not pair(a, b) or not name or not finite(p.get('price'), 1, integer=True)
+            or not finite(p.get('count'), 1, integer=True) or not finite(p.get('prints'), 1, integer=True)
+            or not finite(p.get('tick'), 0, tick, integer=True) or type(p.get('thin')) is not bool):
+            continue
+        key = (*sorted((a, b)), name)
+        if key in seen: continue
+        seen.add(key)
+        out['last_prices'].append({**{k: p[k] for k in ('a', 'b', 'price', 'count', 'tick', 'prints')},
+                                   'item': name, 'thin': p['prints'] == 1})
+        if len(out['last_prices']) == 30: break
     return out
 
 
@@ -578,7 +634,11 @@ class Race:
                     if r['team'] in (a, b):
                         r['pacts'].append({'id':ident, 'with': b if r['team'] == a else a})
         for m in lines or ():
-            if m['team'] in known and any(a['name'] == m['name'] for r in teams if r['team'] == m['team'] for a in r['agents']):
+            event = m.get('event', 'fill')
+            system = (m.get('kind') == 'market' and m.get('system') is True and m.get('name') == 'Trading Post'
+                      and ((event in ('fill', 'embargo') and m.get('to_team') in known and m['to_team'] != m['team'])
+                           or (event in ('coinage', 'raid') and not m.get('to_team'))))
+            if m['team'] in known and (system or any(a['name'] == m['name'] for r in teams if r['team'] == m['team'] for a in r['agents'])):
                 self.say(dict(m, reply=False))
         for m in () if self.ordered else diplomacy:
             # Already rebuilt by diplomacy(): explicit cross-team messages, one pair-local sequence each.
