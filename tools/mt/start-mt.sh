@@ -48,6 +48,8 @@ export POG_FACTORIO_VERSION=${MT_EXPECT_VERSION:-2.0.77}
 export POG_TEAM_LINE='You play in a team of {{TEAM_SIZE}} AI agents'
 export POG_GOAL="a space platform of the team's reaching the solar system's edge, as soon as you can"
 export POG_MAP_TEXT=$'map settings\nmade for this run'
+export POG_IDENTITY_BRIEF='In your first minute, read profile {}. Choose your own character name and a one-line persona with profile {display_name, persona}; optional pronouns, motto and avatar are yours too. Your seeded color and glyph distinguish you from your teammate; keep them unless you have a reason to change. Do not use a model name plus a number as your identity. Keep the same chosen identity on later shifts. Your stable tool/roster ID stays unchanged; tells accept teammate IDs or chosen names. Introduce yourself to your teammate with say, then get to work.'
+export POG_OPENING_BRIEF=${POG_OPENING_BRIEF:-'Start producing, not waiting: agree who builds power/smelting and who scouts, mines and supplies. Build a working production chain, then improve it while one teammate explores safe routes to more resources. Make tools and ammunition before risky exploration; defend yourself when attacked. Do not stand still waiting for a teammate once you have an independent useful task. If a plan is blocked, explain the concrete blocker once and choose productive work while it is resolved. After ninety seconds without a changed observation, stop repeating the same check. Record visible work and coordinate short handoffs; do not invent progress.'}
 export POG_WEB_BLOCK="factorio.nickwinter.net youtube.com www.youtube.com youtu.be github.com raw.githubusercontent.com"
 deny="$root /Users/owner/code/pog-operator"
 for w in $(git worktree list --porcelain | awk '/^worktree /{w=$2} /^branch refs\/heads\/mt\//{print w}'); do
@@ -183,6 +185,7 @@ for t in $teams; do
   td=$rundir/$t; mkdir -p "$td"
   team_files "$t" "$td"
   python3 tools/team_bots.py "$td/team.tsv" "$world" "$t" 2>&1 | while read -r line; do log "$t bot $line"; done
+  python3 tools/mt/identities.py "$teams_file" "$t" --world "$world" --execute | while read -r line; do log "$t identity $line"; done
   nohup python3 tools/fh_broker.py --world "$world" --dir "$td/.sock" --log "$td/broker.log" $(members "$td/team.tsv") >"$td/broker.err" 2>&1 &
   echo $! > "$td/broker.pid"
   last=$(members "$td/team.tsv" | tail -1)
@@ -292,7 +295,7 @@ for t in $teams; do
   nohup python3 tools/chat-log.py --world "$world" --bot "$first_bot" "$op/$t/chat.jsonl" >"$op/$t/chat-log.err" 2>&1 &
   echo $! >> "$op/helpers.pid"
 done
-nohup python3 tools/mt/team_views.py "$run" --every "${POG_VIEWS_EVERY:-60}" >"$op/team-views.err" 2>&1 &
+nohup python3 tools/mt/team_views.py "$run" --every "${POG_VIEWS_EVERY:-5}" >"$op/team-views.err" 2>&1 &
 echo $! >> "$op/helpers.pid"
 # POG_MT_STREAM=1: the stream service per team (tools/stream/serve.py --team), its overlay at 127.0.0.1:879N (red
 # 8791, then in teams-file order; 8788 is world n's): no camera calls or highlights (pog-cam1 renders the agents'

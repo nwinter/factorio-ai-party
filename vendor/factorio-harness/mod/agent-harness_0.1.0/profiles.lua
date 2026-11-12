@@ -74,7 +74,7 @@ return function(api)
   function M.get(index) return store()[index] end
   local function public(pr)
     if not pr then return {} end
-    return {display_name=pr.display_name, color=pr.color, glyph=pr.glyph, motto=pr.motto, avatar=pr.avatar, voice=pr.voice, pronouns=pr.pronouns}
+    return {display_name=pr.display_name, color=pr.color, glyph=pr.glyph, persona=pr.persona, motto=pr.motto, avatar=pr.avatar, voice=pr.voice, pronouns=pr.pronouns}
   end
   -- Paint the character (and, for a player, the player and chat name colour).
   function M.apply(p)
@@ -89,11 +89,12 @@ return function(api)
   M.schema = {
     profile = {display_name='1..24 characters', color='"#rrggbb" (character and chat name colour); one too close to another agent\'s is refused', glyph='1..2 characters: an emoji or letters (a short tag beside your name); one another agent holds is refused',
       motto='0..80 characters',
+      persona='0..160 characters: your chosen personality and approach to the factory; one line',
       voice='your stream voice (Deepgram Aura-2 speaker, lower case): apollo arcas aries atlas hermes hyperion janus jupiter mars neptune odysseus orion orpheus pluto saturn zeus (masculine); amalthea andromeda asteria athena aurora callista cora cordelia delia electra harmonia helena hera iris juno luna minerva ophelia pandora phoebe theia vesta (feminine); unset or unknown: a default picked from your name; one another agent holds is refused',
       pronouns='optional, 0..32 characters of free text (e.g. "she/her", "they/them", "it"); casters use them when they talk about you; "" clears',
       avatar='pixel portrait, every field optional (unset ones follow from your name): base engineer|robot|biter|drone, helmet none|hardhat|armor|power|crest|hood, visor none|goggles|slit|wide|mono|grid, emblem none|gear|bolt|flask|plate|circuit|rocket|leaf|star, accessory none|antenna|headlamp|scarf|tank|horns|earpiece|pipe|headset, backdrop dark|grid|hazard|glow|night, accent "#rrggbb" (second colour; suit is your color); false clears',
       returns='your profile; with no arguments just reads it'},
-    profiles = {returns='every player and bot (directors excluded): kind bot|player, name, display_name, color, glyph, motto, avatar, voice, pronouns, position, surface, where (planet, "platform NAME" or "cargo pod to ..."), travel (bots: ascending|aboard|descending), alive, active (current action kind or false), last_said {text,tick}'},
+    profiles = {returns='every player and bot of your team (directors excluded): kind bot|player, name, display_name, persona, color, glyph, motto, avatar, voice, pronouns, position, surface, where (planet, "platform NAME" or "cargo pod to ..."), travel (bots: ascending|aboard|descending), alive, active (current action kind or false), last_said {text,tick}'},
   }
   -- A glyph tags one agent: one another agent holds is refused, naming the
   -- holder (shake3: Astra and Muse both had ✦, Sol and Sonnet both S). Case
@@ -159,6 +160,17 @@ return function(api)
     local all = store()
     local pr = all[p.index] or {}
     local changed = false
+    if a.persona~=nil then text_arg(a.persona,'persona',0,160) end
+    local display_name
+    if a.display_name~=nil then
+      local name=text_arg(a.display_name,'display_name',1,24):match('^%s*(.-)%s*$');display_name=name
+      assert(name:find('%S'),'display_name must not be blank')
+      for other,opr in pairs(all) do
+        if other~=p.index and holder(other) and opr.display_name and opr.display_name:lower()==name:lower() then
+          error('display_name is already used by a teammate; choose your own name',0)
+        end
+      end
+    end
     local avatar = a.avatar ~= nil and avatar_arg(a.avatar) or nil -- validated before anything changes
     if a.glyph ~= nil then check_glyph(p.index, text_arg(a.glyph, 'glyph', 1, 2)) end -- likewise
     if a.color ~= nil then
@@ -177,8 +189,9 @@ return function(api)
         end
       end
     end
-    if a.display_name ~= nil then pr.display_name = text_arg(a.display_name, 'display_name', 1, 24); changed = true end
+    if a.display_name ~= nil then pr.display_name = display_name; changed = true end
     if a.motto ~= nil then pr.motto = text_arg(a.motto, 'motto', 0, 80); changed = true end
+    if a.persona ~= nil then pr.persona = text_arg(a.persona, 'persona', 0, 160); changed = true end
     if a.glyph ~= nil then pr.glyph = text_arg(a.glyph, 'glyph', 1, 2); changed = true end
     if a.voice ~= nil then pr.voice = text_arg(a.voice, 'voice', 1, 16):lower(); changed = true end
     if a.pronouns ~= nil then
@@ -194,6 +207,7 @@ return function(api)
       all[p.index] = pr
       M.apply(p)
       if api.on_apply then api.on_apply(p) end -- name tag and avatar (nametags.lua)
+      if api.on_identity and pr.display_name and pr.persona and pr.persona:find('%S') then api.on_identity(p,public(pr)) end
     end
     local out = public(all[p.index])
     out.name = p.name; out.kind = api.is_bot(p) and 'bot' or 'player'

@@ -164,6 +164,10 @@ def core(player, time_text, coop, mate="", mate_notes="", role="", open_=None, e
     instructions" section, and every harness's summarizer sees the instructions file). open_ (disclosure_open()): only
     the brief items and index commands open for the team."""
     text = open(os.path.join(AGENT, "PLAYBOOK.md")).read() + coop
+    if os.environ.get("POG_IDENTITY_BRIEF"):
+        text += "\n\n## Your identity\n\n" + os.environ["POG_IDENTITY_BRIEF"].strip() + "\n"
+    if os.environ.get("POG_OPENING_BRIEF"):
+        text += "\n\n## This shift's opening\n\n" + os.environ["POG_OPENING_BRIEF"].strip() + "\n"
     text = text.rstrip("\n") + "\n\n" + (open_index(open_) if open_ else index_text()).rstrip("\n")
     text += "\n\n## Compact instructions\n\n" + open(os.path.join(AGENT, "compact.md")).read()
     if open_:

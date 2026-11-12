@@ -741,6 +741,7 @@ class Agent:
         self.color = self.cfg.get("color")
         self.glyph = self.cfg.get("glyph")
         self.motto = ""
+        self.persona = ""
         self.profile_set = None  # None: unknown (no `profiles`); False: the agent has not called `profile` yet
         self.position = None
         self.where = None  # profiles' text while in a cargo pod ("cargo pod to X")
@@ -1344,7 +1345,7 @@ class Model:
 
     def _ingest_agent(self, a, now):
         ag = self.agent(a["name"])
-        for key in ("kind", "display_name", "color", "glyph", "motto", "voice", "voice_description", "pronouns"):
+        for key in ("kind", "display_name", "color", "glyph", "persona", "motto", "voice", "voice_description", "pronouns"):
             if a.get(key):
                 setattr(ag, key, a[key])
         if "avatar" in a:
@@ -3067,7 +3068,7 @@ class Model:
                 **job,
                 **self.work_card(ag, job, plan_rows),
                 "name": ag.name, "kind": ag.kind, "display_name": ag.display_name, "color": ag.color,
-                "glyph": ag.glyph, "motto": ag.motto, "profile_set": ag.profile_set, "model": ag.cfg.get("model"), "harness": ag.cfg.get("harness"),
+                "glyph": ag.glyph, "persona": ag.persona, "motto": ag.motto, "profile_set": ag.profile_set, "model": ag.cfg.get("model"), "harness": ag.cfg.get("harness"),
                 "role": ag.cfg.get("role"), "alive": ag.alive, "activity": self.activity(ag, now),
                 "action": self.action_text(ag), "active": ag.active, "position": ag.position,
                 "location": self.location(ag), "travel": ag.travel,

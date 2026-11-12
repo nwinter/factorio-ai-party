@@ -121,5 +121,29 @@ do
   local proposal=R.dispatch{id='pact-note',bot='rb1',action='pact_propose',args={with='blue',terms={cease_fire=true},note='Please review these terms.'}}
   eq(proposal.pact.note,'Please review these terms.')
   fails(function() R.dispatch{id='pact-bogus',bot='rb1',action='pact_propose',args={with='blue',bogus=true}} end,'unknown argument bogus')
+  local function call(bot,action,args) return R.dispatch{id='feed-'..action,bot=bot,action=action,args=args or {}} end
+  local profile=call('rb1','profile',{display_name='  Forge  ',persona='A patient builder.',color='#3cb44b',glyph='F'})
+  eq(profile.display_name,'Forge');eq(profile.persona,'A patient builder.')
+  fails(function() call('rb2','profile',{display_name='FORGE'}) end,'already used')
+  fails(function() call('rb1','profile',{display_name='Changed',persona=string.rep('x',161)}) end,'persona')
+  eq(call('rb1','profile',{}).display_name,'Forge','invalid persona does not partially edit identity')
+  call('bb1','profile',{display_name='Forge',persona='Another team can pick a name independently.'})
+  local before=R.dispatch{operator=true,action='mt_feed',args={}}.last_seq
+  call('rb1','say',{text='Red team private speech.'})
+  call('rb2','tell',{to='rb1',text='Private reply.'})
+  call('rb1','board_post',{kind='note',title='Our production plan',note='Mine first.'})
+  call('rb1','diplomacy_send',{to='blue',text='A separate explicit offer.'})
+  local feed=R.dispatch{operator=true,action='mt_feed',args={since=before}}
+  eq(#feed.lines,4);eq(feed.lines[1].kind,'say');eq(feed.lines[2].kind,'tell');eq(feed.lines[3].kind,'board');eq(feed.lines[4].kind,'diplomacy')
+  for i,line in ipairs(feed.lines) do eq(line.seq,before+i);eq(line.team,'red') end
+  eq(feed.lines[1].scope,'team-private');eq(feed.lines[1].identity.display_name,'Forge');eq(feed.lines[2].to[1],'rb1')
+  eq(feed.lines[4].scope,'diplomacy');eq(feed.lines[4].to[1],'blue')
+  fails(function() call('gb1','mt_feed',{}) end,'unsupported action')
+  local bluechat=call('bb1','chat',{peek=true});assert(not tostring(bluechat):find('Red team private'))
+  for _,msg in ipairs(bluechat.messages or {}) do assert(msg.text~='Red team private speech.') end
+  local latest=feed.last_seq
+  R.dispatch{operator=true,team='red',action='tell',args={to='team',text='Operator-only instructions.'}}
+  eq(R.dispatch{operator=true,action='mt_feed',args={}}.last_seq,latest,'operator tells excluded')
+  print('mt295 identity, complete ordered speech and operator-only feed: ok')
   print('mt276 G contact lines, paired diplomacy delivery and third-team privacy: ok')
 end

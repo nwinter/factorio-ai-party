@@ -220,6 +220,7 @@ return function(api)
       kind=item.kind, owner=item.owner, requested_by=item.requested_by, status=item.status, text=text,
       prev_owner=extra and extra.prev_owner, overlaps=extra and extra.overlaps,
       progress=total and progress(item) or nil, steps_done=done, steps_total=total}
+    if api.on_event then api.on_event(b.events[#b.events]) end
     while #b.events > MAX_EVENTS do table.remove(b.events, 1) end
   end
   -- Over the cap, finished items go first (oldest update first), then notes,
@@ -2712,9 +2713,9 @@ return function(api)
       out[#out+1] = OPERATOR_NOTE
     end
     local pr = api.profile(p.index)
-    if not (pr and pr.display_name and pr.glyph and pr.color) and not (h.reminded and game.tick - h.reminded < REMIND_EVERY) then
+    if not (pr and pr.display_name and pr.glyph and pr.color and (not api.state().mt or pr.persona and pr.persona:find('%S'))) and not (h.reminded and game.tick - h.reminded < REMIND_EVERY) then
       h.reminded = game.tick
-      out[#out+1] = 'profile: viewers see you by display_name, glyph and color; set them once with profile {display_name, glyph, color, motto}'
+      out[#out+1] = 'profile: choose your own display_name and persona; viewers see your name, glyph and color. Set profile {display_name, persona, glyph, color, motto}; keep your identity on later shifts.'
     end
     return #out > 0 and out or nil
   end
