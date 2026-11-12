@@ -41,7 +41,8 @@ const rgbOf = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), pa
 const memo = new Map();
 function keep(key, make) { let v = memo.get(key); if (v === undefined) { v = make(); if (memo.size > 6000) memo.clear(); memo.set(key, v); } return v; }
 function mix(a, b, k) { return keep('m' + a + b + k, () => { const p = rgbOf(a), q = rgbOf(b); return '#' + p.map((v, i) => Math.round(lerp(v, q[i], k)).toString(16).padStart(2, '0')).join(''); }); }
-function fade(hex, a) { return keep('a' + hex + a, () => { const p = rgbOf(hex); return `rgba(${p[0]},${p[1]},${p[2]},${a})`; }); }
+// alpha in steps of 1/50: an animated fade must not mint a new cache entry every frame
+function fade(hex, a) { a = Math.round(a * 50) / 50; return keep('a' + hex + a, () => { const p = rgbOf(hex); return `rgba(${p[0]},${p[1]},${p[2]},${a})`; }); }
 const luma = hex => { const p = rgbOf(hex); return (p[0] * 299 + p[1] * 587 + p[2] * 114) / 255000; };
 function turn(hex, deg, light) {  // hue-rotate a colour; teammates without a colour of their own get neighbours of the team's
   return keep('t' + hex + deg + light, () => {
@@ -562,7 +563,8 @@ function newsSync(s) {
   for (const e of events) {
     if (news.seen.has(e.id)) continue; news.seen.add(e.id);
     news.cards.push(Object.assign({}, e, {born: news.first ? -1e9 : T()}));
-    if (!news.first && s.now - (e.at || 0) <= 60) { news.banners.push(e); flashed.set(e.team, T()); }  // fresh: a banner over the camera too
+    // Fresh news lights its team's card; a milestone (not one more of a building the team already has) gets a banner too.
+    if (!news.first && s.now - (e.at || 0) <= 60) { flashed.set(e.team, T()); if (e.kind !== 'build' || /^First /.test(e.text)) news.banners.push(e); }
   }
   news.first = false; news.cards.sort((a, b) => (a.tick || 0) - (b.tick || 0));
   if (news.cards.length > 10) news.cards.splice(0, news.cards.length - 10);

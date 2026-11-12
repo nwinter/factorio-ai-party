@@ -218,9 +218,31 @@ const fs = require('node:fs'), path = require('node:path');
   checks.draw_ms = {three_by_two: await cost(pairs, 36), four_by_three: await cost(trios, 40)};
   if (checks.draw_ms.four_by_three.p95 > 12) fail('a draw takes too long', checks.draw_ms);
 
+  // ---- soak (MT_SOAK=seconds): the page polling the replay server as OBS would, through the fixture's wrap-around
+  // (the game clock goes back there, as when an older save is loaded)
+  if (process.env.MT_SOAK) {
+    const seconds = parseInt(process.env.MT_SOAK, 10), p = await open('');
+    await camera(p, 'still-ore-day.png');
+    const samples = [];
+    for (let t = 0; t < seconds; t += 5) {
+      await p.waitForTimeout(5000);
+      samples.push(await p.evaluate(() => ({frames: overlayDebug.frames, feed: overlayDebug.feed.length, tweens: tweens.size, memo: memo.size,
+        clock: raceState().teams.length ? Math.max(...raceState().teams.map(t => t.tick || 0)) : 0, heap: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null})));
+    }
+    await p.screenshot({path: path.join(out, 'after-soak.png')}); shots.push('after-soak.png');
+    const clocks = samples.map(x => x.clock), wrapped = clocks.some((c, i) => i && c < clocks[i - 1]);
+    checks.soak = {seconds, frames: samples[samples.length - 1].frames, fps: +(samples[samples.length - 1].frames / seconds).toFixed(1), wrapped,
+      distinct_clocks: new Set(clocks).size, max_feed: Math.max(...samples.map(x => x.feed)), max_tweens: Math.max(...samples.map(x => x.tweens)),
+      max_memo: Math.max(...samples.map(x => x.memo)), heap_mb: [samples[0].heap, samples[samples.length - 1].heap]};
+    if (checks.soak.distinct_clocks < seconds / 5 * .6) fail('the polled page stopped updating', checks.soak);
+    if (checks.soak.fps < 20) fail('the polled page animates too slowly', checks.soak);
+    if (checks.soak.max_tweens > 3000) fail('animation state grows without bound', checks.soak);
+    await p.close();
+  }
+
   const result = {shots, errors, checks};
   fs.writeFileSync(path.join(dir, 'browser-check.json'), JSON.stringify(result, null, 2));
-  console.log(JSON.stringify({shots: shots.length, errors, draw_ms: checks.draw_ms, credit: checks.credit, motion: checks.motion, isolation: checks.isolation}, null, 2));
+  console.log(JSON.stringify({shots: shots.length, errors, draw_ms: checks.draw_ms, credit: checks.credit, motion: checks.motion, isolation: checks.isolation, soak: checks.soak}, null, 2));
   await browser.close();
   if (errors.length) process.exit(1);
 })().catch(e => { console.error(String(e && e.stack || e).slice(0, 1500)); process.exit(1); });

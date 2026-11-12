@@ -233,6 +233,33 @@ class ProjectionTest(unittest.TestCase):
                     self.assertEqual(e.exception.code,404);e.exception.close()
             finally:service.close()
 
+    def test_production_poll_reads_the_ordered_feed_from_the_operator_view(self):
+        with tempfile.TemporaryDirectory() as d:
+            op=Path(d)
+            for team,name in (('green','gemini'),('yellow','grok')):
+                td=op/'runs/test'/team;td.mkdir(parents=True)
+                (td/'team.tsv').write_text(f'{name}\tk\troute\tmodel\thigh\tModel {team}\th\n')
+            (op/'streams.txt').write_text('green http://127.0.0.1:1/\nyellow http://127.0.0.1:2/\n')
+            line={'seq':1,'tick':5900,'team':'green','agent':'gemini','kind':'say','scope':'team-private','text':'Labs are ready','to':{},
+                  'identity':{'display_name':'Vesper','persona':'A patient miner'},'internal':'PRIVATE'}
+            feed=[line,dict(line,seq=2,kind='identity',scope='public',text='Vesper: A patient miner'),
+                  dict(line,seq=3,team='yellow',agent='grok',kind='diplomacy',scope='diplomacy',to=['green'],text='Cease-fire?'),
+                  dict(line,seq=4,team='yellow',agent='gemini',text='WRONG TEAM'),dict(line,seq=5,text='see /Users/PRIVATE/notes')]
+            (op/'views.json').write_text(json.dumps({'t':time.strftime('%Y-%m-%d %H:%M:%S'),'teams':[],'feed':feed}))
+            service=overlay.PublicOverlay(op,op,'test',port=0,camera=False)
+            raw=lambda name:{'now':time.time(),'tick':6000,'research':{'done_count':1},'space':{'rockets':0},
+                             'agents':[{'name':name,'display_name':'Vesper' if name=='gemini' else 'Grok'}],
+                             'chat':[{'seq':4,'from':name,'text':'Labs are ready','lane':'talk','tick':5900}]}
+            with mock.patch.object(overlay,'fetch',side_effect=lambda url:raw('gemini' if ':1/' in url else 'grok')), \
+                 mock.patch.object(service.stop,'wait',side_effect=lambda _:service.stop.set()):
+                service.poll()
+            state=service.state;service.http.server_close()
+        self.assertEqual([(m['id'],m['kind'],m['team'],m['name']) for m in state['feed']],
+                         [('f:1','talk','green','gemini'),('f:2','identity','green','gemini'),('f:3','diplomacy','yellow','grok')])
+        self.assertEqual(state['feed'][1]['title'],'Vesper');self.assertEqual(state['feed'][2]['to_team'],'green')
+        self.assertEqual([len(t['chat']) for t in state['teams']],[1,1])      # the site's nested team chat is unchanged
+        self.assertNotIn('PRIVATE',json.dumps(state));self.assertNotIn('WRONG TEAM',json.dumps(state))
+
     def test_page_draws_text_only_on_canvas_and_loads_nothing_remote(self):
         for name in ('public-overlay.html','public-overlay.js'):
             source=(ROOT/'tools/mt'/name).read_text()
