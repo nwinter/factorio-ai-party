@@ -79,8 +79,10 @@ local centers={green={x=126,y=150},yellow={x=174,y=150},blue={x=150,y=174}}
 local count,out={},{}
 for _,b in ipairs(a.bots) do
  local es=s.find_entities_filtered{type='character',force=b.force,position=b.position,radius=1}
- assert(#es==1,'cannot uniquely locate '..b.name)
- local e=es[1];count[b.force]=(count[b.force] or 0)+1
+ local e,best=nil,math.huge
+ for _,v in ipairs(es) do local dx,dy=v.position.x-b.position.x,v.position.y-b.position.y;local d=dx*dx+dy*dy;if d<best then e,best=v,d end end
+ assert(e and best<.01,'cannot locate '..b.name)
+ count[b.force]=(count[b.force] or 0)+1
  local c=centers[b.force];local p={x=c.x+4*(count[b.force]-1),y=c.y}
  assert(e.teleport(p,s),'teleport failed')
  local given={} for item,n in pairs(a.kit) do given[item]=e.insert{name=item,count=n} end
