@@ -104,3 +104,11 @@ Ready: everything above; all Lua and CLI tests pass (`npm test`: 57 pass, 4 brid
 Not addressed from the notes: `cancel_craft` of one recipe seeming to drop other queued crafts (not reproduced); a placement preview that checks pole coverage / inserter reach / belt gaps before construction (Astra's request 3; `scan fields=io|fluids` and the new `inspect` fields cover the inspection half); a screenshot that follows the controlled character (headless server; out of scope for the runtime).
 
 Note for the merge: `runtime.lua` is close to Lua's 200-local limit in the bundled chunk (a deploy was rejected once during this work); new helpers were grouped into tables (`feeding`, `collect_types`) to stay under it. Future additions should do the same or move into sibling modules.
+
+## mt296 checkpoint 1 (private): contact-gated markets core
+
+Implemented shared standing swaps and Coinage orders, persistent request/transaction receipts, one-pass matching,
+exact-count arrival settlement, pair-scoped responses, passive dispatch and home-Post coin spills. The first core
+suite has 187 assertions plus runtime/data fixtures. Full harness run passed 786/786 before the latest viewer/docs
+additions; their focused regressions pass. Real-engine save/load and agent/control runs remain required. See
+`docs/mt-markets.md`; no live-world deployment has occurred.

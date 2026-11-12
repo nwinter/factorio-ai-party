@@ -59,6 +59,7 @@ return function(api)
     end
     local function text(s)
       local lower=s:lower()
+      if not open and (lower:find('mt%-coinage') or lower:find('mt%-trading%-post') or lower:find('mt%-coin')) then return nil end
       if lower:match('%f[%a]viewer [^:]+:') then return nil end -- old saves' viewer trailers
       for _,name in ipairs(hidden_names) do
         if word(s,name) and (not teams()[name] or ownership(lower,name)) then return nil end
@@ -75,9 +76,10 @@ return function(api)
       if type(v)=='string' then return text(v) end
       if type(v)~='table' then return v end
       assert(depth<48,'response nesting exceeds limit')
+      if not open and type(v.name)=='string' and (v.name=='mt-coinage' or v.name=='mt-trading-post' or v.name=='mt-coin') then return nil end
       if v.viewer or v.source=='site' or v.source=='youtube' then return nil end -- old saves too
       -- Omit entire foreign entity/event rows rather than leaving coordinates with an anonymous owner.
-      for _,key in ipairs{'force','force_name','team','owner_force','attacker_force'} do
+      for _,key in ipairs{'force','force_name','team','owner_force','attacker_force','seller','buyer','from_team','to_team'} do
         local owner=v[key]
         if type(owner)=='string' and teams()[owner] and not M.known(reader,owner) then return nil end
       end

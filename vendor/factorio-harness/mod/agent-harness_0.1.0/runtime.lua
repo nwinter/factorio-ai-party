@@ -2285,7 +2285,8 @@ function M.near_actions(name)
   -- a shared word only when nothing is nearer (techologies: technologies, not damage_log for "log")
   local list,weak={},{}
   for n in pairs(handlers) do
-    if type(n)=='string' and n:sub(1,1)~='_' and not (M.pacts and M.pacts.schema[n] and not M.pacts.open_for(M.team_now())) then
+    if type(n)=='string' and n:sub(1,1)~='_' and not (M.pacts and M.pacts.schema[n] and not M.pacts.open_for(M.team_now()))
+      and not (M.market and M.market.names()[n] and not M.market.open_action(M.team_now(),n)) then
       local d=math.abs(#n-#name)<=2 and apart(n,name) or 99
       if d<=2 or (#name>=3 and (n:find(name,1,true) or name:find(n,1,true))) then list[#list+1]={n=n,d=d}
       else for w in n:gmatch('[^_]+') do if #w>2 and name:find(w,1,true) then weak[#weak+1]={n=n,d=d}; break end end end
@@ -2302,6 +2303,9 @@ function M.describe_bundle()
   -- ordinary opaque bundle before contact; nothing hints at hidden tools.
   local bundle=BUNDLE_ID
   if bundle and M.pacts and M.pacts.open_for(M.team_now()) then bundle=bundle..':1' end
+  if bundle and M.market and M.market.rung(M.team_now())>0 then
+    bundle=bundle..':m'..M.market.rung(M.team_now())..':'..tostring(next(M.market.schema(M.team_now()).offer or {})~=nil and M.market.schema(M.team_now()).offer.to~=nil)
+  end
   return bundle
 end
 function handlers.describe(_,a)
@@ -2651,6 +2655,7 @@ function handlers.describe(_,a)
   description.bundle=bundle
   -- (mt281) the pact actions for a team with a contact (pacts.lua)
   if M.pacts then M.pacts.describe_into(description.actions) end
+  if M.market then for name,schema in pairs(M.market.schema(M.team_now())) do description.actions[name]=schema end end
   return description
 end
 function handlers.attach(p,a)
@@ -3087,7 +3092,7 @@ function handlers.status(p,a)
   -- running and the last results, none of the factory, threat or alert scans.
   -- The stream's overlay adds alerts (stored incidents, no scan).
   if a.brief==true then
-    return {brief=true,queues=scheduler.lanes(p.index),inventory=inv_line,active=active(p.index),retreat_guard=M.retreat_guard_line(p.index),last=state().last and state().last[p.index] or false,combat=M.combat_row(p.index,p),hurt=alive and M.hurt_row(p) or nil,flight=alive and M.flight_row(p) or nil,
+    return {market=M.market and M.market.status(M.team_now()) or nil,brief=true,queues=scheduler.lanes(p.index),inventory=inv_line,active=active(p.index),retreat_guard=M.retreat_guard_line(p.index),last=state().last and state().last[p.index] or false,combat=M.combat_row(p.index,p),hurt=alive and M.hurt_row(p) or nil,flight=alive and M.flight_row(p) or nil,
       last_combat=state().last_combat and state().last_combat[p.index] or false,alive=alive or false,riding=p.driving or nil,connected=p.connected,
       vehicle_fire=alive and (function() local ok,v=pcall(M.vehicle_fire,p); return ok and v or nil end)() or nil,
       drop_pending=M.drop_pending(p.index),last_drop=M.last_drop(p.index),
@@ -3172,7 +3177,7 @@ function handlers.status(p,a)
   -- robots per planet from the kept network view (D4, Haiku 16:50)
   local okr,robots=pcall(M.networks.robot_lines,p.force)
   local okv,overdue=pcall(M.overdue_reviews,p)
-  return {overdue_reviews=okv and overdue or nil,robots=okr and robots or nil,logistics_here=alive and (function() local ok,l=pcall(M.personal.here,p); return ok and l or nil end)() or nil,boilers=okb and boiler_line or nil,queues=scheduler.lanes(p.index),storm=oks and sky or nil,crafting=alive and crafting_line(p) or nil,retreat_guard=M.retreat_guard_line(p.index),inv=factory.inv,inventory=inv_line,factory=factory.factory,machines=factory.machines,machine_positions=factory.machine_positions,warnings=factory.warnings,factory_as_of=factory.as_of,factory_age_s=factory.age_s,factory_refresh_failed=factory.refresh_failed,survey_error=factory.error,
+  return {market=M.market and M.market.status(M.team_now()) or nil,overdue_reviews=okv and overdue or nil,robots=okr and robots or nil,logistics_here=alive and (function() local ok,l=pcall(M.personal.here,p); return ok and l or nil end)() or nil,boilers=okb and boiler_line or nil,queues=scheduler.lanes(p.index),storm=oks and sky or nil,crafting=alive and crafting_line(p) or nil,retreat_guard=M.retreat_guard_line(p.index),inv=factory.inv,inventory=inv_line,factory=factory.factory,machines=factory.machines,machine_positions=factory.machine_positions,warnings=factory.warnings,factory_as_of=factory.as_of,factory_age_s=factory.age_s,factory_refresh_failed=factory.refresh_failed,survey_error=factory.error,
     evolution=threats.evolution,pollution=threats.pollution,enemies=threats.enemies,chart=threats.chart,threats_as_of=threats.as_of,
     alerts=alerts,runtime_fault=state().runtime_fault or false,connected=p.connected,alive=p.character and p.character.valid or false,cheat_mode=p.cheat_mode,
     supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,active=now,order=M.orders.brief(p.index),
@@ -18364,11 +18369,14 @@ for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 M.humans=require('humans'){state=state}
 -- (mt281, private) pacts between teams (pacts.lua): open for a team at its first contact; facts to both teams' agents
 M.pacts=require('pacts'){state=state,team_now=function() return M.team_now() end,who=function(p) return M.board.who(p) end,
+  request_id=function() return M.market_request_id end,
+  on_market=function(e) M.teamfeed.market(e) end,
   on_message=function(m) M.teamfeed.emit(m.agent,'diplomacy','diplomacy',m.text,{m.to_team},m.seq) end,
   as_team=function(t,fn,...) return M.as_team(t,fn,...) end,
   fact=function(team,text,wake) M.as_team(team,function()
     for _,ag in ipairs(M.board.agents()) do M.board.deliver(ag.index,{seq='pact',tick=game.tick,from='pact',text=text,wake=wake or nil,fyi=not wake or nil}) end
   end) end}
+M.market=M.pacts.market
 -- (mt274, private) several teams: setup and first contact (multiteam.lua), operator only
 M.multiteam=require('multiteam'){state=state,
   -- (mt276 G) the rules of contact: an operator tell to the whole team, as that team
@@ -18391,7 +18399,10 @@ M.multiteam=require('multiteam'){state=state,
     mt.pacts_open=mt.pacts_open or {}
     local opened={}
     for _,t in ipairs({rec.team,rec.other}) do
-      if M.disclosure and game.forces[t] then pcall(M.disclosure.mark,game.forces[t],'event:contact') end
+      if M.disclosure and game.forces[t] then
+        pcall(M.disclosure.mark,game.forces[t],'event:contact')
+        if M.market and M.market.contact_count(t)>1 then pcall(M.disclosure.mark,game.forces[t],'event:second_contact') end
+      end
       if not mt.pacts_open[t] then mt.pacts_open[t]=game.tick; opened[t]=true end
     end
     for _,l in ipairs(lines) do
@@ -18901,6 +18912,7 @@ function check_args(action,args)
   -- Contact-gated actions validate in their own wrappers. Their schema is dynamic,
   -- and `note` is a real argument there (DOC_ONLY treats it as prose elsewhere).
   if M.pacts and M.pacts.handlers[action] then return end
+  if M.market and M.market.handlers[action] then return end
   if not allowed_args then
     allowed_args={}
     for name,schema in pairs(handlers.describe().actions) do
@@ -19539,7 +19551,8 @@ local dispatch_team
 local function dispatch_scrubbed(request)
   if type(request)=='table' and request.operator~=true and request.reader==nil and M.discovery.active(team_now)
     and not M.discovery.open(team_now) and type(request.action)=='string'
-    and (request.action:match('^pact') or request.action:match('^diplomacy')) then
+    and (request.action:match('^pact') or request.action:match('^diplomacy') or (M.market and M.market.names()[request.action])) then
+    if M.market and M.market.names()[request.action] then passive_failed=game.tick end
     error('unsupported action; call describe',0)
   end
   local ok,result=pcall(dispatch_team,request)
@@ -19556,6 +19569,7 @@ local function dispatch_scrubbed(request)
 end
 function M.dispatch(request) return M.as_team(M.request_team(request),dispatch_scrubbed,request) end
 function dispatch_team(request)
+  M.market_request_id=type(request)=='table' and request.id or nil
   -- the agent the request is for, while it runs (turretwatch.lua tells it what its ghosts became)
   M.caller_index=type(request)=='table' and type(request.player)=='number' and request.player or nil
   -- (d29 batch336 FL6) the request's wall clock (ms since 1970), which fh puts in the envelope; the game has none
@@ -19655,7 +19669,7 @@ function M.dispatch_inner(request)
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.factory_digest.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action] or M.chronicle.operator[request.action]
         or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.rests.operator[request.action] or M.lessonbook.operator[request.action] or M.bplibrary_operator[request.action]
-        or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action]) or (M.chart and M.chart.operator[request.action]) or M.multiteam.operator[request.action] or M.humans.operator[request.action] or M.pacts.operator[request.action]
+        or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action]) or (M.chart and M.chart.operator[request.action]) or M.multiteam.operator[request.action] or M.humans.operator[request.action] or M.pacts.operator[request.action] or M.market.operator[request.action]
       relay=relay or M.teamfeed.operator[request.action] or (M.disclosure and M.disclosure.operator[request.action])
       relay=relay or (M.platformmetrics and M.platformmetrics.operator[request.action])
       if relay then return relay(request.args or {}) end
@@ -20928,6 +20942,8 @@ for name,handler in pairs(M.pacts.handlers) do handlers[name]=handler end
 for name in pairs(M.pacts.reads) do reads[name]=true end
 -- a refused pact call leaves the agent's queue running (passive, as tell and vote)
 for name in pairs(M.pacts.handlers) do passive[name]=true end
+for name,handler in pairs(M.market.handlers) do handlers[name]=handler;passive[name]=true end
+for name in pairs(M.market.reads) do reads[name]=true end
 -- platform_endurance: a route's legs at the platform's speed and what its ammunition, repair packs, thruster fluids,
 -- power and hub space come to over it at today's rates (endurance.lua; Astra, d15: Wayfarer lost at Aquilo).
 M.endurance=require('endurance'){fluid_boxes=M.fluid_boxes,state=state,player_of=function(i) local ok,q=pcall(player,i,true); return ok and q or nil end,platform=function(p,name) return space.platform(p,name) end,platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,ammofeed=M.ammofeed,ammorate=M.ammorate,ammo_damages=M.platdefense and M.platdefense.damages,phase_rates=function(pl,name) return M.freight.phase_rates(pl,name) end,
@@ -22035,6 +22051,8 @@ function M.tick_body(event)
   -- platform_bom requests kept to the ghosts' need (A6)
   -- (mt278) a human team's freeze: its checks every second, its destructible steps every tick while queued (humans.lua)
   do local mt=state().mt; if mt and mt.humans then pcall(M.timed,'humans.tick',M.humans.tick,event.tick) end end
+  -- Market settlement propagates faults to control.lua quarantine; never silently retry half a payment.
+  if M.market then M.market.tick(event.tick) end
   -- (mt281) pacts: proposals lapsing, cease-fires lifting after the notice, obligations, the depot's moves, departures
   do local mt=state().mt; if mt and mt.pacts then pcall(M.timed,'pacts.tick',M.pacts.tick,event.tick) end end
   if event.tick%600==41 and M.disclosure then pcall(M.timed,'disclosure.sweep',M.disclosure.sweep,event.tick) end  -- atoms not met yet (disclosure.lua)
@@ -22240,6 +22258,8 @@ M.operator={
   end}
 end do local MAX_ALERTS=64
 function M.on_event(event)
+  if M.market and event.name==defines.events.on_entity_died then M.market.on_died(event) end
+  if M.market and state().mt and event.name==defines.events.on_research_finished and event.research and event.research.force then M.market.sync(event.research.force.name) end
   -- (mt278) a human team's joins, chat commands and builds while frozen (humans.lua)
   local mt=state().mt
   if mt and mt.humans then pcall(M.humans.on_event,event) end
@@ -22356,7 +22376,10 @@ function M.on_event(event)
       local pl=event.player_index and game.get_player(event.player_index)
       M.as_team(pl and pl.valid and pl.force.name or 'player',M.chat.on_console_chat,event)
       -- (mt281) a human team's "!pact ..." line (pacts.lua)
-      if state().mt and state().mt.humans then pcall(M.pacts.on_console_chat,event) end
+      if state().mt and state().mt.humans then
+        M.market.on_console_chat(event)
+        pcall(M.pacts.on_console_chat,event)
+      end
     end
   elseif event.name==defines.events.on_unit_group_finished_gathering then
     threat.on_group(event)

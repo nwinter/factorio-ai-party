@@ -10,3 +10,17 @@ for i = 1, parts.count do
     width=parts.cell, height=parts.cell, scale=parts.scale, flags={'no-crop'}}
 end
 data:extend(sprites)
+
+-- Private markets: disabled per force until contact; no recipe, NPC, withdrawal or productivity issuance.
+local post=table.deepcopy(data.raw.container['steel-chest'])
+post.name='mt-trading-post';post.localised_name={'','Trading Post'}
+post.localised_description={'','Standing swaps and orders. Deposit goods here; shipments arrive here.'}
+post.minable=nil;post.next_upgrade=nil;post.fast_replaceable_group=nil;post.hidden=true;post.hidden_in_factoriopedia=true
+post.inventory_size=96
+local coin={type='item',name='mt-coin',localised_name={'','Coin'},icon='__base__/graphics/icons/coin.png',icon_size=64,
+  stack_size=1000,hidden=true,hidden_in_factoriopedia=true,subgroup='raw-material',order='z[coin]'}
+local coinage={type='technology',name='mt-coinage',localised_name={'','Coinage'},
+  localised_description={'','Standing priced orders and a one-time grant of 10,000 coin. Money never scores.'},
+  icon='__base__/graphics/technology/automation.png',icon_size=256,enabled=false,visible_when_disabled=false,
+  hidden_in_factoriopedia=true,unit={count=50,ingredients={{'automation-science-pack',1}},time=15},effects={}}
+data:extend{post,coin,coinage}

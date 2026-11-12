@@ -25,6 +25,14 @@ return function(api)
       text=text:sub(1,4000),truncated=#text>4000 or nil,to=recipients,identity=identity,source_seq=source_seq}
     while #s.lines>KEEP do table.remove(s.lines,1) end
   end
+  -- Explicit system facts, never accepted from an agent's chat payload.
+  function M.market(e)
+    local s=store();if not s then return end
+    s.seq=s.seq+1
+    s.lines[#s.lines+1]={seq=s.seq,tick=e.tick,team=e.a,agent='Trading Post',kind='market',scope='market',
+      text=e.text,to={e.b},source_seq=e.id,system=true}
+    while #s.lines>KEEP do table.remove(s.lines,1) end
+  end
   function M.operator.mt_feed(a)
     a=a or {};local since,limit=a.since,a.limit or 200
     assert(since==nil or type(since)=='number' and since>=0 and since==math.floor(since),'since: nonnegative sequence')

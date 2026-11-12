@@ -32,3 +32,4 @@
   `platform_rearm`, `platform_digest`, `platform_tiles`, `platform_lanes`, `platform_gate`, `demolishers`, `shipment`,
   `fleet`, `min_payload`, `launch`, `silo`, `launch_budget`, `cargo`, `load_silo`, `silo_stage`, `pods`, `preflight`, `land`, `drop`,
   `freight_audit`, `delivery_watch`, `flight_watch`, `where_is`, `agriculture`, `eggs`.
+- `markets`, Trading Post: `offer`, `market`, `sell`, `buy`, `cancel`, `embargo`.

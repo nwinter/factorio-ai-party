@@ -9,7 +9,10 @@ local n=0
 local function check(a,b,m) n=n+1; eq(a,b,m) end
 
 -- Data stage: one sprite per layer, cells inside the sheet, unique names.
-data={extend=function(self,list) self.list=list end}
+table.deepcopy=function(v) if type(v)~='table' then return v end local r={} for k,x in pairs(v) do r[k]=table.deepcopy(x) end return r end
+data={raw={container={['steel-chest']={type='container',inventory_size=48}}},extend=function(self,list)
+  if list[1].type=='sprite' then self.list=list else self.markets=list end
+end}
 dofile('mod/agent-harness_0.1.0/data.lua')
 check(#data.list,parts.count)
 local names={}

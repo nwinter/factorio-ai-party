@@ -185,6 +185,9 @@ ACTIONS = {
     "pact_propose": ["event:contact"], "pact_accept": ["with:pact_propose"], "pact_decline": ["with:pact_propose"],
     "pact_withdraw": ["with:pact_propose"], "pact_amend": ["with:pact_propose"], "pact_end": ["with:pact_propose"],
     "pacts": ["with:pact_propose"],
+    "offer": ["event:contact"], "cancel": ["event:contact"],
+    "market": ["research:mt-coinage"], "sell": ["research:mt-coinage"],
+    "buy": ["research:mt-coinage"], "embargo": ["research:mt-coinage"],
     "ground_rule_edit": ["with:ground_rules"], "ground_rule_retire": ["with:ground_rules"],
     "review": ["scale:game_hours:2"], "lookahead": ["scale:game_hours:2"], "boilers": ["built:boiler"],
     "mention_counts": TEAM,
@@ -245,6 +248,8 @@ ARGS = {
 
 # Argument groups of the largest actions: the simple form at the action's unlock, the rest later.
 ARGS_OF = {
+    "offer": {"to": ["event:second_contact"]}, "sell": {"to": ["event:second_contact"]},
+    "buy": {"from": ["event:second_contact"]}, "cancel": {"team": ["event:second_contact"]},
     "build": {"configure": ["scale:machines:10"], "requests": LOGISTIC, "circuit": CIRCUIT, "wires": CIRCUIT,
               "builds": ["habit:repeat_calls:5"], "skip_failed": ["habit:refused:1"], "clear_obstacles": T0,
               "materials": T0, "retry_when_clear": ROBOTS, "retry_ticks": ROBOTS, "retries": ROBOTS},
@@ -277,7 +282,7 @@ ARGS_OF = {
 TOPICS = {
     "moving-items": T0, "building": T0, "analysis": ["scale:machines:10"], "waits-queues": ["with:wait_until"],
     "circuits-settings": T0, "movement-combat": T0, "team": TEAM, "stream-people": STREAM,
-    "space-age": SILO + PLATFORM,
+    "space-age": SILO + PLATFORM, "markets": ["event:contact"],
 }
 # The brief's own files (the core every agent reads at the start of each context window, and the head of space-age),
 # item by item: a top-level bullet or a paragraph; a file's default, then BRIEF_ITEMS by the item's text.
@@ -286,6 +291,7 @@ BRIEF = {
     "harness-claude.md": T0, "spaceage.md": ["world:space_age"] + PLATFORM, "ref/index.md": T0,
 }
 BRIEF_ITEMS = [
+    ("ref/index.md", r"^- `markets`", ["event:contact"]),
     ("PLAYBOOK.md", r"^- More detail", ["never"]),
     ("full-tools.md", r"Aethera and Peregrine", ["never"]),
 ]
@@ -293,6 +299,8 @@ BRIEF_ITEMS = [
 # Doc entries by their lead (the text before the first ": " of a top-level item), first match wins, before the actions
 # the entry names: an entry about a feature unlocks with the feature.
 DOCS = [
+    (r"^- `sell to`", ["event:second_contact"]),
+    (r"^- Your home Post holds", ["research:mt-coinage"]),
     # (cp4) parts split from large entries: "- `ACTION`, FEATURE: ..."
     (r"^- `transfer`, quality", QUALITY),
     (r"^- `transfer`, (two places|from nearest|nearest room|pick|steps|via)", ["habit:chest_moves:5"]),

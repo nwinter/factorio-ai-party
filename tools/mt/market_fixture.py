@@ -1,0 +1,221 @@
+#!/usr/bin/env python3
+"""Prepared complementary bases for the private stage-1 market/control experiment.
+
+prepare runs once on a fresh paused baseline, before agents. Save that map and
+reuse its exact bytes for both treatments. activate performs real chart contact
+and either enables markets/Coinage or keeps the same stock chest without markets.
+No server is started here. The caller owns the shared-server claim.
+"""
+import argparse
+import json
+from pathlib import Path
+import re
+import sys
+import time
+import uuid
+
+ROOT=Path(__file__).resolve().parents[2]
+sys.path[:0]=[str(ROOT/'tools/stream'),str(ROOT/'tools/mt')]
+from harness import Harness,lua_string,one_line
+
+TEAMS=('green','yellow')
+TARGETS={'electronic-circuit':1800,'iron-gear-wheel':900,'automation-science-pack':600}
+PREPARE=r'''
+assert(script.active_mods.base=='2.1.24','wrong engine')
+assert(not storage.mt296_fixture,'fixture already exists')
+local h=storage.agent_harness;assert(h and h.mt and not next(h.mt.first or {}),'requires fresh pre-contact map')
+local sf=game.surfaces.nauvis;game.tick_paused=true;sf.always_day=true
+h.mt.teams={green=true,yellow=true};h.mt.order={'green','yellow'};h.mt.market=nil
+local fxt={version=1,prepared_tick=game.tick,teams={},targets=helpers.json_to_table(TARGETS),market=false}
+storage.mt296_fixture=fxt
+for k,name in ipairs{'green','yellow'} do
+ local f=game.forces[name];local x,y=2000*k+.5,2000.5
+ local area={{x-55,y-55},{x+55,y+55}}
+ sf.request_to_generate_chunks({x,y},3);sf.force_generate_chunk_requests()
+ for _,e in pairs(sf.find_entities_filtered{area=area}) do assert(e.force.name=='neutral' or e.force.name=='enemy','owned entity in fixture yard') end
+ for _,e in pairs(sf.find_entities_filtered{area=area}) do e.destroy() end
+ local tiles={};for xx=math.floor(x)-55,math.floor(x)+55 do for yy=math.floor(y)-55,math.floor(y)+55 do
+  tiles[#tiles+1]={name='grass-1',position={xx,yy}}
+ end end;sf.set_tiles(tiles)
+ f.set_spawn_position({x=x,y=y},sf);h.mt.spawns[name]={nauvis={x=x,y=y}}
+ f.research_queue={}
+ for _,n in ipairs{'automation','logistics','electronics','steel-processing','electric-mining-drill','steam-power','automation-science-pack'} do
+  if f.technologies[n] then f.technologies[n].researched=true end
+ end
+ f.technologies['mt-coinage'].researched=false;f.technologies['mt-coinage'].enabled=false
+ local row={team=name,spawn={x=x,y=y},rich=k==1 and 'iron-ore' or 'copper-ore',poor=k==1 and 'copper-ore' or 'iron-ore',
+  supplied={},entities={},poor_patch_ore=1200,poor_patch_expected_minutes=10}
+ fxt.teams[#fxt.teams+1]=row
+ local function make(n,dx,dy,d)
+  local e=assert(sf.create_entity{name=n,position={x+dx,y+dy},force=f,direction=d},n)
+  row.entities[#row.entities+1]={name=n,position=e.position,unit=e.unit_number};return e
+ end
+ local function put(e,n,count)
+  local v=e.insert{name=n,count=count};assert(v==count,n..' insert short')
+  row.supplied[n]=(row.supplied[n] or 0)+v
+ end
+ -- A labelled test power supply avoids varying coal logistics between arms.
+ local power=make('electric-energy-interface',-3,4);power.electric_buffer_size=100000000;power.energy=100000000;power.power_production=10000000
+ local poles={}
+ for _,xx in ipairs{-36,-18,0,18,36} do for _,yy in ipairs{-36,-18,0,18,36} do
+  local p=make('substation',xx,yy);poles[#poles+1]=p
+ end end
+ for i,p in ipairs(poles) do for j=i+1,#poles do
+  local q=poles[j];local dx,dy=p.position.x-q.position.x,p.position.y-q.position.y
+  if dx*dx+dy*dy<=18*18 then
+   local a=p.get_wire_connector(defines.wire_connector_id.pole_copper,true)
+   local b=q.get_wire_connector(defines.wire_connector_id.pole_copper,true)
+   if not a.is_connected_to(b) then assert(a.connect_to(b)) end
+  end
+ end end
+ local chest=make('steel-chest',4,0);row.stock_position=chest.position;row.stock_unit=chest.unit_number
+ put(chest,'iron-plate',1750);put(chest,'copper-plate',500)
+ -- Each drill outputs into its ore chest; a fueled furnace smelts into an output chest.
+ -- Rich: 8 cells / 150 plates per minute. Poor: 4 cells / 75 plates per minute,
+ -- 1,200 ore mined at 120/minute: the patch runs dry in about ten minutes.
+ for j=1,12 do
+  local rich=j<=8;local ore=rich and row.rich or row.poor
+  local dx=-43+math.floor((j-1)/4)*13;local dy=-40+((j-1)%4)*10
+  for xx=-2,2 do for yy=-2,2 do sf.create_entity{name=ore,position={x+dx+xx,y+dy+yy},amount=rich and 2000 or 12} end end
+  make('electric-mining-drill',dx,dy,defines.direction.east)
+  make('steel-chest',dx+2,dy)
+  make('inserter',dx+3,dy,defines.direction.west)
+  local furnace=make('stone-furnace',dx+4.5,dy+.5);put(furnace,'coal',100)
+  make('inserter',dx+6,dy,defines.direction.west);make('steel-chest',dx+7,dy)
+ end
+ local function cell(recipe,dx,dy,inputs)
+  local src=make('steel-chest',dx-3,dy);make('inserter',dx-2,dy,defines.direction.west)
+  local machine=make('assembling-machine-1',dx,dy);machine.set_recipe(recipe);assert(machine.get_recipe().name==recipe)
+  make('inserter',dx+2,dy,defines.direction.west);local dst=make('steel-chest',dx+3,dy)
+  for n,c in pairs(inputs) do put(src,n,c) end
+  return {recipe=recipe,input=src.position,output=dst.position,machine=machine.position}
+ end
+ row.production={cell('copper-cable',-32,8,{['copper-plate']=50}),cell('copper-cable',-32,15,{['copper-plate']=50}),
+  cell('electronic-circuit',-15,8,{['iron-plate']=50,['copper-cable']=100}),cell('iron-gear-wheel',-15,15,{['iron-plate']=100}),
+  cell('automation-science-pack',4,12,{['iron-gear-wheel']=20,['copper-plate']=20}),
+  cell('automation-science-pack',4,20,{['iron-gear-wheel']=20,['copper-plate']=20}),
+  cell('automation-science-pack',4,28,{['iron-gear-wheel']=20,['copper-plate']=20})}
+ make('lab',17,18);make('lab',22,18)
+ local kit=make('steel-chest',12,0);row.kit=kit.position
+ for n,c in pairs{['transport-belt']=400,inserter=100,['small-electric-pole']=50,['wooden-chest']=20,
+   ['assembling-machine-1']=8,['stone-furnace']=12,['electric-mining-drill']=4,coal=1000,['repair-pack']=20} do put(kit,n,c) end
+ row.expected_target_inputs={['iron-plate']=4800,['copper-plate']=3300}
+ row.initial_metal_equivalent={['iron-plate']=2020,['copper-plate']=710}
+ row.expected_shortfall=k==1 and 1390 or 1580
+ row.grant_fraction=10000/(row.expected_shortfall*20)
+ f.chart(sf,area)
+end
+-- An isolated shared contact marker reveals neither base nor its distance.
+local c={x=150.5,y=150.5};sf.request_to_generate_chunks(c,2);sf.force_generate_chunk_requests()
+for _,e in pairs(sf.find_entities_filtered{area={{148,148},{156,154}}}) do assert(e.force.name=='neutral' or e.force.name=='enemy');e.destroy() end
+sf.set_tiles{{name='grass-1',position={150,150}},{name='grass-1',position={153,150}}}
+assert(sf.create_entity{name='steel-chest',position=c,force='green'})
+assert(sf.create_entity{name='steel-chest',position={153.5,150.5},force='yellow'})
+fxt.contact_area={{148,148},{156,154}}
+rcon.print(helpers.table_to_json(fxt))
+'''
+ACTIVATE=r'''
+local fxt=assert(storage.mt296_fixture,'prepare first');assert(not fxt.activated,'already activated')
+assert(not next(storage.agent_harness.mt.first or {}),'contact must begin at activation')
+game.tick_paused=true
+local on=MARKET;fxt.market=on;fxt.started_tick=game.tick;fxt.activated=true
+local held={}
+if on then
+ for _,row in ipairs(fxt.teams) do
+  local e=assert(game.get_entity_by_unit_number(row.stock_unit));local inv=e.get_inventory(defines.inventory.chest)
+  held[row.team]=inv.get_contents();e.destroy()
+ end
+end
+for _,row in ipairs(fxt.teams) do game.forces[row.team].chart(game.surfaces.nauvis,fxt.contact_area) end
+-- Contact events are processed by the real engine on the next simulation tick.
+storage.mt296_fixture.held=held
+rcon.print(helpers.table_to_json{started_tick=fxt.started_tick,market=on})
+'''
+FINISH=r'''
+local fxt=storage.mt296_fixture
+for _,row in ipairs(fxt.teams) do
+ local f=game.forces[row.team]
+ if fxt.market then
+  local t=storage.agent_harness.mt.market.teams[row.team]
+  assert(t and t.post and t.post.valid,'contact did not create Post')
+  assert(math.abs(t.post.position.x-row.stock_position.x)<.1 and math.abs(t.post.position.y-row.stock_position.y)<.1,'Post moved from stock chest position')
+  for _,q in pairs(fxt.held[row.team]) do assert(t.post.insert(q)==q.count,'Post stock transfer short') end
+  f.technologies['mt-coinage'].researched=true
+ end
+end
+fxt.held=nil
+rcon.print(helpers.table_to_json(fxt))
+'''
+
+class Client:
+    def __init__(self): self.h=Harness('imac2')
+    def lua(self,code):
+        raw=self.h.command('/silent-command '+one_line('\n'.join(l for l in code.splitlines() if not l.lstrip().startswith('--'))))
+        try:return json.loads(raw)
+        except ValueError:raise RuntimeError(raw[:1800]) from None
+    def call(self,action,args=None,bot=None,ident=None):
+        q={'id':ident or 'm296-'+uuid.uuid4().hex,'action':action,'args':args or {}}
+        q.update({'bot':bot} if bot else {'operator':True})
+        r=self.lua('rcon.print(remote.call("agent_harness","dispatch",'+lua_string(json.dumps(q))+'))')
+        if not r['ok']:raise RuntimeError(str(r))
+        return r.get('result') or {}
+
+
+def instructions(row,on):
+    return ("Prepared factory experiment: your buildings, power supply, technology and initial items are supplied fixtures, not earned progress. "
+        "You have a working smelting yard, cable/circuit/gear/red-science cells, two labs, and a construction kit. "
+        f"Your stock {'Trading Post' if on else 'chest'} is at {json.dumps(row['stock_position'])}; kit at {json.dumps(row['kit'])}. "
+        f"Your rich resource is {row['rich']}; the small {row['poor']} patch runs out in about ten minutes. "
+        "Race objective: manufacture 1,800 electronic circuits, 900 iron gears and 600 automation science packs after the start. "
+        "Production counts are the measure; money and trade volume do not score. Your teammate should split work with you: "
+        "one maintains smelting, input logistics and expansion; the other connects and supplies the production cells, then verifies output. "
+        "Build belts/inserters to automate the input and output chests. Keep machines producing and keep working while waiting for supplies. "
+        +("Coinage is researched. market {} shows your 10,000 coin grant, reference prices, standing orders and accepting calls. "
+          "Deposit rich-metal surplus in the Post, sell with a safe keep and finite count, and buy the scarce metal within your budget. "
+          "You will need to sell to keep buying. Matches run every ten seconds and delivery takes ninety seconds. "
+          "Your shared orders operate while you build; coordinate once with your teammate to avoid duplicate orders. " if on else "")
+        +"Use brief teammate tells for handoffs. Record concrete blockers and observed refusals. Do not repeatedly poll unchanged state. "
+        +"Production cell input/output positions: "+json.dumps(row['production'],separators=(',',':')))
+
+
+def main():
+    ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('action',choices=['prepare','activate','brief'])
+    ap.add_argument('run');ap.add_argument('--market',choices=['on','off'],default='on');ap.add_argument('--execute',action='store_true')
+    a=ap.parse_args();assert re.fullmatch(r'[A-Za-z0-9_-]{1,16}',a.run)
+    if not a.execute:print(f'Plan: {a.action} {a.run}, market {a.market}; use the claimed imac2 server only.');return
+    claim=Path('/Users/owner/code/pog-operator/server-claim.txt')
+    assert claim.exists() and 'eng-mt296' in claim.read_text(),'eng-mt296 server claim required'
+    op=ROOT/'runs'/a.run/'op';op.mkdir(parents=True,exist_ok=True)
+    out=op/('market-'+a.action+'.json');assert not out.exists(),'receipt exists; inspect rather than retry'
+    c=Client();receipt={'action':a.action,'run':a.run,'phase':'preparing','wall_started':time.time()}
+    out.write_text(json.dumps(receipt,indent=2))
+    try:
+        if a.action=='prepare':
+            receipt['fixture']=c.lua(PREPARE.replace('TARGETS',lua_string(json.dumps(TARGETS))))
+            c.h.command('/silent-command game.server_save('+lua_string(a.run+'-base')+')')
+        elif a.action=='activate':
+            c.call('mt_market',{'config':{'enabled':a.market=='on'}})
+            receipt['start']=c.lua(ACTIVATE.replace('MARKET','true' if a.market=='on' else 'false'))
+            c.h.command('/silent-command game.tick_paused=false')
+            for _ in range(20):
+                contacts=c.call('mt_contacts').get('contacts') or []
+                if any({v['team'],v['other']}==set(TEAMS) for v in contacts):break
+                time.sleep(.25)
+            else:raise RuntimeError('real chart contact did not occur')
+            c.h.command('/silent-command game.tick_paused=true')
+            c.call('mt_market')
+            receipt['fixture']=c.lua(FINISH)
+            c.call('mt_market')
+            c.h.command('/silent-command game.tick_paused=false')
+        else:
+            receipt['fixture']=c.lua('rcon.print(helpers.table_to_json(storage.mt296_fixture))')
+            for row in receipt['fixture']['teams']:
+                c.call('mt_rules',{'team':row['team'],'text':instructions(row,receipt['fixture']['market']),
+                    'summary':'Prepared factory race: split production/logistics and keep both metals flowing.'})
+        receipt.update(phase='ready',wall_finished=time.time())
+    except Exception as e:
+        receipt.update(phase='failed',error=str(e));raise
+    finally:out.write_text(json.dumps(receipt,indent=2)+'\n')
+    print(out)
+
+if __name__=='__main__':main()

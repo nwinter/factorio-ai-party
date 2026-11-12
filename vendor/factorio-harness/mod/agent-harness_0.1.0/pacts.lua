@@ -594,5 +594,525 @@ return function(api)
     while #out>100 do table.remove(out,1) end
     return {messages=out}
   end
+  -- mt296: the market factory lives beside pacts so the deployed harness needs no new require.
+  -- Only stateless normal items cross this boundary. Cargo is persistent escrow, never an exposed chest.
+  M.market = (function()
+    local K={handlers={},reads={market=true},operator={}}
+    local TECH,POST,COIN='mt-coinage','mt-trading-post','mt-coin'
+    local PRICES={['iron-ore']=10,['copper-ore']=10,coal=10,stone=10,['iron-plate']=20,['copper-plate']=20,
+      ['steel-plate']=100,['iron-gear-wheel']=40,['copper-cable']=10,['electronic-circuit']=70,
+      ['advanced-circuit']=260,['processing-unit']=1400,['plastic-bar']=30,sulfur=30,battery=80}
+    local CFG={enabled=true,transit_ticks=5400,batch_ticks=600,pair_stacks=10,destructible=false}
+    local function copy(v)
+      if type(v)~='table' then return v end
+      local r={} for k,x in pairs(v) do r[k]=copy(x) end return r
+    end
+    local function state()
+      local m=mt();assert(m,'unsupported action; call describe {}')
+      m.market=m.market or {teams={},pairs={},requests={},issuance=0,physical=0,spills={}}
+      return m.market
+    end
+    local function config(k)
+      local s=mt() and mt().market
+      if s and s.config and s.config[k]~=nil then return s.config[k] end
+      return CFG[k]
+    end
+    local function contacts(t)
+      local r={}
+      for _,u in ipairs((mt() or {}).order or {}) do if t~=u and M.contacted(t,u) then r[#r+1]=u end end
+      return r
+    end
+    function K.contact_count(t) return #contacts(t) end
+    function K.rung(t)
+      if not config('enabled') or not M.open_for(t) then return 0 end
+      local f=game.forces[t];local tech=f and f.technologies[TECH]
+      return tech and tech.enabled and tech.researched and 2 or 1
+    end
+    local function team(t)
+      local s=state()
+      s.teams[t]=s.teams[t] or {wallet=0,reserved=0,orders={},next=1,granted=false,spills={}}
+      return s.teams[t]
+    end
+    local function keys(t) local r={} for k in pairs(t) do r[#r+1]=k end table.sort(r) return r end
+    local function pair(a,b)
+      local key=a<b and a..'>'..b or b..'>'..a
+      local s=state()
+      s.pairs[key]=s.pairs[key] or {a=a,b=b,next=1,book_next=1,book_ids={},filled_by_order={},transactions={},pending={},usage={}}
+      return s.pairs[key]
+    end
+    local function inv(t)
+      local p=team(t).post
+      return p and p.valid and p.get_inventory(defines.inventory.chest) or nil
+    end
+    local function amount(t,item)
+      local i=inv(t);return i and i.get_item_count{name=item,quality='normal'} or 0
+    end
+    local function frozen(t)
+      local h=mt() and mt().humans
+      return h and h.team==t and h.state=='frozen' or false
+    end
+    local function fail(msg,call) error(msg..'; call '..(call or 'status {}'),0) end
+    local function integer(n,lo,hi,label)
+      if type(n)~='number' or n~=n or n<lo or n>hi or n~=math.floor(n) then fail(label..': integer '..lo..'..'..hi) end
+      return n
+    end
+    local function item(n)
+      if type(n)~='string' or not PRICES[n] then fail('item unavailable; normal, stateless, nonspoiling reference items only') end
+      local p=prototypes.item[n]
+      if not p or (p.get_spoil_ticks and p.get_spoil_ticks() or p.spoil_ticks or 0)>0 then fail('item unavailable') end
+      return n
+    end
+    local function counter(t,v)
+      if v~=nil and (#contacts(t)<2 or type(v)~='string' or not teams()[v] or v==t or not M.contacted(t,v)) then
+        fail('counterparty unavailable')
+      end
+      return v or '*'
+    end
+    local function order_key(side,itemname,other) return side..'/'..itemname..'/'..other end
+    local function can_pair(o,other) return o.status=='open' and (o.other=='*' or o.other==other) end
+    local function order_view(o)
+      return {id=o.id,side=o.side,item=o.item,price=o.price,keep=o.keep,count=o.count,matched=o.matched,
+        remaining=o.count-o.matched,status=o.status,revision=o.revision,created_tick=o.tick,give=copy(o.give),get=copy(o.get)}
+    end
+    local function cancel_order(t,o,reason)
+      if o.status~='open' then return end
+      if o.side=='buy' then team(t).reserved=team(t).reserved-(o.count-o.matched)*o.price end
+      o.status='cancelled';o.revision=o.revision+1;o.ended_tick=game.tick;o.reason=reason
+    end
+    -- First contact enables red science per force. Creation and grants never run during on_load.
+    function K.sync(t)
+      if K.rung(t)==0 then return end
+      local s=team(t);local f=game.forces[t];local tech=f.technologies[TECH]
+      if tech then tech.enabled=true;tech.visible_when_disabled=false end
+      if not (s.post and s.post.valid) then
+        local home=(mt().spawns or {})[t] or {};local surf=game.get_surface('nauvis')
+        local at=s.home or home.nauvis or f.get_spawn_position(surf)
+        local pos=surf.find_non_colliding_position(POST,{x=at.x+4,y=at.y},32,.5)
+        if pos then
+          s.post=assert(surf.create_entity{name=POST,position=pos,force=f},'Trading Post creation failed')
+          s.post.minable_flag=false;s.post.destructible=config('destructible');s.home=s.home or copy(at)
+          f.add_chart_tag(surf,{position=pos,text='Trading Post'})
+          fact(t,'Trading Post at ('..pos.x..','..pos.y..'). Call status {} for stock and item swaps; research {technology="mt-coinage"} opens priced orders.',true)
+        end
+      end
+      if tech and tech.researched and not s.granted then
+        s.granted=true;s.wallet=s.wallet+10000;state().issuance=state().issuance+10000
+        fact(t,'Coinage: 10,000 coin granted once. Call market {} for the book and exact accepting calls. Money never scores.',true)
+      end
+    end
+    local function canonical(v)
+      if type(v)~='table' then return type(v)..':'..tostring(v) end
+      local r={} for _,k in ipairs(keys(v)) do r[#r+1]=canonical(k)..'='..canonical(v[k]) end
+      return '{'..table.concat(r,',')..'}'
+    end
+    -- Request receipts never expire. A different payload under a used id cannot mutate anything.
+    local function request(t,action,a,fn)
+      local id=K.human_request_id or (api.request_id and api.request_id())
+      if type(id)~='string' or #id<1 or #id>200 then fail('request id required', 'describe {}') end
+      local s=state();s.requests[t]=s.requests[t] or {};local journal=s.requests[t]
+      local payload=canonical({action=action,args=a});local rec=journal[id]
+      if rec then
+        if rec.payload~=payload then fail('request id already used with different arguments') end
+        if rec.status=='committed' then return copy(rec.result) end
+        error(rec.error or 'request quarantined; call market {}',0)
+      end
+      rec={payload=payload,status='started',tick=game.tick};journal[id]=rec
+      local ok,res=pcall(fn)
+      if not ok then rec.status='refused';rec.error=tostring(res);error(res,0) end
+      rec.status='committed';rec.result=copy(res);return res
+    end
+    local function add_order(t,side,a)
+      local name=item(side=='offer' and type(a.give)=='table' and a.give.item or a.item)
+      local other=counter(t,side=='buy' and a.from or a.to)
+      local n=side=='offer' and 1 or integer(a.count,1,100000,'count')
+      local price,keep,give,get
+      if side=='offer' then
+        give={item=name,count=integer(a.give.count,1,10000,'give.count')}
+        if type(a.get)~='table' then fail('get: {item,count}') end
+        get={item=item(a.get.item),count=integer(a.get.count,1,10000,'get.count')}
+        if get.item==name then fail('swap needs different items') end
+        for k in pairs(a.give) do if k~='item' and k~='count' then fail('give: only item,count') end end
+        for k in pairs(a.get) do if k~='item' and k~='count' then fail('get: only item,count') end end
+      else
+        price=integer(a.price,math.ceil(PRICES[name]*.5),PRICES[name]*3,'price')
+        if side=='sell' then keep=integer(a.keep,0,100000,'keep') end
+      end
+      local s=team(t);local key=order_key(side,name,other);local old=s.orders[key]
+      if old and old.status=='open' then
+        fail('a shared order already exists',string.format('cancel {"item":"%s","side":"%s","revision":%d%s}',name,side,old.revision,
+          other~='*' and (',"team":"'..other..'"') or ''))
+      end
+      if side=='buy' and n*price>s.wallet-s.reserved then fail('insufficient available coin; lower count or sell surplus') end
+      local o={id=s.next,team=t,side=side,item=name,other=other,count=n,price=price,keep=keep,give=give,get=get,
+        matched=0,status='open',revision=1,tick=game.tick}
+      s.next=s.next+1;s.orders[key]=o
+      if side=='buy' then s.reserved=s.reserved+n*price end
+      return {order=order_view(o),next={action='status',args={}}}
+    end
+    local function cancel(t,a)
+      local name=item(a.item)
+      if a.side~='buy' and a.side~='sell' and a.side~='offer' then fail('side: buy, sell or offer') end
+      local other=counter(t,a.team);local o=team(t).orders[order_key(a.side,name,other)]
+      if not o or o.status~='open' then fail('no unmatched live order') end
+      if a.revision~=nil and a.revision~=o.revision then fail('order changed; read its current revision') end
+      cancel_order(t,o,'cancel');return {order=order_view(o),note='Matched cargo still arrives; its payment remains committed.'}
+    end
+    local function book_id(p,o)
+      local key=o.team..'/'..o.id
+      if not p.book_ids[key] then p.book_ids[key]=p.book_next;p.book_next=p.book_next+1 end
+      return p.book_ids[key]
+    end
+    local function accepting(t,o,remaining)
+      local a,action
+      if o.side=='offer' then action='offer';a={give=copy(o.get),get=copy(o.give)}
+      elseif o.side=='sell' then action='buy';a={item=o.item,price=o.price,count=remaining}
+      else action='sell';a={item=o.item,price=o.price,count=remaining,keep=0} end
+      if #contacts(t)>1 then a[action=='buy' and 'from' or 'to']=o.team end
+      return {action=action,args=a}
+    end
+    function K.status(t)
+      if K.rung(t)==0 then return nil end
+      local s=team(t);local p=s.post
+      local out={fault=copy(state().fault),rung=K.rung(t)==2 and 'coinage' or 'swap',post=p and p.valid and {position=copy(p.position),surface=p.surface.name} or false,
+        stock={},orders={},offers={},inbound={},fills={},transit_seconds=config('transit_ticks')/60,pair_stacks_per_minute=config('pair_stacks')}
+      if K.rung(t)==2 then out.wallet=s.wallet;out.reserved=s.reserved;out.available=s.wallet-s.reserved;out.reference_prices=copy(PRICES) end
+      for _,n in ipairs(keys(PRICES)) do local nstock=amount(t,n);if nstock>0 then out.stock[n]=nstock end end
+      for _,key in ipairs(keys(s.orders)) do
+        local o=s.orders[key];local row=order_view(o)
+        if #contacts(t)>1 and o.other~='*' then row[o.side=='buy' and 'from' or 'to']=o.other end
+        out.orders[#out.orders+1]=row
+      end
+      for _,u in ipairs(contacts(t)) do
+        local pairdata=pair(t,u);local us=state().teams[u]
+        for _,key in ipairs(keys(us and us.orders or {})) do
+          local o=us.orders[key]
+          local remaining=o.count-(pairdata.filled_by_order[o.team..'/'..o.id] or 0)
+          if o.status~='cancelled' and (o.other=='*' or o.other==t) and remaining>0 and (o.side=='offer' or K.rung(t)==2) then
+            -- No peer wallet, stock, global order id, rival coordinates, or unrelated fill count.
+            local row={id=book_id(pairdata,o),side=o.side,item=o.item,price=o.price,give=copy(o.give),get=copy(o.get),accept=accepting(t,o,remaining)}
+            if #contacts(t)>1 then row.team=u end
+            out.offers[#out.offers+1]=row
+          end
+        end
+        for _,tx in ipairs(pairdata.transactions) do
+          local row={id=tx.id,state=tx.status,matched_tick=tx.tick,arrival_tick=tx.eta,price=tx.price,item=tx.item,count=tx.count}
+          if #contacts(t)>1 then row.team=u end
+          if tx.status~='delivered' then
+            for _,leg in ipairs(tx.legs) do if leg.to==t then
+              local r=copy(row);r.item=leg.item;r.count=leg.count-leg.delivered;r.delivered=leg.delivered
+              if r.count>0 then
+                r.next={action='collect',args={position=out.post and out.post.position,count=100}}
+                out.inbound[#out.inbound+1]=r
+              end
+            end end
+          end
+          out.fills[#out.fills+1]=row
+        end
+      end
+      while #out.fills>20 do table.remove(out.fills,1) end
+      if K.rung(t)==1 then out.next={action='research',args={technology=TECH}} end
+      return out
+    end
+    local BASE_SCHEMA={
+      offer={give='{item,count}: normal stateless goods from your Post',get='{item,count}: goods wanted; one standing lot',returns='shared order; opposite offer accepts; status shows exact calls'},
+      market={returns='wallet, reserved, Post stock, own orders, pair book with accepting calls, inbound cargo and pair-local fills'},
+      sell={item='reference item',price='integer coin per item, 0.5..3 times reference',keep='required stock reserve, >=0',count='required lifetime item cap',returns='shared standing order; matched items cannot be cancelled'},
+      buy={item='reference item',price='integer maximum coin per item, 0.5..3 times reference',count='required lifetime item cap including cargo already in transit',returns='shared order; count*price reserved'},
+      cancel={item='item of the order (give.item for a swap)',side='offer, buy or sell',revision='optional expected shared order revision',returns='unmatched quantity cancelled; cargo already matched still arrives'},
+      embargo={team='contacted team to stop new matches with',returns='new matches stopped; existing cargo arrives'},
+    }
+    function K.open_action(t,name)
+      local rung=K.rung(t)
+      return BASE_SCHEMA[name] and (rung==2 or rung==1 and (name=='offer' or name=='cancel')) or false
+    end
+    function K.schema(t)
+      local schemas={}
+      for n,schema in pairs(BASE_SCHEMA) do if K.open_action(t,n) then schemas[n]=copy(schema) end end
+      if #contacts(t)>1 then
+        if schemas.offer then schemas.offer.to='optional contacted team' end
+        if schemas.sell then schemas.sell.to='optional contacted team' end
+        if schemas.buy then schemas.buy.from='optional contacted team' end
+        if schemas.cancel then schemas.cancel.team='counterparty of the order; omit for the unaddressed order' end
+      end
+      return schemas
+    end
+    function K.names() return BASE_SCHEMA end
+    local function invoke(t,action,a)
+      if not K.open_action(t,action) then fail('unsupported action','describe {}') end
+      if type(a)~='table' then fail('arguments: object') end
+      local schema=K.schema(t)[action]
+      for k in pairs(a) do if not schema[k] or k=='returns' then
+        if k=='to' or k=='from' or k=='team' then fail('counterparty unavailable') end
+        fail('unsupported argument')
+      end end
+      if action=='market' then return K.status(t) end
+      return request(t,action,a,function()
+        if state().fault then fail('market quarantined for operator reconciliation','status {}') end
+        if action~='cancel' and frozen(t) then fail('new commitments paused while frozen','status {}') end
+        if action=='cancel' then return cancel(t,a) end
+        if action=='embargo' then
+          if type(a.team)~='string' or not M.contacted(t,a.team) or not teams()[a.team] or a.team==t then fail('counterparty unavailable') end
+          local p=pair(t,a.team);p.embargo=p.embargo or {};p.embargo[t]=true;return {embargo=true}
+        end
+        return add_order(t,action,a)
+      end)
+    end
+    for name in pairs(BASE_SCHEMA) do K.handlers[name]=function(_,a) return invoke(api.team_now(),name,a or {}) end end
+    -- All economic mutations keep a transaction first. Catch only to mark quarantine, then rethrow.
+    local function transact(tx,fn)
+      local ok,err=pcall(fn)
+      if not ok then
+        tx.status='quarantined';tx.error=tostring(err);tx.failed_tick=game.tick
+        state().fault={tick=game.tick,error=tostring(err),transaction=tx.id}
+        error(err,0)
+      end
+    end
+    local function unitcost(name) return 1/prototypes.item[name].stack_size end
+    local function capacity(p)
+      local used=0;local keep={}
+      for _,v in ipairs(p.usage) do if game.tick-v.tick<3600 then keep[#keep+1]=v;used=used+v.stacks end end
+      p.usage=keep;return math.max(0,config('pair_stacks')-used)
+    end
+    local function matched(o,n)
+      o.matched=o.matched+n;o.revision=o.revision+1
+      if o.matched==o.count then o.status='filled';o.ended_tick=game.tick end
+    end
+    local function same_surface(a,b)
+      local x,y=team(a).post,team(b).post
+      return x and x.valid and y and y.valid and x.surface.index==y.surface.index
+    end
+    local function newtx(p,legs,price)
+      local tx={id=p.next,status='preparing',tick=game.tick,eta=game.tick+config('transit_ticks'),legs=legs,price=price,escrow=0,
+        item=legs[1].item,count=legs[1].count}
+      p.next=p.next+1;p.transactions[#p.transactions+1]=tx;p.pending[#p.pending+1]=tx.id;return tx
+    end
+    local function remove_goods(leg)
+      local i=assert(inv(leg.from),'source Post unavailable')
+      leg.removed=i.remove{name=leg.item,count=leg.count,quality='normal'}
+      assert(leg.removed==leg.count,'short removal: transaction quarantined')
+    end
+    local function emit_fill(p,tx)
+      local l=tx.legs[1]
+      local line=tx.price and string.format('%s sells %d %s to %s at %d; arrival in 90 seconds',l.from,l.count,l.item,l.to,tx.price)
+        or string.format('%s swaps %d %s with %s; arrival in 90 seconds',l.from,l.count,l.item,l.to)
+      fact(p.a,line,true);fact(p.b,line,true)
+      if api.on_market then api.on_market({kind='fill',a=p.a,b=p.b,id=tx.id,tick=game.tick,text=line}) end
+    end
+    local function fill(p,ask,bid)
+      local price=(ask.tick<bid.tick or ask.tick==bid.tick and game.forces[ask.team].index<game.forces[bid.team].index) and ask.price or bid.price
+      local n=math.min(ask.count-ask.matched,bid.count-bid.matched,math.max(0,amount(ask.team,ask.item)-ask.keep),
+        math.floor((capacity(p)+1e-9)/unitcost(ask.item)))
+      if n<1 then return end
+      local tx=newtx(p,{{from=ask.team,to=bid.team,item=ask.item,count=n,delivered=0}},price)
+      transact(tx,function()
+        remove_goods(tx.legs[1])
+        local b=team(bid.team);local cost=n*price
+        assert(b.reserved>=n*bid.price and b.wallet>=cost,'coin reservation invariant')
+        b.reserved=b.reserved-n*bid.price;b.wallet=b.wallet-cost;tx.escrow=cost
+        matched(ask,n);matched(bid,n)
+        for _,o in ipairs({ask,bid}) do local k=o.team..'/'..o.id;p.filled_by_order[k]=(p.filled_by_order[k] or 0)+n end
+        p.usage[#p.usage+1]={tick=game.tick,stacks=n*unitcost(ask.item)};tx.status='in_transit'
+      end)
+      emit_fill(p,tx)
+    end
+    local function swap(p,a,b)
+      if a.give.item~=b.get.item or a.get.item~=b.give.item or a.give.count~=b.get.count or a.get.count~=b.give.count then return end
+      local stacks=a.give.count*unitcost(a.give.item)+b.give.count*unitcost(b.give.item)
+      if stacks>capacity(p)+1e-9 or amount(a.team,a.give.item)<a.give.count or amount(b.team,b.give.item)<b.give.count then return end
+      local tx=newtx(p,{{from=a.team,to=b.team,item=a.give.item,count=a.give.count,delivered=0},
+        {from=b.team,to=a.team,item=b.give.item,count=b.give.count,delivered=0}})
+      transact(tx,function()
+        for _,leg in ipairs(tx.legs) do remove_goods(leg) end
+        matched(a,1);matched(b,1)
+        for _,o in ipairs({a,b}) do local k=o.team..'/'..o.id;p.filled_by_order[k]=(p.filled_by_order[k] or 0)+1 end
+        p.usage[#p.usage+1]={tick=game.tick,stacks=stacks};tx.status='in_transit'
+      end)
+      emit_fill(p,tx)
+    end
+    local function rank(side)
+      return function(a,b)
+        if a.price~=b.price then return side=='buy' and a.price>b.price or side=='sell' and a.price<b.price end
+        if a.tick~=b.tick then return a.tick<b.tick end
+        if a.team~=b.team then return game.forces[a.team].index<game.forces[b.team].index end
+        return a.id<b.id
+      end
+    end
+    local function match_pair(p)
+      if frozen(p.a) or frozen(p.b) or (p.embargo and next(p.embargo)) or not same_surface(p.a,p.b) then return end
+      local orders={}
+      for _,t in ipairs({p.a,p.b}) do for _,key in ipairs(keys(team(t).orders)) do
+        local o=team(t).orders[key]
+        if can_pair(o,t==p.a and p.b or p.a) then orders[#orders+1]=o;book_id(p,o) end
+      end end
+      for _,a in ipairs(orders) do if a.side=='offer' and a.status=='open' then
+        for _,b in ipairs(orders) do if b.side=='offer' and b.team~=a.team and b.status=='open' and a.status=='open' then swap(p,a,b) end end
+      end end
+      if K.rung(p.a)<2 or K.rung(p.b)<2 then return end
+      for _,name in ipairs(keys(PRICES)) do
+        local asks,bids={},{}
+        for _,o in ipairs(orders) do if o.item==name then
+          if o.side=='sell' then asks[#asks+1]=o elseif o.side=='buy' then bids[#bids+1]=o end
+        end end
+        table.sort(asks,rank('sell'));table.sort(bids,rank('buy'))
+        for _,bid in ipairs(bids) do for _,ask in ipairs(asks) do
+          if bid.team~=ask.team and bid.status=='open' and ask.status=='open' and bid.price>=ask.price then fill(p,ask,bid) end
+        end end
+      end
+    end
+    local function deliver(p,tx)
+      if tx.status~='in_transit' and tx.status~='waiting' then return end
+      if game.tick<tx.eta then return end
+      transact(tx,function()
+        local complete=true
+        for _,leg in ipairs(tx.legs) do
+          local remaining=leg.count-leg.delivered;local i=inv(leg.to)
+          if remaining>0 and i then
+            local n=i.insert{name=leg.item,count=remaining,quality='normal'}
+            assert(n>=0 and n<=remaining and n==math.floor(n),'invalid inserted count')
+            leg.delivered=leg.delivered+n
+            if tx.price then
+              local pay=n*tx.price;assert(tx.escrow>=pay,'payment escrow invariant')
+              tx.escrow=tx.escrow-pay;team(leg.from).wallet=team(leg.from).wallet+pay
+            end
+            if n>0 and K.on_delivery then K.on_delivery(leg.from,leg.to,leg.item,n) end
+          end
+          if leg.delivered<leg.count then complete=false end
+        end
+        tx.status=complete and 'delivered' or 'waiting'
+        if complete then tx.ended_tick=game.tick end
+      end)
+    end
+    -- The wallet includes unmatched buy reserves. A raid cancels bids if needed to free the stolen amount;
+    -- matched purchases have already left that wallet into payment escrow and are irrevocable.
+    function K.on_died(event)
+      local e=event.entity
+      if not (mt() and e and e.valid and e.name==POST) then return end
+      local t=e.force.name;local s=state().teams[t]
+      if not s or not s.post or s.post.unit_number~=e.unit_number or s.spills[tostring(e.unit_number)] then return end
+      local n=math.floor(s.wallet*.25)
+      local rec={unit=e.unit_number,count=n,status='preparing',tick=game.tick};s.spills[tostring(e.unit_number)]=rec
+      transact(rec,function()
+        if s.wallet-s.reserved<n then for _,o in pairs(s.orders) do if o.side=='buy' then cancel_order(t,o,'home Post raided') end end end
+        s.wallet=s.wallet-n;rec.debited=n
+        local dropped=n>0 and e.surface.spill_item_stack{position=e.position,stack={name=COIN,count=n},enable_looted=true,
+          allow_belts=false,use_start_position_on_failure=true,drop_full_stack=true} or {}
+        local actual=0
+        for _,v in pairs(dropped or {}) do if v.valid and v.stack and v.stack.valid_for_read then actual=actual+v.stack.count end end
+        rec.dropped=actual;state().physical=state().physical+actual
+        assert(actual==n,'coin spill incomplete: quarantined');rec.status='spilled'
+      end)
+      fact(t,'Home Trading Post destroyed: '..n..' coin spilled in the wreck.',true)
+    end
+    local function deposit(t)
+      local i=inv(t);if not i then return end
+      local n=i.get_item_count{name=COIN,quality='normal'}
+      if n<=0 then return end
+      local s=state();local rec={team=t,count=n,status='preparing',tick=game.tick}
+      s.deposits=s.deposits or {};s.deposits[#s.deposits+1]=rec
+      transact(rec,function()
+        local removed=i.remove{name=COIN,count=n,quality='normal'};rec.removed=removed
+        assert(removed<=s.physical,'coin deposit exceeds circulating supply')
+        s.physical=s.physical-removed;team(t).wallet=team(t).wallet+removed;rec.status='credited'
+      end)
+    end
+    function K.tick(tick)
+      if not mt() or not next(teams()) or not config('enabled') or tick%60~=0 then return end
+      for _,t in ipairs(mt().order) do if K.rung(t)>0 then K.sync(t);deposit(t) end end
+      -- A single deterministic pass shares the actual Post stock and reserved balance across pairs.
+      local list={}
+      for i,a in ipairs(mt().order) do for j=i+1,#mt().order do
+        local b=mt().order[j];if M.contacted(a,b) then list[#list+1]=pair(a,b) end
+      end end
+      if #list==0 or state().fault then return end
+      for _,p in ipairs(list) do
+        local pending={}
+        for _,id in ipairs(p.pending) do
+          local tx=p.transactions[id];deliver(p,tx)
+          if tx.status=='in_transit' or tx.status=='waiting' then pending[#pending+1]=id end
+        end
+        p.pending=pending
+      end
+      if tick%config('batch_ticks')==0 and state().last_batch~=tick then
+        state().last_batch=tick
+        for _,p in ipairs(list) do match_pair(p) end
+      end
+    end
+    function K.audit()
+      local s=state();local wallets,reserved,escrow=0,0,0;local faults={}
+      if s.fault then faults[#faults+1]='market quarantined' end
+      for t,v in pairs(s.teams) do
+        local expected=0
+        for _,o in pairs(v.orders) do if o.side=='buy' and o.status=='open' then expected=expected+(o.count-o.matched)*o.price end end
+        if expected~=v.reserved or v.reserved<0 or v.wallet<v.reserved then faults[#faults+1]='wallet '..t end
+        wallets=wallets+v.wallet;reserved=reserved+v.reserved
+      end
+      for _,p in pairs(s.pairs) do for _,tx in ipairs(p.transactions) do
+        escrow=escrow+tx.escrow;if tx.status=='quarantined' then faults[#faults+1]='transaction '..p.a..'/'..p.b..'/'..tx.id end
+      end end
+      local total=wallets+escrow+s.physical
+      if total~=s.issuance then faults[#faults+1]='coin conservation' end
+      return {issuance=s.issuance,wallets=wallets,reserved=reserved,escrow=escrow,physical=s.physical,total=total,faults=faults}
+    end
+    function K.operator.mt_market(a)
+      local s=state()
+      if a.config then
+        for k,v in pairs(a.config) do
+          assert(CFG[k]~=nil,'unknown market setting')
+          if type(CFG[k])=='boolean' then assert(type(v)=='boolean','boolean setting')
+          else integer(v,1,216000,k) end
+        end
+        if a.config.enabled==false then
+          for _,p in pairs(s.pairs) do for _,tx in ipairs(p.transactions) do assert(tx.status=='delivered','cannot disable with unsettled cargo') end end
+          for t,v in pairs(s.teams) do for _,o in pairs(v.orders) do cancel_order(t,o,'market disabled') end end
+        end
+        s.config=s.config or {};for k,v in pairs(a.config) do s.config[k]=v end
+      end
+      for _,t in ipairs(mt().order or {}) do K.sync(t) end
+      local out={audit=K.audit(),teams={},pairs=s.pairs,markers={},last_prices={}}
+      for _,p in pairs(s.pairs) do
+        local prices={}
+        for _,tx in ipairs(p.transactions) do
+          if tx.price then
+            local prior=prices[tx.item]
+            prices[tx.item]={a=p.a,b=p.b,item=tx.item,price=tx.price,count=tx.count,tick=tx.tick,prints=(prior and prior.prints or 0)+1}
+          end
+        end
+        for _,v in pairs(prices) do v.thin=v.prints==1;out.last_prices[#out.last_prices+1]=v end
+        for _,id in ipairs(p.pending) do
+          local tx=p.transactions[id]
+          for _,leg in ipairs(tx.legs) do
+            local from,to=team(leg.from).post,team(leg.to).post
+            if from and from.valid and to and to.valid then
+              local fraction=math.min(1,math.max(0,(game.tick-tx.tick)/(tx.eta-tx.tick)))
+              out.markers[#out.markers+1]={id=tx.id,from=leg.from,to=leg.to,item=leg.item,count=leg.count-leg.delivered,
+                x=from.position.x+(to.position.x-from.position.x)*fraction,y=from.position.y+(to.position.y-from.position.y)*fraction,
+                surface=to.surface.name,state=tx.status,arrival_tick=tx.eta}
+            end
+          end
+        end
+      end
+      for _,t in ipairs(mt().order or {}) do out.teams[t]=K.status(t) end
+      return out
+    end
+    function K.operator.mt_market_tick() K.tick(game.tick);return K.audit() end
+    function K.on_console_chat(event)
+      local h=mt() and mt().humans;local pl=event.player_index and game.get_player(event.player_index)
+      if not (h and pl and h.players[pl.name] and pl.force.name==h.team) then return end
+      local action,rest=(event.message or ''):match('^!market%s*([%w_]*)%s*(.*)$')
+      if not action then return end
+      if action=='' or action=='list' then action='market' end
+      local store=state();store.chat_seq=(store.chat_seq or 0)+1
+      K.human_request_id='human/'..pl.name..'/'..store.chat_seq
+      local ok,res=pcall(function()
+        local a=rest~='' and helpers.json_to_table(rest) or {}
+        if not BASE_SCHEMA[action] then fail('unsupported action','describe {}') end
+        return api.as_team(h.team,function() return invoke(h.team,action,a) end)
+      end)
+      K.human_request_id=nil
+      pl.force.print('[market] '..(ok and helpers.table_to_json(res) or ('refused: '..tostring(res))))
+    end
+    K.PRICES=PRICES
+    return K
+  end)()
   return M
 end
