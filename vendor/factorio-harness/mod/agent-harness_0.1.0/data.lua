@@ -21,6 +21,6 @@ local coin={type='item',name='mt-coin',localised_name={'','Coin'},icon='__base__
   stack_size=1000,hidden=true,hidden_in_factoriopedia=true,subgroup='raw-material',order='z[coin]'}
 local coinage={type='technology',name='mt-coinage',localised_name={'','Coinage'},
   localised_description={'','Standing priced orders and a one-time grant of 10,000 coin. Money never scores.'},
-  icon='__base__/graphics/technology/automation.png',icon_size=256,enabled=false,visible_when_disabled=false,
+  icon='__base__/graphics/technology/automation-1.png',icon_size=256,enabled=false,visible_when_disabled=false,
   hidden_in_factoriopedia=true,unit={count=50,ingredients={{'automation-science-pack',1}},time=15},effects={}}
 data:extend{post,coin,coinage}
