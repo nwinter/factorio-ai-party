@@ -71,8 +71,11 @@ return function(api)
       end
       return s
     end
-    local function project(v,depth)
-      if type(v)=='string' then return text(v) end
+    local function project(v,depth,context)
+      if type(v)=='string' then
+        if context=='wire-selection' and (v=='red' or v=='green' or v=='red+green') then return v end
+        return text(v)
+      end
       if type(v)~='table' then return v end
       assert(depth<48,'response nesting exceeds limit')
       if v.viewer or v.source=='site' or v.source=='youtube' then return nil end -- old saves too
@@ -93,9 +96,16 @@ return function(api)
       else
         for k,x in pairs(v) do
           local key=k
-          if type(k)=='string' then key=text(k) end
+          -- Circuit wire colours are physical controls, not force identities. Keep
+          -- only these schema positions; ownership rows and arbitrary text still filter.
+          if type(k)=='string' and not (context=='wire-map' and (k=='red' or k=='green')) then key=text(k) end
           if key~=nil then
-            local y=project(x,depth+1)
+            local child=k=='circuit' and 'circuit' or nil
+            if context=='circuit' then
+              if k=='wires' or k=='networks' then child='wire-map'
+              elseif k=='settings' then child='circuit-settings' end
+            elseif context=='circuit-settings' and (k=='input_networks' or k=='output_networks') then child='wire-selection' end
+            local y=project(x,depth+1,child)
             if k=='force' and x==reader and not open then y=nil end
             if y~=nil then out[key]=y end
           end

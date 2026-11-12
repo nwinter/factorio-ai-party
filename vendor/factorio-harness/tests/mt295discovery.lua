@@ -31,5 +31,22 @@ state.mt.first['shot green>blue']=200
 assert(not D.viewer('green','Guest','Nova and Blue are building rockets.'))
 assert(D.project({viewer=true,text='Historic viewer spoiler'},'green')==nil)
 assert(D.project('viewer Guest: Historic spoiler','green')==nil)
+-- The save can retain an unlaunched, undiscovered Red force. Red wires and
+-- green's own wire colour must survive before/after contact without exposing it.
+state.mt.teams.red={}
+local circuit={wires={red={{entity='constant-combinator',position={x=1,y=2}}},green={{entity='requester-chest'}}},
+ networks={red={id=1,signals={{name='iron-plate',count=20}}},green={id=2,signals={}}},
+ settings={input_networks='red',output_networks='green'}}
+for _,first in ipairs{{},state.mt.first} do
+ state.mt.first=first
+ local read=D.project({circuit=circuit,force='red',position={x=9,y=9}},'green')
+ assert(read==nil,'a circuit field cannot exempt foreign ownership')
+ read=D.project({circuit=circuit,notes={red='red'},text='team red is nearby'},'green')
+ assert(read.circuit.wires.red[1].entity=='constant-combinator' and read.circuit.wires.green)
+ assert(read.circuit.networks.red.signals[1].count==20 and read.circuit.networks.green)
+ assert(read.circuit.settings.input_networks=='red' and read.circuit.settings.output_networks=='green')
+ assert(read.notes.red==nil and read.text==nil,'arbitrary force colour hints remain private')
+ assert(D.project({viewer=true,circuit=circuit},'green')==nil)
+end
 state.mt=nil;assert(D.project(original,'player')==original and D.viewer('player','Blue fan','Other teams'))
 print('mt295 discovery: metadata, rows, aliases, pair-only reveal, no viewer input, ordinary world unchanged: ok')
