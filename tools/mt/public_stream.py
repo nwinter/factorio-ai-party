@@ -82,6 +82,11 @@ def setup_obs(obs, url, receipt):
     names = [i['inputName'] for i in obs.call('GetInputList')['inputs']]
     for order, (name, kind, settings, rect) in enumerate(specs):
         if name in names:
+            if name == 'mt camera':
+                # OBS can retain the closed client's last frame when the next isolated
+                # process has the same window title. Release that hook before rebinding.
+                obs.call('SetInputSettings', {'inputName': name, 'inputSettings': {'window': ''}, 'overlay': True})
+                time.sleep(1)
             obs.call('SetInputSettings', {'inputName': name, 'inputSettings': settings, 'overlay': True})
             items = obs.call('GetSceneItemList', {'sceneName': SCENE})['sceneItems']
             if name not in [i['sourceName'] for i in items]:
