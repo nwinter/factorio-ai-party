@@ -10248,8 +10248,10 @@ local function move_stacks(source,target,match,limit)
   local reverse=rocket_id and source.index==rocket_id
   for i=reverse and #source or 1,reverse and 1 or #source,reverse and -1 or 1 do
     if remaining<=0 then break end
-    local stack=source[i]
-    if stack.valid_for_read and match(stack) then
+    -- Removing the final rocket stack also trims preceding empty slots. A prior
+    -- named withdrawal can leave holes, so reverse iteration alone is insufficient.
+    local stack=(not reverse or i<=#source) and source[i]
+    if stack and stack.valid_for_read and match(stack) then
       local key,name,quality,start=stack.name..'@'..stack.quality.name,stack.name,stack.quality.name,stack.count
       -- Its spoilage before the move (Sol, 22:25: the moved batch's spoil %).
       local okt,stick=pcall(function() return stack.spoil_tick end)

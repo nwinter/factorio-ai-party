@@ -132,3 +132,33 @@ target.insert=function() error('insert refused') end
 local ok=pcall(runtime.move_stacks,{source_stack},target,function() return true end,4)
 assert(not ok and source_stack.count==7)
 print('port21 cargo transfer: metadata, partial insertion, and failure conservation passed')
+
+-- Native 2.1 leaves a hole after a middle withdrawal, then trims that hole when
+-- the last stack is removed. The next reverse index is now outside the inventory.
+local slots={}
+for i,name in ipairs{'iron-plate','underground-belt','splitter'} do
+ slots[i]={valid_for_read=true,name=name,quality={name='normal'},count=1}
+end
+local size=3
+local rocket=setmetatable({index=21},{__len=function() return size end,__index=function(_,i)
+ assert(type(i)=='number' and i>=1 and i<=size,'Index out of inventory bounds')
+ return slots[i]
+end})
+local bag={}
+for j=1,3 do
+ local slot={valid_for_read=false,count=0};bag[j]=slot
+ slot.transfer_stack=function(st,n)
+  if slot.valid_for_read then return false end
+  assert(n>=st.count)
+  slot.name=st.name;slot.quality=st.quality;slot.count=st.count;slot.valid_for_read=true
+  st.count=0;st.valid_for_read=false
+  while size>0 and not slots[size].valid_for_read do size=size-1 end
+  return true
+ end
+end
+local first=runtime.move_stacks(rocket,bag,function(st) return st.name=='underground-belt' end,10000)
+assert(first==1 and #rocket==3 and not rocket[2].valid_for_read)
+local rest,parts=runtime.move_stacks(rocket,bag,function() return true end,1000000)
+assert(rest==2 and #rocket==0 and #parts==2)
+assert(bag[1].name=='underground-belt' and bag[2].name=='splitter' and bag[3].name=='iron-plate')
+print('port21 cargo withdrawal: middle hole then multi-slot tail shrink preserves every item and reply')
