@@ -547,8 +547,22 @@ return function(api)
     local TECH,POST,COIN='mt-coinage','mt-trading-post','mt-coin'
     local PRICES={['iron-ore']=10,['copper-ore']=10,coal=10,stone=10,['iron-plate']=20,['copper-plate']=20,
       ['steel-plate']=100,['iron-gear-wheel']=40,['copper-cable']=10,['electronic-circuit']=70,
-      ['advanced-circuit']=260,['processing-unit']=1400,['plastic-bar']=30,sulfur=30,battery=80}
-    local CFG={enabled=true,transit_ticks=5400,batch_ticks=600,pair_stacks=10,destructible=false}
+      ['advanced-circuit']=260,['processing-unit']=1400,['plastic-bar']=30,sulfur=30,battery=80,
+      ['engine-unit']=180,explosives=20,['pipe']=20,['iron-stick']=10,['stone-brick']=20,
+      ['solid-fuel']=20,['electric-engine-unit']=350,['flying-robot-frame']=820,
+      ['low-density-structure']=750,['rocket-fuel']=220}
+    local TIERS={['steel-plate']='logistic-science-pack',['advanced-circuit']='chemical-science-pack',
+      ['plastic-bar']='chemical-science-pack',sulfur='chemical-science-pack',battery='chemical-science-pack',
+      ['engine-unit']='chemical-science-pack',explosives='chemical-science-pack',['processing-unit']='chemical-science-pack',
+      ['solid-fuel']='chemical-science-pack',['electric-engine-unit']='chemical-science-pack',
+      ['flying-robot-frame']='chemical-science-pack',['low-density-structure']='chemical-science-pack',
+      ['rocket-fuel']='chemical-science-pack'}
+    local CFG={enabled=true,transit_ticks=5400,batch_ticks=600,pair_stacks=10,destructible=false,
+      growth_enabled=true,growth_start_hours=60,growth_every_hours=20,growth_amount=20000,
+      grants={['mt-coinage']=10000,['logistic-science-pack']=5000,['chemical-science-pack']=5000,
+        ['production-science-pack']=5000,['utility-science-pack']=5000,['space-science-pack']=10000,
+        ['metallurgic-science-pack']=5000,['electromagnetic-science-pack']=5000,
+        ['agricultural-science-pack']=5000,['cryogenic-science-pack']=5000}}
     local function copy(v)
       if type(v)~='table' then return v end
       local r={} for k,x in pairs(v) do r[k]=copy(x) end return r
@@ -605,8 +619,14 @@ return function(api)
       if type(n)~='number' or n~=n or n<lo or n>hi or n~=math.floor(n) then fail(label..': integer '..lo..'..'..hi) end
       return n
     end
-    local function item(n)
+    local function researched(t,n)
+      local f=game.forces[t];local tech=f and f.technologies[n]
+      return tech and tech.researched or false
+    end
+    local function available(t,n) return PRICES[n] and (not TIERS[n] or researched(t,TIERS[n])) end
+    local function item(n,t)
       if type(n)~='string' or not PRICES[n] then fail('item unavailable; normal, stateless, nonspoiling reference items only') end
+      if t and not available(t,n) then fail('item unavailable at your researched tier') end
       local p=prototypes.item[n]
       if not p or (p.get_spoil_ticks and p.get_spoil_ticks() or p.spoil_ticks or 0)>0 then fail('item unavailable') end
       return n
@@ -628,6 +648,43 @@ return function(api)
       if o.side=='buy' then team(t).reserved=team(t).reserved-(o.count-o.matched)*o.price end
       o.status='cancelled';o.revision=o.revision+1;o.ended_tick=game.tick;o.reason=reason
     end
+    local function pay(t,id,n,cause,tiers)
+      local s=team(t);s.payments=s.payments or {};s.grants=s.grants or {}
+      if s.payments[id] then return end
+      s.payments[id]={amount=n,cause=cause,tick=game.tick,tiers=tiers}
+      for _,name in ipairs(tiers or {}) do s.grants[name]=id end
+      s.wallet=s.wallet+n;state().issuance=state().issuance+n
+      local line='Wallet +'..n..' coin: '..cause..'; this does not depend on when you research it.'
+      fact(t,line,true);news(t,nil,'coinage',line)
+    end
+    local function grants(t)
+      local s=team(t)
+      if not researched(t,TECH) then return end
+      -- Old saves already received the original Coinage grant. Never issue it again.
+      if not s.grants then s.grants={};if s.granted then s.grants[TECH]='legacy-coinage' end end
+      local pending,causes,n={},{},0
+      for _,name in ipairs(keys(config('grants'))) do
+        if researched(t,name) and not s.grants[name] then
+          pending[#pending+1]=name;causes[#causes+1]=name==TECH and 'Coinage' or name:gsub('%-',' ')
+          n=n+config('grants')[name]
+        end
+      end
+      if #pending>0 then
+        local id='research:'..(not s.grants[TECH] and TECH or table.concat(pending,'+'))
+        pay(t,id,n,table.concat(causes,' + '),pending)
+      end
+      s.granted=true
+      local start,step=config('growth_start_hours'),config('growth_every_hours')
+      local period=math.floor((game.tick/216000-start)/step)
+      -- Late Coinage earns prior research, not stipends for hours without Coinage.
+      if s.growth_period==nil then s.growth_period=math.max(-1,math.ceil((game.tick/216000-start)/step)-1) end
+      if not config('growth_enabled') then s.growth_period=math.max(s.growth_period,period);return end
+      while s.growth_period<period do
+        s.growth_period=s.growth_period+1
+        local hour=start+s.growth_period*step
+        pay(t,'growth:'..hour,config('growth_amount'),'growth stipend at game hour '..hour)
+      end
+    end
     -- First contact enables red science per force. Creation and grants never run during on_load.
     function K.sync(t)
       if K.rung(t)==0 or mt().market and mt().market.fault then return end
@@ -646,11 +703,7 @@ return function(api)
         end
       end
       if s.post and s.post.valid then s.post.destructible=config('destructible') end
-      if tech and tech.researched and not s.granted then
-        s.granted=true;s.wallet=s.wallet+10000;state().issuance=state().issuance+10000
-        fact(t,'Coinage: 10,000 coin granted once. Call market {} for the book and exact accepting calls. Money never scores.',true)
-        news(t,nil,'coinage',t..' researches Coinage: the fixed 10,000 coin grant opens priced orders.')
-      end
+      grants(t)
     end
     local function canonical(v)
       if type(v)~='table' then return type(v)..':'..tostring(v) end
@@ -674,14 +727,14 @@ return function(api)
       rec.status='committed';rec.result=copy(res);return res
     end
     local function add_order(t,side,a)
-      local name=item(side=='offer' and type(a.give)=='table' and a.give.item or a.item)
+      local name=item(side=='offer' and type(a.give)=='table' and a.give.item or a.item,t)
       local other=counter(t,side=='buy' and a.from or a.to)
       local n=side=='offer' and 1 or integer(a.count,1,100000,'count')
       local price,keep,give,get
       if side=='offer' then
         give={item=name,count=integer(a.give.count,1,10000,'give.count')}
         if type(a.get)~='table' then fail('get: {item,count}') end
-        get={item=item(a.get.item),count=integer(a.get.count,1,10000,'get.count')}
+        get={item=item(a.get.item,t),count=integer(a.get.count,1,10000,'get.count')}
         if get.item==name then fail('swap needs different items') end
         if give.count/prototypes.item[give.item].stack_size+get.count/prototypes.item[get.item].stack_size>config('pair_stacks') then
           fail('swap exceeds pair capacity; use smaller give/get counts')
@@ -697,7 +750,7 @@ return function(api)
         fail('a shared order already exists',string.format('cancel {"item":"%s","side":"%s","revision":%d%s}',name,side,old.revision,
           other~='*' and (',"team":"'..other..'"') or ''))
       end
-      if side=='buy' and n*price>s.wallet-s.reserved then fail('insufficient available coin; lower count or sell surplus') end
+      if side=='buy' and n*price>s.wallet-s.reserved then fail('not enough coin; sell something or lower the count') end
       local o={id=s.next,team=t,side=side,item=name,other=other,count=n,price=price,keep=keep,give=give,get=get,
         matched=0,status='open',revision=old and old.revision+1 or 1,tick=game.tick}
       s.next=s.next+1;s.orders[key]=o
@@ -735,8 +788,11 @@ return function(api)
       local out={fault=state().fault and {state='quarantined',next={action='status',args={}}} or nil,
         rung=K.rung(t)==2 and 'coinage' or 'swap',post=p and p.valid and {position=copy(p.position),surface=p.surface.name} or false,
         stock={},orders={},offers={},inbound={},fills={},embargoed={},counterparties={},transit_seconds=config('transit_ticks')/60,pair_stacks_per_minute=config('pair_stacks')}
-      if K.rung(t)==2 then out.wallet=s.wallet;out.reserved=s.reserved;out.available=s.wallet-s.reserved;out.reference_prices=copy(PRICES) end
-      for _,n in ipairs(keys(PRICES)) do local nstock=amount(t,n);if nstock>0 then out.stock[n]=nstock end end
+      if K.rung(t)==2 then
+        out.wallet=s.wallet;out.reserved=s.reserved;out.available=s.wallet-s.reserved;out.reference_prices={}
+        for n,price in pairs(PRICES) do if available(t,n) then out.reference_prices[n]=price end end
+      end
+      for _,n in ipairs(keys(PRICES)) do local nstock=amount(t,n);if available(t,n) and nstock>0 then out.stock[n]=nstock end end
       for _,key in ipairs(keys(s.orders)) do
         local o=s.orders[key];local row=order_view(o)
         if #contacts(t)>1 and o.other~='*' then row[o.side=='buy' and 'from' or 'to']=o.other end
@@ -754,11 +810,12 @@ return function(api)
         for _,key in ipairs(keys(us and us.orders or {})) do
           local o=us.orders[key]
           local remaining=o.count-(pairdata.filled_by_order[o.team..'/'..o.id] or 0)
-          if o.status~='cancelled' and (o.other=='*' or o.other==t) and remaining>0 and (o.side=='offer' or K.rung(t)==2) then
+          if o.status~='cancelled' and (o.other=='*' or o.other==t) and remaining>0 and (o.side=='offer' or K.rung(t)==2)
+              and available(t,o.item) and (not o.get or available(t,o.get.item)) then
             -- No peer wallet, stock, global order id, rival coordinates, or unrelated fill count.
             local row={id=book_id(pairdata,o),side=o.side,item=o.item,price=o.price,give=copy(o.give),get=copy(o.get),accept=accepting(t,o,remaining)}
             row.agents=roster(t,u)
-            if row.accept==false then row.blocked='no available coin; sell surplus first';row.next={action='status',args={}} end
+            if row.accept==false then row.blocked='not enough coin; sell something or lower the count';row.next={action='status',args={}} end
             if blocked then row.accept=false;row.blocked='new matches stopped by embargo';row.next={action='status',args={}} end
             if #contacts(t)>1 then row.team=u end
             out.offers[#out.offers+1]=row
@@ -962,9 +1019,53 @@ return function(api)
     -- The wallet includes unmatched buy reserves. A raid cancels bids if needed to free the stolen amount;
     -- matched purchases have already left that wallet into payment escrow and are irrevocable.
     local deposit
+    local function spill_contents(e)
+      local s=state();s.entity_spills=s.entity_spills or {}
+      local surface,position=e.surface,e.position -- clearing a ground stack may invalidate its entity
+      local key=e.unit_number and tostring(e.unit_number)
+      if key and s.entity_spills[key] then return end
+      local rec={unit=e.unit_number,tick=game.tick,status='preparing',removed=0,dropped=0}
+      local lots={}
+      local function take(i,remove)
+        for _,v in pairs(i.get_contents()) do if v.name==COIN and v.count>0 then
+          local q=type(v.quality)=='table' and v.quality.name or v.quality or 'normal'
+          lots[#lots+1]={count=v.count,quality=q,remove=function() return remove{name=COIN,count=v.count,quality=q} end}
+        end end
+      end
+      for id=1,e.get_max_inventory_index() do local i=e.get_inventory(id);if i then take(i,i.remove) end end
+      if e.type=='transport-belt' or e.type=='underground-belt' or e.type=='splitter' or e.type=='loader' or e.type=='loader-1x1' then
+        for id=1,e.get_max_transport_line_index() do local line=e.get_transport_line(id);take(line,line.remove_item) end
+      end
+      local stack=e.type=='inserter' and e.held_stack or e.type=='item-entity' and e.stack or nil
+      if stack and stack.valid_for_read and stack.name==COIN then
+        local n=stack.count;local q=stack.quality and stack.quality.name or 'normal'
+        lots[#lots+1]={count=n,quality=q,remove=function() stack.clear();return n end}
+      end
+      -- A recycler has already consumed its one ingredient during an unfinished craft.
+      if e.type=='furnace' and e.crafting_progress>0 then
+        local r,q=e.get_recipe()
+        if r and r.name=='mt-coin-recycling' then
+          lots[#lots+1]={count=1,quality=q and q.name or 'normal',remove=function() e.crafting_progress=0;return 1 end}
+        end
+      end
+      if #lots==0 then return end
+      if key then s.entity_spills[key]=rec else s.spills[#s.spills+1]=rec end
+      transact(rec,function()
+        for _,lot in ipairs(lots) do
+          local n=lot.remove();rec.removed=rec.removed+n;assert(n==lot.count,'coin removal incomplete')
+          local dropped=surface.spill_item_stack{position=position,stack={name=COIN,count=n,quality=lot.quality},enable_looted=true,
+            allow_belts=false,use_start_position_on_failure=true,drop_full_stack=true}
+          local actual=0
+          for _,v in pairs(dropped or {}) do if v.valid and v.stack and v.stack.valid_for_read then actual=actual+v.stack.count end end
+          rec.dropped=rec.dropped+actual;assert(actual==n,'coin spill incomplete: quarantined')
+        end
+        rec.status='spilled' -- physical custody moved; issuance and physical supply do not change.
+      end)
+    end
     function K.on_died(event)
       local e=event.entity
-      if not (mt() and e and e.valid and e.name==POST) then return end
+      if not (mt() and mt().market and e and e.valid) or state().fault then return end
+      if e.name~=POST then spill_contents(e);return end
       local t=e.force.name;local s=state().teams[t]
       if not s or not s.post or s.post.unit_number~=e.unit_number or s.spills[tostring(e.unit_number)] then return end
       if state().fault then return end
@@ -1042,7 +1143,10 @@ return function(api)
       if a.config then
         for k,v in pairs(a.config) do
           assert(CFG[k]~=nil,'unknown market setting')
-          if type(CFG[k])=='boolean' then assert(type(v)=='boolean','boolean setting')
+          if k=='grants' then
+            assert(type(v)=='table','grants: table')
+            for name,n in pairs(v) do assert(CFG.grants[name]~=nil,'unknown grant tier');integer(n,0,1000000,name) end
+          elseif type(CFG[k])=='boolean' then assert(type(v)=='boolean','boolean setting')
           else
             integer(v,1,216000,k)
             if k=='batch_ticks' or k=='transit_ticks' then assert(v%60==0,'timings must be whole seconds') end
@@ -1052,7 +1156,10 @@ return function(api)
           for _,p in pairs(s.pairs) do for _,tx in ipairs(p.transactions) do assert(tx.status=='delivered','cannot disable with unsettled cargo') end end
           for t,v in pairs(s.teams) do for _,o in pairs(v.orders) do cancel_order(t,o,'market disabled') end end
         end
-        s.config=s.config or {};for k,v in pairs(a.config) do s.config[k]=v end
+        s.config=s.config or {};for k,v in pairs(a.config) do
+          if k=='grants' then local merged=copy(config('grants'));for name,n in pairs(v) do merged[name]=n end;s.config.grants=merged
+          else s.config[k]=v end
+        end
       end
       for _,t in ipairs(mt().order or {}) do K.sync(t) end
       local out={audit=K.audit(),teams={},pairs=s.pairs,markers={},last_prices={}}

@@ -31,7 +31,8 @@ assert(script.active_mods.base=='2.1.24','wrong engine')
 assert(not storage.mt296_fixture,'fixture already exists')
 local h=storage.agent_harness;assert(h and h.mt and not next(h.mt.first or {}),'requires fresh pre-contact map')
 local sf=game.surfaces.nauvis;game.tick_paused=true;sf.always_day=true
-h.mt.teams={green=true,yellow=true};h.mt.order={'green','yellow'};h.mt.market=nil
+h.mt.teams={green=true,yellow=true};h.mt.order={'green','yellow'}
+h.mt.market={teams={},pairs={},requests={},issuance=0,physical=0,spills={},config={growth_enabled=false}}
 local fxt={version=1,prepared_tick=game.tick,teams={},targets=helpers.json_to_table(TARGETS),market=false,enemy_cease_fire=true}
 storage.mt296_fixture=fxt
 for k,name in ipairs{'green','yellow'} do
@@ -235,7 +236,7 @@ def main():
             c.h.command('/silent-command game.tick_paused=false; game.server_save('+lua_string(a.run+'-base')+')')
         elif a.action=='activate':
             from market_metrics import BASELINE
-            c.call('mt_market',{'config':{'enabled':a.market=='on'}})
+            c.call('mt_market',{'config':{'enabled':a.market=='on','growth_enabled':False}})
             receipt['start']=c.lua(ACTIVATE.replace('MARKET','true' if a.market=='on' else 'false').replace('BASELINE',BASELINE))
             c.h.command('/silent-command game.tick_paused=false')
             for _ in range(20):

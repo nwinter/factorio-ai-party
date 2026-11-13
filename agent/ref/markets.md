@@ -22,3 +22,15 @@
 - Your home Post holds your wallet. A raid spills one quarter as coin items, rounded down. Put recovered coin
   into a Post to credit its owner. There is no withdrawal. Unmatched bids may be cancelled to pay a raid;
   purchases already matched are committed escrow. Test Posts are indestructible until raids are enabled.
+
+Coinage pays 10,000 coin plus every research-tier grant already earned, in one payment. Later tier research pays
+its grant once: logistic, chemical, production and utility science pay 5,000 each; space science pays 10,000;
+metallurgic, electromagnetic, agricultural and cryogenic science pay 5,000 each. Military and promethium pay none.
+This does not depend on when you research it. Full games also pay a 20,000 growth stipend at game hours 60, 80,
+100, and every 20 hours thereafter while you have Coinage; prepared-base exercises disable it. Stipends for hours
+before Coinage are not back-paid. Every payment states its amount and cause in one wallet line.
+
+The reference list expands with your own science-tier research. Logistic science opens steel; chemical science
+opens chemical products and advanced intermediates, including engines. The current book gives exact prices and
+accepting calls. If you have not enough coin, sell something or lower the count. Coin held in a destroyed entity
+spills as recoverable items; recycling returns coin one-for-one, without productivity or quality upgrades.

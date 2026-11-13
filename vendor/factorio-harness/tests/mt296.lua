@@ -3,7 +3,7 @@ local checks=0
 local function eq(a,b,m) checks=checks+1;assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function ok(v,m) checks=checks+1;assert(v,m) end
 local function refused(fn,msg) local fine,e=pcall(fn);ok(not fine,'expected refusal');ok(tostring(e):find(msg,1,true),tostring(e));return tostring(e) end
-local s,P,K,teamname,requestid,serial,made,spilled,forces,surface,news
+local s,P,K,teamname,requestid,serial,made,spilled,forces,surface,news,facts
 local function inventory()
  local i={items={},capacity=100000}
  i.get_item_count=function(q) return i.items[q.name..'@'..(q.quality or 'normal')] or 0 end
@@ -18,10 +18,11 @@ local function reload()
  P=dofile('mod/agent-harness_0.1.0/pacts.lua'){state=function() return s end,team_now=function() return teamname end,
  roster=function(reader,other) return {{name=other..'1',display_name='Pilot '..other,model=other=='blue' and 'Grok 4.7' or 'Gemini 3.8 Flash'}} end,
  request_id=function() return requestid end,on_market=function(e) news[#news+1]=e end,
- as_team=function(t,fn) local prev=teamname;teamname=t;local r=fn();teamname=prev;return r end,fact=function() end};K=P.market
+ as_team=function(t,fn) local prev=teamname;teamname=t;local r=fn();teamname=prev;return r end,
+ fact=function(t,text) facts[#facts+1]={team=t,text=text} end};K=P.market
 end
 local function reset(contact,coinage)
- defines={inventory={chest=1}};prototypes={item={}};forces={};made={};spilled={};news={};serial=0;requestid='initial';teamname='red'
+ defines={inventory={chest=1}};prototypes={item={}};forces={};made={};spilled={};news={};facts={};serial=0;requestid='initial';teamname='red'
  surface={index=1,name='nauvis',find_non_colliding_position=function(_,at) return at end}
  surface.create_entity=function(a)
   local i=inventory();local e={name=a.name,valid=true,position=a.position,force=a.force,surface=surface,unit_number=#made+1}
@@ -75,7 +76,7 @@ for _,a in ipairs{{item='iron-ore',price=10,count=100},{item='iron-ore',price=10
 for _,n in ipairs{'pay','withdraw','commission','npc_buy'} do eq(K.handlers[n],nil) end
 stock('red','iron-plate',300);stock('red','iron-plate',500,'rare');sell('red','iron-plate',250,20,100,'ask')
 game.tick=1;buy('blue','iron-plate',250,30,'bid');eq(s.mt.market.teams.blue.reserved,7500);eq(s.mt.market.teams.blue.wallet,10000)
-refused(function() buy('blue','copper-plate',126,20) end,'insufficient')
+refused(function() buy('blue','copper-plate',126,20) end,'not enough coin; sell something or lower the count')
 refused(function() sell('red','iron-plate',5,20) end,'shared order already exists')
 refused(function() sell('red','iron-plate',250,21,100,'ask') end,'request id already used')
 tick(600);tx=firsttx();eq(tx.count,200);eq(tx.price,20,'resting ask');eq(count('red','iron-plate'),100);eq(count('red','iron-plate','rare'),500)
@@ -250,3 +251,91 @@ local book=call('red','market',{})
 eq(#book.counterparties,1);eq(book.counterparties[1].team,'blue');eq(book.counterparties[1].agents[1].model,'Grok 4.7')
 eq(#book.offers,1);eq(book.offers[1].agents[1].name,'blue1');eq(#book.offers[1].agents,1)
 print('mt296 contacted offer identities: ok')
+
+-- d42e: own research, one back-pay event, durable receipts, no hidden-team inputs.
+local function research(t,name) forces[t].technologies[name]={enabled=true,researched=true};K.sync(t) end
+local function clone(v) if type(v)~='table' then return v end local c={} for k,x in pairs(v) do c[k]=clone(x) end return c end
+local function saved_reload()
+ local posts={};for t,v in pairs(s.mt.market.teams) do posts[t]=v.post;v.post=nil end
+ s=clone(s);for t,p in pairs(posts) do s.mt.market.teams[t].post=p end
+ reload()
+end
+reset(true,false)
+research('red','logistic-science-pack');research('red','chemical-science-pack');eq(s.mt.market.issuance,0);eq(#news,0)
+research('red','mt-coinage');eq(s.mt.market.teams.red.wallet,20000);eq(#news,1)
+ok(news[1].text:find('20000 coin',1,true));ok(news[1].text:find('this does not depend on when you research it',1,true))
+local rt=s.mt.market.teams.red;eq(rt.grants['logistic-science-pack'],'research:mt-coinage')
+eq(rt.grants['chemical-science-pack'],'research:mt-coinage');eq(#rt.payments['research:mt-coinage'].tiers,3)
+saved_reload();tick(60);research('red','chemical-science-pack');eq(s.mt.market.issuance,20000);eq(#news,1);audit()
+research('blue','mt-coinage');research('blue','logistic-science-pack');research('blue','chemical-science-pack')
+eq(s.mt.market.teams.blue.wallet,20000);eq(#news,4);saved_reload();tick(120);eq(#news,4);audit()
+for _,name in ipairs{'production-science-pack','utility-science-pack','space-science-pack','metallurgic-science-pack',
+ 'electromagnetic-science-pack','agricultural-science-pack','cryogenic-science-pack'} do research('red',name) end
+eq(s.mt.market.teams.red.wallet,60000);local issued=s.mt.market.issuance;local events=#news
+research('red','military-science-pack');research('red','promethium-science-pack');eq(s.mt.market.issuance,issued);eq(#news,events)
+for _,v in ipairs(news) do ok(not v.text:find('blue',1,true) and not v.text:find('green',1,true));eq(v.b,nil) end
+research('green','space-science-pack');research('green','mt-coinage');eq(s.mt.market.teams.green,nil);eq(s.mt.market.issuance,issued)
+-- Existing saves' original Coinage payment migrates without reissuance.
+reset(true,true);rt=s.mt.market.teams.red;rt.grants=nil;rt.payments=nil;rt.growth_period=nil
+saved_reload();tick(60);eq(s.mt.market.issuance,20000);eq(s.mt.market.teams.red.grants['mt-coinage'],'legacy-coinage');audit()
+reset(true,false);K.operator.mt_market{config={grants={['mt-coinage']=9000,['chemical-science-pack']=2500}}}
+research('red','chemical-science-pack');research('red','mt-coinage');eq(s.mt.market.teams.red.wallet,11500)
+refused(function() K.operator.mt_market{config={grants={['mt-coinage']=1,['military-science-pack']=5000}}} end,'unknown grant tier')
+research('blue','mt-coinage');eq(s.mt.market.teams.blue.wallet,9000);audit()
+-- Scheduled game-time stipends, including a skipped notification and saved-ledger reload.
+reset(true,true);tick(60*216000-60);eq(K.audit().issuance,20000)
+tick(60*216000);eq(K.audit().issuance,60000);eq(#news,4)
+saved_reload();tick(60*216000);eq(K.audit().issuance,60000);eq(#news,4)
+tick(100*216000);eq(K.audit().issuance,140000);eq(#news,8);audit()
+reset(true,false);tick(70*216000);research('red','mt-coinage');eq(K.audit().issuance,10000)
+tick(80*216000);eq(K.audit().issuance,30000);saved_reload();tick(80*216000);eq(K.audit().issuance,30000);audit()
+reset(true,true);K.operator.mt_market{config={growth_enabled=false}};saved_reload();tick(200*216000)
+eq(K.audit().issuance,20000);eq(#news,2);audit()
+-- Tier items cannot be ordered or observed in stock/book before own research.
+reset(true,true);stock('red','engine-unit',10)
+refused(function() sell('red','engine-unit',10,180) end,'item unavailable at your researched tier')
+eq(K.status('red').reference_prices['engine-unit'],nil);eq(K.status('red').stock['engine-unit'],nil)
+research('red','chemical-science-pack');sell('red','engine-unit',10,180)
+eq(#K.status('blue').offers,0);eq(K.status('red').reference_prices['engine-unit'],180)
+research('blue','chemical-science-pack');eq(#K.status('blue').offers,1)
+local offer=K.status('blue').offers[1].accept;call('blue',offer.action,offer.args);tick(600);tick(6000)
+eq(count('blue','engine-unit'),10);audit()
+eq(K.PRICES.explosives,20);eq(K.PRICES['electric-engine-unit'],350);eq(K.PRICES['flying-robot-frame'],820)
+
+-- Physical custody moves without changing supply; non-Post deaths are replay-safe.
+local function carrier(kind,n,unit)
+ local i=inventory();i.insert{name='mt-coin',count=n}
+ i.get_contents=function() return {{name='mt-coin',count=i.get_item_count{name='mt-coin'},quality='normal'}} end
+ local e={valid=true,name='steel-chest',type=kind or 'container',force=forces.blue,unit_number=unit or 500,
+  surface=surface,position={x=50,y=50},get_max_inventory_index=function() return 3 end,
+  get_inventory=function(id) if id==2 then return i end end}
+ return e,i
+end
+reset(true,true);K.on_died{entity=s.mt.market.teams.red.post};eq(K.audit().physical,2500)
+local chest,ci=carrier('container',2500);K.on_died{entity=chest};eq(ci.get_item_count{name='mt-coin'},0)
+eq(spilled[2].stack.count,2500);eq(K.audit().physical,2500);audit()
+saved_reload();K.on_died{entity=chest};eq(#spilled,2);audit()
+stock('blue','mt-coin',2500);tick(60);eq(K.audit().physical,0);eq(s.mt.market.teams.blue.wallet,12500);audit()
+reset(true,true);K.on_died{entity=s.mt.market.teams.red.post}
+local hand={valid_for_read=true,name='mt-coin',count=100,quality={name='normal'}};hand.clear=function() hand.valid_for_read=false end
+local inserter=carrier('inserter',0);inserter.held_stack=hand;K.on_died{entity=inserter}
+eq(spilled[2].stack.count,100);eq(hand.valid_for_read,false);audit()
+local belt,bi=carrier('transport-belt',20,501);belt.get_max_inventory_index=function() return 0 end
+belt.get_max_transport_line_index=function() return 1 end;bi.remove_item=bi.remove;belt.get_transport_line=function() return bi end
+K.on_died{entity=belt};eq(spilled[3].stack.count,20);eq(bi.get_item_count{name='mt-coin'},0);audit()
+local recycler,ri=carrier('furnace',7,502);recycler.crafting_progress=.5
+recycler.get_recipe=function() return {name='mt-coin-recycling'},{name='normal'} end
+K.on_died{entity=recycler};eq(spilled[4].stack.count,7);eq(spilled[5].stack.count,1);eq(recycler.crafting_progress,0);audit()
+-- Ground stack clear invalidates the entity before the spill API call.
+reset(true,true);K.on_died{entity=s.mt.market.teams.red.post}
+local ground=carrier('item-entity',0,503)
+local groundstack={valid_for_read=true,name='mt-coin',count=3,quality={name='normal'}}
+ground.stack=groundstack;groundstack.clear=function()
+ groundstack.valid_for_read=false;ground.valid=false;ground.surface=nil;ground.position=nil
+end
+K.on_died{entity=ground};eq(spilled[2].stack.count,3);audit()
+reset(true,true);K.on_died{entity=s.mt.market.teams.red.post};chest,ci=carrier('container',2500)
+surface.spill_item_stack=function() return {} end
+refused(function() K.on_died{entity=chest} end,'coin spill incomplete');ok(s.mt.market.fault)
+saved_reload();K.on_died{entity=chest};eq(ci.get_item_count{name='mt-coin'},0)
+print('mt290 money supply: '..checks..' total integrity assertions passed')

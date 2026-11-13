@@ -18,7 +18,8 @@ do
     for file in list:gmatch('%S+') do
       local out=io.popen('luac -p -l '..file..' 2>&1'):read('a')
       for name in out:gmatch('[GS]ETTABUP[^\n]-_ENV "([%w_]+)"') do
-        if not KNOWN[name] then bad[#bad+1]=file:match('[^/]+$')..': '..name end
+        -- `mods` is an engine global only during the data stage, not in runtime modules.
+        if not KNOWN[name] and not (name=='mods' and file:match('/data%.lua$')) then bad[#bad+1]=file:match('[^/]+$')..': '..name end
       end
     end
     eq(#bad,0,'globals read: '..table.concat(bad,', '))

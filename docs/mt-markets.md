@@ -4,7 +4,7 @@ Spec: /Users/owner/code/pog-operator/markets/design-v3.md. The implementation is
 instantiated through its existing require. No new requires or persistent on_load mutations. World n is untouched.
 
 First contact opens the Post, `offer` and swap cancellation. Coinage costs 50 automation packs at 15 seconds each,
-is disabled/invisible until contact, and grants 10,000 once per force. It opens `market`, `buy`, `sell`, `embargo`.
+is disabled/invisible until contact, and pays its 10,000 base grant plus earned research-tier back-pay once. It opens `market`, `buy`, `sell`, `embargo`.
 `to`/`from`/cancel-team appear only after a second contact. All actions, including refusals, are passive. Status
 carries the current block. Schemas and reference entries are gated; bundle identity changes with contact/rung.
 
@@ -36,7 +36,7 @@ Destroyed Posts are recreated near their original home on the next pass. Stage-1
 `mt_market {}` is operator-only: audit, full pair transactions, viewer markers and last prices with a thin flag.
 Markers interpolate between Posts only in that trusted operator response. `mt_market {config}` sets the experiment
 switch, timings/cap and destructibility. Disabling refuses unsettled cargo and cancels unmatched orders. Coin audit:
-wallets + payment escrow + circulating physical coin = fixed grants; reserved is a subset of wallets.
+wallets + payment escrow + circulating physical coin = cumulative research/stipend issuance; reserved is a subset of wallets.
 
 Human commands use `!market offer|market|sell|buy|cancel|embargo {JSON}`, or `!market` / `!market list`.
 They invoke the same validators and use saved human request sequence numbers.
@@ -60,3 +60,52 @@ counts and stock before forcing contact. Enemy cease-fire is symmetric in both a
 mechanism; this trial does not test enemy pressure or combat. The independent QA run releases the held machines
 for ten accelerated simulation minutes, verifies every line produces and the small patch depletes, then discards
 that loaded state. Both trials restore the exact canonical paused save, at normal game speed.
+
+## Full-game money supply (d42e)
+
+The approved table is in pacts.lua's market CFG.grants, configurable through the operator's mt_market endpoint.
+Coinage pays 10,000; logistic/chemical/production/utility science pay 5,000 each; space science pays 10,000;
+metallurgic/electromagnetic/agricultural/cryogenic science pay 5,000 each (60,000 research total). No military,
+promethium, mint, loan, catch-up bonus or freight loss implementation. Payments use only the team's own research.
+
+Coinage combines all already-researched unpaid tiers into one `research:mt-coinage` payment. Every tier points to
+its saved payment receipt. Subsequent research pays only unpaid tiers, once; legacy `granted=true` maps Coinage to
+a legacy receipt without minting it again. Stored amounts never change when config changes. Grant sizes are integer
+0..1,000,000; unknown tiers refuse before settings mutate. Payment facts name amount/cause and say "this does not
+depend on when you research it"; neither facts nor public events reveal any other team's tier count or existence.
+
+Default full-game growth settings: growth_enabled=true, growth_start_hours=60, growth_every_hours=20,
+growth_amount=20000. Game hour uses game.tick/216000, not wall time or agent sessions. Each team's durable period
+cursor/payment IDs make duplicate ticks/reloads harmless; missed notifications after Coinage are caught up.
+Research back-pay is distinct from stipends: Coinage acquired between boundaries waits for the next boundary.
+A disabled stipend advances its cursor without paying, so re-enabling does not pay disabled periods. Existing
+pre-feature saves start their stipend schedule at the next boundary. Market fixture prepare/activate and the
+supplied cargo/circuit fixture explicitly disable growth; the canonical saved fixture is unchanged on disk.
+
+Reference items now require the caller's own tier. Base items include ore, fuel coal, stone, plates, gear, cable,
+electronic circuit, pipe20, iron stick10 and stone brick20. Logistic adds steel100. Chemical adds the pre-existing
+plastic30/sulfur30/battery80/advanced-circuit260/processing-unit1400 cards and engine180, explosives20,
+solid-fuel20, electric-engine350, flying-robot-frame820, low-density-structure750, rocket-fuel220. No planetary
+items or science tools are admitted. Stock, offers, accepting calls and order validation share the gate; a locked
+item cannot be acquired through a swap's other leg. Existing prices are retained, not silently repriced.
+
+New card derivations use the ordinary 2.1 recipes and existing material cards, with water free and an explicit
+2 coin/unit reference for liquid oil products (not separately traded). This is a nominal recipe-cost estimate,
+not a runtime production-cost measurement, and includes no productivity/quality advantage:
+- engine = steel100 + gear40 + 2 pipe20 = 180;
+- explosives = (coal10 + sulfur30)/2 = 20;
+- solid fuel = 10 light oil * 2 = 20;
+- electric engine = engine180 + 2 circuits70 + 15 lubricant*2 = 350;
+- robot frame = electric engine350 + 2 batteries80 + steel100 + 3 circuits70 = 820;
+- low density = 20 copper plates20 + 5 plastic30 + 2 steel100 = 750;
+- rocket fuel = 10 solid fuel20 + 10 light oil*2 = 220.
+Sources: tools/analyst/kb/space-age-2.1.24/recipes.json and the installed 2.1.24 recycler/recycling.lua. The existing
+ore10/plate20 reference convention is retained. Price bands and pair capacity are unchanged.
+
+Physical coin in inventories, inserter hands, belt lines or ground entities spills on death with quality preserved.
+An unfinished coin-recycling craft also returns its consumed coin. Remove custody before spilling to avoid duplicate
+corpse inventories; a durable death receipt prevents retry, and incomplete mutations quarantine the market. Such
+spills change neither physical circulation nor issuance. The home-Post wallet spill stays unchanged. Recycler data
+provides exactly 1 coin -> 1 coin, with automatic recycling, productivity and quality upgrades disabled; it is not a
+mint recipe. Audit now reads wallets + payment escrow + circulating physical coin = cumulative issuance (research
+and stipends); reservations remain part of wallets. Native and unit evidence is in report-mt295.md.

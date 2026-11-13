@@ -25,6 +25,8 @@ PAYLOAD=['iron-plate','copper-plate','steel-plate','stone','coal','iron-ore','co
 
 SETUP=r'''
 local a=helpers.json_to_table(PAYLOAD)
+assert(helpers.json_to_table(remote.call('agent_harness','dispatch',helpers.table_to_json{id='stage-stipend-off',operator=true,
+ action='mt_market',args={config={growth_enabled=false}}})).ok,'fixture stipend disable failed')
 local f=game.forces[a.team];local s=game.surfaces.nauvis;local x,y=a.x,a.y
 s.request_to_generate_chunks({x,y},3);s.force_generate_chunk_requests()
 local area={{x-36,y-32},{x+36,y+32}}
