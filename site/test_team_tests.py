@@ -46,6 +46,21 @@ class TestContract(unittest.TestCase):
         self.assertEqual(out['testReplies'],['operator'])
         self.assertEqual(out['normalReplies'],['gemini','operator'])
 
+    def test_models_label_roster_chat_recipients_and_board_owners(self):
+        from test_sitechat import LIVE_CHAT_JS
+        driver=LIVE_CHAT_JS.replace("out.html = kids['#vchat'].innerHTML;", "out.html = kids['#team-tests'].innerHTML;")
+        s=fixture(time.time());r=s['teams'][0]
+        r['agents'][0]['display_name']='Vector'
+        r['agents'][1].update(display_name='Hearth',model='Grok 4.7')
+        r['chat']=[{'name':'gemini','text':'Supply the lab.','kind':'tell','to':['gemini2']}]
+        with tempfile.TemporaryDirectory() as tmp:
+            js=Path(tmp)/'check.js';state=Path(tmp)/'state.json'
+            js.write_text(driver);state.write_text(json.dumps(contract.public_state(s,now=s['now'])))
+            out=json.loads(subprocess.check_output(['node',str(js),str(Path(__file__).parent/'static/live.js'),str(state)],text=True))
+        self.assertEqual(out['html'].count('Vector · Gemini Flash'),2)
+        self.assertEqual(out['html'].count('Hearth · Grok 4.7'),3)
+        self.assertIn('→ Hearth · Grok 4.7',out['html'])
+
     def test_only_operator_receipts_in_tests(self):
         s=fixture();s['viewer_delivery']={'1':{'s':'operator','teams':['green'],'t':100},
                                          '2':{'s':'relayed','teams':['green'],'t':100},

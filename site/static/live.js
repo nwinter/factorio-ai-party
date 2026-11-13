@@ -876,7 +876,7 @@
     if (!box) return;
     box.innerHTML = (s.teams || []).map(function (t) {
       var r = t.research || {}, pct = Math.round((r.progress || 0) * 100), shown = {};
-      (t.agents || []).forEach(function (a) { shown[a.name] = a.display_name || label(a.name); });  // no chosen name: the roster name, capitalised
+      (t.agents || []).forEach(function (a) { shown[a.name] = (a.display_name || label(a.name)) + (a.model ? ' · ' + a.model : ''); });
       return '<section class="fx-panel live-card" style="border-top:3px solid ' + (safeColor(t.color) || '#999999') + '">' +
         '<header class="fx-panel-title">' + esc(label(t.team)) + (t.stale ? ' · data delayed' : '') + '</header><div class="card-body">' +
         '<p>' + esc(r.done_count == null ? '–' : r.done_count) + ' technologies · ' + esc(t.rockets == null ? '–' : t.rockets) + ' rockets · ' +
@@ -886,7 +886,7 @@
           // the character the agent chose (name, glyph, colour, persona); its model stays beside it
           var mark = a.glyph ? '<span class="tt-glyph" style="color:' + acColor(a.color) + '" aria-hidden="true">' + esc(a.glyph) + '</span> ' : '';
           return '<li>' + mark + '<strong>' + esc(shown[a.name]) + '</strong>' + (a.pronouns ? ' <span class="fx-muted small">' + esc(a.pronouns) + '</span>' : '') +
-            ' · ' + esc(a.model) + ' · ' + esc(a.activity) + (a.persona ? '<div class="tt-persona small fx-muted">“' + esc(a.persona) + '”</div>' : '') + '</li>';
+            ' · ' + esc(a.activity) + (a.persona ? '<div class="tt-persona small fx-muted">“' + esc(a.persona) + '”</div>' : '') + '</li>';
         }).join('') + '</ul>' +
         '<h3>Team board</h3><ul>' + (t.board || []).map(function (m) { return '<li>' + esc(m.title) + (m.owner ? ' · ' + esc(shown[m.owner] || m.owner) : '') + '</li>'; }).join('') + '</ul>' +
         '<h3>Team chat</h3><ol class="team-test-chat">' + (t.chat || []).map(function (m) {
