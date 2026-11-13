@@ -551,6 +551,14 @@ return function(api)
       ['engine-unit']=180,explosives=20,['pipe']=20,['iron-stick']=10,['stone-brick']=20,
       ['solid-fuel']=20,['electric-engine-unit']=350,['flying-robot-frame']=820,
       ['low-density-structure']=750,['rocket-fuel']=220}
+    -- Nominal base-recipe costs on the existing ore=10/plate=20 cards; see docs/mt-markets.md.
+    -- Science tools have value for research accounting, but are not stateless market cargo.
+    local SCIENCE={['automation-science-pack']=60,['logistic-science-pack']=160,
+      ['military-science-pack']=275,['chemical-science-pack']=585,
+      ['production-science-pack']=5950/3,['utility-science-pack']=5870/3,['space-science-pack']=12,
+      ['metallurgic-science-pack']=712,['electromagnetic-science-pack']=1001,
+      ['agricultural-science-pack']=124.6875,['cryogenic-science-pack']=86.872,['promethium-science-pack']=201.552}
+    for name,value in pairs(SCIENCE) do PRICES[name]=value end
     local TIERS={['steel-plate']='logistic-science-pack',['advanced-circuit']='chemical-science-pack',
       ['plastic-bar']='chemical-science-pack',sulfur='chemical-science-pack',battery='chemical-science-pack',
       ['engine-unit']='chemical-science-pack',explosives='chemical-science-pack',['processing-unit']='chemical-science-pack',
@@ -558,7 +566,7 @@ return function(api)
       ['flying-robot-frame']='chemical-science-pack',['low-density-structure']='chemical-science-pack',
       ['rocket-fuel']='chemical-science-pack'}
     local CFG={enabled=true,transit_ticks=5400,batch_ticks=600,pair_stacks=10,destructible=false,
-      growth_enabled=true,growth_start_hours=60,growth_every_hours=20,growth_amount=20000,
+      research_enabled=true,growth_coin_per_rate=5,level_rate=0.001,
       grants={['mt-coinage']=10000,['logistic-science-pack']=5000,['chemical-science-pack']=5000,
         ['production-science-pack']=5000,['utility-science-pack']=5000,['space-science-pack']=10000,
         ['metallurgic-science-pack']=5000,['electromagnetic-science-pack']=5000,
@@ -575,6 +583,8 @@ return function(api)
     local function config(k)
       local s=mt() and mt().market
       if s and s.config and s.config[k]~=nil then return s.config[k] end
+      -- Saved prepared-base fixtures used the old stipend switch. Preserve their opt-out on upgrade.
+      if k=='research_enabled' and s and s.config and s.config.growth_enabled==false then return false end
       return CFG[k]
     end
     local function contacts(t)
@@ -623,9 +633,9 @@ return function(api)
       local f=game.forces[t];local tech=f and f.technologies[n]
       return tech and tech.researched or false
     end
-    local function available(t,n) return PRICES[n] and (not TIERS[n] or researched(t,TIERS[n])) end
+    local function available(t,n) return PRICES[n] and not SCIENCE[n] and (not TIERS[n] or researched(t,TIERS[n])) end
     local function item(n,t)
-      if type(n)~='string' or not PRICES[n] then fail('item unavailable; normal, stateless, nonspoiling reference items only') end
+      if type(n)~='string' or not PRICES[n] or SCIENCE[n] then fail('item unavailable; normal, stateless, nonspoiling reference items only') end
       if t and not available(t,n) then fail('item unavailable at your researched tier') end
       local p=prototypes.item[n]
       if not p or (p.get_spoil_ticks and p.get_spoil_ticks() or p.spoil_ticks or 0)>0 then fail('item unavailable') end
@@ -674,19 +684,98 @@ return function(api)
         pay(t,id,n,table.concat(causes,' + '),pending)
       end
       s.granted=true
-      local start,step=config('growth_start_hours'),config('growth_every_hours')
-      local period=math.floor((game.tick/216000-start)/step)
-      -- Late Coinage earns prior research, not stipends for hours without Coinage.
-      if s.growth_period==nil then s.growth_period=math.max(-1,math.ceil((game.tick/216000-start)/step)-1) end
-      if not config('growth_enabled') then s.growth_period=math.max(s.growth_period,period);return end
-      while s.growth_period<period do
-        s.growth_period=s.growth_period+1
-        local hour=start+s.growth_period*step
-        pay(t,'growth:'..hour,config('growth_amount'),'growth stipend at game hour '..hour)
+    end
+    -- Persist only numbers/tables. Own technologies include saved partial progress, so changing/cancelling the
+    -- queue cannot repay work. A level cursor bounds storage even for infinite research. No production statistics.
+    local function research_sample(t,r,baseline,scripted)
+      local f=game.forces[t];local current=f.current_research;local value=0
+      for _,name in ipairs(keys(f.technologies)) do
+        local tech=f.technologies[name];local level=tech.level or 1
+        local progress=tech.researched and 1 or
+          (current and current.name==name and (f.research_progress or 0) or (tech.saved_progress or 0))
+        local prior=r.seen[name]
+        local unit_value=0
+        for _,ing in ipairs(tech.research_unit_ingredients or {}) do
+          assert(SCIENCE[ing.name], 'research pack has no reference price: '..ing.name)
+          unit_value=unit_value+SCIENCE[ing.name]*ing.amount
+        end
+        if not baseline and name~=scripted and unit_value>0 then
+          local old_level=prior and prior.level or (tech.prototype and tech.prototype.level or 1)
+          local old_progress=prior and prior.progress or 0
+          if level>=old_level then
+            for l=old_level,level do
+              local delta=(l<level and 1 or progress)-(l==old_level and old_progress or 0)
+              if delta>0 then
+                local count=l==level and tech.research_unit_count or api.research_units(tech,l)
+                value=value+delta*count*unit_value
+              end
+            end
+          end
+        end
+        -- Reversing research cannot lower its paid watermark.
+        if not prior or level>prior.level then r.seen[name]={level=level,progress=progress}
+        elseif level==prior.level then prior.progress=math.max(prior.progress,progress) end
       end
+      return value
+    end
+    -- Compensated sums keep thousands of tiny progress increments/expirations from stranding whole coin.
+    local function research_add(r,key,value)
+      r.correction=r.correction or {}
+      local adjusted=value-(r.correction[key] or 0)
+      local sum=r[key]+adjusted
+      r.correction[key]=(sum-r[key])-adjusted;r[key]=sum
+    end
+    local function research_income(t,scripted)
+      local s=team(t);local r=s.research_income
+      local active=config('research_enabled') and researched(t,TECH)
+      if not r then
+        r={seen={},window={},first=1,last=0,window_value=0,high_rate=0,value=0,
+          growth=0,level=0,paid=0,remainder=0,hour=math.floor(game.tick/216000),hour_coin=0}
+        s.research_income=r
+      end
+      local baseline=not r.active or not active
+      local value=research_sample(t,r,baseline,scripted)
+      r.active=active
+      if not active then r.window={};r.first=1;r.last=0;r.window_value=0;if r.correction then r.correction.window_value=0 end end
+      -- Flush the previous game hour before adding this sample. Zero-income hours remain a single fact too.
+      local hour=math.floor(game.tick/216000)
+      if hour>r.hour then
+        if active or r.hour_coin>0 then
+          local line='Wallet +'..r.hour_coin..' coin: research income this hour'
+          fact(t,line,false);news(t,nil,'research_income',line)
+        end
+        r.hour=hour;r.hour_coin=0
+      end
+      if not active then return end
+      while r.first<=r.last and r.window[r.first].tick<=game.tick-432000 do
+        research_add(r,'window_value',-r.window[r.first].value)
+        r.window[r.first]=nil;r.first=r.first+1
+      end
+      if r.first>4096 then
+        local window={};for i=r.first,r.last do window[#window+1]=r.window[i] end
+        r.window=window;r.first=1;r.last=#window
+      end
+      if value>0 then
+        local tail=r.window[r.last]
+        if tail and tail.tick==game.tick then tail.value=tail.value+value
+        else r.last=r.last+1;r.window[r.last]={tick=game.tick,value=value} end
+        research_add(r,'window_value',value);research_add(r,'value',value)
+      end
+      if r.first>r.last then r.window_value=0 end
+      -- Full 120-minute denominator from startup: a stockpile burst never receives a short-window windfall.
+      local rate=math.max(0,r.window_value)/120
+      local growth=math.max(0,rate-r.high_rate)*config('growth_coin_per_rate')
+      r.high_rate=math.max(r.high_rate,rate);r.rate=rate
+      local level=value*config('level_rate')
+      research_add(r,'growth',growth);research_add(r,'level',level)
+      local due=r.growth+r.level-r.paid
+      -- Tiny floating point noise at an integer must not strand a coin; retain the signed residual.
+      local coin=math.floor(due+1e-9);r.remainder=due-coin
+      r.paid=r.paid+coin;r.hour_coin=r.hour_coin+coin
+      s.wallet=s.wallet+coin;state().issuance=state().issuance+coin
     end
     -- First contact enables red science per force. Creation and grants never run during on_load.
-    function K.sync(t)
+    function K.sync(t,scripted)
       if K.rung(t)==0 or mt().market and mt().market.fault then return end
       local s=team(t);local f=game.forces[t];local tech=f.technologies[TECH]
       if tech then tech.enabled=true;tech.visible_when_disabled=false end
@@ -704,6 +793,11 @@ return function(api)
       end
       if s.post and s.post.valid then s.post.destructible=config('destructible') end
       grants(t)
+      research_income(t,scripted)
+    end
+    function K.on_research_finished(event)
+      local tech=event.research
+      if tech and tech.force then K.sync(tech.force.name,event.by_script and tech.name or nil) end
     end
     local function canonical(v)
       if type(v)~='table' then return type(v)..':'..tostring(v) end
@@ -1146,6 +1240,8 @@ return function(api)
           if k=='grants' then
             assert(type(v)=='table','grants: table')
             for name,n in pairs(v) do assert(CFG.grants[name]~=nil,'unknown grant tier');integer(n,0,1000000,name) end
+          elseif k=='growth_coin_per_rate' or k=='level_rate' then
+            assert(type(v)=='number' and v==v and v>=0 and v<=1000000,k..': finite number 0..1000000')
           elseif type(CFG[k])=='boolean' then assert(type(v)=='boolean','boolean setting')
           else
             integer(v,1,216000,k)
@@ -1156,13 +1252,18 @@ return function(api)
           for _,p in pairs(s.pairs) do for _,tx in ipairs(p.transactions) do assert(tx.status=='delivered','cannot disable with unsettled cargo') end end
           for t,v in pairs(s.teams) do for _,o in pairs(v.orders) do cancel_order(t,o,'market disabled') end end
         end
+        -- Settle the old rates first. Disabled periods must never earn back-pay on re-enable.
+        for _,t in ipairs(mt().order or {}) do K.sync(t) end
+        if a.config.enabled==false then
+          for _,v in pairs(s.teams) do if v.research_income then v.research_income.active=false end end
+        end
         s.config=s.config or {};for k,v in pairs(a.config) do
           if k=='grants' then local merged=copy(config('grants'));for name,n in pairs(v) do merged[name]=n end;s.config.grants=merged
           else s.config[k]=v end
         end
       end
       for _,t in ipairs(mt().order or {}) do K.sync(t) end
-      local out={audit=K.audit(),teams={},pairs=s.pairs,markers={},last_prices={}}
+      local out={audit=K.audit(),research_reference_prices=copy(SCIENCE),teams={},pairs=s.pairs,markers={},last_prices={}}
       for _,p in pairs(s.pairs) do
         local prices={}
         for _,tx in ipairs(p.transactions) do

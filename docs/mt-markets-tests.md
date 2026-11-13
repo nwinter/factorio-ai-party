@@ -42,3 +42,13 @@ transaction requires operator reconciliation. These limitations must remain visi
 Commands (from harness directory): `npm test`, `lua tests/mt296.lua`, `lua tests/mt296dispatch.lua`,
 `lua tests/mt296data.lua`. From repository: `agent-python tools/test_lua52_syntax.py`, `luac -p` on changed Lua,
 `agent-python tools/mt/test_market_metrics.py`. Engine and trial commands require the server claim and mt290 release.
+
+## Research income (mt299)
+
+The full harness suite auto-discovers tests/mt299.lua. Its regressions cover progress and saved cancellation progress,
+fast completions, infinite-level cost, pre-Coinage exclusion plus tier back-pay, script grants, conservation
+(issuance = grants + research income), serialized state reload mid-window, flat-rate warmup/plateau, burst damping,
+window expiry, fractional carry, hourly messages/replay, config validation/atomicity, disabled/legacy fixtures,
+and a force lookup that throws on any rival read. mt296.lua retains grant/back-pay and physical custody checks
+and verifies there are no scheduled payments after 200 idle game hours. Native-probe evidence is recorded separately
+in the operator's report-mt299.md; deterministic fixtures do not establish an engine result.

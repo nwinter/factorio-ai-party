@@ -18371,7 +18371,7 @@ for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 -- (mt278, private) a team of human players and its freeze (humans.lua); nothing runs without mt_humans
 M.humans=require('humans'){state=state}
 -- (mt281, private) pacts between teams (pacts.lua): open for a team at its first contact; facts to both teams' agents
-M.pacts=require('pacts'){state=state,team_now=function() return M.team_now() end,who=function(p) return M.board.who(p) end,
+M.pacts=require('pacts'){state=state,research_units=function(t,l) return M.research_cost.units(t,l) end,team_now=function() return M.team_now() end,who=function(p) return M.board.who(p) end,
   roster=function(reader,other) return M.discovery.roster(reader,other) end,
   request_id=function() return M.market_request_id end,
   on_market=function(e) M.teamfeed.market(e) end,
@@ -22263,7 +22263,7 @@ M.operator={
 end do local MAX_ALERTS=64
 function M.on_event(event)
   if M.market and event.name==defines.events.on_entity_died then M.market.on_died(event) end
-  if M.market and state().mt and event.name==defines.events.on_research_finished and event.research and event.research.force then M.market.sync(event.research.force.name) end
+  if M.market and state().mt and event.name==defines.events.on_research_finished and event.research and event.research.force then M.market.on_research_finished(event) end
   -- (mt278) a human team's joins, chat commands and builds while frozen (humans.lua)
   local mt=state().mt
   if mt and mt.humans then pcall(M.humans.on_event,event) end

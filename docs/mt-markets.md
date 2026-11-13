@@ -36,7 +36,7 @@ Destroyed Posts are recreated near their original home on the next pass. Stage-1
 `mt_market {}` is operator-only: audit, full pair transactions, viewer markers and last prices with a thin flag.
 Markers interpolate between Posts only in that trusted operator response. `mt_market {config}` sets the experiment
 switch, timings/cap and destructibility. Disabling refuses unsettled cargo and cancels unmatched orders. Coin audit:
-wallets + payment escrow + circulating physical coin = cumulative research/stipend issuance; reserved is a subset of wallets.
+wallets + payment escrow + circulating physical coin = cumulative grants plus research-income issuance; reserved is a subset of wallets.
 
 Human commands use `!market offer|market|sell|buy|cancel|embargo {JSON}`, or `!market` / `!market list`.
 They invoke the same validators and use saved human request sequence numbers.
@@ -65,8 +65,8 @@ that loaded state. Both trials restore the exact canonical paused save, at norma
 
 The approved table is in pacts.lua's market CFG.grants, configurable through the operator's mt_market endpoint.
 Coinage pays 10,000; logistic/chemical/production/utility science pay 5,000 each; space science pays 10,000;
-metallurgic/electromagnetic/agricultural/cryogenic science pay 5,000 each (60,000 research total). No military,
-promethium, mint, loan, catch-up bonus or freight loss implementation. Payments use only the team's own research.
+metallurgic/electromagnetic/agricultural/cryogenic science pay 5,000 each (60,000 research total). No military or
+promethium grants, mint, loan, catch-up bonus or freight loss implementation. Payments use only the team's own research.
 
 Coinage combines all already-researched unpaid tiers into one `research:mt-coinage` payment. Every tier points to
 its saved payment receipt. Subsequent research pays only unpaid tiers, once; legacy `granted=true` maps Coinage to
@@ -74,19 +74,72 @@ a legacy receipt without minting it again. Stored amounts never change when conf
 0..1,000,000; unknown tiers refuse before settings mutate. Payment facts name amount/cause and say "this does not
 depend on when you research it"; neither facts nor public events reveal any other team's tier count or existence.
 
-Default full-game growth settings: growth_enabled=true, growth_start_hours=60, growth_every_hours=20,
-growth_amount=20000. Game hour uses game.tick/216000, not wall time or agent sessions. Each team's durable period
-cursor/payment IDs make duplicate ticks/reloads harmless; missed notifications after Coinage are caught up.
-Research back-pay is distinct from stipends: Coinage acquired between boundaries waits for the next boundary.
-A disabled stipend advances its cursor without paying, so re-enabling does not pay disabled periods. Existing
-pre-feature saves start their stipend schedule at the next boundary. Market fixture prepare/activate and the
-supplied cargo/circuit fixture explicitly disable growth; the canonical saved fixture is unchanged on disk.
+Research income replaces the scheduled stipend (mt299). Defaults: research_enabled=true,
+growth_coin_per_rate=5, level_rate=0.001. The two rates accept finite numbers in 0..1,000,000, including zero
+and fractions; research_enabled is boolean. The old growth_amount/start/every/enabled settings are no longer
+accepted. A saved growth_enabled=false still disables research income unless research_enabled is explicitly set,
+so old prepared-base saves retain their opt-out. Both fixture preparation/activation scripts set research_enabled=false.
+
+Each team samples only its own technology progress once per game second and on research completion. Research value
+is completed units times the sum of ingredient amounts times science reference prices, including fractional units
+of the current technology and saved progress of cancelled research. Lab consumption, spoilage, productivity and
+quality are never separate inputs: only research actually earned counts. A technology/level progress watermark
+prevents cancellation, resumption, reversal, duplicate callbacks or reload from paying twice. Infinite levels use
+the existing researchcost helper for the completed level's unit count. Script-researched completions update the
+baseline but pay no income. Tier grants and Coinage tier back-pay retain their existing behavior.
+
+At Coinage, upgrade of an existing save, and re-enabling income, existing current/saved/completed research is a
+baseline, never research-income back-pay. Research while income is disabled does not enter the income window.
+The rolling sum retains timestamped value increments for the last 432,000 ticks (two game hours); rate is always
+sum/120 coin-value per minute, even in the first two hours. Growth pays only increases above the saved lifetime
+high. Level income pays level_rate times each new value increment. A flat rate after the two-hour warmup receives
+no further growth income; a 120,000-value burst sets only a 1,000/min high and pays 5,000 growth coin.
+
+Both components accumulate into integer wallet coin with a persistent fractional remainder. Income updates total
+issuance in the same operation. The saved ledger contains value, rate, high_rate, growth/level entitlements, paid,
+remainder, rolling samples and the current hour's integer total. Hour boundaries emit one own-team fact and one
+operator event, "Wallet +N coin: research income this hour", with no per-sample messages. Game hour is game.tick/216000;
+ordinary one-second callbacks close each hour, while skipped callbacks coalesce the outstanding report once.
+
+Science reference prices are valuation-only entries in K.PRICES; they do not admit tools or spoilable packs to
+orders/cargo. The operator mt_market response exposes research_reference_prices. Nominal base-recipe costs use the
+existing material cards (preserved, not repriced), no productivity/quality bonuses, free water, 10 per new raw item
+(ores, carbon, ice, fruit, biter eggs, promethium chunks), and 2 per raw fluid/oil product. Molten metal is 2 per unit
+(the casting equivalent of the existing 20/plate). This is a reference convention, not a scarcity/transport price.
+Refunded catalysts/coolant are netted out; energy, machines, fuel and shipment costs are excluded.
+
+| Pack | Reference coin per research unit's single pack | Recipe derivation |
+| --- | ---: | --- |
+| Automation | 60 | copper20 + gear40 |
+| Logistic | 160 | inserter130 + belt30 |
+| Military | 275 | (piercing magazine150 + grenade200 + 2 walls100)/2; 2.1 magazine batch yields two |
+| Chemical | 585 | (2 engines180 + 3 advanced circuits260 + sulfur30)/2 |
+| Production | 5950/3 | (furnace2500 + productivity module1650 + 30 rails60)/3 |
+| Utility | 5870/3 | (3 low density750 + 2 processing units1400 + robot frame820)/3 |
+| Space | 12 | (2 plates20 + carbon10 + ice10)/5 |
+| Metallurgic | 712 | 3 carbide64 + 2 tungsten plates60 + 200 molten copper2 |
+| Electromagnetic | 1001 | supercapacitor471 + accumulator440 + 25 electrolyte3.3 + 25 holmium solution0.3 |
+| Agricultural | 124.6875 | bioflux26.25 + net cultivated egg98.4375 |
+| Cryogenic | 86.872 | 3 ice10 + lithium41.2 + 3 net coolant5.224 |
+| Promethium | 201.552 | (25 chunks10 + quantum processor1665.52 + 10 biter eggs10)/10 |
+
+Intermediate derivations: acid=(5 sulfur30+plate20)/50=3.4; carbide=2 ore10+10 acid3.4+carbon10=64;
+tungsten plate=4 ore10+10 molten iron2=60; holmium solution=(2 ore10+stone10)/100=0.3;
+holmium plate=20 solution0.3=6; electrolyte=(stone10+10 heavy oil2+10 solution0.3)/10=3.3;
+superconductor=(holmium6+copper20+plastic30+5 light oil2)/2=33;
+supercapacitor=2 holmium6+2 superconductor33+4 circuit70+battery80+10 electrolyte3.3=471.
+Fruit processing yields mash5 and jelly2.5; bioflux=(15 mash5+12 jelly2.5)/4=26.25;
+nutrients=5 bioflux26.25/40=3.28125; cultivation yields one net egg per 30 nutrients=98.4375.
+Lithium=(holmium6+50 brine2+50 ammonia2)/5=41.2; coolant=(50 fluorine2+50 ammonia2+fuel20+lithium41.2)/50=5.224;
+carbon fiber=10 mash5+carbon10=60; quantum=carbide64+processing1400+superconductor33+fiber60+2 lithium41.2+5 net coolant5.224=1665.52.
+Sources: https://github.com/wube/factorio-data/blob/master/base/prototypes/recipe.lua and
+https://github.com/wube/factorio-data/blob/master/space-age/prototypes/recipe.lua (2.1 recipe definitions, checked d43).
 
 Reference items now require the caller's own tier. Base items include ore, fuel coal, stone, plates, gear, cable,
 electronic circuit, pipe20, iron stick10 and stone brick20. Logistic adds steel100. Chemical adds the pre-existing
 plastic30/sulfur30/battery80/advanced-circuit260/processing-unit1400 cards and engine180, explosives20,
 solid-fuel20, electric-engine350, flying-robot-frame820, low-density-structure750, rocket-fuel220. No planetary
-items or science tools are admitted. Stock, offers, accepting calls and order validation share the gate; a locked
+cargo or science tools are admitted. Stock, offers, accepting calls and order validation share the gate; a locked
 item cannot be acquired through a swap's other leg. Existing prices are retained, not silently repriced.
 
 New card derivations use the ordinary 2.1 recipes and existing material cards, with water free and an explicit
@@ -107,5 +160,5 @@ An unfinished coin-recycling craft also returns its consumed coin. Remove custod
 corpse inventories; a durable death receipt prevents retry, and incomplete mutations quarantine the market. Such
 spills change neither physical circulation nor issuance. The home-Post wallet spill stays unchanged. Recycler data
 provides exactly 1 coin -> 1 coin, with automatic recycling, productivity and quality upgrades disabled; it is not a
-mint recipe. Audit now reads wallets + payment escrow + circulating physical coin = cumulative issuance (research
-and stipends); reservations remain part of wallets. Native and unit evidence is in report-mt295.md.
+mint recipe. Audit now reads wallets + payment escrow + circulating physical coin = cumulative issuance (grants
+and research income); reservations remain part of wallets. Native and unit evidence is in report-mt295.md.

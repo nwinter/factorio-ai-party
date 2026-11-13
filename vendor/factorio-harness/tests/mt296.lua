@@ -282,15 +282,8 @@ reset(true,false);K.operator.mt_market{config={grants={['mt-coinage']=9000,['che
 research('red','chemical-science-pack');research('red','mt-coinage');eq(s.mt.market.teams.red.wallet,11500)
 refused(function() K.operator.mt_market{config={grants={['mt-coinage']=1,['military-science-pack']=5000}}} end,'unknown grant tier')
 research('blue','mt-coinage');eq(s.mt.market.teams.blue.wallet,9000);audit()
--- Scheduled game-time stipends, including a skipped notification and saved-ledger reload.
-reset(true,true);tick(60*216000-60);eq(K.audit().issuance,20000)
-tick(60*216000);eq(K.audit().issuance,60000);eq(#news,4)
-saved_reload();tick(60*216000);eq(K.audit().issuance,60000);eq(#news,4)
-tick(100*216000);eq(K.audit().issuance,140000);eq(#news,8);audit()
-reset(true,false);tick(70*216000);research('red','mt-coinage');eq(K.audit().issuance,10000)
-tick(80*216000);eq(K.audit().issuance,30000);saved_reload();tick(80*216000);eq(K.audit().issuance,30000);audit()
-reset(true,true);K.operator.mt_market{config={growth_enabled=false}};saved_reload();tick(200*216000)
-eq(K.audit().issuance,20000);eq(#news,2);audit()
+-- Stipend removed: idle Coinage earns nothing even many game hours later.
+reset(true,true);tick(200*216000);eq(K.audit().issuance,20000);audit()
 -- Tier items cannot be ordered or observed in stock/book before own research.
 reset(true,true);stock('red','engine-unit',10)
 refused(function() sell('red','engine-unit',10,180) end,'item unavailable at your researched tier')
