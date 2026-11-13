@@ -3,6 +3,12 @@
 First contact with a force opens explicit diplomacy and pacts for that pair. Ordinary say/tell/board remain private
 to the team. Discovery filters unknown forces, their metadata and their rows; pact actions are absent before contact.
 
+Launch registers base models through operator-only `mt_roster`; agents cannot edit this field through `profile`.
+Own-team `profile`/`profiles` include the model immediately. After pair contact, diplomacy, pact parties and market
+counterparties/offers include only that contacted team's agent IDs, chosen names and base models. These identity
+rows carry no positions, activity or private speech, and disclose no unknown third team. Shared market orders
+identify the team roster rather than inventing an individual author. Ordinary worlds have no roster model field.
+
 ## Current terms
 
 - `cease_fire`: stops attacks both ways while active. It grants neither shared chart nor foreign-inventory access.

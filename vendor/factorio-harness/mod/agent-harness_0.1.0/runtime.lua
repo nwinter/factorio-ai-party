@@ -238,6 +238,7 @@ M.profiles=require('profiles'){state=state,team_now=function() return M.team_now
   bots=function() return M.bots.list() end,active=function(index) local a=M.active(index); return a and a.kind or false end,
   on_apply=function(p) if M.bots.is(p) then M.nametags.refresh(M.bots.record(p.index)) end end,bubble_y=function(index) return M.nametags.bubble_y(index) end}
 M.nametags=require('nametags'){state=state,bots=function() return M.bots.list() end,profile=function(index) return M.profiles.get(index) end,
+  model=function(name) return M.profiles.model(name) end,
   carrier=function(b) return M.bots.carrier(b) end,
   parts=require('avatar_parts'),avatar=require('avatar')(require('avatar_parts'))}
 -- A player or bot by index, dead or alive (cleanup and status).
@@ -18371,6 +18372,7 @@ for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 M.humans=require('humans'){state=state}
 -- (mt281, private) pacts between teams (pacts.lua): open for a team at its first contact; facts to both teams' agents
 M.pacts=require('pacts'){state=state,team_now=function() return M.team_now() end,who=function(p) return M.board.who(p) end,
+  roster=function(reader,other) return M.discovery.roster(reader,other) end,
   request_id=function() return M.market_request_id end,
   on_market=function(e) M.teamfeed.market(e) end,
   on_message=function(m) M.teamfeed.emit(m.agent,'diplomacy','diplomacy',m.text,{m.to_team},m.seq) end,
@@ -19672,7 +19674,7 @@ function M.dispatch_inner(request)
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.factory_digest.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action] or M.chronicle.operator[request.action]
         or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.rests.operator[request.action] or M.lessonbook.operator[request.action] or M.bplibrary_operator[request.action]
         or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action]) or (M.chart and M.chart.operator[request.action]) or M.multiteam.operator[request.action] or M.humans.operator[request.action] or M.pacts.operator[request.action] or M.market.operator[request.action]
-      relay=relay or M.teamfeed.operator[request.action] or (M.disclosure and M.disclosure.operator[request.action])
+      relay=relay or M.teamfeed.operator[request.action] or M.profiles.operator[request.action] or (M.disclosure and M.disclosure.operator[request.action])
       relay=relay or (M.platformmetrics and M.platformmetrics.operator[request.action])
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)

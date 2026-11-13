@@ -309,8 +309,16 @@ def broadcast(lines, teams, now):
     return out
 
 
+def agent_label(agent):
+    """Public chosen identity with the roster's base model, never a route or account."""
+    agent=obj(agent)
+    name=label(agent.get('display_name')) or label(agent.get('name'))
+    model=speech(agent.get('model'), ('Nick','Winter'), 60)
+    return name + (' · ' + model if model else '') if name else ''
+
+
 def project_market(raw, teams):
-    """Operator shipment/print facts only. Never export balances, orders or audit state."""
+    """Shipment/print facts and Coinage-only team balances. No orders or audit state."""
     raw = obj(raw)
     known = {t['team'] for t in teams}
     latest = max((t.get('tick') or 0 for t in teams), default=0)
@@ -325,6 +333,13 @@ def project_market(raw, teams):
     if not finite(tick, integer=True) or not -300 <= latest - tick <= 900:
         return out
     out['tick'] = tick
+    wallets={}
+    for team,w in obj(raw.get('wallets')).items():
+        w=obj(w)
+        if (team in known and w.get('coinage') is True and finite(w.get('wallet'),integer=True)
+                and finite(w.get('reserved'),integer=True) and w['reserved']<=w['wallet']):
+            wallets[team]={'wallet':w['wallet'],'reserved':w['reserved']}
+    if wallets:out['wallets']=wallets
     seen = set()
     for m in map(obj, rows(raw.get('markers'))[-120:]):
         a, b, name = m.get('from'), m.get('to'), item(m.get('item'))
@@ -475,7 +490,7 @@ def project(team, state, agents, now, score=None):
         elif kind == 'rocket':
             text, icon = 'Rocket launched', 'rocket-part'
         elif kind == 'death' and isinstance(e.get('agent'), str) and e['agent'] in public_names:
-            text = next(a['display_name'] for a in out_agents if a['name'] == e['agent']) + ' was lost'
+            text = agent_label(next(a for a in out_agents if a['name'] == e['agent'])) + ' was lost'
         elif kind == 'platform_lost':
             text, icon = 'Space platform lost', 'space-platform-hub'
         if text and et is not None:

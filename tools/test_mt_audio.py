@@ -39,6 +39,14 @@ class AudioTests(unittest.TestCase):
         s['teams'][0]['stale']=True
         self.assertEqual(candidates(s,100),[])
 
+    def test_base_model_in_radio_and_fight_without_private_values(self):
+        s=state();s['teams'][0]['agents'][0].update(model='Gemini 3.8 Flash',verb='fight',activity='acting')
+        s['feed']=[dict(id='f:1',team='green',kind='tell',name='green1',text='Please bring copper for circuits.',at=100)]
+        lines=candidates(s,100)
+        self.assertTrue(all('Vesper · Gemini 3.8 Flash' in c['text'] for c in lines))
+        s['teams'][0]['agents'][0]['model']='/Users/private/token'
+        self.assertNotIn('/Users',json.dumps(candidates(s,100)))
+
     def test_market_authority_and_four_moments(self):
         s=state()
         for i,event in enumerate(('fill','embargo','coinage','raid')):

@@ -44,6 +44,15 @@ def main():
     all_seeds=seeds(a.roster)
     if not a.execute: print(json.dumps({n:all_seeds[n] for n in sorted(selected)}));return
     h=Harness(a.world)
+    models=[]
+    for line in a.roster.read_text().splitlines():
+        fields=line.split('\t')
+        if not line.startswith('#') and len(fields)>=8 and fields[1] in selected:
+            models.append({'name':fields[1],'model':fields[6]})
+    assert len(models)==len(selected),'every selected agent needs a public base-model label'
+    req={'id':'roster-'+uuid.uuid4().hex[:12],'operator':True,'action':'mt_roster','args':{'agents':models}}
+    reply=json.loads(h.command('/silent-command rcon.print(remote.call("agent_harness","dispatch",'+lua_string(json.dumps(req))+'))'))
+    assert reply['ok'],reply.get('error')
     def call(name,args):
         req={'id':'identity-'+uuid.uuid4().hex[:12],'bot':name,'action':'profile','args':args}
         reply=json.loads(h.command('/silent-command rcon.print(remote.call("agent_harness","dispatch",'+lua_string(json.dumps(req))+'))'))

@@ -17,6 +17,11 @@ local R=dofile('mod/agent-harness_0.1.0/runtime.lua');R.operator.bot_create{name
 local function call(action,args) return R.dispatch{id='test-'..action,bot='r1',action=action,args=args or {}} end
 local function read() return R.as_team('red',function() return R.describe_bundle(),R.market.schema('red') end) end
 local b,a=read();assert(b=='test' and next(a)==nil)
+assert(not pcall(call,'mt_roster',{agents={{name='r1',model='Forged'}}}),'agent may not register its model')
+R.dispatch{id='operator-roster',operator=true,action='mt_roster',args={agents={{name='r1',model='Gemini 3.8 Flash'}}}}
+local profile=call('profile',{});assert(profile.model=='Gemini 3.8 Flash')
+assert(not pcall(call,'profile',{model='Forged'}),'profile model is read-only')
+
 for name in pairs(R.market.names()) do
  local ok,e=pcall(call,name,{});assert(not ok and e=='unsupported action; call describe',tostring(e))
  local near=R.as_team('red',R.near_actions,name);for _,v in ipairs(near) do assert(v~=name,'near_actions leaks '..name) end

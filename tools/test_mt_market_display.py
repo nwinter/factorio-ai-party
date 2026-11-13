@@ -81,6 +81,23 @@ class MarketDisplayTests(unittest.TestCase):
         self.assertEqual(out, dict(tick=6000, markers=[], last_prices=[]))
         self.assertEqual(race.project_market(dict(tick=6000, markers=[dict(self.marker, item='mt-coin')]), self.teams)['markers'][0]['item'], 'coin')
 
+    def test_coinage_wallets_are_bounded_and_do_not_change_ranking(self):
+        raw=dict(tick=6000,wallets={'green':{'coinage':True,'wallet':10000,'reserved':3000,'orders':'PRIVATE'},
+            'yellow':{'coinage':False,'wallet':20000,'reserved':0},'hidden':{'coinage':True,'wallet':1,'reserved':0}},audit='PRIVATE')
+        out=race.project_market(raw,self.teams)
+        self.assertEqual(out['wallets'],{'green':{'wallet':10000,'reserved':3000}})
+        self.assertNotIn('PRIVATE',json.dumps(out));self.assertNotIn('yellow',out['wallets'])
+        for bad in (-1,True,float('nan'),1.5,1e20):
+            raw['wallets']['green']['wallet']=bad
+            self.assertNotIn('wallets',race.project_market(raw,self.teams))
+        raw['wallets']['green'].update(wallet=10,reserved=11)
+        self.assertNotIn('wallets',race.project_market(raw,self.teams))
+        raw['wallets']['green'].update(wallet=0,reserved=0)
+        self.assertEqual(race.project_market(raw,self.teams)['wallets']['green']['wallet'],0)
+        self.assertNotIn('wallets',race.project_market(dict(raw,tick=1),self.teams))
+        teams=copy.deepcopy(self.teams);teams[0]['wallet']=100000
+        self.assertEqual([t['rank'] for t in race.Race().update(teams,100)['teams']],[1,1,1])
+
     def test_last_print_count_determines_thin_label(self):
         out = race.project_market(dict(tick=6000, last_prices=[dict(self.price, prints=3)]), self.teams)
         self.assertFalse(out['last_prices'][0]['thin'])
@@ -99,6 +116,24 @@ class MarketDisplayTests(unittest.TestCase):
             self.assertNotIn('PRIVATE', json.dumps(view)); self.assertNotIn('wallet', json.dumps(view))
             with mock.patch.object(Reader, 'op', side_effect=RuntimeError('unsupported action')):
                 self.assertEqual(team_views.collect(Reader(), d)['market'], {})
+
+    def test_collector_uses_authoritative_coinage_for_selected_teams(self):
+        class Reader:
+            def op(self,action,args=None,team=None):
+                if action=='mt_feed':return {'tick':6000,'lines':[]}
+                if action=='mt_market':return {'teams':{
+                    'green':{'rung':'coinage','wallet':10000,'reserved':3000,'orders':'PRIVATE'},
+                    'yellow':{'rung':'swap','wallet':99999,'reserved':0},
+                    'blue':{'rung':'coinage','wallet':88888,'reserved':0}},'audit':'PRIVATE'}
+                return {}
+            def bots(self):return []
+        with tempfile.TemporaryDirectory() as d:
+            Path(d,'teams.tsv').write_text('green\tg1\tagy\tagy\tflash\thigh\tGemini Flash\tfh\nyellow\ty1\tgrok\tgrok\tgrok\tlow\tGrok 4.7\tfh\n')
+            Path(d,'green').mkdir();Path(d,'yellow').mkdir()
+            view=team_views.collect(Reader(),d)
+            self.assertEqual(view['market']['wallets'],{'green':{'coinage':True,'wallet':10000,'reserved':3000}})
+            self.assertNotIn('PRIVATE',json.dumps(view))
+            self.assertEqual(race.project_market(view['market'],self.teams)['wallets'],{'green':{'wallet':10000,'reserved':3000}})
 
     def test_repeated_capture_setup_releases_old_window_hook(self):
         obs = FakeOBS(); obs.inputs = [{'inputName': 'mt camera'}]

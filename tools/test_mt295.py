@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools/mt'))
@@ -61,6 +62,27 @@ class IdentityFeedTests(unittest.TestCase):
             expanded=identities.seeds(p)
             self.assertEqual(len({r['glyph'] for r in expanded.values()}),12)
             self.assertEqual(len({r['color'] for r in expanded.values()}),12)
+
+    def test_launch_registers_only_selected_models_before_profiles(self):
+        requests=[]
+        def encode(value):
+            requests.append(json.loads(value));return '"request"'
+        chosen={'display_name':'Vector','color':'#123456','glyph':'V'}
+        client=mock.Mock()
+        client.command.return_value=json.dumps({'ok':True,'result':chosen})
+        args=['identities',str(ROOT/'agent/mt/teams-test.tsv'),'green','--execute']
+        with mock.patch.object(sys,'argv',args),mock.patch.object(identities,'Harness',return_value=client),mock.patch.object(identities,'lua_string',side_effect=encode),mock.patch('builtins.print'):
+            identities.main()
+        self.assertEqual(requests[0]['action'],'mt_roster')
+        self.assertTrue(requests[0]['operator'])
+        self.assertEqual({r['name'] for r in requests[0]['args']['agents']},{'gemini','gemini2'})
+        self.assertTrue(all(r['model']=='Gemini 3.8 Flash' for r in requests[0]['args']['agents']))
+        self.assertEqual([r['action'] for r in requests[1:]],['profile','profile'])
+        self.assertTrue(all(r['args']=={} for r in requests[1:]),'chosen profiles stay intact')
+        client.reset_mock();client.command.return_value=json.dumps({'ok':False,'error':'no roster'})
+        with mock.patch.object(sys,'argv',args),mock.patch.object(identities,'Harness',return_value=client),mock.patch.object(identities,'lua_string',side_effect=encode):
+            with self.assertRaises(AssertionError):identities.main()
+        self.assertEqual(client.command.call_count,1,'a failed trusted roster prevents profile seeding')
 
     def test_game_objectives_follow_real_contact_only(self):
         teams={'green':['gemini','gemini2'],'yellow':['grok','grok2'],'blue':['muse','muse2']}

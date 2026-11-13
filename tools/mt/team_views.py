@@ -120,8 +120,13 @@ def collect(r, op):
         view['feed']=[]
     try:
         market=r.op('mt_market',{})
-        # Keep the display contract, not operator wallets, orders, audit or internal pair state.
+        # Explicit Coinage balances only; orders, audit and internal pair state stay private.
         view['market']={k:market.get(k) or [] for k in ('markers','last_prices')}
+        wallets={t:{'coinage':True,'wallet':v['wallet'],'reserved':v['reserved']}
+                 for t,v in (market.get('teams') or {}).items() if isinstance(v,dict)
+                 and v.get('rung')=='coinage' and 'wallet' in v and 'reserved' in v
+                 and t in {team for team,_ in teams_of(op)}}
+        if wallets:view['market']['wallets']=wallets
         view['market']['tick']=feed.get('tick')
     except Exception as e:
         view['market']={}  # Older harnesses have no markets; no placeholder on screen.

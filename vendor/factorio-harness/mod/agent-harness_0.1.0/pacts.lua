@@ -57,6 +57,11 @@ return function(api)
   local function fact(team, text, wake) if api.fact then api.fact(team, text, wake) end end
   local function both(p, text, wake) fact(p.a, text, wake); fact(p.b, text, wake) end
   local function other_of(p, team) return team == p.a and p.b or p.a end
+  local function roster(reader,other) return api.roster and api.roster(reader,other) or {} end
+  local function identity(team,name)
+    for _,r in ipairs(roster(team,team)) do if r.name==name then return r end end
+    return {name=name}
+  end
 
   -- The terms in words (fact lines and the status line).
   local function terms_text(t)
@@ -156,11 +161,14 @@ return function(api)
     end
     assert(#recent<6,'diplomacy rate limit: six messages per team per game minute; wait before sending again')
     recent[#recent+1]=game.tick;s.diplomacy_sent[team]=recent
-    local m={kind='diplomacy',seq=c.next,tick=game.tick,from_team=team,to_team=a.to,agent=who,text=text}
+    local author=identity(team,who)
+    local m={kind='diplomacy',seq=c.next,tick=game.tick,from_team=team,to_team=a.to,agent=who,identity=author,text=text}
     c.next=c.next+1;c.messages[#c.messages+1]=m
     if api.on_message then api.on_message(m) end
     while #c.messages>100 do table.remove(c.messages,1) end
-    local line='Diplomacy '..team..' ('..who..') -> '..a.to..': '..text
+    local shown=author.display_name or who
+    if author.model then shown=shown..' · '..author.model end
+    local line='Diplomacy '..team..' ('..shown..') -> '..a.to..': '..text
     fact(team,line,false);fact(a.to,line,true)
     return {message=m,delivered_to={team,a.to},note='Every agent of these two teams receives this message. Ordinary say/tell/board are private to your team.'}
   end
@@ -172,7 +180,7 @@ return function(api)
     local out={}
     for _,m in ipairs(c.messages) do if m.seq>since then out[#out+1]=m end end
     while #out>limit do table.remove(out,1) end
-    return {with=a.with,messages=out,last_seq=c.next-1,tick=game.tick,
+    return {with=a.with,agents=roster(team,a.with),messages=out,last_seq=c.next-1,tick=game.tick,
       note='Only this conversation. To negotiate with the other team, use diplomacy_send; say/tell/board stay within your own team.'}
   end
 
@@ -389,6 +397,7 @@ return function(api)
     local v = {id=p.id, a=p.a, b=p.b, status=p.status, terms=terms_text(p.terms), note=p.note, proposed_tick=p.proposed_by.tick,
       expires_tick=p.status == 'proposed' and p.expires_tick or nil, accepted_tick=p.accepted_by and p.accepted_by.tick or nil,
       ended_tick=p.ended and p.ended.tick or nil, ended_by=p.ended and p.ended.team or nil, lift_tick=p.lift_tick, replaces=p.replaces}
+    v.parties={{team=p.a,agents=roster(p.a,p.a)},{team=p.b,agents=roster(p.a,p.b)}}
     if p.ledger then
       local h = p.ledger[hour()]
       if h then v.this_hour = h end
@@ -441,7 +450,8 @@ return function(api)
       local team=caller(p);local contacts={}
       for other in pairs(teams()) do if other~=team and M.contacted(team,other) then contacts[#contacts+1]=other end end
       table.sort(contacts)
-      return {pacts=list(team),contacts=contacts,tick=game.tick,end_notice_s=cfg('end_notice_s'),
+      local counterparties={};for _,other in ipairs(contacts) do counterparties[#counterparties+1]={team=other,agents=roster(team,other)} end
+      return {pacts=list(team),contacts=contacts,counterparties=counterparties,tick=game.tick,end_notice_s=cfg('end_notice_s'),
         communication='say/tell/board are private to your team. Use diplomacy_send {to: TEAM, text: MESSAGE} to negotiate with a contacted team; diplomacy {with: TEAM} reads that conversation.'}
     end,
   }
@@ -724,7 +734,7 @@ return function(api)
       local s=team(t);local p=s.post
       local out={fault=state().fault and {state='quarantined',next={action='status',args={}}} or nil,
         rung=K.rung(t)==2 and 'coinage' or 'swap',post=p and p.valid and {position=copy(p.position),surface=p.surface.name} or false,
-        stock={},orders={},offers={},inbound={},fills={},embargoed={},transit_seconds=config('transit_ticks')/60,pair_stacks_per_minute=config('pair_stacks')}
+        stock={},orders={},offers={},inbound={},fills={},embargoed={},counterparties={},transit_seconds=config('transit_ticks')/60,pair_stacks_per_minute=config('pair_stacks')}
       if K.rung(t)==2 then out.wallet=s.wallet;out.reserved=s.reserved;out.available=s.wallet-s.reserved;out.reference_prices=copy(PRICES) end
       for _,n in ipairs(keys(PRICES)) do local nstock=amount(t,n);if nstock>0 then out.stock[n]=nstock end end
       for _,key in ipairs(keys(s.orders)) do
@@ -733,6 +743,7 @@ return function(api)
         out.orders[#out.orders+1]=row
       end
       for _,u in ipairs(contacts(t)) do
+        out.counterparties[#out.counterparties+1]={team=u,agents=roster(t,u)}
         local pairdata=pair(t,u);local us=state().teams[u]
         local blocked=pairdata.embargo and next(pairdata.embargo)~=nil
         if blocked then
@@ -746,6 +757,7 @@ return function(api)
           if o.status~='cancelled' and (o.other=='*' or o.other==t) and remaining>0 and (o.side=='offer' or K.rung(t)==2) then
             -- No peer wallet, stock, global order id, rival coordinates, or unrelated fill count.
             local row={id=book_id(pairdata,o),side=o.side,item=o.item,price=o.price,give=copy(o.give),get=copy(o.get),accept=accepting(t,o,remaining)}
+            row.agents=roster(t,u)
             if row.accept==false then row.blocked='no available coin; sell surplus first';row.next={action='status',args={}} end
             if blocked then row.accept=false;row.blocked='new matches stopped by embargo';row.next={action='status',args={}} end
             if #contacts(t)>1 then row.team=u end

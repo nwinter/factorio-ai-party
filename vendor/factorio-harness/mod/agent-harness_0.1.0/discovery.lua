@@ -15,6 +15,17 @@ return function(api)
     for other in pairs(teams()) do if other~=reader and M.known(reader,other) then return true end end
     return false
   end
+  -- Identity only: no position, activity, speech or unknown third-party roster.
+  function M.roster(reader,other)
+    if not M.active(reader) or not M.known(reader,other) then return {} end
+    local out={};local models=(api.state().mt or {}).roster or {}
+    for _,b in ipairs(api.bots and api.bots() or {}) do if b.force==other then
+      local p=api.profile and api.profile(b.index) or {}
+      out[#out+1]={name=b.name,display_name=p.display_name,model=models[b.name] and models[b.name].model}
+    end end
+    table.sort(out,function(a,b) return a.name<b.name end)
+    return out
+  end
   local function word(text,name)
     return text:lower():find('%f[%w_%-]'..name:lower():gsub('([^%w])','%%%1')..'%f[^%w_%-]')~=nil
   end
@@ -74,6 +85,7 @@ return function(api)
     end
     local function project(v,depth,context)
       if type(v)=='string' then
+        if context=='base-model' then return v end -- verified against the operator roster below
         if context=='wire-selection' and (v=='red' or v=='green' or v=='red+green') then return v end
         return text(v)
       end
@@ -103,6 +115,12 @@ return function(api)
           if type(k)=='string' and not (context=='wire-map' and (k=='red' or k=='green')) then key=text(k) end
           if key~=nil then
             local child=k=='circuit' and 'circuit' or nil
+            if k=='model' then
+              local models=(api.state().mt or {}).roster or {}
+              for _,b in ipairs(api.bots and api.bots() or {}) do
+                if b.name==v.name and M.known(reader,b.force) and models[b.name] and models[b.name].model==x then child='base-model' end
+              end
+            end
             if context=='circuit' then
               if k=='wires' or k=='networks' then child='wire-map'
               elseif k=='settings' then child='circuit-settings' end

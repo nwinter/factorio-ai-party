@@ -225,6 +225,15 @@ function statusOf(a, t) {
   return {word: {resting: 'BETWEEN TURNS', offline: 'OFFLINE', dead: 'DOWN'}[a.activity], color: LAMP[a.activity]};
 }
 let clockTop = null;
+function shortModel(a) {
+  const s = String(a.model || '');
+  return /^(Gemini|Grok|Muse)\b/i.test(s) ? s.split(' ')[0] : s;
+}
+function agentName(a, f, room, upper = false) {
+  const name = upper ? a.shown.toUpperCase() : a.shown, base = fit(shortModel(a), f, room * .6);
+  const suffix = base ? ' (' + (upper ? base.toUpperCase() : base) + ')' : '';
+  return fit(name, f, Math.max(0, room - width(suffix, f))) + suffix;
+}
 function ingest(s) {
   // An older save was loaded (the game clock went back): news and speech from after it no longer happened.
   const ticks = (s.teams || []).filter(t => !t.stale && t.tick != null).map(t => t.tick), top = ticks.length ? Math.max(...ticks) : null;
@@ -242,7 +251,7 @@ function ingest(s) {
   model = {order, agents, teams, cam: s.camera && teams.has(s.camera.team) ? s.camera : null};
   feedSync(s); newsSync(s);
   document.getElementById('summary').textContent = order.map(t => `${t.team}${t.rank != null ? ': ' + t.gap : ''}${t.research && t.research.done_count != null ? ', ' + t.research.done_count + ' technologies' : ''}. ` +
-    (t.agents || []).map(a => { const st = statusOf(a, t); return a.shown + (st.word ? ': ' + st.word.toLowerCase() : ''); }).join('. ')).join(' / ');
+    (t.agents || []).map(a => { const st = statusOf(a, t); return a.shown + (a.model ? ' · ' + a.model : '') + (st.word ? ': ' + st.word.toLowerCase() : ''); }).join('. ')).join(' / ');
 }
 
 function rewind() {
@@ -338,6 +347,12 @@ function drawCard(t, x, y, w, h) {
     if (r.progress != null) belt(cx + 42, top + 24, br - cx - 42 - (stacked ? pw : 0), 10, col, r.progress, !t.stale && !t.paused);
   }
   // the roster
+  const coins = state.market && state.market.wallets && state.market.wallets[t.team];
+  if (coins) {
+    const cf = font(13, 700), value = coins.wallet.toLocaleString('en-US') + ' COIN';
+    const reserve = coins.reserved ? ' · ' + coins.reserved.toLocaleString('en-US') + ' RESERVED' : '';
+    text(fit(value + reserve, cf, ir - cx), ir, stacked ? y + h - 8 : y + 102, cf, C.gold, {align: 'right'});
+  }
   if (mode === 'row') list.forEach((a, i) => drawChip(a, t, cx + i * (each + 8), y + 108, each, col, 48));
   else if (mode === 'column') { const pitch = k > 2 ? 52 : 70, y0 = y + (h - (k - 1) * pitch - 48) / 2; list.forEach((a, i) => drawChip(a, t, cr - rosterW, y0 + i * pitch, rosterW, col, 48)); }
   else if (mode === 'faces') { const size = each >= 50 ? 48 : Math.max(24, Math.floor(each) - 2); list.forEach((a, i) => drawChip(a, t, cx + i * (each + 8), y + 108, size + 4, col, size)); }
@@ -368,7 +383,7 @@ function drawChip(a, t, x, y, w, col, size) {
   let ox = 0; const fits = extra => width(a.shown, nf) + extra <= room;
   if (a.icon && fits(24)) { icon('item', a.icon, tx, y + 3, 20); ox = 24; }
   else if (a.glyph && fits(width(a.glyph, font(16, 700)) + 6)) { ox = text(a.glyph, tx, y + 20, font(16, 700), bright(a.tone)) + 6; }
-  text(fit(a.shown, nf, room - ox), tx + ox, y + 20, nf, C.ink);
+  text(agentName(a, nf, room - ox), tx + ox, y + 20, nf, C.ink);
   text(fit(st.word, font(12, 700), room, .8), tx, y + 40, font(12, 700), st.color, {ls: .8});
 }
 
@@ -440,7 +455,7 @@ function receipt(it) {
 }
 const BIG = font(23, 600), SMALL = font(18, 600);
 function laneOf(it) {  // who a team line is for; every team line but an answer to a viewer wears the padlock
-  if (it.kind === 'tell') return 'TO ' + it.to.map(n => n === 'team' ? 'TEAM' : ((who(it.team, n) || {}).shown || cap(n)).toUpperCase()).join(', ');
+  if (it.kind === 'tell') return 'TO ' + it.to.map(n => { const a = who(it.team, n); return n === 'team' ? 'TEAM' : a ? a.shown.toUpperCase() + (a.model ? ' (' + shortModel(a).toUpperCase() + ')' : '') : cap(n).toUpperCase(); }).join(', ');
   return 'TO TEAM';
 }
 const speaks = it => !['board', 'identity', 'market'].includes(it.kind);  // system facts never impersonate an agent
@@ -454,7 +469,7 @@ function measure(it, w, big) {
     return 34 + n * (big ? 28 : 24) + (receipt(it) ? 22 : 0) + 10;
   }
   if (big) return 12 + 72 + 12 + wrap(it.text, BIG, w - 34, 7).length * 30 + 12 + (it.kind === 'diplomacy' ? 26 : 0);
-  return (it.kind === 'diplomacy' ? 26 : 0) + Math.max(68, 34 + wrap(it.text, SMALL, w - 90, it.kind === 'diplomacy' ? 3 : 2).length * 24 + 10);
+  return (it.kind === 'diplomacy' ? 26 : 18) + Math.max(68, 34 + wrap(it.text, SMALL, w - 90, it.kind === 'diplomacy' ? 3 : 2).length * 24 + 10);
 }
 function typed(lines, it) {  // the newest line is typed out as it arrives
   const shown = (T() - it.t0) * 75; let total = 0; for (const l of lines) total += l.length;
@@ -468,7 +483,7 @@ function drawNote(it, x, y, w, h) {
   if (it.kind === 'board') {  // the team board: a plan, note or step, pinned under its author
     plate(x + 22, y, w - 22, h, {cut: 8, corners: 'tr,bl', fill: '#262524', fill2: '#201f1e', bevel: false}); box(x + 22, y, 3, h - 8, fade(col, .8));
     portrait(a, x + 34, y + 8, 24, col);
-    const nw = text(fit(a.shown, font(15, 700), w * .4), x + 66, y + 22, font(15, 700), bright(col));
+    const nw = text(agentName(a, font(15, 700), w * .48), x + 66, y + 22, font(15, 700), bright(col));
     text('TEAM BOARD', x + 74 + nw, y + 21, font(11, 700), C.dim, {ls: 1}); text(clockOf(it.tick), x + w - 12, y + 21, font(12, 600), C.dim, {align: 'right'});
     wrap(it.text, NOTE, w - 62, 2).forEach((l, i) => text(l, x + 34, y + 45 + i * 21, NOTE, C.muted));
     return;
@@ -524,9 +539,9 @@ function drawBubble(it, x, y, w, h, e, life) {
   ctx.globalAlpha = body;
   if (big) {
     portrait(a, x + 18, top + 12, 72, col);
-    const nf = font(32, 800, 'disp'), nx = x + 104, room = x + w - 14 - nx;
+    const nf = font(28, 800, 'disp'), nx = x + 104, room = x + w - 14 - nx;
     let ox = 0; if (a.icon) { icon('item', a.icon, nx, top + 16, 24); ox = 30; } else if (a.glyph) ox = text(a.glyph, nx, top + 38, font(22, 700), bright(a.tone)) + 8;
-    text(fit(a.shown.toUpperCase(), nf, room - ox - width(stamp, font(14, 600)) - 10, .5), nx + ox, top + 40, nf, C.ink, {ls: .5});
+    text(agentName(a, nf, room - ox - width(stamp, font(14, 600)) - 10, true), nx + ox, top + 40, nf, C.ink);
     text(stamp, x + w - 14, top + 38, font(14, 600), C.dim, {align: 'right'});
     const tw2 = tag(it.team.toUpperCase(), nx, top + 50, col, {solid: true});
     if (lane) { const lx = nx + tw2 + 10, locked = !it.reply; if (locked) padlock(lx, top + 53, C.muted); text(fit(lane, font(13, 700), room - tw2 - 26, .8), lx + (locked ? 16 : 0), top + 65, font(13, 700), it.reply ? C.cyan : C.muted, {ls: .8}); }
@@ -534,10 +549,10 @@ function drawBubble(it, x, y, w, h, e, life) {
   } else {
     portrait(a, x + 16, top + 10, 48, col);
     const nx = x + 76, room = x + w - 14 - nx, nf = font(17, 700), sw = width(stamp, font(13, 600));
-    const nw = text(fit(a.shown, nf, room * .55), nx, top + 25, nf, bright(col));
-    if (lane) { const lx = nx + nw + 12, locked = !it.reply; if (locked) padlock(lx, top + 13, C.dim); text(fit(lane, font(12, 700), room - nw - sw - 40, .8), lx + (locked ? 15 : 0), top + 24, font(12, 700), it.reply ? C.cyan : C.muted, {ls: .8}); }
+    text(agentName(a, nf, room - sw - 8), nx, top + 25, nf, bright(col));
+    if (lane) { const locked = !it.reply; if (locked) padlock(nx, top + 31, C.dim); text(fit(lane, font(11, 700), room - 16, .5), nx + (locked ? 15 : 0), top + 42, font(11, 700), it.reply ? C.cyan : C.muted, {ls: .5}); }
     text(stamp, x + w - 14, top + 24, font(13, 600), C.dim, {align: 'right'});
-    wrap(it.text, SMALL, w - 90, dip ? 3 : 2).forEach((l, i) => text(l, nx, top + 49 + i * 24, SMALL, C.text));
+    wrap(it.text, SMALL, w - 90, dip ? 3 : 2).forEach((l, i) => text(l, nx, top + (dip ? 49 : 67) + i * 24, SMALL, C.text));
   }
   pop();
 }
@@ -671,7 +686,7 @@ function lowerThird(c, cam, team, col, slide) {
     plate(x, y, w, h, {cut: 14, corners: 'tl,br', fill: 'rgba(30,29,28,.94)', fill2: 'rgba(20,19,19,.94)'}); box(x, y + 14, 7, h - 14, col);
     portrait(a, x + 22, y + 16, 72, col);
     let nx = x + 112; if (a.icon) { icon('item', a.icon, nx, y + 16, 32); nx += 40; } else if (a.glyph) nx += text(a.glyph, nx, y + 46, font(30, 700), bright(a.tone)) + 10;
-    const nw = text(fit(name, nf, w - (nx - x) - 20, 1), nx, y + 50, nf, C.ink, {ls: 1});
+    const nw = text(fit(name, nf, w - (nx - x) - width(meta, font(15, 600)) - 34, 1), nx, y + 50, nf, C.ink, {ls: 1});
     text(fit(meta, font(15, 600), w - (nx - x) - nw - 34), nx + nw + 14, y + 48, font(15, 600), C.muted);
     // with no activity read, the model beside the name already says all the roster knows
     if (a.activity || team.stale || team.paused) { if (a.activity) lamp(x + 120, y + 67, 6, LAMP[a.activity] || C.dim, a.activity === 'acting'); text(fit(st.word, font(15, 700), w - 150, 1), x + (a.activity ? 134 : 112), y + 72, font(15, 700), st.color, {ls: 1}); }

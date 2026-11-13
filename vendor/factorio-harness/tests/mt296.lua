@@ -16,6 +16,7 @@ local function inventory()
 end
 local function reload()
  P=dofile('mod/agent-harness_0.1.0/pacts.lua'){state=function() return s end,team_now=function() return teamname end,
+ roster=function(reader,other) return {{name=other..'1',display_name='Pilot '..other,model=other=='blue' and 'Grok 4.7' or 'Gemini 3.8 Flash'}} end,
  request_id=function() return requestid end,on_market=function(e) news[#news+1]=e end,
  as_team=function(t,fn) local prev=teamname;teamname=t;local r=fn();teamname=prev;return r end,fact=function() end};K=P.market
 end
@@ -243,3 +244,9 @@ s.mt.market.teams.blue.post.inv.capacity=30;tick(6000)
 local ledger=s.mt.pacts.by_id[pid].ledger[0];eq(ledger.received.blue['iron-ore'],30);eq(ledger.sent.red['iron-ore'],30);eq(ledger.cut,nil)
 s.mt.market.teams.blue.post.inv.capacity=100;tick(6060);tick(6120);eq(ledger.received.blue['iron-ore'],100)
 print('mt296 pact integration total: '..checks)
+
+reset(true,true);stock('blue','copper-plate',100);sell('blue','copper-plate',100,20,0)
+local book=call('red','market',{})
+eq(#book.counterparties,1);eq(book.counterparties[1].team,'blue');eq(book.counterparties[1].agents[1].model,'Grok 4.7')
+eq(#book.offers,1);eq(book.offers[1].agents[1].name,'blue1');eq(#book.offers[1].agents,1)
+print('mt296 contacted offer identities: ok')

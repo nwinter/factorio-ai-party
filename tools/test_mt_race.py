@@ -331,7 +331,7 @@ class IdentityTest(unittest.TestCase):
 
     def test_death_news_uses_the_chosen_name(self):
         state={'now':100,'tick':6300,'agents':[{'name':'gemini','display_name':'Vesper'}],'chronicle':{'events':[{'kind':'death','agent':'gemini','tick':6200,'cause':'PRIVATE'}]}}
-        self.assertEqual(race.project('green',state,AGENTS,100)['events'][0]['text'],'Vesper was lost')
+        self.assertEqual(race.project('green',state,AGENTS,100)['events'][0]['text'],'Vesper · Flash was lost')
 
 
 class ConversationTest(unittest.TestCase):

@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'stream'))
 from caster import spoken, talk_pick, near_same
 from serve import AudioHub
 import voices
-from public_race import speech, label, rows, obj
+from public_race import speech, label, rows, obj, agent_label
 
 PRIORITY = {'death': 9, 'platform_lost': 9, 'fight': 9, 'rocket': 8,
             'contact': 7, 'pact': 7, 'market': 6, 'research': 5, 'build': 3, 'radio': 1}
@@ -78,7 +78,7 @@ def candidates(state, now):
             ok, _, picked = talk_pick({'text': text, 'agent': m['name']}, limit=200)
             if not ok:
                 continue
-            who = label(agent.get('display_name')) or label(m['name'])
+            who = agent_label(agent)
             if not who:
                 continue
             text = f'{team.capitalize()} radio. {who} says, {spoken(picked)}'
@@ -87,7 +87,7 @@ def candidates(state, now):
     for team, t in teams.items():
         for a in map(obj, rows(t.get('agents'))):
             if a.get('verb') == 'fight' and a.get('activity') == 'acting':
-                who = label(a.get('display_name')) or label(a.get('name'))
+                who = agent_label(a)
                 if who:
                     out.append(dict(id=f'fight:{team}:{a.get("name")}', kind='fight', team=team,
                                     text=f'{team.capitalize()}. {who} is fighting.', at=now))

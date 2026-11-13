@@ -2,7 +2,27 @@
 -- speech bubbles `say` draws over the speaker. `profiles` is what the stream
 -- overlay polls: every player's and bot's profile, where it is and what it does.
 return function(api)
-  local M = {handlers={}}
+  local M = {handlers={},operator={}}
+  -- Base models come from the launch roster, never an agent-chosen profile.
+  function M.model(name)
+    local mt=api.state().mt
+    return mt and mt.roster and mt.roster[name] and mt.roster[name].model or nil
+  end
+  function M.operator.mt_roster(a)
+    local mt=assert(api.state().mt,'no team setup')
+    assert(type(a.agents)=='table' and #a.agents<=12,'agents: up to twelve roster entries')
+    local bots={};for _,b in ipairs(api.bots()) do bots[b.name]=b end
+    local pending={}
+    for _,r in ipairs(a.agents) do
+      assert(type(r)=='table' and bots[r.name] and mt.teams[bots[r.name].force],'unknown roster agent')
+      assert(not pending[r.name],'duplicate roster agent')
+      assert(type(r.model)=='string' and #r.model>=1 and #r.model<=60 and r.model:match('^[%w .+%-]+$'),'model: plain public label, 1..60 bytes')
+      pending[r.name]={model=r.model}
+    end
+    mt.roster=mt.roster or {}
+    for name,r in pairs(pending) do mt.roster[name]=r end
+    return {updated=#a.agents}
+  end
   local BUBBLE_TICKS, WRAP, MAX_LINES = 480, 40, 6
   local function store()
     local s = api.state()
@@ -93,8 +113,8 @@ return function(api)
       voice='your stream voice (Deepgram Aura-2 speaker, lower case): apollo arcas aries atlas hermes hyperion janus jupiter mars neptune odysseus orion orpheus pluto saturn zeus (masculine); amalthea andromeda asteria athena aurora callista cora cordelia delia electra harmonia helena hera iris juno luna minerva ophelia pandora phoebe theia vesta (feminine); unset or unknown: a default picked from your name; one another agent holds is refused',
       pronouns='optional, 0..32 characters of free text (e.g. "she/her", "they/them", "it"); casters use them when they talk about you; "" clears',
       avatar='pixel portrait, every field optional (unset ones follow from your name): base engineer|robot|biter|drone, helmet none|hardhat|armor|power|crest|hood, visor none|goggles|slit|wide|mono|grid, emblem none|gear|bolt|flask|plate|circuit|rocket|leaf|star, accessory none|antenna|headlamp|scarf|tank|horns|earpiece|pipe|headset, backdrop dark|grid|hazard|glow|night, accent "#rrggbb" (second colour; suit is your color); false clears',
-      returns='your profile; with no arguments just reads it'},
-    profiles = {returns='every player and bot of your team (directors excluded): kind bot|player, name, display_name, persona, color, glyph, motto, avatar, voice, pronouns, position, surface, where (planet, "platform NAME" or "cargo pod to ..."), travel (bots: ascending|aboard|descending), alive, active (current action kind or false), last_said {text,tick}'},
+      returns='your profile, including the read-only base model from the launch roster; with no arguments just reads it'},
+    profiles = {returns='every player and bot of your team (directors excluded): kind bot|player, name, display_name, model (read-only base model), persona, color, glyph, motto, avatar, voice, pronouns, position, surface, where (planet, "platform NAME" or "cargo pod to ..."), travel (bots: ascending|aboard|descending), alive, active (current action kind or false), last_said {text,tick}'},
   }
   -- A glyph tags one agent: one another agent holds is refused, naming the
   -- holder (shake3: Astra and Muse both had ✦, Sol and Sonnet both S). Case
@@ -157,6 +177,7 @@ return function(api)
     end
   end
   function M.handlers.profile(p, a)
+    assert(a.model==nil and a.base_model==nil,'base model is set by the launch roster')
     local all = store()
     local pr = all[p.index] or {}
     local changed = false
@@ -211,6 +232,7 @@ return function(api)
     end
     local out = public(all[p.index])
     out.name = p.name; out.kind = api.is_bot(p) and 'bot' or 'player'
+    out.model = M.model(p.name)
     return out
   end
   -- Space Age: where an agent is, for the overlay: a planet, "platform NAME",
@@ -228,6 +250,7 @@ return function(api)
     local pr = store()[index]
     local out = public(pr)
     out.kind = kind; out.name = name
+    out.model = M.model(name)
     local alive = character ~= nil and character.valid
     out.alive = alive
     out.position = alive and character.position or pos
