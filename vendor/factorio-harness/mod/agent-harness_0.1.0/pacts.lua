@@ -579,12 +579,20 @@ return function(api)
       ['solid-fuel']='chemical-science-pack',['electric-engine-unit']='chemical-science-pack',
       ['flying-robot-frame']='chemical-science-pack',['low-density-structure']='chemical-science-pack',
       ['rocket-fuel']='chemical-science-pack'}
-    local CFG={enabled=true,transit_ticks=5400,batch_ticks=600,pair_stacks=10,destructible=false,
+    -- raid_share: the part of the wallet a destroyed home Post spills (design v3: 25%). wreck: spilled coin goes into a
+    -- coin wreck (a character corpse: robots and inserters cannot reach it; any team's character loots it with mine)
+    -- instead of items on the ground. Off by default: prepared-base fixtures keep ground spills; the full game's
+    -- profile (PROFILES.full) turns it on.
+    local CFG={enabled=true,transit_ticks=5400,batch_ticks=600,pair_stacks=10,destructible=false,raid_share=0.25,wreck=false,
       research_enabled=true,growth_coin_per_rate=5,level_rate=0.001,
       grants={['mt-coinage']=10000,['logistic-science-pack']=5000,['chemical-science-pack']=5000,
         ['production-science-pack']=5000,['utility-science-pack']=5000,['space-science-pack']=10000,
         ['metallurgic-science-pack']=5000,['electromagnetic-science-pack']=5000,
         ['agricultural-science-pack']=5000,['cryogenic-science-pack']=5000}}
+    -- (mt302) A full game's market in one call: mt_market {profile="full"} (tools/mt/start-mt.sh in POG_RUN_MODE=full).
+    -- Home Posts can be destroyed (25% of the wallet spills into a coin wreck), the tier grants at their defaults,
+    -- research income on. The pact settings stay at pacts.lua's DEFAULTS; the reply shows them.
+    local PROFILES={full={destructible=true,raid_share=0.25,wreck=true,research_enabled=true,enabled=true}}
     local function copy(v)
       if type(v)~='table' then return v end
       local r={} for k,x in pairs(v) do r[k]=copy(x) end return r
@@ -1151,7 +1159,32 @@ return function(api)
     -- The wallet includes unmatched buy reserves. A raid cancels bids if needed to free the stolen amount;
     -- matched purchases have already left that wallet into payment escrow and are irrevocable.
     local deposit
+    -- (mt302) Coin out of a destroyed entity into a coin wreck: a character corpse (no force, no collision, never
+    -- expires; inserters and robots cannot take from it; any team's character takes it with mine, bots.lua M.mine).
+    -- lots: {{count=,quality=}}. Returns the coin put in and where; nil when no wreck could be made (the caller spills
+    -- on the ground then, as before).
+    local function wreck(surface,position,lots)
+      local slots,total=0,0
+      for _,l in ipairs(lots) do slots=slots+math.ceil(l.count/1000);total=total+l.count end
+      if total<=0 then return nil end
+      local ok,w=pcall(surface.create_entity,{name='character-corpse',position=position,inventory_size=math.max(1,slots)})
+      if not (ok and w and w.valid) then return nil end
+      local i=w.get_inventory(defines.inventory.character_corpse)
+      local put=0
+      for _,l in ipairs(lots) do put=put+i.insert{name=COIN,count=l.count,quality=l.quality} end
+      if put~=total then i.clear();w.destroy();return nil end
+      return put,{x=w.position.x,y=w.position.y,surface=surface.name}
+    end
+    local function ground(surface,position,n,quality)
+      local dropped=surface.spill_item_stack{position=position,stack={name=COIN,count=n,quality=quality},enable_looted=true,
+        allow_belts=false,use_start_position_on_failure=true,drop_full_stack=true}
+      local actual=0
+      for _,v in pairs(dropped or {}) do if v.valid and v.stack and v.stack.valid_for_read then actual=actual+v.stack.count end end
+      return actual
+    end
     local function spill_contents(e)
+      -- A character keeps its coin: the game leaves it in the character's corpse (the corpse rule), for any team to loot.
+      if e.type=='character' then return end
       local s=state();s.entity_spills=s.entity_spills or {}
       local surface,position=e.surface,e.position -- clearing a ground stack may invalidate its entity
       local key=e.unit_number and tostring(e.unit_number)
@@ -1183,13 +1216,19 @@ return function(api)
       if #lots==0 then return end
       if key then s.entity_spills[key]=rec else s.spills[#s.spills+1]=rec end
       transact(rec,function()
+        local taken={}
         for _,lot in ipairs(lots) do
           local n=lot.remove();rec.removed=rec.removed+n;assert(n==lot.count,'coin removal incomplete')
-          local dropped=surface.spill_item_stack{position=position,stack={name=COIN,count=n,quality=lot.quality},enable_looted=true,
-            allow_belts=false,use_start_position_on_failure=true,drop_full_stack=true}
-          local actual=0
-          for _,v in pairs(dropped or {}) do if v.valid and v.stack and v.stack.valid_for_read then actual=actual+v.stack.count end end
-          rec.dropped=rec.dropped+actual;assert(actual==n,'coin spill incomplete: quarantined')
+          taken[#taken+1]={count=n,quality=lot.quality}
+        end
+        local put,at=nil,nil
+        if config('wreck') then put,at=wreck(surface,position,taken) end
+        if put then rec.dropped=put;rec.wreck=at
+        else
+          for _,l in ipairs(taken) do
+            local actual=ground(surface,position,l.count,l.quality)
+            rec.dropped=rec.dropped+actual;assert(actual==l.count,'coin spill incomplete: quarantined')
+          end
         end
         rec.status='spilled' -- physical custody moved; issuance and physical supply do not change.
       end)
@@ -1204,15 +1243,15 @@ return function(api)
       -- Coins just inserted since the last one-second pass already belong to this team.
       -- Credit them before chest destruction can erase their physical stack.
       deposit(t)
-      local n=math.floor(s.wallet*.25)
+      local n=math.floor(s.wallet*config('raid_share'))
       local rec={unit=e.unit_number,count=n,status='preparing',tick=game.tick};s.spills[tostring(e.unit_number)]=rec
       transact(rec,function()
         if s.wallet-s.reserved<n then for _,o in pairs(s.orders) do if o.side=='buy' then cancel_order(t,o,'home Post raided') end end end
         s.wallet=s.wallet-n;rec.debited=n
-        local dropped=n>0 and e.surface.spill_item_stack{position=e.position,stack={name=COIN,count=n},enable_looted=true,
-          allow_belts=false,use_start_position_on_failure=true,drop_full_stack=true} or {}
-        local actual=0
-        for _,v in pairs(dropped or {}) do if v.valid and v.stack and v.stack.valid_for_read then actual=actual+v.stack.count end end
+        local put,at=nil,nil
+        if n>0 and config('wreck') then put,at=wreck(e.surface,e.position,{{count=n,quality='normal'}}) end
+        local actual
+        if put then actual=put;rec.wreck=at else actual=n>0 and ground(e.surface,e.position,n,'normal') or 0 end
         rec.dropped=actual;state().physical=state().physical+actual
         assert(actual==n,'coin spill incomplete: quarantined');rec.status='spilled'
       end)
@@ -1359,12 +1398,19 @@ return function(api)
     end
     function K.operator.mt_market(a)
       local s=state()
+      if a.profile~=nil then
+        local p=PROFILES[a.profile];assert(p,'profile: full (the only profile)')
+        assert(a.config==nil,'profile and config: one at a time')
+        a.config=copy(p);a.config.grants=copy(CFG.grants)
+      end
       if a.config then
         for k,v in pairs(a.config) do
           assert(CFG[k]~=nil,'unknown market setting')
           if k=='grants' then
             assert(type(v)=='table','grants: table')
             for name,n in pairs(v) do assert(CFG.grants[name]~=nil,'unknown grant tier');integer(n,0,1000000,name) end
+          elseif k=='raid_share' then
+            assert(type(v)=='number' and v>=0 and v<=1,'raid_share: a number 0..1')
           elseif k=='growth_coin_per_rate' or k=='level_rate' then
             assert(type(v)=='number' and v==v and v>=0 and v<=1000000,k..': finite number 0..1000000')
           elseif type(CFG[k])=='boolean' then assert(type(v)=='boolean','boolean setting')
@@ -1387,9 +1433,14 @@ return function(api)
           else s.config[k]=v end
         end
       end
+      if a.profile~=nil then s.config.profile=a.profile;s.config.profile_tick=game.tick end
       for _,t in ipairs(mt().order or {}) do K.sync(t) end
       if a.compact==true then K.compact(true) end
       local out={audit=K.audit(),research_reference_prices=copy(SCIENCE),teams={},pairs=s.pairs,markers={},last_prices={},records=K.sizes()}
+      -- (mt302) the settings in force, and the pact settings beside them (a full game uses pacts.lua's DEFAULTS)
+      out.settings={profile=s.config and s.config.profile or nil}
+      for k in pairs(CFG) do out.settings[k]=copy(config(k)) end
+      out.pact_settings={end_notice_s=cfg('end_notice_s'),share_max_score=cfg('share_max_score'),expires_min=cfg('expires_min'),terms=copy(cfg('terms'))}
       for _,p in pairs(s.pairs) do
         local prices={}
         for name,v in pairs(p.folded and p.folded.prints or {}) do
