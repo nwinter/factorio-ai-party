@@ -98,7 +98,7 @@ def main():
         home = (out / "index.html").read_text()
         nav = re.search(r'<nav class="site-nav".*?</nav>', home, re.S).group(0)
         # Polls, Updates, How it was made and GitHub under More (batch270)
-        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "The run", "Agents", "Timeline", "Chronicle", "Chat", "Search", "About", "Polls", "Ideas", "Updates", "How it was made", "GitHub"], nav
+        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "Team runs", "The run", "Agents", "Timeline", "Chronicle", "Chat", "Search", "About", "Polls", "Ideas", "Updates", "How it was made", "GitHub"], nav
         more = nav.split('<details class="nav-more">')[1]
         assert re.findall(r">([^<]+)</a>", more) == ["Polls", "Ideas", "Updates", "How it was made", "GitHub"], more
         page = (out / "runs" / "long" / "index.html").read_text()
