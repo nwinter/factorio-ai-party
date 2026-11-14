@@ -1,5 +1,16 @@
 # Stage 1 adversarial coverage
 
+Stage-2 coverage (`mod/tests/mt303_test.lua`, auto-discovered by the full harness): every buyer/seller/third-party/
+no-force loss branch across death, final mining, deconstruction, entry and raised script removal; registered
+object destruction and missing-entity fallback; buyer pre-removal denial; duplicate terminal receipts; partial
+arrivals; fixed no-path fallback; dispatch and newly acquired allies sticky after ending, including non-cease-fire
+pacts; shared partners; own-source protection; no route ETA; uncharted loss coordinates and unknown-killer identity
+hidden; identical unknown/invented addresses; conserved coin including destruction; reload of live units and
+terminal losses; same-surface offworld and platform Post selection; no cross-surface settlement; exact stock-stack
+transfer with quality/ammo/tags into one raid wreck; destroyed stock conservation after reload; private metrics.
+The CLI suite tests reference/action gating at Freight; the market display suite admits loss events and no-ETA
+platform markers without admitting private measurements. Native results are recorded separately in report-mt303.md.
+
 Spec/reviews: /Users/owner/code/pog-operator/markets/design-v3.md,
 /Users/owner/code/pog-operator/markets/review-codex.md,
 /Users/owner/code/pog-operator/markets/review-fable-v2.md.

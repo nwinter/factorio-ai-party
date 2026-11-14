@@ -52,9 +52,9 @@ def project_feed(messages,teams):
         if kind=='market':
             event=m.get('event','fill')
             if (scope!='market' or m.get('system') is not True or agent!='Trading Post'
-                or event not in ('fill','coinage','raid','embargo')
+                or event not in ('fill','coinage','raid','embargo','shipment_loss')
                 or type(m.get('source_seq')) is not int or m['source_seq']<1):continue
-            if event in ('fill','embargo'):
+            if event in ('fill','embargo','shipment_loss'):
                 if len(to)!=1 or to[0] not in rosters or to[0]==team:continue
             elif to:continue
             body=text(m.get('text'),4000)

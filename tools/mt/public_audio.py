@@ -69,11 +69,11 @@ def candidates(state, now):
         if kind == 'market':
             event = m.get('event', 'fill')
             if (m.get('system') is not True or m.get('name') != 'Trading Post'
-                    or event not in ('fill', 'coinage', 'raid', 'embargo')
+                    or event not in ('fill', 'coinage', 'raid', 'embargo', 'shipment_loss')
                     or type(m.get('source_seq')) is not int or m['source_seq'] <= 0):
                 continue
             other = m.get('to_team')
-            if (event in ('fill', 'embargo') and (other not in teams or other == team)
+            if (event in ('fill', 'embargo', 'shipment_loss') and (other not in teams or other == team)
                     or event in ('coinage', 'raid') and other):
                 continue
             text = 'Trading Post. ' + spoken(text)

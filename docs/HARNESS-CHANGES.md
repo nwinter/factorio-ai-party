@@ -1,5 +1,28 @@
 # Harness changes, 2026-10-10 (branch `pog-eng`, uncommitted)
 
+## mt303 (private): Freight, Orbital Posts, and stocked raid wrecks
+
+Problem: the stage-1 timer could not express raidable Freight, orders only used the Nauvis home Post, and destroying
+a stocked Post lost its goods while spilling its coin. Nick approved stage 2 and required stock and coin to share
+one recoverable wreck, with no combat reward.
+
+Change: logistic science enables buyer-force shipment units, native path requests with a fixed no-path fallback,
+64-tile endpoint protection and exact-arrival payment. Every custody loss uses the buyer/seller/third-party rule;
+pact and cease-fire membership stays sticky. Forward Posts accept same-surface orders, including other planets and
+platforms after the first platform. Destroyed Post stacks transfer intact into the coin wreck. Status, references,
+viewer losses/moving markers and private per-team money measurements follow these rules without route ETAs or
+unmet-team disclosure. Cross-surface movement remains native rocket/pod logistics; no cargo pod force is written.
+
+Verified on private 2.1.24: native path/no-path probe, all money branches, bare and raised destruction, buyer custody
+locks, protected damage, actual arrival without charting the seller's base, sticky cease-fire, live-shipment reload,
+platform-local settlement, native no-pad pod, and Post-stock wreck reload preserving rare quality and magazine ammo.
+Focused fixture: 506 assertions; full harness and private two-team run evidence are recorded in
+/Users/owner/code/pog-operator/report-mt303.md and /Users/owner/code/personal/player-of-games/artifacts/mt303.
+
+Players: use `post {position}` on an own chest, then its ID on orders. Deliveries pay only goods actually inserted;
+clear a full destination Post. An embargo stops new matches after a hostile loss. Use native pods between surfaces,
+and recover a raided Post's goods and coins from its wreck by hand.
+
 All changes live in `factorio-harness/` (working tree only). Lua changes were hot-deployed to the dev world `live` and exercised there; the CLI was rebuilt with `npm run build`. Tests: `lua mod/tests/runtime_test.lua` (657 assertions), `lua tests/*.lua`, and `npm test` (57 pass; the 4 `bridge.test` cases fail only because this sandbox refuses Unix sockets, unrelated to these changes).
 
 ## 0. Fake-engine test for `clock.lua` (turn mode)

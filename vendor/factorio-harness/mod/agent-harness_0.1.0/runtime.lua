@@ -2309,7 +2309,7 @@ function M.describe_bundle()
   local bundle=BUNDLE_ID
   if bundle and M.pacts and M.pacts.open_for(M.team_now()) then bundle=bundle..':1' end
   if bundle and M.market and M.market.rung(M.team_now())>0 then
-    bundle=bundle..':m'..M.market.rung(M.team_now())..':'..tostring(next(M.market.schema(M.team_now()).offer or {})~=nil and M.market.schema(M.team_now()).offer.to~=nil)
+    bundle=bundle..':m'..M.market.rung(M.team_now())..':'..tostring(M.market.freight(M.team_now()))..':'..tostring(M.market.orbital(M.team_now()))..':'..tostring(next(M.market.schema(M.team_now()).offer or {})~=nil and M.market.schema(M.team_now()).offer.to~=nil)
   end
   return bundle
 end
@@ -18391,6 +18391,9 @@ for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 M.humans=require('humans'){state=state}
 -- (mt281, private) pacts between teams (pacts.lua): open for a team at its first contact; facts to both teams' agents
 M.pacts=require('pacts'){state=state,research_units=function(t,l) return M.research_cost.units(t,l) end,team_now=function() return M.team_now() end,who=function(p) return M.board.who(p) end,
+  shipment_seen=function(e) M.multiteam.shipment_seen(e) end,
+  market_ranks=function() local ranks={} for _,row in ipairs(M.multiteam.game.standings()) do ranks[row.team]=row.rank end return ranks end,
+  market_measure=function(rows) for _,row in ipairs(rows) do helpers.write_file('pog/mt-market-measures.jsonl',helpers.table_to_json(row)..'\n',true,0) end end,
   roster=function(reader,other) return M.discovery.roster(reader,other) end,
   request_id=function() return M.market_request_id end,
   on_market=function(e) M.teamfeed.market(e) end,
@@ -22290,6 +22293,7 @@ M.operator={
   end}
 end do local MAX_ALERTS=64
 function M.on_event(event)
+  if M.market then M.market.on_event(event) end
   if M.market and event.name==defines.events.on_entity_died then M.market.on_died(event) end
   -- (mt301) a team's agent killed on respawn by another team (multiteam.lua's wipe)
   if event.name==defines.events.on_entity_died and state().mt then pcall(M.multiteam.game.on_died,event) end

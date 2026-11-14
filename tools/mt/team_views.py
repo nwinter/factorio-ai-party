@@ -10,6 +10,7 @@ Reads per team: the operator requests carry the team's force as their `team` fie
 force (pog.for_force); chat and score rows come from the per-team logs start-mt.sh writes in op/TEAM/.
 """
 import argparse, html, json, os, sys, time, uuid
+from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -124,10 +125,21 @@ def collect(r, op):
         view['market']={k:market.get(k) or [] for k in ('markers','last_prices')}
         wallets={t:{'coinage':True,'wallet':v['wallet'],'reserved':v['reserved']}
                  for t,v in (market.get('teams') or {}).items() if isinstance(v,dict)
-                 and v.get('rung')=='coinage' and 'wallet' in v and 'reserved' in v
+                 and v.get('rung') in ('coinage','freight','orbital') and 'wallet' in v and 'reserved' in v
                  and t in {team for team,_ in teams_of(op)}}
         if wallets:view['market']['wallets']=wallets
         view['market']['tick']=feed.get('tick')
+        # Economy/rank evidence is private, never copied into the public view.
+        samples=market.get('measurements') or []
+        if samples:
+            path=Path(op)/'market-measures.jsonl'
+            cursor=Path(op)/'market-measures-tick.txt'
+            last_tick=int(cursor.read_text()) if cursor.exists() else None
+            fresh=[row for row in samples if row.get('tick')!=last_tick]
+            if fresh:
+                with path.open('a') as target:
+                    for row in fresh:target.write(json.dumps(row)+'\n')
+                cursor.write_text(str(fresh[-1]['tick']))
     except Exception as e:
         view['market']={}  # Older harnesses have no markets; no placeholder on screen.
         if 'unsupported action' not in str(e):

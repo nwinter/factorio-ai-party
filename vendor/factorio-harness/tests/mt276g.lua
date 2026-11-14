@@ -96,6 +96,8 @@ do
 
   -- a loss whose cause is another team's entity names its force; the enemy's by name alone
   local furnace={valid=true,name='stone-furnace',type='furnace',position={x=40,y=40},force=blue,surface=surface}
+  furnace.get_max_inventory_index=function() return 0 end
+  furnace.crafting_progress=0
   R.on_event{name=11,tick=200,entity=furnace,cause=turret,force=red}
   local inc
   for _,i in ipairs(s.losses) do if i.force=='blue' then inc=i end end
