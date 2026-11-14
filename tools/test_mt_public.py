@@ -163,6 +163,15 @@ class PublicTest(unittest.TestCase):
         with self.assertRaises(RuntimeError): stream.setup_obs(obs, 'url', {})
         self.assertEqual([c[0] for c in obs.calls], ['GetStreamStatus'])
 
+    def test_obs_recovery_preserves_recording_disk_hold_and_live_output(self):
+        obs = FakeOBS(live=True)
+        receipt = {'recording_hold': True, 'record_was_active': False, 'previous_scene': 'stream'}
+        stream.setup_obs(obs, 'http://127.0.0.1:8790/', receipt, recovering=True)
+        self.assertTrue(obs.live)
+        self.assertFalse(obs.recording)
+        self.assertEqual(obs.scene, 'mt-stream')
+        self.assertFalse(any(name in ('StartRecord', 'StopStream') for name,_ in obs.calls))
+
     def test_record_start_is_asynchronous(self):
         class DelayedOBS(FakeOBS):
             waiting = 2

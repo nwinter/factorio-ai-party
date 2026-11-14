@@ -55,7 +55,7 @@ def healthy(s,op):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('run');p.add_argument('fault',choices=['obs','camera','tunnel','relay','publisher','youtube','modal'])
+    p.add_argument('run');p.add_argument('fault',choices=['obs','camera','tunnel','relay','publisher','youtube','modal','feed'])
     p.add_argument('--execute',action='store_true');p.add_argument('--timeout',type=int,default=600)
     a=p.parse_args();op=op_dir(a.run)
     if not a.execute:
@@ -76,6 +76,15 @@ def main():
     elif a.fault=='modal':
         from harness import Harness
         Harness('imac2').command('/kick pog-director2 Closed stream recovery drill')
+    elif a.fault=='feed':
+        from stream_feeds import owned_pids
+        from urllib.parse import urlsplit
+        team,url=(op/'streams.txt').read_text().splitlines()[0].split()
+        config=Path((op/'launch-tree').read_text().strip())/'runs'/a.run/team/'stream.json'
+        found=owned_pids(config,team,urlsplit(url).port)
+        assert len(found)==1,'expected exactly one owned team feed'
+        result['feed_pid']=found[0];write(path,result)
+        os.kill(found[0],signal.SIGTERM)
     elif a.fault in ('tunnel','relay','publisher'):
         owner=before['session'] if a.fault=='publisher' else before['staging']
         pid=owner[a.fault+'_pid'];command=ps(pid)
@@ -87,16 +96,23 @@ def main():
     result['injected']=time.time();write(path,result)
     deadline=time.time()+a.timeout
     stable_since, stable_key, previous_bytes = None, None, None
+    obs_restarted = False
     while time.time()<deadline:
         time.sleep(5)
         try:
             after=snapshot(op)
-            changed = (after['video']!=before['video'] if a.fault=='youtube' else
+            if a.fault=='obs' and after['output']['outputDuration']<before['output']['outputDuration']:
+                # The new stream may outlive the short pre-fault stream during
+                # the required healthy minute; retain the observed reset.
+                obs_restarted=True
+            if a.fault=='feed':
+                after['feed_pids']=owned_pids(config,team,urlsplit(url).port)
+            changed = (len(after['feed_pids'])==1 and result['feed_pid'] not in after['feed_pids'] if a.fault=='feed' else after['video']!=before['video'] if a.fault=='youtube' else
                        after['camera'].get('ProcessId')!=before['camera'].get('ProcessId') if a.fault in ('camera','modal') else
                        after['staging'][a.fault+'_pid']!=before['staging'][a.fault+'_pid'] if a.fault in ('tunnel','relay') else
                        after['session']['publisher_pid']!=before['session']['publisher_pid'] if a.fault=='publisher' else
-                       after['output']['outputDuration']<before['output']['outputDuration'])
-            key=(after['camera'].get('ProcessId'),after['staging'].get('tunnel_pid'),after['video'])
+                       obs_restarted)
+            key=(after['camera'].get('ProcessId'),after['staging'].get('tunnel_pid'),after['video'],tuple(after.get('feed_pids',[])))
             if changed and healthy(after,op) and after['game']['tick']>before['game']['tick']:
                 # Factorio can remain "connected" until its network timeout, even
                 # after SSH has recovered. Require a full healthy minute with

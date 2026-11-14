@@ -31,21 +31,24 @@ class Tours:
         if now < self.state.get('hold_until',0):
             return None, True
         queue = self.state.get('queue',[])
-        if not queue and now >= self.state.get('next',0):
-            queue = sorted(eligible)
+        if eligible and now >= self.state.get('next',0):
+            # Keep a temporarily stale team's place, while a fresh hourly cycle
+            # also gives the other teams another visit.
+            queue = list(dict.fromkeys(queue+sorted(eligible)))
             self.state.update(queue=queue,next=now+self.interval,cycle=int(now))
             write(self.path,self.state)
-        queue = [t for t in queue if t in eligible]
-        self.state['queue']=queue
-        if queue and now >= self.state.get('retry',0):
-            return (queue[0],'Team tour'), False
+        available = [t for t in queue if t in eligible]
+        if available and now >= self.state.get('retry',0):
+            self.state['pending']=available[0]
+            return (available[0],'Team tour'), False
         return None, False
 
     def failed(self, now):
         # One inaccessible team must not starve the remainder of this cycle.
         queue=self.state.get('queue',[])
-        if queue:
-            queue.append(queue.pop(0))
+        pending=self.state.get('pending')
+        if pending in queue:
+            queue.remove(pending);queue.append(pending)
         self.state['retry']=now+30
         write(self.path,self.state)
 

@@ -11,8 +11,8 @@ from broadcast_rotation import Rotation
 from public_session import broadcast, transition
 from public_tours import Tours
 from stream_memory import assess, GIB
-from stream_recovery import Recovery, FrameProgress
-from stream_feeds import owns
+from stream_recovery import Recovery, FrameProgress, recording_space_ok
+from stream_feeds import owns, owned_pids
 from viewer_inbox import BroadcastChat
 
 
@@ -152,6 +152,29 @@ class Tests(unittest.TestCase):
         (self.op/'broadcast.json').write_text(json.dumps({'id':'new'}))
         self.assertEqual(feed.poll(),'new')
         self.assertFalse(hasattr(feed,'relay'))
+    def test_tours_do_not_discard_a_temporarily_stale_team(self):
+        rows=[dict(team=t,stale=False,paused=False) for t in ('green','yellow','blue')]
+        tours=Tours(self.op)
+        team=tours.choose(rows,100)[0][0]
+        tours.success(next(r for r in rows if r['team']==team),100)
+        rows[0]['stale']=True
+        choice,_=tours.choose(rows,150)
+        self.assertEqual(choice[0],'yellow')
+        tours.success(rows[1],150)
+        rows[0]['stale']=False
+        self.assertEqual(tours.choose(rows,200)[0][0],'green')
+    def test_low_spool_space_holds_only_recording_with_hysteresis(self):
+        self.assertFalse(recording_space_ok(4095))
+        self.assertTrue(recording_space_ok(4096))
+        self.assertFalse(recording_space_ok(5000,held=True))
+        self.assertTrue(recording_space_ok(8192,held=True))
+        self.assertFalse(recording_space_ok(None))
+    def test_feed_scan_ignores_unrelated_and_unparseable_processes(self):
+        config=self.op/'stream.json'
+        args=f'tools/stream/serve.py --world imac2 --team green --run {config} --port 8791'
+        processes=f'11 python3 {args}\n12 python3 {args.replace("8791","8792")}\n13 editor serve.py \'unterminated\n14 arbitrary \'quote\n15 exited\n'
+        with patch('stream_feeds.subprocess.check_output',return_value=processes):
+            self.assertEqual(owned_pids(config,'green',8791),[11])
 
 
 if __name__=='__main__':unittest.main()
