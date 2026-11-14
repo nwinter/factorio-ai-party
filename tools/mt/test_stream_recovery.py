@@ -1,6 +1,7 @@
 import copy
 import datetime
 import json
+import os
 from pathlib import Path
 import tempfile
 import threading
@@ -12,7 +13,7 @@ from urllib.parse import urlparse, parse_qs
 from broadcast_rotation import LiveAPI, RequestRejected, Rotation
 from public_session import broadcast, transition
 from public_tours import Tours
-from stream_memory import assess, GIB
+from stream_memory import assess, observe, GIB
 from stream_recovery import Recovery, FrameProgress, recording_space_ok
 from stream_feeds import owns, owned_pids
 from viewer_inbox import BroadcastChat
@@ -155,6 +156,24 @@ class Tests(unittest.TestCase):
         self.assertTrue(result['warnings']);self.assertAlmostEqual(result['hours_to_4gib'],4)
         result=assess([base,dict(later,boot='b')]);self.assertEqual(result['hours'],0)
         self.assertNotIn('nonpaged_gib_per_hour',result)
+    def test_memory_early_warning_reaches_operator_wake_file_and_is_throttled(self):
+        wake=self.op/'operator-wake.jsonl'
+        base=dict(at=10000,boot='same',available_bytes=16*GIB,nonpaged_bytes=GIB,
+                  commit_bytes=20*GIB,commit_limit=70*GIB)
+        later=dict(base,at=17200,available_bytes=10*GIB,nonpaged_bytes=1.1*GIB)
+        with patch.dict(os.environ,{'POG_OPERATOR_WAKE':str(wake)}):
+            with patch('stream_memory.sample',return_value=base):observe(self.op)
+            self.assertFalse(wake.exists())
+            with patch('stream_memory.sample',return_value=later):observe(self.op)
+            with patch('stream_memory.sample',return_value=dict(later,at=17260)):observe(self.op)
+            rows=[json.loads(s) for s in wake.read_text().splitlines()]
+            self.assertEqual(len(rows),1)
+            self.assertEqual(rows[0]['event'],'pogwin-memory')
+            self.assertIn('within 12 hours',rows[0]['detail'])
+            self.assertIn('No automatic reboot',rows[0]['detail'])
+            with patch('stream_memory.sample',return_value=dict(later,at=19000)):observe(self.op)
+            self.assertEqual(len(wake.read_text().splitlines()),2)
+        self.assertEqual(len(json.loads((self.op/'memory.json').read_text())['samples']),4)
     def test_multi_day_tours_visit_every_team_and_resume(self):
         rows=[dict(team=t,stale=False,paused=False,research={'done_count':2},science={'spm':3}) for t in ('green','yellow','blue')]
         tours=Tours(self.op);seen={t:0 for t in ('green','yellow','blue')}
