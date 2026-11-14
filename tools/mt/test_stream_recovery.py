@@ -1,13 +1,15 @@
 import copy
+import datetime
 import json
 from pathlib import Path
 import tempfile
 import threading
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 from urllib.parse import urlparse, parse_qs
 
-from broadcast_rotation import Rotation
+from broadcast_rotation import LiveAPI, RequestRejected, Rotation
 from public_session import broadcast, transition
 from public_tours import Tours
 from stream_memory import assess, GIB
@@ -23,6 +25,7 @@ class API:
         self.inserts=0
         self.lose_insert=False
         self.lose_bind=False
+        self.reject_insert=False
     def call(self, method, url, body=None):
         q={k:v[0] for k,v in parse_qs(urlparse(url).query).items()}
         if '/liveStreams?' in url:
@@ -37,6 +40,9 @@ class API:
         elif '/transition?' in url:
             self.rows[q['id']]['status']['lifeCycleStatus']=q['broadcastStatus']
         else:
+            if self.reject_insert:
+                self.reject_insert=False
+                raise RequestRejected('YouTube HTTP 403')
             self.inserts+=1
             self.rows['new']={'id':'new','snippet':body['snippet'],
                 'status':dict(body['status'],lifeCycleStatus='created'),'contentDetails':{}}
@@ -78,6 +84,31 @@ class Tests(unittest.TestCase):
         with self.assertRaises(TimeoutError):self.rotation(api).advance(self.receipt(),0,400)
         new,_,_=self.rotation(api).advance(self.receipt(),0,460)
         self.assertEqual(new['id'],'new');self.assertEqual(api.inserts,1)
+    def test_rejected_insert_retries_after_restart_with_a_fresh_start_time(self):
+        api=API();api.reject_insert=True
+        with self.assertRaises(RequestRejected):self.rotation(api).advance(self.receipt(),0,400)
+        pending=json.loads((self.op/'broadcast-rotation.json').read_text())
+        self.assertFalse(pending['attempted']);self.assertEqual(api.inserts,0)
+        self.assertEqual(api.rows['old']['status']['lifeCycleStatus'],'live')
+        new,_,changed=self.rotation(api).advance(self.receipt(),0,86400)
+        self.assertTrue(changed);self.assertEqual(api.inserts,1)
+        self.assertIn(pending['marker'],new['request']['snippet']['description'])
+        self.assertEqual(datetime.datetime.fromisoformat(new['request']['snippet']['scheduledStartTime']).timestamp(),86460)
+    def test_api_distinguishes_rejections_from_uncertain_http_errors(self):
+        for code in (401,403,429,408,500,503):
+            with self.subTest(code=code),patch('broadcast_rotation.access_token',return_value='test-token'),patch(
+                    'broadcast_rotation.urllib.request.urlopen',side_effect=HTTPError('https://example.invalid',code,'error',{},None)):
+                with self.assertRaises(RuntimeError) as caught:
+                    LiveAPI().call('POST','https://example.invalid',{})
+                self.assertEqual(isinstance(caught.exception,RequestRejected),code in (401,403,429))
+                self.assertEqual(str(caught.exception),f'YouTube HTTP {code}')
+    def test_token_failure_never_sends_insert_or_exposes_credentials(self):
+        for error in (SystemExit('private-token'),RuntimeError('private-token')):
+            with self.subTest(error=type(error).__name__),patch('broadcast_rotation.access_token',side_effect=error),patch(
+                    'broadcast_rotation.urllib.request.urlopen') as request:
+                with self.assertRaisesRegex(RequestRejected,'^YouTube authorization unavailable$'):
+                    LiveAPI().call('POST','https://example.invalid',{})
+                request.assert_not_called()
     def test_lost_bind_reply_is_idempotent(self):
         api=API();api.lose_bind=True
         with self.assertRaises(TimeoutError):self.rotation(api).advance(self.receipt(),0,400)
