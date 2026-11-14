@@ -757,8 +757,8 @@ function drawMarket() {
       const px = mx + (m.x - x0) / span * size, qy = my + (m.y - y0) / span * size;
       box(px - 6, qy - 6, 12, 12, teamColor(m.to)); box(px - 4, qy - 4, 8, 8, teamColor(m.from));
       text(String(i + 1), px + 8, qy + 4, font(12, 700), C.ink);
-      const lx = x + 140, ly = py + 12 + i * 39, eta = Math.max(0, Math.ceil((m.arrival_tick - (clockTop || data.tick)) / 60));
-      const status = m.state === 'waiting' ? 'WAITING FOR SPACE' : m.state === 'quarantined' ? 'HELD' : eta ? eta + 's TO ARRIVAL' : 'ARRIVING';
+      const lx = x + 140, ly = py + 12 + i * 39, eta = Number.isFinite(m.arrival_tick) ? Math.max(0, Math.ceil((m.arrival_tick - (clockTop || data.tick)) / 60)) : null;
+      const status = m.state === 'waiting' ? 'WAITING FOR SPACE' : m.state === 'quarantined' ? 'HELD' : eta === null ? 'IN TRANSIT' : eta ? eta + 's TO ARRIVAL' : 'ARRIVING';
       text(fit((i + 1) + '. ' + m.from.toUpperCase() + ' → ' + m.to.toUpperCase() + ' · ' + status, font(11, 700), w - 154), lx, ly, font(11, 700), C.muted);
       text(fit(m.count + ' ' + cap(m.item) + ' · ' + Math.round(m.x) + ',' + Math.round(m.y), font(16, 600), w - 154), lx, ly + 19, font(16, 600), C.text);
     });

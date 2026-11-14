@@ -43,7 +43,7 @@ export function syncMarketReference(dir: string | undefined, actions: Record<str
   const file = join(dir, 'markets.md');
   const commands = join(dir, 'commands.tsv');
   const lines = existsSync(commands) ? readFileSync(commands, 'utf8').split('\n').filter(l => l && l.split('\t')[1] !== 'markets') : [];
-  const names = ['offer','market','sell','buy','cancel','embargo'].filter(n => actions[n]);
+  const names = ['offer','market','sell','buy','cancel','embargo','post'].filter(n => actions[n]);
   for (const n of names) lines.push(`${n}\tmarkets`);
   writeFileSync(commands, lines.join('\n') + '\n');
   if (!actions.offer) {
@@ -52,7 +52,8 @@ export function syncMarketReference(dir: string | undefined, actions: Record<str
   }
   const address = actions.offer.args ?? actions.offer;
   const gates: Record<string, boolean> = {offer:true, market:!!actions.market, sell:!!actions.sell,
-    cancel:!!actions.cancel, embargo:!!actions.embargo, 'sell-2':!!address.to, 'your-home-post-holds':!!actions.market};
+    cancel:!!actions.cancel, embargo:!!actions.embargo, post:!!actions.post, 'freight-moves-cargo-in':!!actions.post,
+    'sell-2':!!address.to, 'your-home-post-holds':!!actions.market};
   const text = units.head + units.items.filter(i => gates[i.id.split('#')[1] ?? '']).map(i => i.text.replace(/\n*$/, '\n')).join('');
   writeFileSync(file, text);
   return text;
@@ -107,7 +108,7 @@ export function addReference(reply: { ok?: boolean; error?: { code?: string; mes
   dir: string | undefined = refDir()): string | undefined {
   if (!dir || reply.ok !== false || !reply.error || typeof reply.error.message !== 'string') return undefined;
   const message = reply.error.message;
-  if (message === 'unsupported action; call describe' && ['offer','market','sell','buy','cancel','embargo'].includes(action)) return undefined;
+  if (message === 'unsupported action; call describe' && ['offer','market','sell','buy','cancel','embargo','post'].includes(action)) return undefined;
   if (!ARGUMENT_ERROR.test(message) || /\(reference: /.test(message)) return undefined;
   const topics = commandTopics(dir);
   const step = /^steps\[\d+\] \(([a-z_]+)\)/.exec(message);

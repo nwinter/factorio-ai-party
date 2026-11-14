@@ -118,6 +118,7 @@ end)
 -- The human player log (players.lua) listens to the events after on_console_chat.
 local forwarded={}
 for _,name in ipairs{'on_script_path_request_finished','on_entity_died','on_unit_group_finished_gathering','on_entity_damaged',
+    'on_object_destroyed','on_pre_player_mined_item','on_robot_pre_mined','on_player_driving_changed_state',
     'on_console_chat','on_built_entity','on_player_mined_entity','on_robot_mined_entity','on_marked_for_deconstruction',
     'on_marked_for_upgrade','on_cancelled_deconstruction','on_cancelled_upgrade','on_gui_opened','on_gui_closed',
     'on_player_fast_transferred','on_player_main_inventory_changed','on_player_joined_game','on_player_left_game',

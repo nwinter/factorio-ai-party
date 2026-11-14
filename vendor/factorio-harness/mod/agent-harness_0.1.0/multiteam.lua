@@ -538,6 +538,17 @@ return function(api)
     cost.acc.add(p)
     cost.n = cost.n + 1
   end
+  -- A shipment entering an already-visible chunk is contact too. It charts nothing itself.
+  function M.shipment_seen(e)
+    local s=st();if game.tick%60~=0 then return end
+    for _,t in ipairs(s.order or {}) do
+      local f=game.forces[t];local key='chart '..t..'>'..e.force.name
+      if t~=e.force.name and not s.first[key] and f.is_chunk_visible(e.surface,{x=math.floor(e.position.x/32),y=math.floor(e.position.y/32)}) then
+        s.first[key]=game.tick
+        record{kind='chart',team=t,other=e.force.name,surface=e.surface.name,x=e.position.x,y=e.position.y,entity=e.name}
+      end
+    end
+  end
   function M.operator.mt_cost(a)
     local n, searched = cost.n, cost.searched
     if cost.acc then log({'', 'mt chart cost: ', n, ' events, ', searched, ' searched, total ', cost.acc}) end
