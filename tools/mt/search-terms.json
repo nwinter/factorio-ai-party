@@ -1,0 +1,30 @@
+{
+  "_doc": [
+    "Terms tools/mt/search_watch.py flags in a playing agent's web search, fetched URL or shell URL (case-insensitive",
+    "Python regexes). always: one match flags. combined: every pattern of one entry must match the same text.",
+    "Team colors (the run's teams.tsv, else default_teams) flag next to a team_context word; another team's agent",
+    "names (teams.tsv, extra_names, the run's op/search-names.txt) flag with a name_context word. The agent's own team",
+    "is never flagged for its own color or names. Search result sources (Grok lists them) are checked for always only."
+  ],
+  "always": {
+    "project": ["player[\\s_.-]*of[\\s_.-]*games", "\\bpog[\\s_.-]*(?:live|stream|factorio|run)\\b",
+                "factorio[\\s_.-]*pog\\b"],
+    "operator": ["nick[\\s_.-]*winter", "\\bnwinter\\b", "\\bcrafta(?:[.-]app)?\\b"],
+    "site": ["factorio\\.nickwinter\\.net", "nickwinter\\.net", "player-of-games-live", "account-c-app\\.workers\\.dev"],
+    "repo": ["factorio[\\s_.-]*ai[\\s_.-]*party", "github\\.com/nwinter"],
+    "channel": ["@playerofgames", "youtube\\.com/@pog\\b"],
+    "ai-party": ["\\bai[\\s_.-]*party\\b"]
+  },
+  "combined": [
+    {"label": "ai-factorio-run",
+     "all": ["factorio",
+             "\\b(?:ai|a\\.i\\.|llms?|agents?|language models?|gpt|claude|gemini|grok|muse|codex|chatbots?)\\b",
+             "\\b(?:multiplayer|teams?|stream(?:s|ing|ed|er)?|twitch|youtube|live|competition|compete|competing|versus|vs|tournament|party|experiment|arena|rivals?|race|showdown|battle)\\b"]},
+    {"label": "ai-factorio-run", "all": ["factorio", "learning[\\s_-]*environment"]}
+  ],
+  "team_context": "(?:team|teams|force|forces|faction|side|player|players|agent|agents|rival|rivals|opponent|opponents|base)",
+  "default_teams": ["red", "blue", "green", "yellow", "orange", "purple"],
+  "name_context": "(?:factorio|team|player|agent|rival|opponent|stream|ai)",
+  "extra_names": [],
+  "ignore_url_hosts": ["127.0.0.1", "localhost", "0.0.0.0"]
+}

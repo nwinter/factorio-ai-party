@@ -105,6 +105,18 @@ class MarketDisplayTests(unittest.TestCase):
         out = race.project_market(dict(tick=6000, last_prices=[dict(self.price, prints=3)]), self.teams)
         self.assertFalse(out['last_prices'][0]['thin'])
 
+    def test_freight_loss_and_platform_markers_need_no_eta(self):
+        line=dict(self.line,event='shipment_loss',text='Shipment lost: buyer side; 400 coin paid to seller; cargo in a wreck.')
+        lines=self.feed([line])
+        self.assertEqual(len(lines),1)
+        self.assertEqual(lines[0]['event'],'shipment_loss')
+        self.assertEqual(len(race.Race().update(self.teams,100,lines=lines)['feed']),1)
+        marker=dict(self.marker,surface='platform');marker.pop('arrival_tick')
+        out=race.project_market(dict(tick=6000,markers=[marker],measurements=[{'PRIVATE':True}]),self.teams)
+        self.assertEqual(out['markers'],[marker]);self.assertNotIn('PRIVATE',json.dumps(out))
+        self.assertNotIn('arrival_tick',out['markers'][0])
+        self.assertEqual(self.feed([dict(line,to=['hidden'])]),[])
+
     def test_operator_collector_discards_private_market_state(self):
         class Reader:
             def op(self, action, args=None, team=None):
