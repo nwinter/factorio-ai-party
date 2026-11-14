@@ -21,6 +21,7 @@
 --   mt_chat_scrub (mt277) drops the game's join and leave lines (players notices) from the harness chat: the setup's
 --                team accounts (mt-red, ...) joined once each, and every agent's chat would show them. players.lua
 --                writes none on a map with teams set up (tools/mt/start-mt.sh runs this before agents launch).
+--   mt_force_move (mt302) moves a force's entities on a surface to another force, never a cargo pod (a 2.1.24 crash).
 -- (mt276 G) Each first contact also reaches the agents it concerns as a fact line (api.on_contact; runtime.lua): the
 -- team whose chart showed the other's entity; for a hit, the team hit (waking) and the team whose entity hit.
 return function(api)
@@ -589,6 +590,41 @@ return function(api)
     end
     if c then c.messages = kept end
     return {dropped=dropped, kept=#kept}
+  end
+  -- (mt302) mt_force_move {from=, to=, surface=, area=, keep_pads=}: moves one force's entities on a surface (an area of
+  -- it, or all) to another force, the way a bench split or a hand-over does, and never a cargo pod. On 2.1.24 writing a
+  -- cargo pod's force while it is bound for the ground (it has no pad, or its pad went) leaves the pod in the surface's
+  -- incoming list after it lands: the next pod that lands on the ground there, any force's, crashes the server
+  -- (SIGSEGV in CargoUnit::getGroundPosition), and a save made in between carries the fault. Pods keep their force and
+  -- land as they would; a pad that moves sends its inbound pods to the ground, which is safe. Characters stay too
+  -- (players move by mt_assign), and so do platform hubs (a platform belongs to its force). game.merge_forces was
+  -- measured safe. Only the operator's split or hand-over moves
+  -- entities between forces; no agent action does.
+  function M.operator.mt_force_move(a)
+    local from, to = game.forces[a.from or ''], game.forces[a.to or '']
+    assert(from, 'from: a force name')
+    assert(to, 'to: a force name')
+    assert(from ~= to, 'from and to are the same force')
+    local surface = surface_of(a.surface)
+    local filter = {force=from}
+    if a.area ~= nil then
+      assert(type(a.area) == 'table', 'area: {{x,y},{x,y}}')
+      local p1, p2 = pos_of(a.area[1], 'area[1]'), pos_of(a.area[2], 'area[2]')
+      filter.area = {{math.min(p1.x, p2.x), math.min(p1.y, p2.y)}, {math.max(p1.x, p2.x), math.max(p1.y, p2.y)}}
+    end
+    local out = {moved=0, failed=0, pods_kept=0, characters_kept=0, hubs_kept=0, pads_kept=0, tick=game.tick}
+    for _, e in ipairs(surface.find_entities_filtered(filter)) do
+      if e.valid then
+        local t = e.type
+        if t == 'cargo-pod' then out.pods_kept = out.pods_kept + 1
+        elseif t == 'character' then out.characters_kept = out.characters_kept + 1
+        elseif t == 'space-platform-hub' then out.hubs_kept = out.hubs_kept + 1
+        elseif t == 'cargo-landing-pad' and a.keep_pads then out.pads_kept = out.pads_kept + 1
+        elseif pcall(function() e.force = to end) then out.moved = out.moved + 1
+        else out.failed = out.failed + 1 end
+      end
+    end
+    return out
   end
   -- (mt301, private) The end of the game (the private design doc, Nick d27-d28). Solo edge 1.5; allied edge 1.0 each
   -- member, split by the pact's shares (2 x share, capped by pacts' share_max_score 1.4). The alliance that counts is

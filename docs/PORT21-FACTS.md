@@ -38,3 +38,23 @@ surface around501–512ticks; that is not landing. The native finished-descendin
 second three-pod fixture occurred at**1099/1101/1102ticks** (18.32–18.37s), spawning cargo-pod containers. Existing
 ~40s up/~20s down messages are approximate observations; actual completion is native state/event driven.
 Evidence: `order8-timing21.json`, `order8-pod-events21.json`; first failed timing callback retained separately.
+
+### Cargo pods and forces (mt302, imac2, fresh 2.1.24 map)
+Writing a cargo pod's force (`pod.force = ...`) while the pod is bound for the ground crashes the server at the next
+ground landing on that surface, by any force (SIGSEGV in `CargoUnit::getGroundPosition` via
+`findNonCollidingPositionWithIncomingCargoUnits`). It happens whether the pod is ascending on its platform or
+descending, and whether it was sent to the ground or turned ground-bound when its pad went. The landed pod stays in
+the surface's incoming list. A save made in between carries the fault: loaded, it crashes on the first ground
+landing. The crash fires either on a pod's update or inside a later `pad.force = ...` write
+(`unregisterCargoStation` re-targets the inbound pods). mt301's split did both writes at once.
+
+Measured safe with pods in flight at every stage: the pad destroyed by `die`, by damage with a turret cause or by
+40 atomic rockets; `mine`; `destroy`; its force changed (alone, or to another force and back); the last pad gone
+with pods queued natively or by script; two pads; a server save; a pad-bound pod's force written; teleport;
+`game.merge_forces`; the platform destroyed, put on a connection or moved to another planet; a rocket's pod with its
+platform destroyed. Pods left with no pad land as `cargo-pod-container`s, often far from the pad (about 800 tiles
+away here). A platform that leaves still delivers its pods in flight. `launch_rocket` takes `{type=station,
+station=hub}`; a `space_platform` destination returns false.
+
+The harness never writes an entity's force. Operator splits and hand-overs use `mt_force_move` (multiteam.lua),
+which leaves cargo pods, characters and platform hubs on their force. Evidence: artifacts/mt302 and report-mt302.
