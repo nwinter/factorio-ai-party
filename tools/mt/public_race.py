@@ -470,7 +470,7 @@ def project_result(raw, teams):
     elif reason == 'wipe':
         text = f'{w} wiped every other team'
     else:
-        text = 'Time is up: ' + ' and '.join(t.capitalize() for t in winners) + (' share the lead' if len(winners) > 1 else ' leads') + ' on milestones'
+        text = ('The run has ended: ' if kind == 'operator' else 'Time is up: ') + ' and '.join(t.capitalize() for t in winners) + (' share the lead' if len(winners) > 1 else ' leads') + ' on milestones'
     return {'reason': reason, 'kind': kind, 'winners': winners, 'scores': scores, 'tick': number(raw.get('tick')),
             'time': clock(number(raw.get('tick'))), 'text': text}
 

@@ -31,13 +31,16 @@ def main():
     prompt = Path(sys.argv[1]).read_text()
     options = sys.argv[2:]
     first = True
-    while time.time() < deadline(Path('deadline.txt')) - 20:
-        left = deadline(Path('deadline.txt')) - time.time()
+    continuous = Path('.continuous').exists()
+    while continuous or time.time() < deadline(Path('deadline.txt')) - 20:
+        left = None if continuous else deadline(Path('deadline.txt')) - time.time()
         message = prompt if first else (
             'Continue playing until deadline.txt. This is a fresh conversation; '
             'recover from AGENTS.md and your own notes.md. Keep your current '
             'identity. Read status, chat, tells and board, then continue your '
             'current work and keep notes.md current.')
+        if continuous:
+            message = message.replace('Continue playing until deadline.txt.', 'Continue playing.')
         started = time.time()
         child = subprocess.Popen(command(message, options), start_new_session=True)
         def stop(*_):
@@ -48,7 +51,7 @@ def main():
         for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
             signal.signal(sig, lambda signum, frame: (stop(), sys.exit(128+signum)))
         try:
-            result = child.wait(timeout=max(1, left))
+            result = child.wait(timeout=None if continuous else max(1, left))
         except subprocess.TimeoutExpired:
             stop()
             try:
@@ -63,7 +66,7 @@ def main():
         if result:
             return result  # fail visibly; no provider-limit retry storm
         first = False
-        time.sleep(min(10, max(0, deadline(Path('deadline.txt'))-time.time())))
+        time.sleep(10 if continuous else min(10, max(0, deadline(Path('deadline.txt'))-time.time())))
     return 0
 
 
