@@ -39,6 +39,8 @@ started=0
 turn_s=${POG_AGY_TURN_S:-300}
 timed_out=0
 turn() {
+  d=\$(cat deadline.txt)
+  deadline=\$(date -j -f "%Y-%m-%d %H:%M:%S %Z" "\${d% *}:00 \${d##* }" +%s)
   touch .agy-stamp
   t0=\$(date +%s)
   # The wait cap goes on agy only: this loop's own sleep until a quota reset stays a plain sleep.

@@ -51,7 +51,7 @@ class Shifts(unittest.TestCase):
             with patch.object(full_run,'stop_client',side_effect=lambda a:calls.append(('stop',a['name']))), \
                  patch.object(full_run,'snapshot',return_value=op/'history'), \
                  patch.object(full_run,'start_client',side_effect=lambda op,a,c:calls.append(('start',a['name'],str(c)))), \
-                 patch.object(full_run,'say'),patch.object(full_run,'indexes'),patch.object(full_run,'event'):
+                 patch.object(full_run,'say'),patch.object(full_run,'indexes'),patch.object(full_run,'event'),patch.object(full_run,'set_deadline'):
                 full_run.change(op,state,['a'],90)
             self.assertEqual([r[:2] for r in calls],[('stop','a'),('start','a')])
             self.assertEqual(b['pane'],'old');self.assertEqual(b['shift'],1)

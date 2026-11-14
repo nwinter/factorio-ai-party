@@ -65,6 +65,10 @@ def capture_env(op):
     write(op/'full-env.json',{k:os.environ[k] for k in ENV_KEYS if k in os.environ})
     (op/'full-env.json').chmod(0o600)
 
+def set_deadline(a,at):
+    a['deadline']=at
+    Path(a['folder'],a['name'],'deadline.txt').write_text(time.strftime('%Y-%m-%d %H:%M %Z',time.localtime(at))+'\n')
+
 def init(run,minutes,max_shifts=0):
     pinned();op=op_dir(run)
     assert not (op/'full-run.json').exists(),'run already registered'
@@ -72,6 +76,7 @@ def init(run,minutes,max_shifts=0):
     now=time.time()
     for name,a in agents.items():
         a.update(pane=panes.get(name),shift=1,deadline=now+minutes*60,started=now,restarts=0,next_retry=0)
+        set_deadline(a,math.ceil((now+minutes*60)/60)*60)
     state=dict(run=run,phase='running',started=now,minutes=minutes,max_shifts=max_shifts,agents=agents,serial=0)
     capture_env(op);write(op/'full-run.json',state)
     event(op,'registered',agents=list(agents),minutes=minutes,max_shifts=max_shifts)
@@ -175,6 +180,10 @@ def change(op,state,names,minutes=None,reason='shift',hold=False):
             alert(op,'agent-start-failed',f"{a['name']}: {e}")
         indexes(op,state);write(op/'full-run.json',state)
     event(op,reason,serial=serial,names=names,held=hold,panes={a['name']:a.get('pane') for a in selected})
+    if minutes is not None and not hold:
+        end=math.ceil((time.time()+minutes*60)/60)*60
+        for a in selected:set_deadline(a,end)
+        write(op/'full-run.json',state)
     if reason=='shift':
         count=sum(bool(a.get('pane')) for a in selected)
         try:say(op,str(serial)+'-ready',f"Shift handoff finished: {count} of {len(selected)} agents launched; the world continues.")
