@@ -34,7 +34,8 @@ class TestSession(unittest.TestCase):
                 self.assertEqual(env['POG_YOUTUBE'],'video')
                 session.os.environ['POG_LIVE_TOKEN']='explicit-fixture-token'
                 self.assertEqual(session.publisher_env('video')['POG_LIVE_TOKEN'],'explicit-fixture-token')
-            cmd=session.publisher_command('trial',op)
+            cmd=session.publisher_command('trial',op,source='http://127.0.0.1:1234/state.json')
+            self.assertEqual(cmd[cmd.index('--source')+1],'http://127.0.0.1:1234/state.json')
             self.assertEqual(cmd[1],str(session.ROOT/'site/push_live.py'))
             self.assertEqual(cmd[cmd.index('--team-archive-dir')+1],str(op/'public-site'))
             self.assertEqual(cmd[cmd.index('--team-run-id')+1],'trial')

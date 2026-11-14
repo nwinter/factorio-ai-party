@@ -282,6 +282,14 @@ def supervise(run, minutes, run_mode='test', public=False, closed_drill=False):
                 publisher.wait(timeout=20)
             except subprocess.TimeoutExpired:
                 publisher.kill(); publisher.wait(timeout=5)
+        # Capture the last public snapshot before taking the live publication down.
+        # --print records locally and makes no publish request.
+        if publisher is not None:
+            try:
+                subprocess.run(publisher_command(run, op, source=source)+['--once','--print'],
+                               stdout=subprocess.DEVNULL, check=True, timeout=15)
+            except Exception as e:
+                errors.append('final public archive: '+str(e))
         try:
             if owns_site(site_state(),receipt['id']):
                 subprocess.run(publisher_command(run, op, off=True),env=publisher_env(receipt['id']),check=True,timeout=40)
