@@ -328,6 +328,17 @@ return function(api)
     end
   end
 
+  -- (mt301) a team's active pacts now: the partner, cease-fire and shares
+  function M.active_with(team)
+    local active = {}
+    for _, p in pairs(st().by_id) do
+      if p.status == 'active' and (p.a == team or p.b == team) then
+        active[#active+1] = {id=p.id, with=other_of(p, team), cease_fire=p.terms.cease_fire, shares=p.terms.shares}
+      end
+    end
+    table.sort(active, function(x, y) return x.id < y.id end)
+    return active
+  end
   -- Departures: a team's platform leaving a planet's orbit, with the team's active pacts then (the scoring reads the
   -- edge-run platform's last one).
   local function departures()
@@ -340,14 +351,12 @@ return function(api)
           local key = pl.index
           local was = s.platforms[key]
           if was and was ~= '' and at == nil and prototypes.space_location[was] and prototypes.space_location[was].type == 'planet' then
-            local active = {}
-            for _, p in pairs(s.by_id) do
-              if p.status == 'active' and (p.a == team or p.b == team) then
-                active[#active+1] = {id=p.id, with=other_of(p, team), cease_fire=p.terms.cease_fire, shares=p.terms.shares}
-              end
-            end
-            s.departures[#s.departures+1] = {team=team, platform=pl.name, from=was, tick=game.tick, pacts=active}
+            local rec = {team=team, platform=pl.name, from=was, tick=game.tick, pacts=M.active_with(team)}
+            s.departures[#s.departures+1] = rec
             if #s.departures > MAX_DEPARTURES then table.remove(s.departures, 1) end
+            -- (mt301) each platform's last departure from a planet, kept past the list's 50 (multiteam.lua's scoring)
+            s.last_departure = s.last_departure or {}
+            s.last_departure[team .. '/' .. tostring(key)] = rec
           end
           s.platforms[key] = at or ''
         end
@@ -355,6 +364,11 @@ return function(api)
     end
   end
 
+  M.departures_now = function() return departures() end
+  function M.last_departure(team, index)
+    local s = mt() and mt().pacts
+    return s and s.last_departure and s.last_departure[team .. '/' .. tostring(index)] or nil
+  end
   function M.tick(tick)
     local s = mt() and mt().pacts
     if not s then return end
@@ -810,12 +824,23 @@ return function(api)
       if type(id)~='string' or #id<1 or #id>200 then fail('request id required', 'describe {}') end
       local s=state();s.requests[t]=s.requests[t] or {};local journal=s.requests[t]
       local payload=canonical({action=action,args=a});local rec=journal[id]
+      if type(rec)=='number' then   -- (mt301) a slimmed old receipt: committed at that tick, never run again
+        return {committed=true,compacted=true,tick=rec,next={action='market',args={}},
+          note='this request id already committed at tick '..rec..'; its receipt was compacted'}
+      end
       if rec then
         if rec.payload~=payload then fail('request id already used with different arguments') end
+        if rec.status=='committed' and rec.compacted then
+          return {committed=true,compacted=true,tick=rec.tick,next={action='market',args={}},
+            note='this request already committed at tick '..rec.tick..'; its full receipt was compacted'}
+        end
         if rec.status=='committed' then return copy(rec.result) end
         error(rec.error or 'request quarantined; call market {}',0)
       end
       rec={payload=payload,status='started',tick=game.tick};journal[id]=rec
+      -- (mt301) the ids in order, so old receipts can drop their full result (K.compact)
+      s.request_order=s.request_order or {};s.request_order[t]=s.request_order[t] or {next=1,done=0}
+      local ro=s.request_order[t];ro[ro.next]=id;ro.next=ro.next+1
       local ok,res=pcall(fn)
       if not ok then rec.status='refused';rec.error=tostring(res);error(res,0) end
       rec.status='committed';rec.result=copy(res);return res
@@ -860,6 +885,18 @@ return function(api)
       if a.revision~=nil and a.revision~=o.revision then fail('order changed; read its current revision') end
       cancel_order(t,o,'cancel');return {order=order_view(o),note='Matched cargo still arrives; its payment remains committed.'}
     end
+    -- (mt301) transactions stay sorted by id; compaction folds old delivered ones, so the index is no longer the id
+    local function txget(p,id)
+      local list=p.transactions;local x=list[id]
+      if x and x.id==id then return x end
+      local lo,hi=1,#list
+      while lo<=hi do
+        local mid=math.floor((lo+hi)/2);x=list[mid]
+        if x.id==id then return x elseif x.id<id then lo=mid+1 else hi=mid-1 end
+      end
+      return nil
+    end
+    K.txget=txget
     local function book_id(p,o)
       local key=o.team..'/'..o.id
       if not p.book_ids[key] then p.book_ids[key]=p.book_next;p.book_next=p.book_next+1 end
@@ -915,7 +952,8 @@ return function(api)
             out.offers[#out.offers+1]=row
           end
         end
-        for _,tx in ipairs(pairdata.transactions) do
+        local recent=#pairdata.transactions-20
+        for txi,tx in ipairs(pairdata.transactions) do
           local row={id=tx.id,state=tx.status,matched_tick=tx.tick,arrival_tick=tx.eta,price=tx.price,item=tx.item,count=tx.count}
           if #contacts(t)>1 then row.team=u end
           if tx.status~='delivered' then
@@ -927,10 +965,10 @@ return function(api)
               end
             end end
           end
-          out.fills[#out.fills+1]=row
+          if txi>recent then out.fills[#out.fills+1]=row end
         end
       end
-      while #out.fills>20 do table.remove(out.fills,1) end
+      if #out.fills>20 then local keep={} for i=#out.fills-19,#out.fills do keep[#keep+1]=out.fills[i] end out.fills=keep end
       if K.rung(t)==1 then out.next={action='research',args={technology=TECH}} end
       return out
     end
@@ -1193,9 +1231,96 @@ return function(api)
         s.physical=s.physical-removed;team(t).wallet=team(t).wallet+removed;rec.status='credited'
       end)
     end
+    -- (mt301) The market's records over a long game. Receipts never expire (a used id never runs twice), but those
+    -- older than the newest KEEP.receipts of a team drop their copied result, and committed ones older than the newest
+    -- KEEP.payloads become their tick alone (a replay answers 'committed', with any arguments); delivered transactions older than a
+    -- pair's newest KEEP.transactions fold into per-item print counts (last price, count, tick); credited deposits
+    -- fold into a count and a coin total; per-order fill counts and book ids of orders no longer held are dropped.
+    -- Nothing undelivered, quarantined or holding escrow is folded. The audit totals do not change.
+    local KEEP={receipts=256,payloads=4096,transactions=200,deposits=100,slack=64}
+    K.KEEP=KEEP
+    function K.compact(force)
+      local s=state();local out={receipts=0,transactions=0,deposits=0,orders=0}
+      for t,ro in pairs(s.request_order or {}) do
+        local journal=s.requests[t] or {}
+        local upto=ro.next-1-KEEP.receipts
+        if force and upto>ro.done or upto-ro.done>=KEEP.slack then
+          for i=ro.done+1,upto do
+            local rec=journal[ro[i]]
+            if type(rec)=='table' and rec.status=='committed' and rec.result~=nil then rec.result=nil;rec.compacted=true;out.receipts=out.receipts+1 end
+          end
+          ro.done=math.max(ro.done,upto)
+        end
+        ro.slim=ro.slim or 0
+        local slim=ro.next-1-KEEP.payloads
+        if force and slim>ro.slim or slim-ro.slim>=KEEP.slack then
+          for i=ro.slim+1,slim do
+            local id=ro[i];local rec=journal[id]
+            if type(rec)=='table' and rec.status=='committed' then journal[id]=rec.tick;out.slimmed=(out.slimmed or 0)+1 end
+            ro[i]=nil
+          end
+          ro.slim=math.max(ro.slim,slim)
+        end
+      end
+      for _,p in pairs(s.pairs) do
+        local list=p.transactions
+        if #list>KEEP.transactions+(force and 0 or KEEP.slack) then
+          local cut,kept=#list-KEEP.transactions,{}
+          p.folded=p.folded or {count=0,prints={}}
+          for i,tx in ipairs(list) do
+            if i<=cut and tx.status=='delivered' and tx.escrow==0 then
+              p.folded.count=p.folded.count+1;out.transactions=out.transactions+1
+              if tx.price then
+                local v=p.folded.prints[tx.item] or {prints=0}
+                v.prints,v.price,v.count,v.tick=v.prints+1,tx.price,tx.count,tx.tick
+                p.folded.prints[tx.item]=v
+              end
+            else kept[#kept+1]=tx end
+          end
+          p.transactions=kept
+          local held={}
+          for _,t in ipairs({p.a,p.b}) do for _,o in pairs(team(t).orders) do held[o.team..'/'..o.id]=true end end
+          for k in pairs(p.filled_by_order) do if not held[k] then p.filled_by_order[k]=nil;out.orders=out.orders+1 end end
+          for k in pairs(p.book_ids) do if not held[k] then p.book_ids[k]=nil end end
+        end
+      end
+      local d=s.deposits
+      if d and #d>KEEP.deposits+(force and 0 or KEEP.slack) then
+        s.deposit_totals=s.deposit_totals or {count=0,coin=0}
+        local cut,kept=#d-KEEP.deposits,{}
+        for i,rec in ipairs(d) do
+          if i<=cut and rec.status=='credited' then
+            s.deposit_totals.count=s.deposit_totals.count+1;s.deposit_totals.coin=s.deposit_totals.coin+(rec.removed or 0)
+            out.deposits=out.deposits+1
+          else kept[#kept+1]=rec end
+        end
+        s.deposits=kept
+      end
+      return out
+    end
+    function K.sizes()
+      local s=state();local r={receipts=0,full_receipts=0,transactions=0,folded_transactions=0,deposits=#(s.deposits or {}),
+        folded_deposits=s.deposit_totals and s.deposit_totals.count or 0,order_counters=0}
+      -- by the id order (a few hundred reads a team); receipts made before mt301 kept no order and are counted whole
+      for t,journal in pairs(s.requests) do
+        local ro=(s.request_order or {})[t]
+        if ro then
+          r.receipts=r.receipts+ro.next-1
+          for i=ro.done+1,ro.next-1 do local rec=journal[ro[i]];if type(rec)=='table' and rec.result~=nil then r.full_receipts=r.full_receipts+1 end end
+        else
+          for _,rec in pairs(journal) do r.receipts=r.receipts+1;if type(rec)=='table' and rec.result~=nil then r.full_receipts=r.full_receipts+1 end end
+        end
+      end
+      for _,p in pairs(s.pairs) do
+        r.transactions=r.transactions+#p.transactions;r.folded_transactions=r.folded_transactions+(p.folded and p.folded.count or 0)
+        for _ in pairs(p.filled_by_order) do r.order_counters=r.order_counters+1 end
+      end
+      return r
+    end
     function K.tick(tick)
       if not mt() or not next(teams()) or not config('enabled') or tick%60~=0 then return end
       if mt().market and mt().market.fault then return end
+      if tick%3600==1800 and mt().market then pcall(K.compact) end   -- never a fault: it moves no coin or goods
       for _,t in ipairs(mt().order) do if K.rung(t)>0 then K.sync(t);deposit(t) end end
       -- A single deterministic pass shares the actual Post stock and reserved balance across pairs.
       local list={}
@@ -1206,7 +1331,7 @@ return function(api)
       for _,p in ipairs(list) do
         local pending={}
         for _,id in ipairs(p.pending) do
-          local tx=p.transactions[id];deliver(p,tx)
+          local tx=txget(p,id);deliver(p,tx)
           if tx.status=='in_transit' or tx.status=='waiting' then pending[#pending+1]=id end
         end
         p.pending=pending
@@ -1263,9 +1388,13 @@ return function(api)
         end
       end
       for _,t in ipairs(mt().order or {}) do K.sync(t) end
-      local out={audit=K.audit(),research_reference_prices=copy(SCIENCE),teams={},pairs=s.pairs,markers={},last_prices={}}
+      if a.compact==true then K.compact(true) end
+      local out={audit=K.audit(),research_reference_prices=copy(SCIENCE),teams={},pairs=s.pairs,markers={},last_prices={},records=K.sizes()}
       for _,p in pairs(s.pairs) do
         local prices={}
+        for name,v in pairs(p.folded and p.folded.prints or {}) do
+          prices[name]={a=p.a,b=p.b,item=name,price=v.price,count=v.count,tick=v.tick,prints=v.prints}
+        end
         for _,tx in ipairs(p.transactions) do
           if tx.price then
             local prior=prices[tx.item]
@@ -1274,7 +1403,7 @@ return function(api)
         end
         for _,v in pairs(prices) do v.thin=v.prints==1;out.last_prices[#out.last_prices+1]=v end
         for _,id in ipairs(p.pending) do
-          local tx=p.transactions[id]
+          local tx=txget(p,id)
           for _,leg in ipairs(tx.legs) do
             local from,to=team(leg.from).post,team(leg.to).post
             if from and from.valid and to and to.valid then

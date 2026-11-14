@@ -149,6 +149,12 @@ def collect(r, op):
     except Exception:
         view["diplomacy"] = []
     try:
+        view["game"] = game_view(r.op("mt_game", {}), op)
+    except Exception as e:
+        view["game"] = {}   # an older harness (no mt_game): nothing to show
+        if "mt_game" not in str(e) and "unknown" not in str(e).lower():
+            view["errors"]["game"] = str(e)
+    try:
         view["freeze"] = r.op("mt_freeze")
     except Exception:
         view["freeze"] = None   # no human team (mt_humans not set up)
@@ -187,6 +193,55 @@ def collect(r, op):
         col["refused"] = refusals(op, names)
         view["teams"].append(col)
     return view
+
+
+ALERTS = "game-alerts.jsonl"
+
+
+def game_view(game, op):
+    """(mt301) The end of the game for the operator: standings, the frozen result, wipe state and alerts. New alerts
+    (a wipe, a pending wipe win, a refused arrival, the game over) are appended once to op/game-alerts.jsonl and
+    printed, so whoever watches this pane sees them; restore is Nick's call, nothing here acts on the game."""
+    alerts = [a for a in (game.get("alerts") or []) if isinstance(a, dict) and isinstance(a.get("seq"), int)]
+    path = os.path.join(op, ALERTS)
+    seen = 0
+    try:
+        with open(path) as f:
+            for line in f:
+                seen = max(seen, json.loads(line).get("seq", 0))
+    except (OSError, ValueError):
+        pass
+    fresh = [a for a in alerts if a["seq"] > seen]
+    if fresh:
+        with open(path, "a") as f:
+            for a in fresh:
+                f.write(json.dumps(a) + "\n")
+                print(f"GAME ALERT {a.get('kind')}: {a.get('text')}", flush=True)
+    return {"standings": game.get("standings") or [], "result": game.get("result"), "alerts": alerts[-30:],
+            "teams": game.get("teams") or {}, "config": game.get("config") or {}, "milestones": game.get("milestones")}
+
+
+def game_html(game):
+    e = html.escape
+    if not game:
+        return ""
+    out = []
+    res = game.get("result")
+    if res:
+        scores = ", ".join(f"{t} {v}" for t, v in sorted((res.get("scores") or {}).items()))
+        out.append(f"<p class=over>GAME OVER at tick {e(str(res.get('tick')))} ({e(str(res.get('reason')))}): "
+                   f"{e(str(res.get('text')))}{'; scores ' + e(scores) if scores else ''}</p>")
+    loud = [a for a in game.get("alerts") or [] if a.get("kind") in ("wipe", "wipe_win_pending", "arrival_refused", "departure_unrecorded")]
+    out += [f"<p class=err>tick {e(str(a.get('tick')))} {e(str(a.get('kind')))}: {e(str(a.get('text')))}</p>" for a in loud[-6:]]
+    rows = "".join(f"<li>{e(str(r.get('rank')))}. {e(str(r.get('team')))}: {r.get('milestones')}/{r.get('of')}"
+                   f"{' (latest ' + e(str(r.get('latest'))) + ' at tick ' + str(r.get('tick')) + ')' if r.get('latest') else ''}"
+                   f"{' <b>WIPED</b>' if r.get('wiped') else ''}</li>" for r in game.get("standings") or [])
+    down = "".join(f"<li class=err>{e(t)}: no powered production since tick {v.get('down_since')}</li>"
+                   for t, v in sorted((game.get("teams") or {}).items()) if isinstance(v, dict) and v.get("down_since"))
+    cfg = game.get("config") or {}
+    out.append(f"<p class=small>race to {e(str(cfg.get('target')))} (milestones, then sooner):</p><ul class=small>{rows}{down}</ul>"
+               f"{'<p class=small>deadline tick ' + str(cfg['deadline_tick']) + '</p>' if cfg.get('deadline_tick') else ''}")
+    return "".join(out)
 
 
 def text_of(m):
@@ -233,7 +288,8 @@ body{{background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,sans-serif;ma
 main{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}}
 section{{border:1px solid var(--line);border-radius:6px;padding:8px 12px;min-width:0;overflow-wrap:anywhere}}
 h2{{margin:4px 0}}h3{{margin:10px 0 2px;font-size:13px;color:var(--muted)}}ul{{margin:0;padding-left:18px}}
-.small{{font-size:12px}}.err{{color:var(--err)}}</style></head><body>
+.small{{font-size:12px}}.err{{color:var(--err)}}.over{{font-size:18px;font-weight:700}}</style></head><body>
+{game_html(view.get('game'))}
 <p>{e(view['t'])} &middot; world {WORLD} &middot; first contacts:</p><ul class=small>{contacts}</ul>
 <main>{''.join(cols)}</main></body></html>"""
 

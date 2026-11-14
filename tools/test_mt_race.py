@@ -123,14 +123,53 @@ class ProjectionTest(unittest.TestCase):
             (p/'views.json').write_text('{');self.assertEqual(race.read_views(p,at),{})
 
     def test_rank_tie_stale_and_startup(self):
-        teams=[row('green',entities={'lab':1,'steam-engine':1}),row('yellow',entities={'lab':1}),row('blue',entities={'lab':3})]
+        def race_row(team,n,tick,**kw):
+            r=row(team,**kw);r['race']=race.project_race({'milestones':n,'tick':tick,'reached':list(race.MILESTONES)[:n],'latest':list(race.MILESTONES)[n-1] if n else None});return r
+        teams=[race_row('green',0,None,entities={'lab':1,'steam-engine':1}),race_row('yellow',0,None,entities={'lab':1}),race_row('blue',0,None,entities={'lab':3})]
         basis=race.rank(teams);self.assertIn('Startup',basis)
         self.assertEqual([r['rank'] for r in teams],[1,2,2]);self.assertEqual(teams[1]['gap'],'1 startup step back')
         teams[0]['stale']=True;race.rank(teams)
         self.assertIsNone(teams[0]['rank']);self.assertFalse(teams[0]['leader']);self.assertEqual(teams[1]['gap'],'Joint lead')
-        teams=[row('green',techs=10),row('yellow',techs=8),row('blue',techs=8)]
-        race.rank(teams);self.assertEqual(teams[2]['rank'],2);self.assertEqual(teams[1]['gap'],'2 techs back')
-        teams[1]['space']['rockets']=1;race.rank(teams);self.assertTrue(teams[1]['leader']);self.assertEqual(teams[0]['gap'],'1 rocket back')
+        # (mt301) the race to the edge: milestones, then who reached them first; technologies and rockets do not rank
+        teams=[race_row('green',5,9000,techs=40),race_row('yellow',3,4000,techs=8),race_row('blue',3,6000,techs=90)]
+        teams[2]['space']['rockets']=4
+        self.assertIn('Race',race.rank(teams))
+        self.assertEqual([r['rank'] for r in teams],[1,2,3]);self.assertEqual(teams[1]['gap'],'2 milestones back')
+        self.assertEqual(teams[2]['gap'],'2 milestones back','behind yellow on time, the gap is to the leader')
+        teams[2]['race']['tick']=4000;race.rank(teams);self.assertEqual([r['rank'] for r in teams],[1,2,2])
+        teams[1]['race']=race.project_race({'milestones':5,'tick':9100});race.rank(teams)
+        self.assertEqual(teams[1]['rank'],2);self.assertEqual(teams[1]['gap'],'Same milestones, later')
+        teams[1]['race']=race.project_race({'milestones':6,'tick':9500});race.rank(teams)
+        self.assertTrue(teams[1]['leader']);self.assertEqual(teams[0]['gap'],'1 milestone back')
+        # no race standing (an older harness, or none read yet): unranked, never ranked by technologies
+        plain=[row('green',techs=10),row('yellow',techs=8)]
+        self.assertEqual(race.rank(plain),'Awaiting race standings');self.assertEqual([r['rank'] for r in plain],[None,None])
+        # bounded projection: names from the fixed list only, counts in range
+        self.assertIsNone(race.project_race({'milestones':99}));self.assertIsNone(race.project_race({'milestones':1.5}))
+        p=race.project_race({'milestones':2,'tick':5,'reached':['aquilo','PRIVATE',3],'latest':'/Users/x','wiped':True})
+        self.assertEqual(p['reached'],['aquilo']);self.assertIsNone(p['latest']);self.assertNotIn('wiped',p)
+
+    def test_game_over_is_rebuilt_and_announced_once(self):
+        r=race.Race();teams=[row(),row('yellow'),row('blue')]
+        res={'reason':'edge','kind':'allied','winner':'green','tick':5900,'scores':{'green':1.2,'yellow':0.8,'blue':0,'secret':9},
+             'arrival':{'at':'solar-system-edge','platform':'PRIVATE ship'},'text':'PRIVATE words','standings':[{'team':'secret'}]}
+        out=r.update(teams,100,game={'result':res})
+        self.assertEqual(out['result']['text'],'Green reached the solar system edge with Yellow')
+        self.assertEqual(out['result']['scores'],{'green':1.2,'yellow':0.8,'blue':0})
+        self.assertNotIn('PRIVATE',json.dumps(out));self.assertNotIn('secret',json.dumps(out))
+        self.assertEqual([e['text'] for e in out['events'] if e['kind']=='game'],['Game over: Green reached the solar system edge with Yellow'])
+        self.assertEqual(len([e for e in r.update(teams,105,game={'result':res})['events'] if e['kind']=='game']),1)
+        solo=dict(res,kind='solo',scores={'green':1.5});self.assertEqual(race.project_result(solo,teams)['text'],'Green reached the solar system edge alone')
+        self.assertEqual(race.project_result(dict(res,reason='wipe'),teams)['text'],'Green wiped every other team')
+        tie={'reason':'milestones','tick':5,'winners':['green','blue','hidden']}
+        self.assertEqual(race.project_result(tie,teams)['text'],'Time is up: Green and Blue share the lead on milestones')
+        for bad in ({'reason':'money','tick':5,'winner':'green'},{'reason':'edge','winner':'hidden','tick':5},{'reason':'edge','winner':'green'}):
+            self.assertIsNone(race.project_result(bad,teams))
+        # a milestone event when a team's reached list grows
+        r=race.Race();a=row();a['race']=race.project_race({'milestones':1,'tick':6000,'reached':['automation-science-pack']})
+        r.update([a],100)
+        b=row(now=105);b['tick']=6300;b['race']=race.project_race({'milestones':2,'tick':6200,'reached':['automation-science-pack','first-rocket']})
+        self.assertEqual([e['text'] for e in r.update([b],105)['events']],['First rocket launched'])
 
     def test_pact_events_are_constructed_and_only_name_known_teams(self):
         r=race.Race();teams=[row(),row('yellow'),row('blue')]
@@ -206,7 +245,9 @@ class ProjectionTest(unittest.TestCase):
             op=Path(d);td=op/'runs/test/green';td.mkdir(parents=True)
             (td/'team.tsv').write_text('gemini\tagy\troute\tmodel\thigh\tFlash\tagy\n')
             (op/'streams.txt').write_text('green http://127.0.0.1:1/\n')
-            (op/'views.json').write_text(json.dumps({'t':time.strftime('%Y-%m-%d %H:%M:%S'),'teams':[{'team':'green','score':{'tick':6000,'entities':{'lab':2},'research':['automation']}}]}))
+            (op/'views.json').write_text(json.dumps({'t':time.strftime('%Y-%m-%d %H:%M:%S'),'teams':[{'team':'green','score':{'tick':6000,'entities':{'lab':2},'research':['automation']}}],
+                'game':{'standings':[{'team':'green','milestones':1,'reached':['automation-science-pack'],'latest':'automation-science-pack','tick':5000,'wiped':True}],
+                        'alerts':[{'kind':'wipe','text':'PRIVATE'}]}}))
             service=overlay.PublicOverlay(op,op,'test',port=0,camera=False)
             raw={'now':time.time(),'tick':6000,'research':{'done_count':1},'space':{'rockets':0},'tokens':{'secret':'PRIVATE'},
                  'agents':[{'name':'gemini','display_name':'Vesper','profile_set':True,'color':'#34a853'}],
@@ -220,6 +261,8 @@ class ProjectionTest(unittest.TestCase):
                 with urllib.request.urlopen(url+'/state.json') as response:state=json.load(response)
                 self.assertEqual(state['teams'][0]['entities']['lab'],2)
                 self.assertEqual(state['teams'][0]['rank'],1)
+                self.assertEqual(state['teams'][0]['race']['milestones'],1)
+                self.assertNotIn('wiped',json.dumps(state));self.assertNotIn('PRIVATE',json.dumps(state))
                 self.assertEqual(state['teams'][0]['agents'][0]['display_name'],'Vesper')
                 self.assertEqual([m['text'] for m in state['feed']],['Labs are ready'])
                 self.assertEqual(state['layout'],{'camera':list(overlay.CAMERA_RECT)})

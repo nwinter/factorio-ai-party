@@ -24,7 +24,7 @@ import re
 import time
 import urllib.parse
 
-from public_race import project, Race, Director, diplomacy, subjects, broadcast, clock, verb_class, project_market
+from public_race import project, Race, Director, diplomacy, subjects, broadcast, clock, verb_class, project_market, MILESTONES
 from public_overlay import asset, audience, shots, CAMERA_RECT
 from public_feed import project_feed
 
@@ -207,6 +207,13 @@ def synthetic(teams=3, per=2, steps=56, fresh=False):
                  'pacts': [], 'feed': [line for at, line in feed if at <= step],
                  'diplomacy': [{'kind': 'diplomacy', 'from_team': a, 'to_team': b, 'agent': CAST[a][who][0], 'text': text, 'tick': 180000 + at * 300, 'seq': n + 1}
                                for n, (at, a, who, b, text) in enumerate(TALKS) if at <= step and who < per and b in order]}
+        # (mt301) the harness's race standings (mt_game): here one milestone a technology, the latest at its tick
+        names = list(MILESTONES)
+        views['game'] = {'standings': [{'team': team, 'milestones': min(len(names), start[ti] + step // speed[ti]),
+                                        'reached': names[:min(len(names), start[ti] + step // speed[ti])],
+                                        'latest': names[min(len(names), start[ti] + step // speed[ti]) - 1] if start[ti] + step // speed[ti] else None,
+                                        'tick': 180000 + (step // speed[ti]) * speed[ti] * 300 if start[ti] + step // speed[ti] else None}
+                                       for ti, team in enumerate(order)]}
         if step >= 24:
             views['pacts'].append({'id': 3, 'a': 'yellow', 'b': 'green', 'status': 'active' if step >= 26 else 'proposed',
                                    'proposed_tick': 180000 + 24 * 300, 'accepted_tick': 180000 + 26 * 300})
@@ -218,10 +225,11 @@ def synthetic(teams=3, per=2, steps=56, fresh=False):
 
 def assemble(race, director, rosters, raws, scores, views, now, camera, fixture):
     """One frame the way PublicOverlay.poll builds it; the camera 'cut' always succeeds."""
-    rows = [project(team, raws[team], rosters[team], now, scores.get(team)) for team in rosters]
+    standing = {g['team']: g for g in (views.get('game') or {}).get('standings') or []}
+    rows = [project(team, raws[team], rosters[team], now, scores.get(team), standing.get(team)) for team in rosters]
     talks = diplomacy(views.get('diplomacy'), rows)
     lines = broadcast(project_feed(views['feed'], rows), rows, now) if isinstance(views.get('feed'), list) else None
-    data = race.update(rows, now, views.get('contacts') or [], views.get('pacts') or [], talks, lines)
+    data = race.update(rows, now, views.get('contacts') or [], views.get('pacts') or [], talks, lines, views.get('game'))
     data['market'] = project_market(views.get('market'), rows)
     fresh = {t: raws[t] for t, r in zip(rosters, rows) if not r['stale']}
     data.update(v=2, now=now, diplomacy=talks, layout={'camera': list(CAMERA_RECT)}, fixture=fixture, **audience({'operator':next(iter(fresh.values()))} if fresh else {}, rosters, now))

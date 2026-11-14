@@ -59,6 +59,19 @@ RESERVED = {'server', 'operator', 'mod', 'moderator', 'admin', 'caster', 'system
             'youtube', 'site', 'wube', 'factorio', 'staff'}
 HEX = re.compile(r'#[0-9a-fA-F]{6}')
 PRONOUNS = re.compile(r'(?:he|she|they|it|xe|ze|ey|fae)(?:/[a-z]{2,8}){0,2}')
+# (mt301) The race to the edge: the harness's milestones (multiteam.lua M.game, in its order) and their public words.
+MILESTONES = {'automation-science-pack': 'Automation science', 'logistic-science-pack': 'Logistic science',
+              'military-science-pack': 'Military science', 'chemical-science-pack': 'Chemical science',
+              'production-science-pack': 'Production science', 'utility-science-pack': 'Utility science',
+              'rocket-silo': 'Rocket silo researched', 'first-rocket': 'First rocket launched',
+              'first-platform': 'First space platform', 'space-science-pack': 'Space science',
+              'first-planet': 'First planet reached', 'second-planet': 'Second planet reached',
+              'third-planet': 'Third planet reached', 'metallurgic-science-pack': 'Metallurgic science',
+              'electromagnetic-science-pack': 'Electromagnetic science', 'agricultural-science-pack': 'Agricultural science',
+              'aquilo': 'Aquilo reached', 'cryogenic-science-pack': 'Cryogenic science',
+              'stellar-discovery-solar-system-edge': 'Solar system edge discovered', 'edge-run': 'Bound for the edge',
+              'edge': 'Reached the edge'}
+TARGETS = {'solar-system-edge': 'the solar system edge', 'shattered-planet': 'the Shattered Planet'}
 PACT_TEXT = {'proposed': 'Pact #{id} proposed to {other}', 'active': 'Pact #{id} signed with {other}',
              'ended': 'Pact #{id} with {other} ended', 'declined': 'Pact #{id} with {other} declined',
              'withdrawn': 'Pact #{id} with {other} withdrawn', 'expired': 'Pact #{id} with {other} expired'}
@@ -421,7 +434,45 @@ def read_views(op, now):
         return {}
 
 
-def project(team, state, agents, now, score=None):
+def project_race(raw):
+    """One team's race standing from the operator's mt_game read: counts, a tick and milestone names from the fixed
+    list only. Wipe flags stay with the operator (restore is a judgment, not a broadcast)."""
+    raw = obj(raw)
+    n, tick = raw.get('milestones'), number(raw.get('tick'))
+    if type(n) is not int or not 0 <= n <= len(MILESTONES):
+        return None
+    reached = [m for m in rows(raw.get('reached')) if isinstance(m, str) and m in MILESTONES][:len(MILESTONES)]
+    latest = raw.get('latest') if isinstance(raw.get('latest'), str) and raw.get('latest') in MILESTONES else None
+    return {'milestones': int(n), 'of': len(MILESTONES), 'tick': tick if n else None, 'latest': latest,
+            'label': MILESTONES.get(latest), 'reached': reached}
+
+
+def project_result(raw, teams):
+    """The frozen end of the game, rebuilt: reason, winners among the known teams, scores and constructed words."""
+    raw, known = obj(raw), {r['team'] for r in teams}
+    reason = raw.get('reason')
+    if reason not in ('edge', 'wipe', 'milestones') or number(raw.get('tick')) is None:
+        return None
+    winners = [t for t in rows(raw.get('winners')) if isinstance(t, str) and t in known] or \
+        ([raw['winner']] if isinstance(raw.get('winner'), str) and raw['winner'] in known else [])
+    if not winners:
+        return None
+    scores = {t: n for t, v in obj(raw.get('scores')).items() if t in known and (n := number(v, hi=10)) is not None}
+    kind = raw.get('kind') if raw.get('kind') in ('solo', 'allied', 'wipe', 'deadline', 'operator') else None
+    w = winners[0].capitalize()
+    if reason == 'edge':
+        where = TARGETS.get(obj(raw.get('arrival')).get('at'), 'the edge')
+        allies = sorted(t.capitalize() for t, v in scores.items() if v > 0 and t != winners[0])
+        text = f'{w} reached {where} alone' if kind == 'solo' or not allies else f'{w} reached {where} with ' + ' and '.join(allies)
+    elif reason == 'wipe':
+        text = f'{w} wiped every other team'
+    else:
+        text = 'Time is up: ' + ' and '.join(t.capitalize() for t in winners) + (' share the lead' if len(winners) > 1 else ' leads') + ' on milestones'
+    return {'reason': reason, 'kind': kind, 'winners': winners, 'scores': scores, 'tick': number(raw.get('tick')),
+            'time': clock(number(raw.get('tick'))), 'text': text}
+
+
+def project(team, state, agents, now, score=None, race=None):
     """Deliberate allowlist. The roster decides who is on a team; names, colours and personas the
     agents chose are rebuilt by identity(), never copied from the feed."""
     state, score = obj(state), obj(score)
@@ -514,19 +565,21 @@ def project(team, state, agents, now, score=None):
                         'packs': [p for p in PACKS if any(obj(m).get('item') == p and number(obj(m).get('total'), 0) > 0
                                                        for m in rows(obj(science.get('made')).get('packs')))]},
             'space': {'rockets': number(space.get('rockets'), number(score.get('rockets')))},
-            'entities': entities, 'score_tick': number(score.get('tick')), 'map': mini,
+            'entities': entities, 'score_tick': number(score.get('tick')), 'map': mini, 'race': project_race(race) if race else None,
             'chat': chat, 'board': board[:12], 'events': events}
 
 
 def rank(rows_):
-    """No invented overall percentage. Equal scores stay tied, stale feeds unranked."""
-    valid = [r for r in rows_ if not r['stale'] and r['research']['done_count'] is not None and r['space']['rockets'] is not None]
-    startup = bool(valid) and all(not r['research']['done_count'] and not r['space']['rockets'] for r in valid)
+    """(mt301) The race to the edge: milestones reached, then who reached the last of them first. Never money, never an
+    invented percentage. Before any milestone, the opening's five first buildings. Stale feeds and teams with no race
+    standing stay unranked."""
+    valid = [r for r in rows_ if not r['stale'] and r.get('race') is not None]
+    startup = bool(valid) and all(not r['race']['milestones'] for r in valid)
     if startup:
         valid = [r for r in valid if r['entities'] is not None]
     def key(r):
         return ((sum(r['entities'].get(k, 0) > 0 for k in STARTUP),) if startup else
-                (r['space']['rockets'], r['research']['done_count']))
+                (r['race']['milestones'], -(r['race']['tick'] or 0)))
     ordered = sorted(valid, key=key, reverse=True)
     best = key(ordered[0]) if ordered else None
     for r in rows_:
@@ -542,13 +595,14 @@ def rank(rows_):
             gap = f'{delta} startup step' + ('s' if delta != 1 else '') + ' back'
         elif best[0] != k[0]:
             delta = int(best[0] - k[0])
-            gap = f'{delta} rocket' + ('s' if delta != 1 else '') + ' back'
+            gap = f'{delta} milestone' + ('s' if delta != 1 else '') + ' back'
         else:
-            delta = int(best[1] - k[1])
-            gap = f'{delta} tech' + ('s' if delta != 1 else '') + ' back'
+            gap = 'Same milestones, later'
         r.update(rank=place, leader=k == best, gap=gap,
                  startup_steps=sum((r['entities'] or {}).get(k, 0) > 0 for k in STARTUP))
-    return 'Startup: miner · furnace · engine · lab · assembler' if startup else 'Rank: rockets → technologies completed'
+    if not valid:
+        return 'Awaiting race standings'
+    return 'Startup: miner · furnace · engine · lab · assembler' if startup else 'Race: milestones toward the edge, then who reached them first'
 
 
 class Race:
@@ -574,7 +628,7 @@ class Race:
             while len(self.said) > 240:
                 self.said.pop(next(iter(self.said)))
 
-    def update(self, teams, now, contacts=(), pacts=(), diplomacy=(), lines=None):
+    def update(self, teams, now, contacts=(), pacts=(), diplomacy=(), lines=None, game=None):
         """lines: broadcast() rows from the operator's ordered feed, or None when this run has none
         (then speech comes from each team's own chat window and the diplomacy lane)."""
         self.ordered = self.ordered or lines is not None
@@ -613,6 +667,12 @@ class Race:
                         self.add(t, 'research', f'{count} ' + ('technology' if count == 1 else 'technologies') + ' completed', tick, now, 'lab', observed=True)
                 if r['space']['rockets'] is not None and old['space']['rockets'] is not None and r['space']['rockets'] > old['space']['rockets'] and not any(e['kind'] == 'rocket' and e['tick'] > (old['tick'] or 0) for e in r['events']):
                     self.add(t, 'rocket', 'First rocket launched' if old['space']['rockets'] == 0 else 'Rocket launched', tick, now, 'rocket-part', observed=True)
+                # (mt301) a milestone toward the edge, once, at the tick the harness saw it
+                was, now_race = old.get('race'), r.get('race')
+                if was is not None and now_race is not None:
+                    for m in now_race['reached']:
+                        if m not in was['reached']:
+                            self.add(t, 'milestone', MILESTONES[m], now_race['tick'] or tick, now, None, observed=True)
                 if r['entities'] is not None and old['entities'] is not None:
                     for item in BUILDINGS:
                         n, b = r['entities'][item], old['entities'][item]
@@ -662,15 +722,20 @@ class Race:
                       'to_team': m['to_team'], 'kind': 'diplomacy', 'text': m['text'], 'tick': m['tick'],
                       'at': now - max(0, latest - m['tick']) / 60, 'reply': False})
         basis = rank(teams)
+        # (mt301) the frozen end of the game: one event, and the result for the overlay
+        result = project_result(obj(game).get('result'), teams) if game else None
+        if result and result['tick'] <= latest:
+            self.add(result['winners'][0], 'game', 'Game over: ' + result['text'], result['tick'],
+                     now - (latest - result['tick']) / 60, 'rocket-part')
         feed = sorted(self.said.values(), key=lambda m: (m['at'] or 0, m['tick'] or 0))[-40:]
         return {'teams': teams, 'events': sorted(self.events, key=lambda e: e['tick'] or 0, reverse=True)[:12],
-                'ranking': basis, 'feed': feed}
+                'ranking': basis, 'feed': feed, 'result': result}
 
 
 # ---- camera -------------------------------------------------------------------------------------------------------
 ACTION, WARM = 3.0, 1.5  # a subject at ACTION is doing something now; under WARM it has stood for a while
 DOING = {'fight': 10.0, 'build': 8.0, 'work': 5.0, 'walk': 3.0}
-NEWS = {'rocket': 10, 'death': 9, 'platform_lost': 9, 'contact': 8, 'pact': 8, 'research': 6, 'build': 4}
+NEWS = {'game': 12, 'milestone': 9, 'rocket': 10, 'death': 9, 'platform_lost': 9, 'contact': 8, 'pact': 8, 'research': 6, 'build': 4}
 
 
 def subjects(state, names, now):

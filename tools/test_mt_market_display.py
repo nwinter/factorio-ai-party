@@ -17,8 +17,11 @@ from tools.test_mt_public import FakeOBS
 
 class MarketDisplayTests(unittest.TestCase):
     def setUp(self):
+        # (mt301) equal race standings: money must not break the tie
         self.teams = [race.project(t, {'now': 100, 'tick': 6000, 'research': {'done_count': 1}, 'space': {'rockets': 0}},
-                                  [{'name': t + '1'}, {'name': t + '2'}], 100) for t in ('green', 'yellow', 'blue')]
+                                  [{'name': t + '1'}, {'name': t + '2'}], 100, None,
+                                  {'milestones': 2, 'tick': 5000, 'reached': ['automation-science-pack', 'logistic-science-pack']})
+                      for t in ('green', 'yellow', 'blue')]
         self.line = dict(kind='market', scope='market', system=True, agent='Trading Post', team='green',
                          to=['yellow'], source_seq=1, seq=10, tick=5900, text='green sells 20 iron-plate to yellow at 3; arrival in 90 seconds')
         self.marker = dict(id=1, **{'from': 'green'}, to='yellow', item='iron-plate', count=20,
