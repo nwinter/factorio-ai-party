@@ -1,6 +1,6 @@
 # Harness changes, 2026-10-10 (branch `pog-eng`, uncommitted)
 
-## mt306 (private, offline checkpoint): late-game harness headroom
+## mt306 (checkpoint; matched after-bench pending): late-game harness headroom
 
 The mt302 joined-player bench spent 266–297 ms per game second in the harness, with GC spikes and a 2.1-second
 first-call hitch. Production-leg watches now read the immutable engine version once per runtime and share their
@@ -15,9 +15,14 @@ and digest markers are not consumed while pending. Existing completed snapshots 
 freshness; bot-only forces also warm after a request. No actions, visibility rules or production boundaries change.
 
 Counted Lua 5.2 fixtures cover engine crossings, empty-belt accounting, cell-key spelling, snapshot text reuse,
-cold requests, job reload, playerless forces and unchanged multi-force scan cadence. Native before/after timing and GC settings remain
-pending the operator's imac2 slots; this checkpoint does not establish the 300 ms/s target. The stand-in collector
+cold requests, job reload, playerless forces and unchanged multi-force scan cadence. The cp31 native rerun averaged
+264.27 ms/game-s with twelve stand-ins and 286.38 ms/game-s all-at-once, peaking at 533.52 and 620.35 ms. A four-setting
+GC sweep still exceeded 500 ms/s; default settings were restored. The matched optimized after-bench remains pending
+after mt307; this checkpoint does not establish the 300 ms/s target. The stand-in collector
 now records initial status/queue calls, and the load collector keeps raw UPS intervals and per-window UPS.
+The native baseline exposed the profiler's 20,000-line limit: a 300-second window retained only 154 seconds.
+The load collector now defaults to 60-second windows and marks missing, interrupted or truncated profiles
+incomplete, with the requested tick range and dropped-line count. Bench summaries must check that coverage.
 
 Players: no changed action arguments. A first network/alert read can report its scan pending; later reads return
 the completed snapshot. Evidence and native follow-up status:

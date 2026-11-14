@@ -14,6 +14,16 @@ import standin_load
 
 
 class BenchTests(unittest.TestCase):
+    def test_truncated_or_interrupted_profiles_are_not_complete(self):
+        def done(end, dropped):
+            return f"agent-harness profile done from_tick=100 to_tick={end} (elapsed) keys=200 second_lines=20000 dropped={dropped}"
+        self.assertTrue(load_bench.profile_completion(done(3700, 0), 100, 3700)["complete"])
+        cut = load_bench.profile_completion(done(3700, 1200), 100, 3700)
+        self.assertFalse(cut["complete"])
+        self.assertEqual(cut["dropped_lines"], 1200)
+        self.assertFalse(load_bench.profile_completion(done(1900, 0), 100, 3700)["complete"])
+        self.assertFalse(load_bench.profile_completion(done(3700, 0), 101, 3700)["complete"])
+
     def test_ups_windows_preserve_boundaries(self):
         points = [{"from_tick": 0, "to_tick": 100, "ups": 30},
                   {"from_tick": 100, "to_tick": 700, "ups": 60},

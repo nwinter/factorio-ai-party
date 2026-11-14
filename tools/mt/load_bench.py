@@ -16,6 +16,7 @@ import pog  # noqa: E402
 
 SECOND = re.compile(r'agent-harness profile second tick=(\d+) n=(\d+) key=(.+) time=\D*?([\d.]+) ?ms\s*$')
 HEAP = re.compile(r'agent-harness profile heap tick=(\d+) kb=(\d+) grew_kb=(\d+) fell_kb=(\d+)')
+DONE = re.compile(r'agent-harness profile done from_tick=(\d+) to_tick=(\d+).*?dropped=(\d+)')
 
 
 def pct(xs, p):
@@ -29,6 +30,17 @@ def ups_window(samples, start_tick, end_tick):
     rates = [s["ups"] for s in samples if start_tick <= s["from_tick"] and s["to_tick"] <= end_tick]
     return {"samples": len(rates), "min": min(rates) if rates else None,
             "median": statistics.median(rates) if rates else None}
+
+
+def profile_completion(text, start_tick, end_tick):
+    # A busy team run exhausts profile.lua's 20,000-line cap in about 150 s.
+    # Keep the measured subset, but never call a truncated window complete.
+    matches = [m for m in DONE.finditer(text) if int(m[1]) == start_tick]
+    if not matches:
+        return {"complete": False, "dropped_lines": None, "profile_to_tick": None}
+    m = matches[-1]
+    return {"complete": int(m[2]) >= end_tick and int(m[3]) == 0,
+            "dropped_lines": int(m[3]), "profile_to_tick": int(m[2])}
 
 
 def window_stats(text, start_tick, end_tick):
@@ -69,7 +81,7 @@ def main():
     ap.add_argument("--password-file", required=True)
     ap.add_argument("--log-cmd", required=True)
     ap.add_argument("--minutes", type=float, default=30)
-    ap.add_argument("--window", type=int, default=300)
+    ap.add_argument("--window", type=int, default=60)
     ap.add_argument("--every", type=float, default=10)
     ap.add_argument("--label", default="")
     ap.add_argument("--out", required=True)
@@ -110,6 +122,11 @@ def main():
         text = subprocess.run(a.log_cmd, shell=True, capture_output=True, text=True).stdout
         w = window_stats(text, s_tick, s_tick + seconds * 60)
         w["from_tick"] = s_tick
+        w["until_tick"] = s_tick + seconds * 60
+        w["requested_seconds"] = seconds
+        w.update(profile_completion(text, s_tick, w["until_tick"]))
+        if w["seconds"] < seconds - 1:
+            w["complete"] = False
         w["ups"] = ups_window(ups_samples, s_tick, s_tick + seconds * 60)
         windows.append(w)
         print(json.dumps({"window": len(windows), **w}))
