@@ -48,7 +48,8 @@ def setup(names):
     for n in names:
         bot = 'proof-'+n
         lua('rcon.print(remote.call("agent_harness","bot_create",{name='+json.dumps(bot)+',force='+json.dumps(n)+'}))')
-    lua('local h=storage.agent_harness; for _,n in ipairs('+names_lua+') do '
+    lua('if storage.pog_autosave then storage.pog_autosave.enabled=false end; '
+        'local h=storage.agent_harness; for _,n in ipairs('+names_lua+') do '
         'local f=game.forces[n]; f.technologies["mt-coinage"].enabled=true; '
         'f.technologies["mt-coinage"].researched=true; f.technologies["logistic-science-pack"].researched=true; '
         'for _,other in ipairs('+names_lua+') do if n~=other then h.mt.first["chart "..n..">"..other]=game.tick end end end; '
@@ -102,8 +103,8 @@ def probe(names, directory, timeout=1800):
             before = state()
             path=native_path(seller,buyer,before)
             write(directory/(seller+'-'+buyer+'-path.json'),path)
-            call('sell', dict(item='iron-plate',price=1,keep=0,count=100), 'proof-'+seller)
-            call('buy', dict(item='iron-plate',price=1,count=100), 'proof-'+buyer)
+            call('sell', dict(item='iron-plate',price=10,keep=0,count=100), 'proof-'+seller)
+            call('buy', dict(item='iron-plate',price=10,count=100), 'proof-'+buyer)
             started=time.time();observed=[];unit_seen=False
             lua('game.tick_paused=false; rcon.print("{}")')
             while time.time()-started<timeout:
