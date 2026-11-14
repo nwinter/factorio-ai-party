@@ -15,6 +15,33 @@ ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tools/stream'))
 import viewers
 
+
+class BroadcastChat:
+    """Follow this run's durable rollover receipt; remains operator/display only."""
+    def __init__(self, op, target, factory=None):
+        self.op, self.target = op, target
+        self.factory = factory or viewers.YouTubeChat
+        self.source = self.factory(target)
+
+    def current(self):
+        try:
+            target=json.loads((self.op/'broadcast.json').read_text())['id']
+            if isinstance(target,str) and target!=self.target:
+                self.source=self.factory(target)
+                self.target=target
+        except (OSError,ValueError,KeyError):
+            pass
+        return self.source
+
+    def poll(self):
+        return self.current().poll()
+
+    def poll_watching(self):
+        return self.current().poll_watching()
+
+    def status(self):
+        return self.source.status()
+
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('run');p.add_argument('--minutes',type=int,required=True)
     p.add_argument('--run-mode',choices=['test','full'],default='test')
@@ -28,6 +55,8 @@ def main():
     feed=viewers.build(a,agent_names=names,log_dir=str(op/'viewer-logs'),inbox=str(op/'viewer-inbox.jsonl'),
                        deletions=str(op/'viewer-deletions.jsonl'),cursor=str(op/viewers.CURSOR_NAME))
     assert feed and feed.relay is None
+    if a.youtube:
+        feed.sources['youtube']=BroadcastChat(op,a.youtube)
     feed.start();stop=False;deadline=time.time()+a.minutes*60
     def halt(*_):
         nonlocal stop

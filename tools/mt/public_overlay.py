@@ -8,6 +8,7 @@ import copy
 import http.server
 import json
 import math
+import os
 import re
 import sys
 import threading
@@ -24,6 +25,7 @@ from public_race import (project, Race, Director, read_views, icons, speech, pro
                          subjects, broadcast, project_market, rows as list_rows, obj)
 from public_feed import project_feed
 from public_audio import PublicAudio, AudioRoutes
+from public_tours import Tours
 
 CAMERA = 'pog-director2'
 # The one camera rectangle, in overlay pixels. The OBS scene item (public_stream.setup_obs) and the
@@ -225,6 +227,7 @@ class PublicOverlay:
         self.op = op
         self.feeds = feeds(op)
         self.race, self.director = Race(), Director(dwell)
+        self.tours = Tours(op, float(os.environ.get('POG_MT_TOUR_SECONDS', '3600')))
         self.rosters = {t: roster(tree, run, t) for t, _ in self.feeds}
         self.harnesses = {t: Harness('imac2', t) for t, _ in self.feeds} if camera else {}
         self.stop = threading.Event()
@@ -278,6 +281,16 @@ class PublicOverlay:
             return copy.deepcopy(self.state)
 
     def poll(self):
+        # Keep a malformed transient feed or a dropped RCON session from killing
+        # the only polling thread for the rest of a multi-day broadcast.
+        while not self.stop.is_set():
+            try:
+                self.poll_loop()
+            except Exception as e:
+                print(f'overlay retry: {type(e).__name__}: {e}', flush=True)
+                self.stop.wait(10)
+
+    def poll_loop(self):
         previous = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.feeds)) as pool:
             while not self.stop.is_set():
@@ -301,6 +314,10 @@ class PublicOverlay:
                         row = dict(previous.get(team) or project(team, {}, self.rosters[team], now), stale=True)
                     rows.append(row)
                 talks = diplomacy(views.get('diplomacy'), rows)
+                try:
+                    self.youtube = json.loads((self.op/'broadcast.json').read_text())['id']
+                except (OSError, ValueError, KeyError):
+                    pass
                 # The operator's ordered feed, when this run's harness keeps one (views.json.feed): every team's
                 # say, tell, board note, diplomacy and identity announcement on one sequence.
                 lines = broadcast(project_feed(views['feed'], rows), rows, now) if isinstance(views.get('feed'), list) else None
@@ -312,7 +329,9 @@ class PublicOverlay:
                         self.state['stream'] = {'youtube_video_id': self.youtube}
                 # Private to the director: where each roster agent is and how much it is doing.
                 scout = {t: subjects(data, {a['name'] for a in self.rosters[t]}, now) for t, data in fresh.items()}
-                choice = self.director.choose(rows, self.state['events'], now, scout) if self.harnesses else None
+                tour_choice, hold = self.tours.choose(rows, now) if self.harnesses else (None, False)
+                choice = tour_choice or (self.director.choose(rows, self.state['events'], now, scout)
+                                         if self.harnesses and not hold else None)
                 if choice:
                     team, reason = choice
                     try:
@@ -324,10 +343,14 @@ class PublicOverlay:
                             surface = camera['surface'] if camera['surface'] in ('nauvis', 'vulcanus', 'gleba', 'fulgora', 'aquilo') else 'factory'
                             self.state['camera'] = {'team': team, 'surface': surface, 'since': since, 'reason': reason,
                                                     'agent': camera['agent'], 'kind': camera['kind']}
+                            if tour_choice:
+                                self.state['tour'] = self.tours.success(next(r for r in rows if r['team']==team), since)
                         print(f'camera: {team} {camera}', flush=True)
                     except Exception as e:
                         print(f'camera {team}: {type(e).__name__}', flush=True)
                         self.director.failed(team, time.time())
+                        if tour_choice:
+                            self.tours.failed(time.time())
                 self.stop.wait(5)
 
 
