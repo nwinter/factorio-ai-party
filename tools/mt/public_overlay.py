@@ -285,11 +285,14 @@ class PublicOverlay:
                 views = read_views(self.op, now)
                 scores = {r['team']: r.get('score') for r in map(obj, list_rows(views.get('teams')))
                           if isinstance(r.get('team'), str) and r['team'] in self.rosters and not obj(r.get('errors')).get('score')}
+                # (mt301) the race standings (the harness's mt_game, read by team_views): the public ranking's basis
+                game = obj(views.get('game'))
+                standing = {g['team']: g for g in map(obj, list_rows(game.get('standings'))) if isinstance(g.get('team'), str)}
                 pending = [(t, pool.submit(fetch, u)) for t, u in self.feeds]
                 for team, job in pending:
                     try:
                         data = job.result()
-                        row = project(team, data, self.rosters[team], now, scores.get(team))
+                        row = project(team, data, self.rosters[team], now, scores.get(team), standing.get(team))
                         if not row['stale']:
                             fresh[team] = data
                         previous[team] = row
@@ -302,7 +305,7 @@ class PublicOverlay:
                 # say, tell, board note, diplomacy and identity announcement on one sequence.
                 lines = broadcast(project_feed(views['feed'], rows), rows, now) if isinstance(views.get('feed'), list) else None
                 with self.lock:
-                    self.state.update(self.race.update(rows, now, list_rows(views.get('contacts')), list_rows(views.get('pacts')), talks, lines),
+                    self.state.update(self.race.update(rows, now, list_rows(views.get('contacts')), list_rows(views.get('pacts')), talks, lines, game),
                                       now=now, diplomacy=talks, market=project_market(views.get('market'), rows),
                                       **operator_audience(self.op, self.rosters, now))
                     if self.youtube:

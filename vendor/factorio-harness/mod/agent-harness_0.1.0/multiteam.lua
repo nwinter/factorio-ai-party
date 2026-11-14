@@ -590,5 +590,490 @@ return function(api)
     if c then c.messages = kept end
     return {dropped=dropped, kept=#kept}
   end
+  -- (mt301, private) The end of the game (the private design doc, Nick d27-d28). Solo edge 1.5; allied edge 1.0 each
+  -- member, split by the pact's shares (2 x share, capped by pacts' share_max_score 1.4). The alliance that counts is
+  -- the one pacts.lua recorded when the edge-run platform left its last planet. The team's Nauvis home (its cargo
+  -- landing pad, with power round it) must stand when the platform arrives, or the arrival does not count. A team
+  -- that wipes every other team wins: a wipe is no powered production building for wipe_down_s AND every agent of the
+  -- team killed on respawn by another team. It is detected and alerted, never restored; the win waits for the
+  -- operator unless wipe_win is 'auto'. An optional deadline ends the run by milestone ranking. The result is frozen
+  -- in storage (mt.game.result), written to script-output pog/mt-game-result.json, pog/mt-game.jsonl and the log, and
+  -- told to the agents (each team's line names only teams it has had contact with), the feed (a system line) and the
+  -- operator (alerts in mt_game; team_views.py shows them).
+  --   operator: mt_game {config?, end_by_wipe?, wipe_clear?, end_now?, clear_result?, alerts_since?}, mt_game_tick
+  M.game = (function()
+    local G = {operator={}}
+    local DEFAULTS = {target='solar-system-edge', solo=1.5, home_surface='nauvis', home_radius=64, home_power=true,
+      wipe_down_s=600, respawn_window_s=120, wipe_win='confirm', deadline_tick=false, check_s=60}
+    local PRODUCTION = {'assembling-machine', 'furnace', 'mining-drill', 'lab', 'rocket-silo', 'agricultural-tower'}
+    local INNER = {vulcanus=true, fulgora=true, gleba=true}
+    local MAX_ARRIVALS, MAX_ALERTS = 50, 200
+    -- The race to the edge (proposal, report-mt301.md): each milestone once, at the tick the harness first saw it. A
+    -- technology milestone counts only where the game has that technology.
+    local MILESTONES = {
+      {'automation-science-pack', 'tech'}, {'logistic-science-pack', 'tech'}, {'military-science-pack', 'tech'},
+      {'chemical-science-pack', 'tech'}, {'production-science-pack', 'tech'}, {'utility-science-pack', 'tech'},
+      {'rocket-silo', 'tech'}, {'first-rocket'}, {'first-platform'}, {'space-science-pack', 'tech'},
+      {'first-planet'}, {'second-planet'}, {'third-planet'},
+      {'metallurgic-science-pack', 'tech'}, {'electromagnetic-science-pack', 'tech'}, {'agricultural-science-pack', 'tech'},
+      {'aquilo'}, {'cryogenic-science-pack', 'tech'}, {'stellar-discovery-solar-system-edge', 'tech'},
+      {'edge-run'}, {'edge'}}
+    G.MILESTONES = MILESTONES
+    local function on() local m = api.state().mt; return m and m.teams and m.order and m or nil end
+    local function gs()
+      local m = st()
+      m.game = m.game or {config={}, teams={}, arrivals={}, alerts={}, at_target={}, alert_seq=0}
+      return m.game
+    end
+    local function cfg(k)
+      local v = gs().config[k]
+      if v ~= nil then return v end
+      return DEFAULTS[k]
+    end
+    local function rec_of(t)
+      local g = gs()
+      g.teams[t] = g.teams[t] or {milestones={}, planets={}, kills={}}
+      return g.teams[t]
+    end
+    local function pacts() return api.pacts and api.pacts() or nil end
+    local function contacted(a, b) local p = pacts(); return a == b or (p ~= nil and p.contacted(a, b)) end
+    local function words(name) return (tostring(name):gsub('-', ' ')) end
+    local function emit(rec, file)
+      pcall(log, 'mt game: ' .. helpers.table_to_json(rec))
+      pcall(helpers.write_file, 'pog/mt-game.jsonl', helpers.table_to_json(rec) .. '\n', true, 0)
+      if file then pcall(helpers.write_file, 'pog/' .. file, helpers.table_to_json(rec), false, 0) end
+    end
+    local function alert(kind, team, text, extra)
+      local g = gs()
+      g.alert_seq = g.alert_seq + 1
+      local a = {seq=g.alert_seq, tick=game.tick, kind=kind, team=team, text=text}
+      for k, v in pairs(extra or {}) do a[k] = v end
+      g.alerts[#g.alerts+1] = a
+      while #g.alerts > MAX_ALERTS do table.remove(g.alerts, 1) end
+      emit({alert=a})
+      return a
+    end
+    local function fact(t, text) if api.fact then pcall(api.fact, t, text, true) end end
+    local function platforms(f)
+      local list = {}
+      for _, pl in pairs(f and f.platforms or {}) do if pl.valid then list[#list+1] = pl end end
+      return list
+    end
+
+    -- Milestones: a few reads per team (technologies by name, rockets, its platforms).
+    function G.observe(t, tick)
+      local f = game.forces[t]
+      if not f then return end
+      local r = rec_of(t)
+      local function reach(name) if not r.milestones[name] then r.milestones[name] = tick end end
+      for _, m in ipairs(MILESTONES) do
+        if m[2] == 'tech' and not r.milestones[m[1]] then
+          local tech = f.technologies[m[1]]
+          if tech and tech.researched then reach(m[1]) end
+        end
+      end
+      if (f.rockets_launched or 0) > 0 then reach('first-rocket') end
+      local target = cfg('target')
+      for _, pl in ipairs(platforms(f)) do
+        if pl.hub and pl.hub.valid then reach('first-platform') end
+        local at = pl.space_location and pl.space_location.name
+        if at and (INNER[at] or at == 'aquilo') and not r.planets[at] then r.planets[at] = tick end
+        if at == 'aquilo' then reach('aquilo') end
+        local c = not at and pl.space_connection
+        if c and ((c.to and c.to.name == target) or (c.from and c.from.name == target)) then reach('edge-run') end
+      end
+      local n = 0
+      for p in pairs(r.planets) do if INNER[p] then n = n + 1 end end
+      if n >= 1 then reach('first-planet') end
+      if n >= 2 then reach('second-planet') end
+      if n >= 3 then reach('third-planet') end
+    end
+    -- Ranked by milestones reached, then by the tick of the latest one (sooner first); equal both share a place.
+    function G.standings()
+      local rows = {}
+      for _, t in ipairs(team_names()) do
+        local r = rec_of(t)
+        local n, last, latest, names = 0, nil, nil, {}
+        for _, m in ipairs(MILESTONES) do
+          local tick = r.milestones[m[1]]
+          if tick then
+            n = n + 1; names[#names+1] = m[1]
+            if not last or tick >= last then last, latest = tick, m[1] end   -- equal ticks: the later in the race
+          end
+        end
+        rows[#rows+1] = {team=t, milestones=n, of=#MILESTONES, reached=names, latest=latest, tick=last, wiped=r.wiped and true or nil}
+      end
+      table.sort(rows, function(a, b)
+        if a.milestones ~= b.milestones then return a.milestones > b.milestones end
+        if (a.tick or 0) ~= (b.tick or 0) then return (a.tick or 0) < (b.tick or 0) end
+        return a.team < b.team
+      end)
+      for i, row in ipairs(rows) do
+        local prev = rows[i - 1]
+        row.rank = (prev and prev.milestones == row.milestones and prev.tick == row.tick) and prev.rank or i
+      end
+      return rows
+    end
+
+    -- An entity's power: production buildings by status (no power, no fuel), the home's by its electric buffer.
+    local function up(e)
+      if not (e and e.valid) then return false end
+      local ok, s = pcall(function() return e.status end)
+      if not ok or s == nil then return true end
+      local d = defines.entity_status
+      return s ~= d.no_power and s ~= d.no_fuel
+    end
+    local function electric(e)
+      local ok, v = pcall(function()
+        local b = e.electric_buffer_size
+        if not b or b <= 0 then return nil end
+        local s = e.status
+        if s ~= nil and s == defines.entity_status.no_power then return false end
+        return e.energy > 0
+      end)
+      if ok then return v end
+      return nil
+    end
+    function G.home(t)
+      local surface = game.get_surface(cfg('home_surface'))
+      if not surface then return {ok=false, why='no ' .. tostring(cfg('home_surface')) .. ' surface'} end
+      local pad = surface.find_entities_filtered{type='cargo-landing-pad', force=t, limit=1}[1]
+      if not pad then return {ok=false, why='no cargo landing pad of ours on ' .. surface.name} end
+      local h = {ok=true, surface=surface.name, pad={x=pad.position.x, y=pad.position.y}}
+      if cfg('home_power') then
+        local seen = 0
+        for _, e in ipairs(surface.find_entities_filtered{position=pad.position, radius=cfg('home_radius'), force=t}) do
+          local p = electric(e)
+          if p ~= nil then seen = seen + 1 end
+          if p then h.powered_by = e.name; return h end
+        end
+        h.ok = false
+        h.why = seen == 0 and ('no electric building of ours within ' .. cfg('home_radius') .. ' tiles of the landing pad')
+          or 'no power at the landing pad (' .. seen .. ' electric buildings round it, none powered)'
+      end
+      return h
+    end
+    -- A powered production building anywhere: the last one found first (one read), else the first 200 of each
+    -- surface, else every one.
+    local function production_up(t)
+      local r = rec_of(t)
+      if r.witness and up(r.witness) then return true end
+      r.witness = nil
+      local partial = {}
+      for pass = 1, 2 do
+        for _, surface in pairs(game.surfaces) do
+          if pass == 1 or partial[surface.name] then
+            local found = surface.find_entities_filtered{type=PRODUCTION, force=t, limit=pass == 1 and 200 or nil}
+            for _, e in ipairs(found) do if up(e) then r.witness = e; return true end end
+            if pass == 1 and #found >= 200 then partial[surface.name] = true end
+          end
+        end
+      end
+      return false
+    end
+    -- A character of a team's agent killed by another team within respawn_window_s of its (re)spawn.
+    function G.on_died(event)
+      local m = on()
+      local e = event.entity
+      if not (m and e and e.valid and e.type == 'character') then return end
+      local victim, by = e.force.name, event.force and event.force.name
+      if not (m.teams[victim] and by and m.teams[by] and by ~= victim) then return end
+      local unit = e.unit_number
+      for _, b in pairs((api.state().bots or {}).by_index or {}) do
+        local c = b.character
+        if c and (c == e or (c.valid and c.unit_number == unit)) then
+          if game.tick - (b.spawn_tick or b.created_tick or 0) <= cfg('respawn_window_s') * 60 then
+            local cause = event.cause
+            rec_of(victim).kills[b.name] = {tick=game.tick, by=by, cause=cause and cause.valid and cause.name or nil}
+          end
+          return
+        end
+      end
+    end
+    local function team_bots(t)
+      local list = {}
+      for _, b in pairs((api.state().bots or {}).by_index or {}) do if (b.force or 'player') == t then list[#list+1] = b end end
+      table.sort(list, function(x, y) return x.name < y.name end)
+      return list
+    end
+    function G.check_wipe(t, tick)
+      local r = rec_of(t)
+      if production_up(t) then
+        r.down_since = nil
+        if r.wiped then
+          alert('recovered', t, t .. ': a production building has power again; its wipe flag is cleared (nothing was restored)', {wiped_tick=r.wiped.tick})
+          r.wiped = nil
+        end
+        return
+      end
+      r.down_since = r.down_since or tick
+      if r.wiped or tick - r.down_since < cfg('wipe_down_s') * 60 then return end
+      local bots, killed = team_bots(t), {}
+      if #bots == 0 then return end   -- a team without agents (humans only) is never flagged
+      for _, b in ipairs(bots) do
+        local k = r.kills[b.name]
+        if not (k and k.tick >= r.down_since) then return end
+        killed[#killed+1] = b.name .. ' by ' .. k.by .. (k.cause and (' (' .. k.cause .. ')') or '')
+      end
+      r.wiped = {tick=tick, down_since=r.down_since, killed=killed}
+      alert('wipe', t, string.format('%s is wiped: no powered production building since tick %d (%d s), and every agent killed on respawn by another team: %s. Restore is the operator\'s call; nothing was restored.',
+        t, r.down_since, math.floor((tick - r.down_since) / 60), table.concat(killed, ', ')), {down_since=r.down_since})
+    end
+
+    -- The lines to agents: each names only the teams the reader's team has had contact with.
+    function G.fact_text(res, t)
+      local mine = res.scores and res.scores[t]
+      local score = mine and string.format(' Our score: %g.', mine) or ''
+      local w = res.winner
+      if res.reason == 'edge' then
+        local where, a = words(res.arrival.at), res.arrival
+        if w == t then
+          if res.kind == 'solo' then
+            return string.format('The run is over: our platform %s reached the %s with our Nauvis home standing. We win alone.%s', a.platform, where, score)
+          end
+          local names = {}
+          for u, v in pairs(res.scores) do if u ~= t and v > 0 and contacted(t, u) then names[#names+1] = string.format('%s %g', u, v) end end
+          table.sort(names)
+          return string.format('The run is over: our platform %s reached the %s with our Nauvis home standing, allied when it left its last planet with %s.%s',
+            a.platform, where, table.concat(names, ', '), score)
+        elseif (mine or 0) > 0 and contacted(t, w) then
+          return string.format('The run is over: %s\'s platform reached the %s; our team was allied with %s when it left its last planet.%s', w, where, w, score)
+        elseif contacted(t, w) then
+          return string.format('The run is over: %s\'s platform reached the %s.%s', w, where, score)
+        end
+        return 'The run is over.' .. score
+      elseif res.reason == 'wipe' then
+        if w == t then return 'The run is over: every other team is wiped. We win.' .. score end
+        if contacted(t, w) then return string.format('The run is over: %s wiped every other team.%s', w, score) end
+        return 'The run is over.' .. score
+      end
+      local parts, own = {}, nil
+      for _, row in ipairs(res.standings or {}) do
+        if row.team == t then own = row end
+        if contacted(t, row.team) then parts[#parts+1] = (row.team == t and 'our team' or row.team) .. ' ' .. row.milestones end
+      end
+      if #parts > 1 then
+        return 'The run is over at its time limit, ranked by milestones toward the edge: ' .. table.concat(parts, ', ') .. '.'
+      end
+      return string.format('The run is over at its time limit; our team reached %d milestones toward the edge.', own and own.milestones or 0)
+    end
+    local function public_text(res)
+      if res.reason == 'edge' then
+        if res.kind == 'solo' then return string.format('%s reached the %s alone and wins (score %g)', res.winner, words(res.arrival.at), res.scores[res.winner]) end
+        local names = {}
+        for u, v in pairs(res.scores) do if v > 0 then names[#names+1] = string.format('%s %g', u, v) end end
+        table.sort(names)
+        return string.format('%s reached the %s with its allies: %s', res.winner, words(res.arrival.at), table.concat(names, ', '))
+      elseif res.reason == 'wipe' then return res.winner .. ' wiped every other team and wins' end
+      local top = {}
+      for _, row in ipairs(res.standings) do if row.rank == 1 then top[#top+1] = row.team end end
+      return 'Time is up; ranked by milestones toward the edge: ' .. table.concat(top, ' and ') .. (#top > 1 and ' share the lead' or ' leads')
+    end
+    function G.finish(reason, r)
+      local g = gs()
+      if g.result then return g.result end
+      local res = {reason=reason, tick=game.tick, winner=r.winner, kind=r.kind, scores=r.scores, arrival=r.arrival, by=r.by,
+        standings=G.standings(), deadline_tick=cfg('deadline_tick') or nil}
+      if reason == 'milestones' then
+        res.winners = {}
+        for _, row in ipairs(res.standings) do if row.rank == 1 then res.winners[#res.winners+1] = row.team end end
+        if #res.winners == 1 then res.winner = res.winners[1] end
+      end
+      res.text = public_text(res)
+      g.result = res
+      emit({result=res}, 'mt-game-result.json')
+      alert('game_over', res.winner, 'Game over (' .. reason .. '): ' .. res.text .. '. The result is frozen in mt_game.')
+      for _, t in ipairs(team_names()) do fact(t, G.fact_text(res, t)) end
+      if api.feed then pcall(api.feed, {event='game_over', team=res.winner, text='Game over: ' .. res.text}) end
+      return res
+    end
+
+    -- Edge arrivals: once per platform per stay at the target.
+    local function scores_for(t, allies)
+      local scores = {}
+      for _, u in ipairs(team_names()) do scores[u] = 0 end
+      if #allies == 0 then scores[t] = cfg('solo'); return scores, 'solo' end
+      local P = pacts()
+      local cap = P and P.share_max and P.share_max(2) * 2 or 1.4
+      local own = 0
+      for _, p in ipairs(allies) do
+        local mine, theirs = 1, 1
+        if p.shares then mine, theirs = 2 * (p.shares[t] or 0.5), 2 * (p.shares[p.with] or 0.5) end
+        scores[p.with] = math.min(cap, math.max(scores[p.with] or 0, theirs))
+        own = own + mine
+      end
+      scores[t] = math.min(cap, own / #allies)
+      for u, v in pairs(scores) do scores[u] = math.floor(v * 1000 + 0.5) / 1000 end   -- 1.2, not 1.19999...
+      return scores, 'allied'
+    end
+    function G.arrival(t, pl, tick)
+      local g, P = gs(), pacts()
+      local dep = P and P.last_departure and P.last_departure(t, pl.index)
+      local rec = {tick=tick, team=t, platform=pl.name, at=cfg('target')}
+      if dep then rec.departure = {from=dep.from, tick=dep.tick, pacts=dep.pacts} else rec.departure_unrecorded = true end
+      g.arrivals[#g.arrivals+1] = rec
+      while #g.arrivals > MAX_ARRIVALS do table.remove(g.arrivals, 1) end
+      if g.result then rec.after_end = true; emit({arrival=rec}); return rec end
+      rec.home = G.home(t)
+      if not rec.home.ok then
+        rec.counted, rec.why = false, 'home did not hold: ' .. rec.home.why
+        emit({arrival=rec})
+        alert('arrival_refused', t, string.format('%s\'s platform %s reached the %s, but its Nauvis home did not hold (%s): not counted.', t, pl.name, words(rec.at), rec.home.why))
+        fact(t, string.format('Our platform %s reached the %s, but our Nauvis home did not hold (%s): the arrival does not count. With the landing pad standing and powered, arrive again.',
+          pl.name, words(rec.at), rec.home.why))
+        return rec
+      end
+      local allies = {}
+      if dep then
+        for _, p in ipairs(dep.pacts or {}) do if p.cease_fire then allies[#allies+1] = p end end
+      else
+        -- No departure on record (it left while the harness did not run): the pacts holding now, and the operator told.
+        for _, p in ipairs(P and P.active_with and P.active_with(t) or {}) do if p.cease_fire then allies[#allies+1] = p end end
+        alert('departure_unrecorded', t, string.format('%s\'s platform %s arrived with no departure on record: scored by the pacts holding at arrival.', t, pl.name))
+      end
+      local scores, kind = scores_for(t, allies)
+      rec.counted, rec.kind = true, kind
+      rec.home = {ok=true, pad=rec.home.pad, powered_by=rec.home.powered_by}
+      emit({arrival=rec})
+      rec_of(t).milestones.edge = rec_of(t).milestones.edge or tick
+      return G.finish('edge', {winner=t, kind=kind, scores=scores, arrival=rec})
+    end
+    function G.check_arrivals(tick)
+      local g, target = gs(), cfg('target')
+      for _, t in ipairs(team_names()) do
+        for _, pl in ipairs(platforms(game.forces[t])) do
+          local key = t .. '/' .. tostring(pl.index)
+          if pl.space_location and pl.space_location.name == target then
+            if not g.at_target[key] then
+              g.at_target[key] = tick
+              G.arrival(t, pl, tick)
+              if g.result then return end
+            end
+          elseif g.at_target[key] then g.at_target[key] = nil end
+        end
+      end
+    end
+    -- An event of a team's platform (on_space_platform_changed_state): the departure and arrival on the tick.
+    function G.on_platform(event)
+      if not on() or gs().result then return end
+      local P = pacts()
+      if P and P.departures_now then pcall(P.departures_now) end
+      G.check_arrivals(event.tick or game.tick)
+    end
+
+    local function wipe_win(tick)
+      local names, alive = team_names(), {}
+      for _, t in ipairs(names) do if not rec_of(t).wiped then alive[#alive+1] = t end end
+      local g = gs()
+      if #names < 2 or #alive ~= 1 then g.wipe_win_alerted = nil; return end
+      local w = alive[1]
+      if cfg('wipe_win') == 'auto' then return G.finish('wipe', {winner=w, kind='wipe', scores={[w]=cfg('solo')}}) end
+      if g.wipe_win_alerted ~= w then
+        g.wipe_win_alerted = w
+        alert('wipe_win_pending', w, w .. ' has wiped every other team. The run ends when the operator confirms: mt_game {end_by_wipe="' .. w .. '"}; or restore a team.')
+      end
+    end
+    -- Every 60 ticks (runtime.lua): arrivals; every check_s the milestones, wipes and the deadline.
+    function G.tick(tick)
+      local m = on()
+      if not m then return end
+      local g = gs()
+      if g.result then return end
+      if not m.pacts and api.pacts and tick % 600 < 60 then
+        local P = pacts()
+        if P and P.departures_now then pcall(P.departures_now) end
+      end
+      G.check_arrivals(tick)
+      if g.result then return end
+      if g.last_check and tick - g.last_check < cfg('check_s') * 60 then return end
+      g.last_check = tick
+      for _, t in ipairs(team_names()) do
+        G.observe(t, tick)
+        G.check_wipe(t, tick)
+      end
+      wipe_win(tick)
+      local dl = cfg('deadline_tick')
+      if not g.result and dl and tick >= dl then G.finish('milestones', {kind='deadline', by='deadline'}) end
+    end
+
+    local CHECK = {
+      target=function(v) return type(v) == 'string' and prototypes.space_location[v] ~= nil, 'a space location' end,
+      solo=function(v) return type(v) == 'number' and v >= 1 and v <= 10, '1..10' end,
+      home_surface=function(v) return type(v) == 'string' and #v > 0, 'a surface name' end,
+      home_radius=function(v) return type(v) == 'number' and v >= 1 and v <= 500, '1..500 tiles' end,
+      home_power=function(v) return type(v) == 'boolean', 'true or false' end,
+      wipe_down_s=function(v) return type(v) == 'number' and v >= 1 and v <= 86400, '1..86400 s' end,
+      respawn_window_s=function(v) return type(v) == 'number' and v >= 1 and v <= 3600, '1..3600 s' end,
+      wipe_win=function(v) return v == 'confirm' or v == 'auto', 'confirm or auto' end,
+      deadline_tick=function(v) return v == false or (type(v) == 'number' and v == math.floor(v) and v >= game.tick), 'false or a tick from now on' end,
+      check_s=function(v) return type(v) == 'number' and v >= 1 and v <= 3600, '1..3600 s' end}
+    function G.operator.mt_game(a)
+      assert(on(), 'no teams set up (mt_setup)')
+      local g = gs()
+      if a.config ~= nil then
+        assert(type(a.config) == 'table', 'config: {setting = value}')
+        local set = {}
+        for key, value in pairs(a.config) do
+          local k, v = key, value
+          if k == 'deadline_h' then
+            assert(type(v) == 'number' and v > 0 and v <= 10000, 'deadline_h: hours from now, 0..10000')
+            k, v = 'deadline_tick', game.tick + math.floor(v * 216000)
+          end
+          assert(CHECK[k], 'config: ' .. tostring(k) .. ' is no setting')
+          local ok, want = CHECK[k](v)
+          assert(ok, 'config ' .. k .. ': ' .. want)
+          set[k] = v
+        end
+        assert(not g.result or next(set) == nil, 'the result is frozen; settings no longer change it')
+        for k, v in pairs(set) do g.config[k] = v end
+      end
+      if a.wipe_clear ~= nil then
+        assert(on().teams[a.wipe_clear], 'not a team: ' .. tostring(a.wipe_clear))
+        local r = rec_of(a.wipe_clear)
+        r.wiped, r.down_since, r.kills, r.witness = nil, nil, {}, nil
+        alert('wipe_cleared', a.wipe_clear, a.wipe_clear .. ': wipe record cleared by the operator')
+      end
+      if a.end_by_wipe ~= nil then
+        local w = a.end_by_wipe
+        assert(on().teams[w], 'not a team: ' .. tostring(w))
+        assert(not g.result, 'the result is already frozen')
+        for _, t in ipairs(team_names()) do
+          assert(t == w or rec_of(t).wiped, t .. ' is not wiped: no wipe win for ' .. w)
+        end
+        assert(not rec_of(w).wiped, w .. ' is wiped itself')
+        G.finish('wipe', {winner=w, kind='wipe', scores={[w]=cfg('solo')}, by='operator'})
+      end
+      if a.end_now ~= nil then
+        assert(a.end_now == true, 'end_now: true (ends the run now by milestone ranking)')
+        assert(not g.result, 'the result is already frozen')
+        G.finish('milestones', {kind='operator', by='operator'})
+      end
+      if a.clear_result ~= nil then
+        assert(g.result and a.clear_result == g.result.tick, 'clear_result: the frozen result\'s tick (a deliberate operator undo)')
+        alert('result_cleared', g.result.winner, 'the frozen result of tick ' .. g.result.tick .. ' was cleared by the operator')
+        g.result, g.at_target = nil, {}
+      end
+      local c, teams = {}, {}
+      for k in pairs(DEFAULTS) do c[k] = cfg(k) end
+      for _, t in ipairs(team_names()) do
+        local r = rec_of(t)
+        local kills = {}
+        for name, k in pairs(r.kills) do kills[name] = {tick=k.tick, by=k.by, cause=k.cause} end
+        teams[t] = {down_since=r.down_since, wiped=r.wiped, respawn_kills=kills, milestones=r.milestones}
+      end
+      local alerts = {}
+      for _, x in ipairs(g.alerts) do if not a.alerts_since or x.seq > a.alerts_since then alerts[#alerts+1] = x end end
+      return {config=c, result=g.result, standings=G.standings(), teams=teams, arrivals=g.arrivals, alerts=alerts,
+        alert_seq=g.alert_seq, milestones=#MILESTONES, tick=game.tick}
+    end
+    function G.operator.mt_game_tick(a)
+      local g = gs()
+      g.last_check = nil
+      G.tick(a.tick or game.tick)
+      return {tick=game.tick, result=g.result}
+    end
+    return G
+  end)()
+  for k, fn in pairs(M.game.operator) do M.operator[k] = fn end
   return M
 end

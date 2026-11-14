@@ -173,6 +173,7 @@ return function(api)
       if count > 0 then c.insert{name=name, count=count} end
     end
     b.character = c; b.position = c.position; b.dead_until_tick = nil
+    b.spawn_tick = game.tick   -- (mt301) a death soon after is a kill on respawn (multiteam.lua's wipe)
     b.surface = surface.name; b.planet = surface.name
     look(c)
     if api.on_spawn then api.on_spawn(b, kind) end

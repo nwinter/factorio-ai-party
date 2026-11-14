@@ -18383,6 +18383,13 @@ M.pacts=require('pacts'){state=state,research_units=function(t,l) return M.resea
 M.market=M.pacts.market
 -- (mt274, private) several teams: setup and first contact (multiteam.lua), operator only
 M.multiteam=require('multiteam'){state=state,
+  -- (mt301) the end of the game (multiteam.lua's M.game): the departures and pacts it scores by, its game-over line
+  -- to a team's agents (wakes them) and to the operator's feed
+  pacts=function() return M.pacts end,
+  fact=function(team,text,wake) M.as_team(team,function()
+    for _,ag in ipairs(M.board.agents()) do M.board.deliver(ag.index,{seq='game',tick=game.tick,from='game',text=text,wake=wake or nil,fyi=not wake or nil}) end
+  end) end,
+  feed=function(e) M.teamfeed.game(e) end,
   -- (mt276 G) the rules of contact: an operator tell to the whole team, as that team
   tell_team=function(team,text,summary) return M.as_team(team,M.tells.operator.tell,{to='team',text=text,summary=summary}) end,
   -- (mt276 G) a first contact as a fact line to the agents of the teams it concerns: the game's facts (what, whose,
@@ -22059,6 +22066,8 @@ function M.tick_body(event)
   if M.market then M.market.tick(event.tick) end
   -- (mt281) pacts: proposals lapsing, cease-fires lifting after the notice, obligations, the depot's moves, departures
   do local mt=state().mt; if mt and mt.pacts then pcall(M.timed,'pacts.tick',M.pacts.tick,event.tick) end end
+  -- (mt301) edge arrivals each second; milestones, wipes and the deadline each check_s (multiteam.lua)
+  if event.tick%60==47 then local mt=state().mt; if mt and mt.teams then pcall(M.timed,'mtgame.tick',M.multiteam.game.tick,event.tick) end end
   if event.tick%600==41 and M.disclosure then pcall(M.timed,'disclosure.sweep',M.disclosure.sweep,event.tick) end  -- atoms not met yet (disclosure.lua)
   if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.each_team_holding,'owed',M.owed.tick) end  -- unanswered mentions' reminders
   if M.platbom and M.platbom.watch then pcall(M.platbom.watch) end  -- the platform_bom request lowered as the hub spends (A3)
@@ -22263,6 +22272,8 @@ M.operator={
 end do local MAX_ALERTS=64
 function M.on_event(event)
   if M.market and event.name==defines.events.on_entity_died then M.market.on_died(event) end
+  -- (mt301) a team's agent killed on respawn by another team (multiteam.lua's wipe)
+  if event.name==defines.events.on_entity_died and state().mt then pcall(M.multiteam.game.on_died,event) end
   if M.market and state().mt and event.name==defines.events.on_research_finished and event.research and event.research.force then M.market.on_research_finished(event) end
   -- (mt278) a human team's joins, chat commands and builds while frozen (humans.lua)
   local mt=state().mt
@@ -22274,6 +22285,8 @@ function M.on_event(event)
     if not ok then local s=state(); s.damage_log_errors={count=((s.damage_log_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
   end
   if event.name~=nil and event.name==(defines.events or {}).on_space_platform_changed_state then
+    -- (mt301) a team's departure and edge arrival on their tick (pacts.lua, multiteam.lua)
+    if state().mt then pcall(M.multiteam.game.on_platform,event) end
     local pl=event.platform
     local ok,err=pcall(function() M.timed('productionlegs.event',M.freight.productionlegs.observe,pl,event.tick,'event',M.freight.where(pl)) end)
     if not ok then state().production_legs_error={tick=event.tick,error=tostring(err)} end

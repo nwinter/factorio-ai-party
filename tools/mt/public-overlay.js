@@ -261,7 +261,8 @@ function rewind() {
 
 // ---- the standings strip: one card a team, rosters inside ------------------------------------------------------
 function gapWord(t) {
-  const m = /^(\d+) (tech|rocket|startup step)s? back$/.exec(t.gap || '');
+  if (t.gap === 'Same milestones, later') return 'LATER';
+  const m = /^(\d+) (tech|rocket|milestone|startup step)s? back$/.exec(t.gap || '');
   return m ? '−' + m[1] + ' ' + (m[2] === 'startup step' ? 'STEP' : m[2].toUpperCase()) + (m[1] === '1' ? '' : 'S') : '';
 }
 function drawStrip() {
@@ -305,6 +306,8 @@ function drawCard(t, x, y, w, h) {
   const nameF = font(w >= 420 ? 40 : 30, 800, 'disp'), name = fit(t.team.toUpperCase(), nameF, (ir - cx) * (stacked ? 1 : .5), 1);
   let nx = cx + text(name, cx, y + 44, nameF, C.ink, {ls: 1}) + 12;
   const stats = [], rockets = t.space && t.space.rockets, done = t.research && t.research.done_count, spm = t.science && t.science.spm;
+  // (mt301) the race to the edge, the ranked number, first
+  if (t.race && !t.startup) stats.push({v: t.race.milestones + '/' + t.race.of, u: 'MILESTONES', key: 'ms'});
   if (rockets > 0) stats.push({v: String(rockets), u: rockets === 1 ? 'ROCKET' : 'ROCKETS', key: 'rk'});
   if (t.startup && t.startup_steps != null) stats.push({v: t.startup_steps + '/5', u: 'BUILT', key: 'st'});
   else if (done != null) stats.push({v: String(done), u: done === 1 ? 'TECH' : 'TECHS', key: 'td'});
@@ -588,7 +591,7 @@ function legend(r, top) {  // before anyone speaks: what this column carries
 
 // ---- the band: show bug, the news belt, the game clock -----------------------------------------------------------
 const news = {cards: [], seen: new Set(), first: true, phase: 0, banners: [], banner: null, last: 0};
-const KIND = {research: 'RESEARCH', rocket: 'ROCKET', death: 'LOST', platform_lost: 'SPACE', contact: 'CONTACT', pact: 'DIPLOMACY', build: 'BUILT'};
+const KIND = {game: 'GAME OVER', milestone: 'MILESTONE', research: 'RESEARCH', rocket: 'ROCKET', death: 'LOST', platform_lost: 'SPACE', contact: 'CONTACT', pact: 'DIPLOMACY', build: 'BUILT'};
 function newsSync(s) {
   const events = (s.events || []).filter(e => model.teams.has(e.team) && typeof e.text === 'string' && e.id).sort((a, b) => (a.tick || 0) - (b.tick || 0));
   for (const e of events) {
@@ -606,8 +609,9 @@ function drawBand() {
   // the show bug
   plate(b.x, b.y, bugW, b.h, {cut: 14, corners: 'tl,br'}); hazard(b.x + 1, b.y + 1, 12, b.h - 2);
   text('THE FACTORY RACE', b.x + 28, b.y + 42, font(40, 900, 'disp'), C.ink, {ls: 1});
-  const basis = /^Rank/.test(state.ranking || '') ? 'RANKED BY ROCKETS, THEN TECHS' : /^Startup/.test(state.ranking || '') ? 'OPENING: FIVE FIRST BUILDINGS' : '';
-  const lines = ['AI TEAM TEST · FACTORIO: SPACE AGE'].concat(basis ? [basis] : []), pick = Math.floor(T() / 12) % lines.length;
+  const basis = /^Race/.test(state.ranking || '') ? 'RANKED BY THE RACE TO THE EDGE' : /^Startup/.test(state.ranking || '') ? 'OPENING: FIVE FIRST BUILDINGS' : '';
+  const over = state.result && typeof state.result.text === 'string' ? ['GAME OVER · ' + state.result.text.toUpperCase()] : [];
+  const lines = over.length ? over : ['AI TEAM TEST · FACTORIO: SPACE AGE'].concat(basis ? [basis] : []), pick = Math.floor(T() / 12) % lines.length;
   text(fit(lines[pick], font(12, 700), bugW - 44, 1), b.x + 28, b.y + 62, font(12, 700), C.amber, {ls: 1});
   // the clock
   const cx = b.x + b.w - clockW; plate(cx, b.y, clockW, b.h, {cut: 14, corners: 'tl,br'});

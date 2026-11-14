@@ -33,6 +33,14 @@ return function(api)
       text=e.text,to=e.b and {e.b} or {},source_seq=e.id or s.seq,system=true,event=e.kind or 'fill'}
     while #s.lines>KEEP do table.remove(s.lines,1) end
   end
+  -- (mt301) the end of the game (multiteam.lua): one system line, the public text only
+  function M.game(e)
+    local s=store();if not s or type(e.text)~='string' then return end
+    s.seq=s.seq+1
+    s.lines[#s.lines+1]={seq=s.seq,tick=game.tick,team=e.team,agent='Game',kind='game',scope='game',
+      text=e.text,to={},source_seq=s.seq,system=true,event=e.event or 'game_over'}
+    while #s.lines>KEEP do table.remove(s.lines,1) end
+  end
   function M.operator.mt_feed(a)
     a=a or {};local since,limit=a.since,a.limit or 200
     assert(since==nil or type(since)=='number' and since>=0 and since==math.floor(since),'since: nonnegative sequence')

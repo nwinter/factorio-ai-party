@@ -54,8 +54,9 @@ ledger hours retain 24 hours. `mt_pacts {config?}` reads/configures remaining se
 `share_max_score`, `expires_min`, `check_s`, and enabled diplomatic terms. `mt_diplomacy {}` is the trusted operator
 read of recent pair messages; it is not an agent endpoint. The system feed is similarly operator-only.
 
-When a team's platform leaves a planet's orbit, the harness records the active pact partners and score shares then.
-The edge-run platform's recorded departure governs allied scoring. Money, orders, shipment volume and supplied
+When a team's platform leaves a planet's orbit, the harness records the active pact partners and score shares then
+(also kept per platform, past the 50-entry list). The edge-run platform's recorded departure governs allied scoring;
+docs/mt-endgame.md has the end of the game. Money, orders, shipment volume and supplied
 fixtures never contribute to the edge race. No market wealth leaderboard exists.
 
 ## Evidence
