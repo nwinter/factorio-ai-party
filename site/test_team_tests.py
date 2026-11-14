@@ -74,7 +74,7 @@ class TestContract(unittest.TestCase):
     def test_allowlist_and_moderation(self):
         s=fixture();r=s['teams'][0]
         r['operator']={'path':'/home/private'};r['agents'][0]['notes']='NOT PUBLIC'
-        private=['/home/private/note', 'https://private.example/secret', 'key@example.com', 'multi'+'-team', 'secret word', 'POG_PRIVATE']
+        private=['/home/private/note', 'https://private.example/secret', 'key@example.com', 'secret word', 'POG_PRIVATE']
         r['chat'] += [{'name':'gemini','text':v} for v in private] + [{'name':'foreign','text':'NOT PUBLIC'}]
         h=moderation.Hidden();h.add_text('Guest','Hidden audience line')
         s['viewers']=[{'source':'youtube','id':'yt:1','name':'Guest','text':'Hidden audience line','t':100},

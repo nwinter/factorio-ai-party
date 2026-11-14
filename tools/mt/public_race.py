@@ -50,7 +50,7 @@ SURFACES = ('nauvis', 'vulcanus', 'gleba', 'fulgora', 'aquilo')
 # Free-form public chat remains public speech, never notes, jobs, confessions or errors.
 # A path is a slash that starts a word ("/Users/x", "~/x", "C:\x"); "0.52 / 0.48" is ordinary speech.
 PRIVATE = re.compile(r'(?:https?://|(?:^|[\s("\'=])(?:~/|/(?=[\w.~])|[A-Za-z]:[\\/])|[\w.+-]+@[\w.-]+\.[a-z]{2,}|'
-                     r'\b(?:token|password|secret|api[_ -]?key|operator|traceback|exception|multi-?teams?)\b|\bsk-[\w-]+)', re.I)
+                     r'\b(?:token|password|secret|api[_ -]?key|operator|traceback|exception)\b|\bsk-[\w-]+)', re.I)
 # Moderated audience text is addressed to the operator. That ordinary role word
 # is public; keep the stricter operator/private-note exclusion for agent speech.
 VIEWER_PRIVATE = re.compile(PRIVATE.pattern.replace('|operator|', '|'), PRIVATE.flags)

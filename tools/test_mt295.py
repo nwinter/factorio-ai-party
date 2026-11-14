@@ -39,11 +39,11 @@ class IdentityFeedTests(unittest.TestCase):
              dict(self.line,kind='confess'),dict(self.line,seq=True),dict(self.line,tick=-1),
              dict(self.line,kind='diplomacy',scope='diplomacy',to=['green'])]
         bad += [dict(self.line,text=t) for t in ['/Users/private/file','D:\\private\\file','tools/mt/start-mt.sh',
-                'mt/batch290','multi-team','NickWinter','password=abc','https://private.invalid','a@private.invalid']]
+                'mt/batch290','/home/operator/file','NickWinter','password=abc','https://private.invalid','a@private.invalid']]
         self.assertEqual(project_feed(bad,self.teams),[])
 
     def test_identity_allowlist(self):
-        p={'display_name':'/Users/private','persona':'multi-team','motto':'Build carefully.','glyph':'⚙',
+        p={'display_name':'/Users/private','persona':'/home/operator/file','motto':'Build carefully.','glyph':'⚙',
            'color':'red;url(x)','avatar':{'base':'robot','accent':'#AABBCC','source':'PRIVATE','visor':'bad'},'error':'PRIVATE'}
         self.assertEqual(identity(p,'Forge'),{'display_name':'Forge','motto':'Build carefully.','glyph':'⚙',
                                              'avatar':{'base':'robot','accent':'#aabbcc'}})

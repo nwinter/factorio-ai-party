@@ -577,8 +577,8 @@ def nav_items():
     the run's page (when there is one) and About."""
     if archive():
         return [("/", "Live"), ("/experiments/", "Experiments"), ("/runs/", "Runs"), ("/studies/", "Studies")] + updates_nav() + \
-            [("/about/", "About")]
-    return [("/", "Live"), ("/polls/", "Polls"), ("/ideas/", "Ideas")] + ([("/runs/long/", "The run")] + ([("/videos/", "Videos")] if VIDEOS or R2 else []) + [("/agents/", "Agents"), ("/timeline/", "Timeline"), ("/chronicle/", "Chronicle"),
+            [("/teams/", "Team runs"), ("/about/", "About")]
+    return [("/", "Live"), ("/polls/", "Polls"), ("/ideas/", "Ideas"), ("/teams/", "Team runs")] + ([("/runs/long/", "The run")] + ([("/videos/", "Videos")] if VIDEOS or R2 else []) + [("/agents/", "Agents"), ("/timeline/", "Timeline"), ("/chronicle/", "Chronicle"),
                                ("/chat/", "Chat")] + ([("/blueprints/", "Blueprints")] if BLUEPRINTS else []) + [("/search/", "Search")]
                               if LONG else []) + updates_nav() + [("/how/", "How it was made"), ("/about/", "About"),
                                                   (GITHUB_URL, "GitHub")]
@@ -2229,6 +2229,8 @@ def main():
     ap.add_argument("--out", default=str(SITE / "dist"))
     ap.add_argument("--runs-dir", default=str(REPO / "runs"),
                     help="where the long run's shift folders are (default: the repo's runs/; read-only)")
+    ap.add_argument("--team-runs-dir", default=os.environ.get("POG_TEAM_RUNS_DIR"),
+                    help="team runs containing op/public-site archives (default: --runs-dir)")
     ap.add_argument("--content", default=os.environ.get("POG_SITE_CONTENT"),
                     help="another site.json (tests: the archive switch and run_start; default $POG_SITE_CONTENT)")
     # (batch265) the video data only when named (tools/site-refresh.sh names site/content/videos.json, r2.json and
@@ -2353,6 +2355,8 @@ def main():
         body, head = site_search.build_search(entries, esc)
         write("search/index.html", page("Search", body, "/search/", "Search the agents, shifts, events and chat.",
                                         extra_head=head, path="/search/"))
+    import team_runs
+    team_runs.build(args.team_runs_dir or args.runs_dir, write, page, esc, CONFIG.get("live_api_url", ""))
     write("about/index.html", build_about(runs, all_worlds))
     _title = CONFIG.get("site_title", "Factorio AI Party")  # the privacy policy and terms (site/legal.py, d23)
     write("privacy/index.html", page("Privacy policy", legal.privacy_body(esc(_title)), "/privacy/",

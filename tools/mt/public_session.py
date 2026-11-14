@@ -140,7 +140,7 @@ def supervise(run, minutes, run_mode='test', public=False):
         transition(api,receipt,'live',stop)
         env = dict(os.environ, POG_YOUTUBE=receipt['id'])
         with (op/'site-push.log').open('a') as log:
-            publisher = subprocess.Popen([sys.executable,str(MAIN/'site/push_live.py'),'--team-tests','--source','http://127.0.0.1:8790/state.json','--report','30'],env=env,stdout=log,stderr=subprocess.STDOUT)
+            publisher = subprocess.Popen([sys.executable,str(ROOT/'site/push_live.py'),'--team-tests','--team-run-id',run,'--team-archive-dir',str(op/'public-site'),'--source','http://127.0.0.1:8790/state.json','--report','30'],env=env,stdout=log,stderr=subprocess.STDOUT)
         state['publisher_pid'] = publisher.pid
         confirmed = False
         for _ in range(12):

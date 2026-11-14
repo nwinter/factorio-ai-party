@@ -1077,7 +1077,15 @@ def main():
     ap.add_argument("--team-tests", action="store_true", help="publish the team-test display contract")
     ap.add_argument("--team-tests-off", action="store_true", help="publish test mode off once; leaves ended-run status intact")
     ap.add_argument("--youtube", default=os.environ.get("POG_YOUTUBE"), help="test broadcast video ID")
+    ap.add_argument("--team-run-id", help="public team run identifier")
+    ap.add_argument("--team-archive-dir", type=Path, help="durable public team history directory")
     a = ap.parse_args()
+    team_archive = None
+    if a.team_run_id or a.team_archive_dir:
+        import team_runs
+        if not a.team_tests or not team_runs.run_id(a.team_run_id) or not a.team_archive_dir:
+            ap.error("team history needs --team-tests, --team-run-id and --team-archive-dir")
+        team_archive = team_runs.Archive(a.team_archive_dir, a.team_run_id)
     if a.team_tests_off:
         a.once = True
     lock = None
@@ -1108,6 +1116,12 @@ def main():
                 if a.team_tests:
                     import team_tests
                     state = team_tests.public_state(raw, video=a.youtube, now=t0, hidden=hidden_now())
+                    if team_archive:
+                        run = team_runs.project(raw, a.team_run_id, now=t0)
+                        if run:
+                            state["team_run"] = run
+                            if -5 <= t0 - run["now"] <= 30 and run["teams"]:
+                                team_archive.save(run)
                 else:
                     state = with_terrain(public_state(raw), site_terrain(CONFIG.get("site_url")))
                     state = with_chart(state, site_chart(CONFIG.get("site_url")))

@@ -291,3 +291,25 @@ It forwards only the fields listed in `docs/LIVE-API.md` and passes every string
 - `push_live.py`: Mac-side state pusher
 - `worker/`: the live API Worker (`worker.js`, `wrangler.toml`, `test_api.py`)
 - `dist/`: build output (not committed)
+
+## Team runs
+
+`/teams/` follows the public team broadcast, with race milestones and places, per-team coin balances, contacts,
+pacts, trades and the frozen result. Coin never determines place. The existing world-n pages remain separate.
+The page labels unavailable feeds and archived snapshots without calling an interrupted test a completed game.
+
+`tools/mt/public_session.py` starts the local checkout's pusher with `--team-run-id RUN --team-archive-dir
+runs/RUN/op/public-site`. Only the allowlisted spectator projection enters this directory. SQLite deduplicates
+contacts, pact events, milestones and market/diplomacy feed lines across publisher restarts; snapshots are replaced
+atomically. Restoring an earlier save begins a new event epoch and is recorded explicitly. No journals, operator
+alerts, wipe flags, internal game configuration, raw views or launch metadata enter the site.
+
+Build with `site/build.py --team-runs-dir PATH/TO/TEAM/RUNS` (or `POG_TEAM_RUNS_DIR`, including in site-refresh.sh).
+The normal site rebuild adds `/teams/RUN/` archive pages and 100-event history pages. Live updates use the existing
+`/v1/state` API; static archives update at the next build. To include a previous test that predates the recorder,
+run `tools/mt/archive_site.py PATH/TO/RUN` once, offline. It projects the last `op/views.json` snapshot and its retained
+contacts/pacts/feed; it cannot recover events that the old collector did not retain. An archive without a frozen
+result says so. Keep the run directories when rotating agent shifts. The recorder runs once per site push, so events
+that disappear from the collector between pushes cannot be reconstructed.
+
+Offline contract, restart, pagination and Chromium/Playwright checks: `python3 site/test_team_runs.py`.
