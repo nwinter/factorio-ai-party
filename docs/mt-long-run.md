@@ -109,12 +109,17 @@ Preserve the server profile log before restoring. Register helper PIDs in
 op/helpers.pid for owned-process cleanup. Quota readings are account-wide and
 must be separated at resets; divide observed deltas by the route's measured
 agent-hours and report any concurrent usage or stale readings.
-If the installed quota command stalls on historical transcript scans, the
-independent helper accepts `quota_refresh.py RUN --max-age 240 --reader COMMAND ARG...`.
-The reader must use live provider adapters, emit the normal ai-usage brief JSON,
-and preserve saved observation ages and unknown values. Record the selected
-reader and its deployment; do not fabricate a zero when a reset response omits
-the percentage. This changes collection, not agent quota-hold policy.
+The dashboard refreshes every300s and writes ~/.cache/ai-usage/agent-brief.json.
+Read this file for routine checks; generated_at or a profile observation older
+than15 minutes is unavailable, even when its saved availability flag says true.
+The independent helper attempts a fallback only after two missed dashboard
+refreshes (10 minutes), at most once per30 minutes; attempts are persisted in
+op/quota-fallback.json. It never runs ai-usage on each sample. A bounded provider
+adapter can be selected with `quota_refresh.py RUN --reader COMMAND ARG...` if
+the installed ai-usage command stalls on transcript-history scans. It must emit
+the normal brief JSON and preserve saved observation ages and unknown values.
+Record the selected reader and deployment; never fabricate zero usage when a
+reset response omits the percentage. Agent quota-hold policy stays separate.
 
 `mt_map.py create --teams 3 --team-names green yellow blue ...` aligns forces
 with the six-agent roster. A failed setup join now returns failure. Native
@@ -179,9 +184,9 @@ Quota at-limit windows use the existing route/model selection and quota_rest.py
 format/push. Rest is firm until the actual reset, survives shifts, and suppresses
 nudges. A limit screen with unknown reset is held until fresh quota shows room
 or an explicit release. Stale telemetry never invents a reset or available quota.
-An independent quota helper checks each minute, refreshes ai-usage when its cache
-is older than eight minutes, and alerts on missing/stale playing routes. It does
-not depend on the desktop widget. Refresh failures retain the last known cache.
+The quota helper reads the dashboard cache each minute and alerts on missing or
+stale playing routes. It uses the rare fallback described above if dashboard
+refreshes stop; failures retain the last known observation and its actual age.
 
 POG_IDLE_NUDGE defaults to 1 in full mode. Scoped idle_report and scoped tells
 use only that pair; running queue lanes and quota rests suppress reminders. The

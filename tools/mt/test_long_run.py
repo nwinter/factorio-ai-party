@@ -57,8 +57,35 @@ import run_state
 import stop_helpers
 import team_views
 import quota_refresh
+import rehearsal_metrics
 
 class Shifts(unittest.TestCase):
+    def test_quota_cache_age_overrides_saved_availability_without_zeroing_windows(self):
+        brief=dict(generated_at=1000,profiles=[dict(command='grok',observed_at=1000,available=True,stale=False,windows=[dict(percent=29)])])
+        self.assertEqual(quota_refresh.unavailable(brief,{'grok'},1900),[])
+        self.assertEqual(quota_refresh.unavailable(brief,{'grok'},1901),['grok'])
+        with patch.object(rehearsal_metrics,'read',return_value=brief),patch.object(rehearsal_metrics.time,'time',return_value=1901):
+            sample=rehearsal_metrics.quota_snapshot()
+        self.assertTrue(sample['stale']);self.assertFalse(sample['profiles'][0]['available'])
+        self.assertEqual(sample['profiles'][0]['windows'],[dict(percent=29)])
+
+    def test_quota_cache_is_primary_and_fallback_cooldown_survives_restart(self):
+        with tempfile.TemporaryDirectory() as temp:
+            op=Path(temp);cache=op/'cache.json'
+            run_state.write(op/'full-run.json',dict(phase='running',agents={'a':dict(kind='grok',route='grok')}))
+            fresh=dict(generated_at=1000,profiles=[dict(command='grok',observed_at=1000,available=True,stale=False)])
+            for brief,cooldown in [(fresh,False),(dict(fresh,generated_at=0),True)]:
+                run_state.write(cache,brief)
+                if cooldown:run_state.write(op/'quota-fallback.json',dict(at=950,phase='failed'))
+                stop=unittest.mock.Mock();stop.is_set.side_effect=[False,True]
+                with patch.object(sys,'argv',['quota_refresh','trial']),patch.object(quota_refresh,'op_dir',return_value=op), \
+                     patch.object(quota_refresh,'CACHE',cache),patch.object(quota_refresh,'pinned'), \
+                     patch.object(quota_refresh.threading,'Event',return_value=stop),patch.object(quota_refresh.signal,'signal'), \
+                     patch.object(quota_refresh.time,'time',return_value=1100),patch.object(quota_refresh.subprocess,'run') as run,patch.object(quota_refresh,'alert'):
+                    quota_refresh.main()
+                run.assert_not_called()
+                self.assertEqual(run_state.read(op/'quota-health.json')['stale'],cooldown)
+
     def test_custom_quota_reader_preserves_unknown_profiles(self):
         with tempfile.TemporaryDirectory() as temp:
             op=Path(temp);cache=op/'cache.json';run_state.write(cache,dict(generated_at=0))

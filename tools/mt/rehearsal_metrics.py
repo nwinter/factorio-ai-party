@@ -17,9 +17,15 @@ from map_probe import call, lua
 
 def quota_snapshot():
     b=read(Path.home()/'.cache/ai-usage/agent-brief.json',{})
-    return dict(generated_at=b.get('generated_at'),profiles=[{k:p.get(k) for k in
+    now=time.time();age=now-b.get('generated_at',0);expired=not 0<=age<=900
+    profiles=[{k:p.get(k) for k in
         ('command','source','observed_at','stale','available','windows','status_note')} for p in b.get('profiles',[])
-        if p.get('command') in ('codex-b','agy','grok','muse')])
+        if p.get('command') in ('codex-b','agy','grok','muse')]
+    for p in profiles:
+        p['age_seconds']=now-(p.get('observed_at') or b.get('generated_at',0))
+        p['stale']=bool(expired or p.get('stale') or not 0<=p['age_seconds']<=900)
+        p['available']=bool(p.get('available') and not p['stale'])
+    return dict(generated_at=b.get('generated_at'),age_seconds=age,stale=expired,profiles=profiles)
 
 
 def world():
