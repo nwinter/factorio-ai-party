@@ -55,8 +55,22 @@ import launch
 import restore
 import run_state
 import stop_helpers
+import team_views
 
 class Shifts(unittest.TestCase):
+    def test_partial_view_failure_reconnects_next_poll(self):
+        with tempfile.TemporaryDirectory() as temp:
+            op=Path(temp)/'runs/trial/op';op.mkdir(parents=True)
+            readers=[unittest.mock.Mock(),unittest.mock.Mock()]
+            views=[dict(t='failed',teams=[],errors={'bots':'Broken pipe'}),dict(t='recovered',teams=[],errors={})]
+            with patch.object(sys,'argv',['team_views','trial','--every','5']),patch.object(team_views,'ROOT',temp), \
+                 patch.object(team_views,'Reader',side_effect=readers) as factory,patch.object(team_views,'collect',side_effect=views), \
+                 patch.object(team_views,'page',return_value='view'),patch.object(team_views.time,'sleep',side_effect=[None,StopIteration]):
+                with self.assertRaises(StopIteration):team_views.main()
+            self.assertEqual(factory.call_count,2)
+            for reader in readers:reader.rcon.sock.close.assert_called_once()
+            self.assertEqual(run_state.read(op/'views.json')['t'],'recovered')
+
     def test_helper_pid_reuse_does_not_stop_another_run(self):
         folders=[Path('/private/run/one')]
         self.assertTrue(stop_helpers.owned(['python3','tools/mt/full_run.py','watch','one'],'one',folders))

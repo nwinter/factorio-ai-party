@@ -71,6 +71,8 @@ and clients held. A recorded mismatch requires operator inspection. When the
 screenshot camera was connected, the drill relaunches it after the exact-state
 comparison (briefly advancing the world for its join), records that later tick,
 and pauses again. An ordinary agent handoff never touches the camera.
+The operator team view opens a fresh RCON connection on each poll, so partial
+read errors during a restore cannot strand its later snapshots on a dead socket.
 
 The closed rehearsal controller is `agent-python tools/mt/rehearse.py RUN --execute`.
 Launch with POG_FULL_SHIFTS=1, POG_MT_PAUSED_START=1 and POG_MT_PUBLIC=0 first.
