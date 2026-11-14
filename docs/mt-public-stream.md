@@ -46,13 +46,13 @@ cut earlier, after a 15-second minimum at the default; see the director below.
 `POG_MT_YOUTUBE` is optional and must be the intended broadcast ID, never an old
 channel stream chosen by accident. `POG_MT_STREAM=1` alone keeps its existing
 private/local behavior unless POG_MT_VIEWERS=1 is supplied. Public staging defaults
-POG_MT_VIEWERS=1: each team's serve.py reads site/YouTube chat through the existing
-Filter, Clef and Relay. Every accepted line reaches both agents in every team;
-a viewer may name a team as a conversational cue. Operator-only and viewers-only
-channels retain their existing rules. No automatic site push, caster or highlight runs.
-The overlay reads these filtered lanes; it never starts another reader or relay.
-Manual hidden-viewers rules and deletions apply before display and delivery.
-Removing TREE/runs/RUN/TEAM/viewer-relay pauses that team's relay.
+POG_MT_VIEWERS=1: one viewer_inbox.py moderates site/YouTube chat for the operator
+and viewer display only. Team serve.py processes never consume viewer chat;
+playing agents receive no viewer messages or tour hints. Hidden-viewer rules and
+deletions apply before display. The overlay reads the operator's filtered lane
+and never creates an agent relay. Publication remains a separate explicit
+public_session.py action. Viewer-side narration and periodic tours use public
+facts only; see docs/mt-stream-recovery.md.
 
 The public page is http://127.0.0.1:8790/ on this Mac and pogwin; `/state.json`
 is its public projection. The only other routes are `/health`, the page's own files (`/overlay.js`,
@@ -67,8 +67,10 @@ OBS shows the HTTP page to viewers; no public HTTP server is needed.
 recording path after stop. `public-stream.log` contains errors and camera cuts.
 Startup fails visibly if the tunnel, join, team framing, or recording fails.
 The agents and per-team services remain running if public staging fails; fix it
-and use `public_stream.py start RUN`. A dropped SSH connection cleans up the
-public components and requires a stop/start. No automatic go-live exists.
+and use `public_stream.py start RUN`. The mt305 supervisor repairs dropped SSH,
+relay, camera and OBS connections with bounded retries and wake alerts. The full
+publication supervisor also recovers the publisher and rotates broadcasts.
+Initial go-live requires explicit `public_session.py start --execute`.
 
 If an operator later starts streaming, stop OBS streaming before stopping this
 run. Stop refuses while OBS is live, so it cannot blank a broadcast unexpectedly.

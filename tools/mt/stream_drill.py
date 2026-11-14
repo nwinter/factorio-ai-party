@@ -47,6 +47,9 @@ def healthy(s,op):
     return (s['output']['outputActive'] and not s['output'].get('outputReconnecting')
             and s['recording']['outputActive'] and s['camera'] and s['game']['connected']
             and not s['game']['paused'] and s['youtube']['lifeCycleStatus']=='live'
+            and s['session']['phase']=='live'
+            and all(s['staging'].get('health',{}).get(k) for k in ('wire','obs','camera'))
+            and time.time()-s['staging'].get('heartbeat',0)<45
             and owns_site(s['site'],s['video']) and fresh_feed(s['site'],time.time(),roster_of(op)))
 
 
@@ -83,6 +86,7 @@ def main():
         transition(LiveAPI(),read(op/'broadcast.json'),'complete',threading.Event())
     result['injected']=time.time();write(path,result)
     deadline=time.time()+a.timeout
+    stable_since, stable_key, previous_bytes = None, None, None
     while time.time()<deadline:
         time.sleep(5)
         try:
@@ -92,11 +96,16 @@ def main():
                        after['staging'][a.fault+'_pid']!=before['staging'][a.fault+'_pid'] if a.fault in ('tunnel','relay') else
                        after['session']['publisher_pid']!=before['session']['publisher_pid'] if a.fault=='publisher' else
                        after['output']['outputDuration']<before['output']['outputDuration'])
+            key=(after['camera'].get('ProcessId'),after['staging'].get('tunnel_pid'),after['video'])
             if changed and healthy(after,op) and after['game']['tick']>before['game']['tick']:
-                # Observe actual bytes increasing after the recovery, not a mere process launch.
-                time.sleep(5);check=snapshot(op)
-                if healthy(check,op) and check['output']['outputBytes']>after['output']['outputBytes']:
-                    result.update(recovered=time.time(),seconds=time.time()-result['injected'],after=check)
+                # Factorio can remain "connected" until its network timeout, even
+                # after SSH has recovered. Require a full healthy minute with
+                # advancing output bytes before certifying the entire chain.
+                if stable_since is None or stable_key!=key or (previous_bytes is not None and after['output']['outputBytes']<=previous_bytes):
+                    stable_since,stable_key=time.time(),key
+                previous_bytes=after['output']['outputBytes']
+                if time.time()-stable_since>=60:
+                    result.update(recovered=time.time(),seconds=time.time()-result['injected'],stable_since=stable_since,stable_seconds=time.time()-stable_since,after=after)
                     write(path,result)
                     obs=OBS(port=4458,timeout=10)
                     data=obs.call('GetSourceScreenshot',{'sourceName':'mt-stream','imageFormat':'png','imageWidth':1280,'imageHeight':720})['imageData']
@@ -104,7 +113,10 @@ def main():
                     alert(op,'fault-recovered',f'{a.fault} in {result["seconds"]:.1f}s; iMac tick advanced')
                     print(json.dumps({k:result[k] for k in ('fault','seconds','recovered')}),flush=True)
                     return
+            else:
+                stable_since,stable_key,previous_bytes=None,None,None
         except Exception as e:
+            stable_since,stable_key,previous_bytes=None,None,None
             result['last_error']=type(e).__name__+': '+str(e)[:200]
             write(path,result)
     result['failed']=time.time();write(path,result)

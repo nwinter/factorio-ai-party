@@ -161,6 +161,7 @@ def supervise(op, run):
     write(statefile, receipt)
     children, bridge, overlay, obs, camera_started = [], None, None, None, False
     archivist = None
+    memory = None
     try:
         tree = Path((op / 'launch-tree').read_text().strip())
         port = int(os.environ.get('POG_MT_PUBLIC_PORT', '8790'))
@@ -221,6 +222,10 @@ def supervise(op, run):
         with (op/'recording-archive.log').open('a') as log:
             archivist=subprocess.Popen([sys.executable,str(HERE/'stream_recordings.py'),str(op)],
                                        stdout=log,stderr=subprocess.STDOUT)
+        # One independent observer per run. A lock prevents duplicate samples if
+        # the operator already started it before bringing up the camera.
+        with (op/'memory-watch.log').open('a') as log:
+            memory=subprocess.Popen([sys.executable,str(HERE/'stream_memory.py'),str(op)],stdout=log,stderr=subprocess.STDOUT)
         receipt.update(phase='ready', overlay=f'http://127.0.0.1:{port}/', camera=CAMERA, scene=SCENE,
                        streaming=False, recording_active=True)
         receipt['audio']['tts'] = overlay.audio.backend
@@ -228,6 +233,7 @@ def supervise(op, run):
         print('READY: public overlay, one camera, mt-stream scene, recording; OBS streaming is OFF', flush=True)
         recovery, frame = Recovery(op, 'staging'), FrameProgress()
         last_frame, rehooked, last_split = 0, False, time.time()
+        last_memory_spawn = last_archive_spawn = time.time()
 
         def wire_check():
             require(tunnel.poll() is None and relay.poll() is None, 'owned tunnel or UDP relay exited')
@@ -257,9 +263,12 @@ def supervise(op, run):
             require(obs.call('GetRecordStatus')['outputActive'], 'recording stopped')
 
         def obs_repair():
+            restart = recovery.states.get('obs',{}).get('attempts',0)>=2
             try:
                 obs.call('GetVersion')
             except Exception:
+                restart = True
+            if restart:
                 obs.close()
                 subprocess.run(powershell(f"& '{REMOTE}/obs-restart.ps1' -WaitClose 5 -WaitStart 60"),
                                check=True, timeout=200, capture_output=True, text=True)
@@ -272,16 +281,13 @@ def supervise(op, run):
             require(connected.get('connected'), 'camera disconnected or in a disconnect/lag modal')
 
         def camera_repair():
-            nonlocal relay
             pinned()
             remote_camera('stop')
             # The relay pins one UDP source endpoint. A new client uses a new
-            # ephemeral port, so it needs a new relay even if SSH stayed healthy.
-            terminate(relay)
-            stop.wait(2)
-            relay = subprocess.Popen(powershell(f"& '{REMOTE}/bridge.ps1'"))
-            children[:] = [tunnel, relay]
-            stop.wait(3)
+            # ephemeral port. Closing only its ssh.exe parent can leave the
+            # Windows PowerShell child alive and holding UDP. Close the owning
+            # TCP tunnel as well: EOF makes that bridge release its socket.
+            wire_repair()
             remote_camera('start')
             rehook()
 
@@ -322,9 +328,18 @@ def supervise(op, run):
                     last_split=now
                 except Exception as e:
                     recovery.event('recording','split-error',reason=str(e))
-            if archivist.poll() is not None:
+            if archivist.poll() is not None and now-last_archive_spawn>=60:
+                last_archive_spawn=now
                 with (op/'recording-archive.log').open('a') as log:
                     archivist=subprocess.Popen([sys.executable,str(HERE/'stream_recordings.py'),str(op)],stdout=log,stderr=subprocess.STDOUT)
+            if memory.poll() is not None:
+                # An independently owned observer can legitimately hold the lock.
+                from run_state import read as read_json
+                sample=read_json(op/'memory.json',{})
+                if now-sample.get('heartbeat',0)>600 and now-last_memory_spawn>=600:
+                    last_memory_spawn=now
+                    with (op/'memory-watch.log').open('a') as log:
+                        memory=subprocess.Popen([sys.executable,str(HERE/'stream_memory.py'),str(op)],stdout=log,stderr=subprocess.STDOUT)
             # Overlay poll errors are contained in its thread; a stall still wakes the operator.
             recovery.run('overlay', lambda: require(now-overlay.snapshot().get('now', 0)<30, 'overlay poll stalled'),
                          lambda: None, grace=30)
@@ -344,8 +359,16 @@ def supervise(op, run):
                     obs.call('SetRecordDirectory',{'recordDirectory':receipt['previous_record_directory']})
             except Exception as e:
                 receipt['cleanup_error'] = f'OBS cleanup: {e}'
-        terminate(archivist)
-        if receipt.get('record_directory'):
+        if archivist is not None and archivist.poll() is None:
+            # Finish an in-flight checksum/copy before final archival. SIGTERM
+            # requests a graceful worker stop; it never abandons an scp child.
+            archivist.terminate()
+            try:
+                archivist.wait(timeout=660)
+            except subprocess.TimeoutExpired:
+                receipt['cleanup_archive_error']='archive worker still copying; retained for operator inspection'
+        terminate(memory)
+        if receipt.get('record_directory') and not receipt.get('cleanup_archive_error'):
             try:
                 from stream_recordings import archive
                 archive(op,run)

@@ -12,6 +12,8 @@ from public_session import broadcast, transition
 from public_tours import Tours
 from stream_memory import assess, GIB
 from stream_recovery import Recovery, FrameProgress
+from stream_feeds import owns
+from viewer_inbox import BroadcastChat
 
 
 class API:
@@ -133,6 +135,23 @@ class Tests(unittest.TestCase):
                 tours=Tours(self.op)
         self.assertTrue(all(n>=71 for n in seen.values()),seen)
         self.assertLessEqual(max(seen.values())-min(seen.values()),1)
+    def test_feed_restart_cannot_signal_another_run_or_agent(self):
+        config=self.op/'stream.json'
+        args=['python3','tools/stream/serve.py','--world','imac2','--team','green','--run',str(config),'--port','8791']
+        self.assertTrue(owns(args,config,'green',8791))
+        self.assertFalse(owns(args,config,'blue',8791))
+        self.assertFalse(owns(args,self.op/'other.json','green',8791))
+        self.assertFalse(owns(['python3','agent.py']+args[2:],config,'green',8791))
+        self.assertFalse(owns(args[:-1],config,'green',8791))
+    def test_operator_chat_follows_durable_broadcast_receipt(self):
+        class Chat:
+            def __init__(self,target):self.target=target
+            def poll(self):return self.target
+        feed=BroadcastChat(self.op,'old',Chat)
+        self.assertEqual(feed.poll(),'old')
+        (self.op/'broadcast.json').write_text(json.dumps({'id':'new'}))
+        self.assertEqual(feed.poll(),'new')
+        self.assertFalse(hasattr(feed,'relay'))
 
 
 if __name__=='__main__':unittest.main()

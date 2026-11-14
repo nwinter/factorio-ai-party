@@ -8,6 +8,7 @@ import argparse
 import json
 from pathlib import Path
 import time
+import fcntl
 
 from run_state import alert, read, write
 from public_stream import checked, powershell
@@ -85,6 +86,8 @@ def main():
     p.add_argument('--once', action='store_true')
     a = p.parse_args()
     a.op.mkdir(parents=True, exist_ok=True)
+    handle=(a.op/'memory.lock').open('a+')
+    fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB)
     last_error = 0
     while True:
         try:

@@ -14,7 +14,7 @@ import subprocess
 import sys
 import threading
 import time
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -119,6 +119,9 @@ def supervise(run, minutes, run_mode='test', public=False, closed_drill=False):
     receipt['session_privacy'] = privacy
     ready = read(op/'public-stream.json')
     assert ready['phase'] == 'ready' and ready['run'] == run and ready['root'] == str(ROOT)
+    source=ready['overlay'].rstrip('/')+'/state.json'
+    parsed=urlsplit(source)
+    assert parsed.scheme=='http' and parsed.hostname=='127.0.0.1' and parsed.port, 'invalid local overlay source'
     assert os.environ.get('MT_DIR') == '/Users/owner/pog-mt21' and os.environ.get('MT_EXPECT_VERSION') == '2.1.24', 'missing isolated 2.1 pins'
     expected = roster_of(op)
     state = {'pid':os.getpid(), 'run':run, 'video':receipt['id'], 'phase':'starting', 'started':time.time(),
@@ -142,7 +145,7 @@ def supervise(run, minutes, run_mode='test', public=False, closed_drill=False):
         transition(api,receipt,'live',stop)
         env = dict(os.environ, POG_YOUTUBE=receipt['id'])
         with (op/'site-push.log').open('a') as log:
-            publisher = subprocess.Popen([sys.executable,str(MAIN/'site/push_live.py'),'--team-tests','--source','http://127.0.0.1:8790/state.json','--report','30'],env=env,stdout=log,stderr=subprocess.STDOUT)
+            publisher = subprocess.Popen([sys.executable,str(MAIN/'site/push_live.py'),'--team-tests','--source',source,'--report','30'],env=env,stdout=log,stderr=subprocess.STDOUT)
         state['publisher_pid'] = publisher.pid
         confirmed = False
         for _ in range(12):
@@ -170,7 +173,7 @@ def supervise(run, minutes, run_mode='test', public=False, closed_drill=False):
             env = dict(os.environ, POG_YOUTUBE=receipt['id'])
             with (op/'site-push.log').open('a') as log:
                 publisher = subprocess.Popen([sys.executable,str(MAIN/'site/push_live.py'),'--team-tests',
-                    '--source','http://127.0.0.1:8790/state.json','--report','30'],env=env,stdout=log,stderr=subprocess.STDOUT)
+                    '--source',source,'--report','30'],env=env,stdout=log,stderr=subprocess.STDOUT)
             state['publisher_pid'] = publisher.pid
 
         def stream_check():
@@ -225,11 +228,12 @@ def supervise(run, minutes, run_mode='test', public=False, closed_drill=False):
                 recovery.run('youtube',youtube_check,youtube_repair,grace=0,cooldown=60)
             recovery.run('site',site_check,start_publisher,grace=30,cooldown=60)
             try:
-                with urlopen('http://127.0.0.1:8790/state.json', timeout=5) as response:
+                with urlopen(source, timeout=5) as response:
                     healthy = fresh_feed(json.load(response), time.time(), expected)
             except (OSError, ValueError):
                 healthy = False
-            recovery.run('feeds',lambda:require(healthy,'team feeds stale; world retained'),lambda:None,grace=60)
+            from stream_feeds import restart_stale
+            recovery.run('feeds',lambda:require(healthy,'team feeds stale; world retained'),lambda:restart_stale(op),grace=60,cooldown=120)
             state['heartbeat'] = time.time()
             write(statefile,state)
     except Exception as e:

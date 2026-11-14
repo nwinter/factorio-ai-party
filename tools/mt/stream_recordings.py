@@ -5,11 +5,14 @@ Only this run's spool is inspected. Open files are skipped, never copied/deleted
 The Mac filesystem must report the external volume as mounted before any write.
 """
 import argparse
+import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import signal
+import threading
 import time
 
 from public_stream import checked, powershell
@@ -74,6 +77,11 @@ def main():
     a=p.parse_args();run=a.op.parent.name
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,20}',run):
         raise ValueError('plain run name required')
+    handle=(a.op/'recordings.lock').open('a+')
+    fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    stop=threading.Event()
+    for sig in (signal.SIGTERM,signal.SIGINT):
+        signal.signal(sig,lambda *_:stop.set())
     last_alert=0
     while True:
         try:
@@ -83,9 +91,10 @@ def main():
                 alert(a.op,'recording-archive',str(e));last_alert=time.time()
             if a.once:
                 raise
-        if a.once:
+        if a.once or stop.is_set():
             return
-        time.sleep(60)
+        if stop.wait(60):
+            return
 
 
 if __name__=='__main__':
