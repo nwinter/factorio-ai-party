@@ -27,7 +27,7 @@ import announce
 ENV_KEYS=('PATH','HOME','USER','LOGNAME','SHELL','TMPDIR','LANG','TZ','HERDR_WORKSPACE_ID',
           'IMAC_HOST','IMAC_PYTHON',
           'MT_DIR','MT_FACTORIO_APP','MT_EXPECT_VERSION','MT_RCON_PORT','MT_GAME_PORT','MT_MODS_FILE',
-          'POG_KB','POG_SPACE_AGE','POG_BROKER','POG_TIME_MODE','POG_ENEMIES','POG_SEED',
+          'POG_KB','POG_FACTORIO_VERSION','POG_SPACE_AGE','POG_BROKER','POG_TIME_MODE','POG_ENEMIES','POG_SEED',
           'POG_TEAM_LINE','POG_GOAL','POG_MAP_TEXT','POG_IDENTITY_BRIEF','POG_OPENING_BRIEF',
           'POG_WEB_BLOCK','POG_DENY_READ','POG_READ_SCOPE','POG_SHELL_NET','POG_FULL_TOOLS',
           'POG_ISOLATED','POG_IDLE_NUDGE','POG_PANE_WATCH','POG_WORLD_RUNNING','POG_CLAIM_OWNER',
@@ -261,7 +261,8 @@ def watch(run):
                     state=read(op/'full-run.json');now=time.time()
                     if state['phase']!='running':return
                     brief=read(Path.home()/'.cache/ai-usage/agent-brief.json',{})
-                    due=[n for n,a in state['agents'].items() if now>=a['deadline'] and not a.get('held')]
+                    due=[n for n,a in state['agents'].items() if now>=a['deadline'] and not a.get('completed')
+                         and (not a.get('held') or (state['max_shifts'] and a['shift']>=state['max_shifts']))]
                     if due:
                         finished=[n for n in due if state['max_shifts'] and state['agents'][n]['shift']>=state['max_shifts']]
                         for n in finished:

@@ -29,6 +29,35 @@ import public_session
 import launch
 
 class Shifts(unittest.TestCase):
+    def test_resume_environment_keeps_engine_version(self):
+        with tempfile.TemporaryDirectory() as temp,patch.dict('os.environ',{'POG_FACTORIO_VERSION':'2.1.24'}):
+            full_run.capture_env(Path(temp))
+            self.assertEqual(json.loads(Path(temp,'full-env.json').read_text())['POG_FACTORIO_VERSION'],'2.1.24')
+
+    def test_dead_client_restarts_once_then_backs_off(self):
+        with tempfile.TemporaryDirectory() as temp:
+            a=dict(name='a',folder=temp,kind='grok',pane='p',started=0,restarts=0)
+            panes=unittest.mock.Mock();panes.read.return_value='';panes.status.return_value='done'
+            state=dict(agents={'a':a})
+            with patch.object(full_run,'live_client',return_value=False),patch.object(full_run,'change') as change,patch.object(full_run,'alert'):
+                full_run.watch_agent(Path(temp),state,a,10000,panes,{}, {})
+                full_run.watch_agent(Path(temp),state,a,10020,panes,{}, {})
+                self.assertEqual(change.call_count,1)
+                self.assertEqual(a['restarts'],1)
+                a['restarts']=4;a['next_retry']=0
+                full_run.watch_agent(Path(temp),state,a,11000,panes,{}, {})
+                self.assertTrue(a['held']);self.assertEqual(change.call_count,1)
+
+    def test_unknown_limit_holds_without_restart_or_prompt(self):
+        with tempfile.TemporaryDirectory() as temp:
+            a=dict(name='a',folder=temp,kind='grok',pane='p',started=0,restarts=0)
+            panes=unittest.mock.Mock();panes.read.return_value='Weekly limit reached'
+            with patch.object(full_run,'live_client',return_value=True),patch.object(full_run,'change') as change, \
+                 patch.object(full_run,'stop_client') as stop,patch.object(full_run,'alert'):
+                full_run.watch_agent(Path(temp),dict(agents={'a':a}),a,10000,panes,{}, {})
+                stop.assert_called_once();change.assert_not_called();panes.prompt.assert_not_called()
+                self.assertEqual(a['hold_reason'],'quota');self.assertTrue(a['held'])
+
     def test_scoped_nudge_ignores_foreign_rows(self):
         a=dict(name='a',team='green',started=0,folder='unused',tree='unused')
         state={'agents':{'a':a,'b':dict(a,name='b',team='blue')}}
