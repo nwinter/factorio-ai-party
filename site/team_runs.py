@@ -39,6 +39,7 @@ def project(raw, ident, now=None):
     source = {r.get('team'): r for r in map(display.obj, display.rows(raw.get('teams')))
               if isinstance(r.get('team'), str)}
     teams = []
+    known = {row['team'] for row in base['teams']}
     wallets = display.obj(display.obj(raw.get('market')).get('wallets'))
     for row in base['teams']:
         src = source[row['team']]
@@ -53,7 +54,7 @@ def project(raw, ident, now=None):
             'entities': {k: display.number(entities.get(k)) or 0 for k in race.STARTUP} if entities else None,
             'coins': coins, 'reserved': reserved,
             'pacts': [{'id': p['id'], 'with': p['with']} for p in map(display.obj, display.rows(src.get('pacts')))
-                      if type(p.get('id')) is int and p['id'] > 0 and isinstance(p.get('with'), str) and p['with'] in source and p['with'] != row['team']][:12]})
+                      if type(p.get('id')) is int and p['id'] > 0 and isinstance(p.get('with'), str) and p['with'] in known and p['with'] != row['team']][:12]})
     ranking = race.rank(teams)
     result = race.project_result(raw.get('result'), teams)
     tick = max((t['tick'] or 0 for t in teams), default=0)

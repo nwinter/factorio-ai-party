@@ -53,6 +53,9 @@ class TeamRuns(unittest.TestCase):
         self.assertIsNone(tr.project({}, 'days', 100))
         raw['teams'][0]['pacts'] = [{'id': 1, 'with': []}]
         self.assertEqual(tr.project(raw, 'days', 100)['teams'][0]['pacts'], [])
+        raw['teams'].append({'team': 'DO NOT PUBLISH', 'agents': [], 'tick': 100})
+        raw['teams'][0]['pacts'] = [{'id': 1, 'with': 'DO NOT PUBLISH'}]
+        self.assertNotIn('DO NOT PUBLISH', json.dumps(tr.project(raw, 'days', 100)))
 
     def test_restart_pagination_restore_and_result(self):
         with tempfile.TemporaryDirectory() as d:
