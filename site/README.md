@@ -311,7 +311,8 @@ The normal site rebuild adds `/teams/RUN/` archive pages and 100-event history p
 `/v1/state` API; static archives update at the next build. To include a previous test that predates the recorder,
 run `tools/mt/archive_site.py PATH/TO/RUN` once, offline. It projects the last `op/views.json` snapshot and its retained
 contacts/pacts/feed; it cannot recover events that the old collector did not retain. An archive without a frozen
-result says so. Keep the run directories when rotating agent shifts. The recorder runs once per site push, so events
+result says so. Keep the run directories when rotating agent shifts. The live state trims older displayed events to fit the API payload budget; the durable archive retains them.
+The recorder runs once per site push, so events
 that disappear from the collector between pushes cannot be reconstructed.
 
 Offline contract, restart, pagination and Chromium/Playwright checks: `python3 site/test_team_runs.py`.

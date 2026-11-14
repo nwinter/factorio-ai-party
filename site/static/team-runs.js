@@ -77,8 +77,8 @@
       } else {
         const live = await json(root.dataset.api.replace(/\/$/, '') + '/v1/state');
         if (live.team_run) render(live.team_run);
-        else if (state) { render(state); document.getElementById('team-run-status').textContent = 'No active team broadcast · last recorded progress'; }
-        else document.getElementById('team-run-status').textContent = 'No active team broadcast. Past team tests are below.';
+        else if (state) { render(state); document.getElementById('team-run-status').textContent = 'Team progress unavailable · last recorded progress'; }
+        else document.getElementById('team-run-status').textContent = 'Team progress is unavailable. Past team tests are below.';
       }
     } catch (_) {
       if (state) render(state);

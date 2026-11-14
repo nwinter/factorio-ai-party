@@ -57,6 +57,19 @@ class TeamRuns(unittest.TestCase):
         raw['teams'][0]['pacts'] = [{'id': 1, 'with': 'DO NOT PUBLISH'}]
         self.assertNotIn('DO NOT PUBLISH', json.dumps(tr.project(raw, 'days', 100)))
 
+    def test_live_budget_keeps_durable_history_whole(self):
+        raw = fixture(100)
+        raw['feed'] = []
+        raw['events'] = [{'kind':'market', 'team':'green', 'tick':n, 'text':'矿'*500} for n in range(100)]
+        snapshot = tr.project(raw, 'days', 100)
+        live = tr.display.public_state(raw, now=100)
+        live['team_run'] = snapshot
+        tr.fit_live(live)
+        self.assertLessEqual(len(json.dumps(live, separators=(',', ':')).encode()), 240*1024)
+        self.assertLess(len(live['team_run']['events']), 100)
+        self.assertEqual(len(snapshot['events']), 100)
+        self.assertEqual(live['team_run']['events'][-1]['tick'], 99)
+
     def test_restart_pagination_restore_and_result(self):
         with tempfile.TemporaryDirectory() as d:
             folder = Path(d)/'days/op/public-site'

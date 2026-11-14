@@ -80,6 +80,23 @@ def project(raw, ident, now=None):
             'events': sorted(events, key=lambda e: (e['tick'], e['id']))[-100:]}
 
 
+def fit_live(state, limit=240 * 1024):
+    """Keep the added live history within the worker's 256 KiB state limit.
+
+    The durable archive is saved first and retains every projected event.
+    """
+    if 'team_run' not in state:
+        return
+    state['team_run'] = dict(state['team_run'], events=list(state['team_run']['events']))
+    def size():
+        return len(json.dumps(state, separators=(',', ':')).encode())
+    while state['team_run']['events'] and size() > limit:
+        state['team_run']['events'].pop(0)
+    if size() > limit:
+        # An already-full legacy payload must not fail because of this addition.
+        state.pop('team_run')
+
+
 def restore(snapshot):
     """Saved pages pass through the same allowlist again, including final results."""
     s = display.obj(snapshot)

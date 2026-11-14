@@ -1122,6 +1122,7 @@ def main():
                             state["team_run"] = run
                             if -5 <= t0 - run["now"] <= 30 and run["teams"]:
                                 team_archive.save(run)
+                            team_runs.fit_live(state)
                 else:
                     state = with_terrain(public_state(raw), site_terrain(CONFIG.get("site_url")))
                     state = with_chart(state, site_chart(CONFIG.get("site_url")))
