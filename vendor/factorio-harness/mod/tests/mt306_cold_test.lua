@@ -68,6 +68,17 @@ eq(alert.pending,nil); eq(alert.cursor,1,'first completed read owns the first cu
 eq(s.push_alerts.red.groups[1].kind,'no_power.network')
 print(string.format('mt306 cold reads: queries=0; background finished at tick %d (%d total queries); reload and playerless force passed',finish,finds))
 
+-- Upgrading a bot-only force with an existing synchronous snapshot must
+-- register it for future refreshes too, while serving the last complete facts.
+s.networks.requested=nil; s.push_requested=nil
+local network_snapshot,alert_snapshot=s.networks.views.red,s.push_alerts.red
+local before_finds=finds
+reload()
+eq(N.read(p,{}).pending,nil); eq(P.read(p,{}).pending,nil)
+eq(s.networks.requested.red,true); eq(s.push_requested.red,true)
+eq(s.networks.views.red,network_snapshot); eq(s.push_alerts.red,alert_snapshot)
+eq(finds,before_finds,'upgrade serves completed snapshots without scanning')
+
 -- Existing per-force pacing must remain intact: a round-robin shortcut
 -- multiplies sparse census walks (one band per turn) by the force count.
 local teams={'red','blue','green','yellow'}

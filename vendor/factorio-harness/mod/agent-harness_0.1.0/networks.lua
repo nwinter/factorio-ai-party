@@ -1594,7 +1594,6 @@ return function(api)
   local function view(f)
     local n = store()
     local v = n.views[f.name]
-    if v and (n.view_bg or game.tick - v.tick < VIEW_TICKS) then return v end
     -- Runtime reads never build a force's whole base in the asking tick.
     -- The persisted map/view jobs warm it; do not publish an empty snapshot.
     if api.background then
@@ -1607,6 +1606,7 @@ return function(api)
       end
       return v or {tick=game.tick,surfaces={},pending=true}
     end
+    if v and (n.view_bg or game.tick - v.tick < VIEW_TICKS) then return v end
     fresh_map(n)
     v = {tick=game.tick, surfaces={}}
     for _, surface in ipairs(surfaces()) do

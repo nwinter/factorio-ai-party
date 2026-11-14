@@ -1705,11 +1705,11 @@ return function(api)
     local s = api.state()
     s.push_alerts = s.push_alerts or {}
     local c = s.push_alerts[force.name]
-    if c and (s.push_bg or game.tick - c.tick < SCAN_TICKS) then return with_belts(c,force) end
     if api.background then
       s.push_requested=s.push_requested or {}; s.push_requested[force.name]=true
       return with_belts(c or {tick=game.tick,groups={},pending=true},force)
     end
+    if c and (s.push_bg or game.tick - c.tick < SCAN_TICKS) then return with_belts(c,force) end
     local groups, sight = scan(force)
     c = {tick=game.tick, groups=groups, sight=sight}
     s.push_alerts[force.name] = c
