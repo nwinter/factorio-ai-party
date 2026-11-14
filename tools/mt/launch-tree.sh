@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# (mt277, private: part E) The tree a multi-team run's agents run from: this branch's HEAD as files (git archive, no
-# .git, so no branch or commit of it is readable there), without what names the teams or this mode, plus the built
+# (mt277, private: part E) The tree a multi-team run's agents run from: this branch's HEAD (or tracked working content
+# during a pending merge) as files, with no .git and without what names the teams or this mode, plus the built
 # host. Agents' workspaces live in its runs/ (kept across updates); the operator's files stay in this checkout.
 #   tools/mt/launch-tree.sh [DIR]     make or update it (default worktrees/pog-p); prints DIR
 #   tools/mt/launch-tree.sh --scan DIR   the words that would name the mode, with the files they are in (none: exit 0)
@@ -22,7 +22,13 @@ tree=${1:-/Users/owner/code/personal/player-of-games/worktrees/pog-p}
 case $tree in "$root"|"$root"/*) echo "the launch tree must be outside this checkout" >&2; exit 64 ;; esac
 [ -e "$tree" ] && [ ! -f "$tree/.launch-tree" ] && { echo "$tree exists and is not a launch tree" >&2; exit 1; }
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
-git -C "$root" archive HEAD | tar -x -C "$tmp"
+archive_ref=HEAD
+if git -C "$root" rev-parse -q --verify MERGE_HEAD >/dev/null; then
+  # The gate tests an uncommitted merge. Snapshot tracked/index changes without
+  # changing the merge, index, working tree or stash list; omit untracked files.
+  archive_ref=$(git -C "$root" stash create)
+fi
+git -C "$root" archive "${archive_ref:-HEAD}" | tar -x -C "$tmp"
 rm -rf "$tmp/tools/mt" "$tmp/agent/mt" "$tmp/site" "$tmp/agent/briefs" "$tmp/agent/ENGINEER.md" "$tmp"/tools/test_*.py "$tmp"/tools/stream/test_*.py "$tmp"/site/test_*.py \
   "$tmp/vendor/factorio-harness/mod" "$tmp"/vendor/factorio-harness/tests/mt[0-9]*.lua \
   "$tmp"/tools/public_export.py "$tmp"/tools/public_sync.py "$tmp"/tools/public-push.sh "$tmp"/tools/public-start.sh \
