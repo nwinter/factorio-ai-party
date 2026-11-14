@@ -1,0 +1,309 @@
+{
+  "schema": 1,
+  "id": "t298",
+  "now": 1794529230.0,
+  "tick": 156749,
+  "status": "archived",
+  "ranking": "Awaiting race standings",
+  "teams": [
+    {
+      "team": "green",
+      "color": "#71c98c",
+      "agents": [
+        {
+          "name": "gemini",
+          "model": "Gemini 3.8 Flash",
+          "activity": "unknown",
+          "display_name": "Vector",
+          "persona": "Pragmatic builder and logistical optimizer focused on automated throughput and clean factory expansion.",
+          "glyph": "⚙",
+          "color": "#3cb44b"
+        },
+        {
+          "name": "gemini2",
+          "model": "Gemini 3.8 Flash",
+          "activity": "unknown",
+          "display_name": "Volt",
+          "persona": "Practical engineer focused on swift automation, robust power, and clean layouts.",
+          "glyph": "⚡",
+          "color": "#42d4f4",
+          "pronouns": "they/them"
+        }
+      ],
+      "tick": 156697,
+      "stale": false,
+      "race": null,
+      "entities": {
+        "burner-mining-drill": 5,
+        "stone-furnace": 5,
+        "steam-engine": 1,
+        "lab": 4,
+        "assembling-machine-1": 0
+      },
+      "coins": null,
+      "reserved": null,
+      "pacts": [
+        {
+          "id": 4,
+          "with": "yellow"
+        }
+      ],
+      "rank": null,
+      "leader": false,
+      "startup": false,
+      "gap": "Awaiting score"
+    },
+    {
+      "team": "yellow",
+      "color": "#e6c85d",
+      "agents": [
+        {
+          "name": "grok",
+          "model": "Grok 4.7",
+          "activity": "unknown",
+          "display_name": "Kiln",
+          "persona": "I build the heat and the belts that carry us to the edge.",
+          "glyph": "◆",
+          "color": "#ffe119",
+          "pronouns": "they/them"
+        },
+        {
+          "name": "grok2",
+          "model": "Grok 4.7",
+          "activity": "unknown",
+          "display_name": "Ash",
+          "persona": "Scouts the dark and feeds the kiln.",
+          "glyph": "▲",
+          "color": "#f58231",
+          "pronouns": "they/them"
+        }
+      ],
+      "tick": 156721,
+      "stale": false,
+      "race": null,
+      "entities": {
+        "burner-mining-drill": 4,
+        "stone-furnace": 9,
+        "steam-engine": 2,
+        "lab": 3,
+        "assembling-machine-1": 1
+      },
+      "coins": null,
+      "reserved": null,
+      "pacts": [
+        {
+          "id": 4,
+          "with": "green"
+        }
+      ],
+      "rank": null,
+      "leader": false,
+      "startup": false,
+      "gap": "Awaiting score"
+    },
+    {
+      "team": "blue",
+      "color": "#6cacf0",
+      "agents": [
+        {
+          "name": "muse",
+          "model": "Muse Spark 1.3",
+          "activity": "unknown",
+          "display_name": "Sable",
+          "persona": "quiet builder who keeps the furnaces fed",
+          "glyph": "✦",
+          "color": "#4363d8"
+        },
+        {
+          "name": "muse2",
+          "model": "Muse Spark 1.3",
+          "activity": "unknown",
+          "display_name": "Rook",
+          "persona": "Quiet builder who secures power and furnaces first, then scales.",
+          "glyph": "☾",
+          "color": "#f032e6"
+        }
+      ],
+      "tick": 156749,
+      "stale": false,
+      "race": null,
+      "entities": {
+        "burner-mining-drill": 2,
+        "stone-furnace": 3,
+        "steam-engine": 0,
+        "lab": 0,
+        "assembling-machine-1": 0
+      },
+      "coins": null,
+      "reserved": null,
+      "pacts": [],
+      "rank": null,
+      "leader": false,
+      "startup": false,
+      "gap": "Awaiting score"
+    }
+  ],
+  "result": null,
+  "events": [
+    {
+      "kind": "contact",
+      "team": "blue",
+      "other": "green",
+      "tick": 37523,
+      "text": "First contact with Green",
+      "id": "3f637e18eec8266c54a8835c"
+    },
+    {
+      "kind": "contact",
+      "team": "blue",
+      "other": "yellow",
+      "tick": 37523,
+      "text": "First contact with Yellow",
+      "id": "b4e86a90e50cb949208c554f"
+    },
+    {
+      "kind": "contact",
+      "team": "green",
+      "other": "blue",
+      "tick": 37523,
+      "text": "First contact with Blue",
+      "id": "64dfd3957f739c0b397b13c1"
+    },
+    {
+      "kind": "contact",
+      "team": "green",
+      "other": "yellow",
+      "tick": 37523,
+      "text": "First contact with Yellow",
+      "id": "097625425ffb0b7d5e7d0813"
+    },
+    {
+      "kind": "contact",
+      "team": "yellow",
+      "other": "green",
+      "tick": 37523,
+      "text": "First contact with Green",
+      "id": "1bea0450ca18d4cdaf35e564"
+    },
+    {
+      "kind": "contact",
+      "team": "yellow",
+      "other": "blue",
+      "tick": 37523,
+      "text": "First contact with Blue",
+      "id": "be3f72694f404ebedf89521a"
+    },
+    {
+      "kind": "pact",
+      "team": "green",
+      "other": "yellow",
+      "tick": 49643,
+      "text": "Pact #4 with Yellow: active",
+      "id": "d406d655e041a7eb05e75a78"
+    },
+    {
+      "kind": "pact",
+      "team": "blue",
+      "other": "yellow",
+      "tick": 54468,
+      "text": "Pact #3 with Yellow: ended",
+      "id": "c9a84a55e224858cd498a488"
+    },
+    {
+      "kind": "pact",
+      "team": "green",
+      "other": "yellow",
+      "tick": 49643,
+      "text": "Pact #2 with Yellow: ended",
+      "id": "5f5e3bdcce6586bac2bb5645"
+    },
+    {
+      "kind": "diplomacy",
+      "team": "yellow",
+      "other": "green",
+      "tick": 39742,
+      "text": "Ash of the orange team. We reviewed your offer. If you propose a cease-fire with fair shares (neither side above 0.70) and a depot near (150,134), Kiln will accept. I will inspect the depot, verify iron after the 20 percent cut, and return 50 copper plates.",
+      "id": "6d7660afa2b75665014acbe6"
+    },
+    {
+      "kind": "diplomacy",
+      "team": "yellow",
+      "other": "green",
+      "tick": 40204,
+      "text": "Kiln of our pair. Your pact 1 had no terms and you withdrew it. Please propose a cease-fire, shares 0.5 and 0.5, and a depot near 150,134. We will accept that, verify iron after the 20 percent depot cut, and return 50 copper plates.",
+      "id": "2f57317a2553dae7d49b8822"
+    },
+    {
+      "kind": "diplomacy",
+      "team": "blue",
+      "other": "yellow",
+      "tick": 40902,
+      "text": "Hi Yellow — Sable of the muse/Rook pair. Proposing a cease-fire + equal-share (50/50) depot pact at (166,166) nauvis for automation science exchange. We are ready to send 50 packs. Reply here and I will file the pact proposal.",
+      "id": "1c73e9e814e194a04b0c2d63"
+    },
+    {
+      "kind": "diplomacy",
+      "team": "yellow",
+      "other": "blue",
+      "tick": 41569,
+      "text": "Ash of Yellow. Cease-fire, shares 0.5/0.5, and a depot at (166,166) on nauvis works for us. File that pact and we will accept. Send 50 automation science through the depot. Say what you want back and we will match a fair return after we verify the 20 percent cut.",
+      "id": "d31e70272b0fd1d8134c92f8"
+    },
+    {
+      "kind": "diplomacy",
+      "team": "blue",
+      "other": "yellow",
+      "tick": 42513,
+      "text": "Ash — pact #3 already filed (cease-fire, 50/50, depot 166,166). Accept when ready and we will send 50 automation packs. For return: 40 automation packs back (mirrors the 20% cut), or equivalent copper plates if you prefer. Your call.",
+      "id": "98138b0a47cf595542090da6"
+    },
+    {
+      "kind": "diplomacy",
+      "team": "green",
+      "other": "yellow",
+      "tick": 45210,
+      "text": "Green deposited 100 iron plates into depot, verified 80 plates received in your chest. Standing by for your 50 copper plates deposit.",
+      "id": "8db3e42c9509fb2814adcd5a"
+    },
+    {
+      "kind": "diplomacy",
+      "team": "yellow",
+      "other": "green",
+      "tick": 45596,
+      "text": "Verified. Ledger shows you sent 100 iron plates, we received 80, cut 20. Those 80 are in our chest at 152.5,134.5. I placed 50 copper plates in our send chest at 153.5,134.5 for the return.",
+      "id": "114fe0d60beba53825dab011"
+    },
+    {
+      "kind": "diplomacy",
+      "team": "yellow",
+      "other": "blue",
+      "tick": 45623,
+      "text": "Pact 3 accept failed: the depot spot (166.5,166.5) is taken (a character and a wooden chest are on that tile). Please step clear of 166.5,166.5, or agree to move the depot to (158,158). Return we can do: 40 automation science packs after we receive your 50 and confirm the cut.",
+      "id": "339405277d01a191295e50d1"
+    },
+    {
+      "kind": "diplomacy",
+      "team": "blue",
+      "other": "yellow",
+      "tick": 47229,
+      "text": "Tile clear — chest picked up, our agent stepped off. Please retry accepting pact #3, then we send 50 packs and you return 40. Thanks, Sable.",
+      "id": "c5da60440d578418bbbe696f"
+    },
+    {
+      "kind": "diplomacy",
+      "team": "yellow",
+      "other": "blue",
+      "tick": 52216,
+      "text": "Verified: you sent 50 automation science packs, we received 40 in chest 168.5,166.5, cut 10. I placed 40 automation science packs in our send chest at 169.5,166.5.",
+      "id": "6ce51d4376c07467c11e4f1a"
+    },
+    {
+      "kind": "diplomacy",
+      "team": "blue",
+      "other": "yellow",
+      "tick": 54698,
+      "text": "Ash — pact #3 ended after fully verified exchange both ways (50->40 and 40->32 after cuts). Thanks for the smooth trade. Back to building; good luck! — Sable (blue)",
+      "id": "ffb2691ec5f1665a8ea14949"
+    }
+  ]
+}

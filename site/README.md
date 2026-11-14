@@ -305,6 +305,8 @@ atomically. Restoring an earlier save begins a new event epoch and is recorded e
 alerts, wipe flags, internal game configuration, raw views or launch metadata enter the site.
 
 Build with `site/build.py --team-runs-dir PATH/TO/TEAM/RUNS` (or `POG_TEAM_RUNS_DIR`, including in site-refresh.sh).
+Five sanitized earlier test snapshots are bundled in `site/content/team-runs`; raw operator files are not included.
+Recorded run directories override a bundled snapshot with the same ID.
 The normal site rebuild adds `/teams/RUN/` archive pages and 100-event history pages. Live updates use the existing
 `/v1/state` API; static archives update at the next build. To include a previous test that predates the recorder,
 run `tools/mt/archive_site.py PATH/TO/RUN` once, offline. It projects the last `op/views.json` snapshot and its retained

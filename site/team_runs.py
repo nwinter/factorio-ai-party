@@ -186,7 +186,9 @@ def shell(api, esc, ident=None, archive=False):
 
 
 def build(runs_dir, write, page, esc, api):
-    archives = load(runs_dir)
+    bundled = Path(__file__).resolve().parent / 'content/team-runs'
+    by_id = {s['id']: (s, folder) for s, folder in load(bundled) + load(runs_dir)}
+    archives = sorted(by_id.values(), key=lambda pair: pair[0]['now'], reverse=True)
     links = ''.join(f'<li><a href="/teams/{esc(s["id"])}/">{esc(s["id"])}</a> · '
                     f'{"Game over" if s["result"] else "Archived snapshot; no recorded result"} · '
                     f'{esc(duration(s["tick"]))} game time</li>' for s, _ in archives)
@@ -196,7 +198,7 @@ def build(runs_dir, write, page, esc, api):
     for state, folder in archives:
         ident = state['id']
         write(f'teams/{ident}/state.json', json.dumps(state, allow_nan=False))
-        body = shell(api, esc, ident, archive=True) + '<p><a href="/teams/">All team runs</a></p>'
+        body = shell(api, esc, ident, archive=True) + '<p>Historical test snapshots reflect the rules and records available at the time. Events outside the retained history may be missing.</p><p><a href="/teams/">All team runs</a></p>'
         pages = 0
         for pages, rows in enumerate(event_pages(folder, state), 1):
             write(f'teams/{ident}/events-{pages}.json', json.dumps(rows, allow_nan=False))
