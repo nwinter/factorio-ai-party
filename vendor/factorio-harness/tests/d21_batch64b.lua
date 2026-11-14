@@ -141,6 +141,9 @@ print('d21_batch64b Z5 power: ok')
 local N=runtime.networks
 force.players={{}}   -- (networks reads forces with players)
 local store=storage.agent_harness.networks
+-- The runtime now warms the first pole map in bounded background steps.
+for _=1,1200 do if store.map_tick then break end; advance(1) end
+assert(store.map_tick,'background pole map completed')
 store.views.player={tick=game.tick,surfaces={}}
 store.view_jobs=store.view_jobs or {}
 store.view_jobs.player={start=game.tick,steps={{step='done'}},i=1,out={},ctx={},n=0,every=1}

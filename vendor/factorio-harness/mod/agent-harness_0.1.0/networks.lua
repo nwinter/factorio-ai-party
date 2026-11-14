@@ -96,7 +96,8 @@ return function(api)
   end
   local function forces()
     local out = {}
-    for _, f in pairs(game.forces or {}) do if f.players and #f.players > 0 then out[#out+1] = f end end
+    local wanted = store().requested or EMPTY
+    for _, f in pairs(game.forces or {}) do local ps=f.players; if wanted[f.name] or ps and #ps > 0 then out[#out+1] = f end end
     return out
   end
   local function surfaces()
@@ -459,7 +460,10 @@ return function(api)
       n.map_failed = snapfail.failed(err, tick)   -- the last map keeps its tick; the next walk starts VIEW_TICKS after this
     end
     if tick % SAMPLE ~= 0 then return end
-    if not n.map_tick then map_poles(n) end
+    if not n.map_tick then
+      if api.background then return end
+      map_poles(n)
+    end
     if not n.watch_tick or tick - n.watch_tick >= WATCH_TICKS then watch_logistics(n); n.watch_tick = tick end
     if not n.stock_tick or tick - n.stock_tick >= STOCK_EVERY then pcall(sample_stock, n); n.stock_tick = tick end
     sample(n)
@@ -1591,6 +1595,18 @@ return function(api)
     local n = store()
     local v = n.views[f.name]
     if v and (n.view_bg or game.tick - v.tick < VIEW_TICKS) then return v end
+    -- Runtime reads never build a force's whole base in the asking tick.
+    -- The persisted map/view jobs warm it; do not publish an empty snapshot.
+    if api.background then
+      n.requested = n.requested or {}
+      if not n.requested[f.name] then
+        n.requested[f.name] = true
+        -- A bot-only force was absent from the joined-player map job.
+        local ps=f.players
+        if not ps or #ps==0 then n.map_tick,n.map_job,n.map_steps=nil,nil,nil end
+      end
+      return v or {tick=game.tick,surfaces={},pending=true}
+    end
     fresh_map(n)
     v = {tick=game.tick, surfaces={}}
     for _, surface in ipairs(surfaces()) do
@@ -1656,7 +1672,10 @@ return function(api)
     elseif not job and v and tick - snapfail.since(v.tick, v.refresh_failed) < VIEW_TICKS then return end
     if not job then
       -- (with no pole map yet the first is made here at once)
-      if not n.map_tick then fresh_map(n) end
+      if not n.map_tick then
+        if api.background then return end
+        fresh_map(n)
+      end
       local steps = {}
       for _, s in ipairs(surfaces()) do
         for _, step in ipairs({'walk', 'boilers', 'supply', 'rows', 'logistic', 'orders', 'turrets'}) do steps[#steps+1] = {step=step, surface=s.name} end
@@ -1694,7 +1713,8 @@ return function(api)
     end
     -- (BT1: the surface by name without the sorted list of every surface a step; names are unique)
     local surface
-    for _, s in pairs(game.surfaces or EMPTY) do if s.name == step.surface then surface = s; break end end
+    if game.get_surface then surface = game.get_surface(step.surface)
+    else for _, s in pairs(game.surfaces or EMPTY) do if s.name == step.surface then surface = s; break end end end
     if not surface then job.i, job.walk, job.list = job.i + 1, nil, nil; job.ctx[step.surface] = nil; return end  -- the surface is gone
     local row = job.out[step.surface] or {name=surface.name, platform=try(function() return surface.platform.name end), logistic={}}
     job.out[step.surface] = row
@@ -1894,6 +1914,7 @@ return function(api)
   end
   function M.lines(f, here, max)
     local v = view(f)
+    if v.pending then return {'network scan in progress; no complete snapshot yet'} end
     local list = {}
     local function add(s)
       for _, r in ipairs(s.electric) do list[#list+1] = plain_line(f, r.line) end
@@ -1951,6 +1972,7 @@ return function(api)
     local v = view(p.force)
     local n = store()
     local named = M.surface_named(p.force, a)
+    if v.pending then return {pending=true,surfaces={},note='Network scan in progress; no complete snapshot yet.'} end
     local out = {}
     for _, s in ipairs(v.surfaces) do
       if named == nil or named.name == s.name then
@@ -2542,6 +2564,7 @@ return function(api)
   end
   function M.alert_cursor(f)
     local v = view(f)
+    if v.pending then return {force=f.name,pending=true,out={}} end
     local rows = {}
     for _, s in ipairs(v.surfaces) do
       for _, r in ipairs(s.electric) do r.view_tick = v.tick; rows[#rows+1] = {s=s, r=r, electric=true} end
@@ -2552,6 +2575,12 @@ return function(api)
   function M.alert_step(cur, max)
     local n = store()
     local f = game.forces[cur.force]
+    if cur.pending then
+      if not f then cur.pending=nil; return true end
+      local ready = M.alert_cursor(f)
+      if ready.pending then return false end
+      cur.pending,cur.rows,cur.i = nil,ready.rows,ready.i
+    end
     local last = math.min(#cur.rows, cur.i + (max or #cur.rows) - 1)
     for i = cur.i, last do
       local row = cur.rows[i]

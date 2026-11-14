@@ -55,6 +55,15 @@ def main():
     a = ap.parse_args()
     bots = a.bots.split(",")
     c = Copy(a)
+    os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
+    out = open(a.out, "w", buffering=1)
+
+    def measured(bot, action, args, phase):
+        env, ms, size = c.call(bot, action, args)
+        out.write(json.dumps({"t": round(time.time(), 3), "bot": bot, "action": action, "phase": phase,
+                              "ms": round(ms, 2), "bytes": size, "ok": bool(env.get("ok")), "tick": env.get("tick"),
+                              "error": None if env.get("ok") else (env.get("error") or {}).get("message", "")[:160]}) + "\n")
+        return env
     if a.give:
         names = ",".join(f"'{b}'" for b in bots)
         print(c.lua("local out={} for _,n in ipairs({" + names + "}) do local b=storage.agent_harness.bots.by_name[n]; "
@@ -62,17 +71,15 @@ def main():
                     "ch.insert{name='iron-plate',count=400}; out[#out+1]=n end end rcon.print('given: '..table.concat(out,' '))"))
     spots = {}
     for b in bots:
-        env, _, _ = c.call(b, "status", {"peek": True})
+        env = measured(b, "status", {"peek": True}, "startup")
         pos = ((env.get("result") or {}).get("position")) or {"x": 0, "y": 0}
         # a free tile for the chest within reach (find_non_colliding_position round 3 tiles east of the bot)
         got = c.lua("local c=storage.agent_harness.bots.by_name['" + b + "'].character; local p=c.surface.find_non_colliding_position("
                     "'wooden-chest',{c.position.x+3,c.position.y},6,1,true); rcon.print(p and (p.x..' '..p.y) or '')").split()
         spots[b] = {"x": float(got[0]), "y": float(got[1])} if len(got) == 2 else {"x": round(pos["x"]) + 3.5, "y": round(pos["y"]) + 0.5}
-        env, _, _ = c.call(b, "queue_repeat", {"name": "standin", "interval_ticks": 1200,
-                                                "steps": [{"action": "craft", "args": {"item": "iron-gear-wheel", "count": 2}}]})
+        env = measured(b, "queue_repeat", {"name": "standin", "interval_ticks": 1200,
+                                          "steps": [{"action": "craft", "args": {"item": "iron-gear-wheel", "count": 2}}]}, "startup")
         print(b, "queue:", "ok" if env.get("ok") else (env.get("error") or {}).get("message", "")[:120])
-    os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
-    out = open(a.out, "w")
     step = {b: i for i, b in enumerate(bots)}
     every = 1.0 / (a.rate * len(bots))
     t_end = time.time() + a.minutes * 60
@@ -92,10 +99,7 @@ def main():
             args = {"position": spots[b], "queue_resume_after": True}
         elif act == "wait_ticks":
             args = {"ticks": 240}
-        env, ms, size = c.call(b, act, args)
-        out.write(json.dumps({"t": round(time.time(), 3), "bot": b, "action": act, "ms": round(ms, 2), "bytes": size,
-                              "ok": bool(env.get("ok")), "tick": env.get("tick"),
-                              "error": None if env.get("ok") else (env.get("error") or {}).get("message", "")[:160]}) + "\n")
+        measured(b, act, args, "steady")
         nxt += every
         wait = nxt - time.time()
         if wait > 0:
@@ -103,7 +107,11 @@ def main():
         else:
             nxt = time.time()
     out.close()
-    rows = [json.loads(x) for x in open(a.out)]
+    with open(a.out) as recorded:
+        rows = [json.loads(x) for x in recorded]
+    startup = [r for r in rows if r["phase"] == "startup"]
+    print(f"startup: {len(startup)} calls, max {max((r['ms'] for r in startup), default=0):.1f} ms")
+    rows = [r for r in rows if r["phase"] == "steady"]
     span = rows[-1]["t"] - rows[0]["t"] if len(rows) > 1 else 1
     print(f"{len(rows)} calls in {span:.0f} s: {len(rows) / span:.2f} a second (asked {a.rate * len(bots):.2f}); "
           f"{sum(1 for r in rows if not r['ok'])} failed")

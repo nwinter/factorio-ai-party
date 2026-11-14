@@ -19037,3 +19037,11 @@ where applicable and omit finite free-slot capacities. Stack counts still descri
 rocket and unloading its shrinking inventory preserve item quality, spoilage and other stack metadata. The
 `load_silo` manifest accepts up to 64 item/quality entries on 2.1 (20 on 2.0). The 2.0.77 rocket retains its slot
 limit; platform hub and cargo-pod capacity remain separate from rocket lift.
+
+## First network and alert snapshots (mt306)
+
+On a newly observed force, `networks` and `game_alerts` can return `pending: true` while their first scan runs
+across game ticks. That reply is incomplete, not a report that the force has no networks or warnings.
+`game_alerts` leaves its cursor unchanged until the first complete scan. Completed snapshots retain their usual
+fields and observation age; refreshes continue in the background. The first-shift network line also names a pending
+scan. No argument or gameplay rule changes.

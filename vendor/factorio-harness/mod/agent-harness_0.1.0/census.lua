@@ -209,6 +209,7 @@ return function(api)
   local function pump_fluid(e) local f = fluid_boxes(e)[1]; return f and f.name end
   local function pump_filter(e) local f = fluid_boxes(e).get_filter(1); return f and f.name end
   local function same_line(line, partner, i) return line.line_equals(partner.get_transport_line(i)) end
+  local function empty_belt(e) return e.get_item_count() == 0 end
   local fuel_recipe = {}
   local function takes_fuel(r)
     if not r then return false end
@@ -342,18 +343,24 @@ return function(api)
     elseif BELT[t] and job.belt_items then
       local tot = job.belt_items[si]
       if not tot then tot = {}; job.belt_items[si] = tot end
-      local ok, lines = pcall(e.get_max_transport_line_index)
-      -- (d22 batch96 BF1) an underground exit's buried lines (3 and 4) are its entrance's: counted there once, as
-      -- freight.lua stock_places counts them
-      local partner = t == 'underground-belt' and e.belt_to_ground_type == 'output' and e[UNDERGROUND_NEIGHBOUR]
-      if partner and not partner.valid then partner = nil end
-      local n = ok and lines or 0
-      local get_line = n >= 1 and e.get_transport_line or nil  -- (BT1) the method read once a belt, not once a line
-      for i = 1, n do
-        local ok2, line = pcall(get_line, i)
-        local same = ok2 and line and partner and i > 2 and select(2, pcall(same_line, line, partner, i)) == true
-        if ok2 and line and not same then
-          for _, c in ipairs(line.get_contents()) do tot[c.name] = (tot[c.name] or 0) + c.count end
+      -- The entity count covers every line and quality without allocating
+      -- transport-line objects. Keep the exact old line accounting when full
+      -- (including the underground output's shared buried lines).
+      local counted, empty = pcall(empty_belt, e)
+      if not (counted and empty) then
+        local ok, lines = pcall(e.get_max_transport_line_index)
+        -- (d22 batch96 BF1) an underground exit's buried lines (3 and 4) are its entrance's: counted there once, as
+        -- freight.lua stock_places counts them
+        local partner = t == 'underground-belt' and e.belt_to_ground_type == 'output' and e[UNDERGROUND_NEIGHBOUR]
+        if partner and not partner.valid then partner = nil end
+        local n = ok and lines or 0
+        local get_line = n >= 1 and e.get_transport_line or nil  -- (BT1) the method read once a belt, not once a line
+        for i = 1, n do
+          local ok2, line = pcall(get_line, i)
+          local same = ok2 and line and partner and i > 2 and select(2, pcall(same_line, line, partner, i)) == true
+          if ok2 and line and not same then
+            for _, c in ipairs(line.get_contents()) do tot[c.name] = (tot[c.name] or 0) + c.count end
+          end
         end
       end
     elseif t == 'inserter' and job.hand_items then

@@ -1,5 +1,28 @@
 # Harness changes, 2026-10-10 (branch `pog-eng`, uncommitted)
 
+## mt306 (private, offline checkpoint): late-game harness headroom
+
+The mt302 joined-player bench spent 266–297 ms per game second in the harness, with GC spikes and a 2.1-second
+first-call hitch. Production-leg watches now read the immutable engine version once per runtime and share their
+ledger lookup per tick. The first-shift research summary uses the force's maintained entity counts instead of
+surface presence searches. Empty census belts avoid transport-line objects; network view slices resolve one
+surface by name; alert cell keys use fast integer formatting. Board/status sight text is rendered once per completed
+alert snapshot, with a fresh small list for each caller.
+
+Runtime network and alert reads leave cold scans to the existing paced, persisted background jobs; a direct read says
+`pending: true` until a complete snapshot exists, rather than scanning the whole base in the reply. Alert cursors
+and digest markers are not consumed while pending. Existing completed snapshots keep their ordinary fields and
+freshness; bot-only forces also warm after a request. No actions, visibility rules or production boundaries change.
+
+Counted Lua 5.2 fixtures cover engine crossings, empty-belt accounting, cell-key spelling, snapshot text reuse,
+cold requests, job reload, playerless forces and unchanged multi-force scan cadence. Native before/after timing and GC settings remain
+pending the operator's imac2 slots; this checkpoint does not establish the 300 ms/s target. The stand-in collector
+now records initial status/queue calls, and the load collector keeps raw UPS intervals and per-window UPS.
+
+Players: no changed action arguments. A first network/alert read can report its scan pending; later reads return
+the completed snapshot. Evidence and native follow-up status:
+/Users/owner/code/pog-operator/report-mt306.md
+
 ## mt303 (private): Freight, Orbital Posts, and stocked raid wrecks
 
 Problem: the stage-1 timer could not express raidable Freight, orders only used the Nauvis home Post, and destroying

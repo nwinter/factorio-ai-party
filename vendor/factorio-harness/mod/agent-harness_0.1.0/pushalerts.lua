@@ -125,7 +125,7 @@ return function(api)
     if unit and dmem then dmem[unit] = name end
     if mining then
       pos = pos or e.position
-      local key = surface .. '|' .. math.floor(pos.x / CELL) .. ',' .. math.floor(pos.y / CELL)
+      local key = string.format('%s|%d,%d', surface, math.floor(pos.x / CELL), math.floor(pos.y / CELL))
       mining[key] = mining[key] or {}
       mining[key][name] = (mining[key][name] or 0) + 1
     end
@@ -147,7 +147,7 @@ return function(api)
   local AMMO_LOW = 10
   local function add(groups, kind, surface, e, pos, name, by, detail)
     local cx, cy = math.floor(pos.x / CELL), math.floor(pos.y / CELL)
-    local key = kind .. '|' .. surface .. '|' .. cx .. ',' .. cy
+    local key = string.format('%s|%s|%d,%d', kind, surface, cx, cy)
     local g = groups[key]
     if not g then
       g = {key=key, kind=kind, surface=surface, n=0, names={}, sx=0, sy=0, at={}, by={}}
@@ -899,7 +899,7 @@ return function(api)
     local kind = SIGHT_KIND[etype]
     if not kind then return end
     local cx, cy = math.floor(pos.x / 32), math.floor(pos.y / 32)
-    local ck = s.name .. '|' .. cx .. ',' .. cy
+    local ck = string.format('%s|%d,%d', s.name, cx, cy)
     local seen = sight.vis[ck]
     if seen == nil then
       if (sight.budget or 0) > 0 then
@@ -913,7 +913,7 @@ return function(api)
       end
     end
     if seen then return end
-    local key = s.name .. '|' .. math.floor(pos.x / CELL) .. ',' .. math.floor(pos.y / CELL)
+    local key = string.format('%s|%d,%d', s.name, math.floor(pos.x / CELL), math.floor(pos.y / CELL))
     local c = sight.cells[key]
     if not c then c = {surface=s.name, drills=0, machines=0, turrets=0, n=0, sx=0, sy=0}; sight.cells[key] = c end
     c[kind] = c[kind] + 1; c.n = c.n + 1; c.sx = c.sx + pos.x; c.sy = c.sy + pos.y
@@ -1463,7 +1463,8 @@ return function(api)
   local function by_name(a, b) return a.name < b.name end
   local function forces()
     local out = {}
-    for _, f in pairs(game.forces or {}) do local ps = f.players; if ps and #ps > 0 then out[#out+1] = f end end
+    local wanted = api.state().push_requested or {}
+    for _, f in pairs(game.forces or {}) do local ps = f.players; if wanted[f.name] or ps and #ps > 0 then out[#out+1] = f end end
     table.sort(out, by_name)
     return out
   end
@@ -1693,7 +1694,7 @@ return function(api)
       end
     end
     if not api.belt_groups and not next(lost) then return c end
-    local out={tick=c.tick,groups={},refresh_failed=c.refresh_failed}
+    local out={tick=c.tick,groups={},refresh_failed=c.refresh_failed,pending=c.pending}
     for _,g in ipairs(c.groups) do out.groups[#out.groups+1]=g end
     for _,g in ipairs(api.belt_groups and api.belt_groups(force) or {}) do out.groups[#out.groups+1]=centred(g) end
     -- (cells as add() makes them: centred here, as merge centres the scan's)
@@ -1705,6 +1706,10 @@ return function(api)
     s.push_alerts = s.push_alerts or {}
     local c = s.push_alerts[force.name]
     if c and (s.push_bg or game.tick - c.tick < SCAN_TICKS) then return with_belts(c,force) end
+    if api.background then
+      s.push_requested=s.push_requested or {}; s.push_requested[force.name]=true
+      return with_belts(c or {tick=game.tick,groups={},pending=true},force)
+    end
     local groups, sight = scan(force)
     c = {tick=game.tick, groups=groups, sight=sight}
     s.push_alerts[force.name] = c
@@ -2281,6 +2286,7 @@ return function(api)
     local mem = h.push or {told={}}
     if mem.tick and game.tick - mem.tick < DIGEST_TICKS then return {} end
     local c = current(p.force)
+    if c.pending then return {} end  -- do not consume a digest before its first complete scan
     local me = api.who(p)
     local here = try(function() return p.surface.name end)
     local who, by = shared_owners(p.force)
@@ -2331,6 +2337,10 @@ return function(api)
   -- in chunks no force of players sees now, by 64-tile area (the most first, up to SIGHT_AREAS), each with the nearest
   -- radar of ours on that planet and its state; and the radars not working. From the last background read.
   local SIGHT_AREAS, SIGHT_TEAM = 5, 216000
+  local function copy_lines(lines)
+    if not lines or #lines==0 then return nil end
+    local out={}; for i=1,#lines do out[i]=lines[i] end; return out
+  end
   local RADAR_WORDS = {no_power='no power', low_power='low power', disabled_by_control_behavior='off by its circuit condition', no_minable_resources=nil}
   local function radar_state(status)
     for k, v in pairs(defines.entity_status or {}) do if v == status then return RADAR_WORDS[k] or k:gsub('_', ' ') end end
@@ -2340,6 +2350,10 @@ return function(api)
     local c = (api.state().push_alerts or {})[force.name]
     local sight = c and c.sight
     if not sight then return nil end
+    -- A completed scan is immutable. Status and board.team render the same
+    -- sight facts for every agent; keep the text with that snapshot, including
+    -- an empty result. Return a small copy because sight_team appends coverage.
+    if c.sight_lines then return copy_lines(c.sight_lines),c.tick end
     local by = {}
     for _, cell in pairs(sight.cells or {}) do
       local list = by[cell.surface] or {}; by[cell.surface] = list; list[#list+1] = cell
@@ -2380,7 +2394,8 @@ return function(api)
     if #lines > 0 and (sight.unread or 0) > 0 then
       lines[#lines+1] = string.format('(%d buildings in chunks not yet read for sight; the next reads take them)', sight.unread)
     end
-    return #lines > 0 and lines or nil, c.tick
+    c.sight_lines=lines
+    return copy_lines(lines), c.tick
   end
   -- Outside coverage, per planet (status alerts.outside_coverage; the hourly team line): what lies outside every
   -- roboport's construction area by 64-tile area (the most first, up to SIGHT_AREAS: count, ghosts, the 3 names most
@@ -2711,11 +2726,11 @@ return function(api)
     local parts = {}
     for _, k in ipairs(order) do parts[#parts+1] = k .. ' ' .. by[k] end
     local counts = #rows > 0 and string.format('%d group%s: %s', #rows, #rows == 1 and '' or 's', table.concat(parts, ', ')) or nil
-    local scanned = string.format('%ds ago', math.floor((game.tick - c.tick) / 60))
+    local scanned = c.pending and 'pending: no complete scan yet' or string.format('%ds ago', math.floor((game.tick - c.tick) / 60))
     local failed = snapfail.line('the alert scan', c.tick, c.refresh_failed)
     -- the cursor: the groups this reply covered, kept per agent (the last one only)
     local cursor, gone
-    if me and (a.since ~= nil or a.mine or a.claim ~= nil or a.cursor) then
+    if not c.pending and me and (a.since ~= nil or a.mine or a.claim ~= nil or a.cursor) then
       if a.since ~= nil and not since_note then
         gone = 0
         for k in pairs(before.keys) do if not shown_keys[k] then gone = gone + 1 end end
@@ -2729,12 +2744,12 @@ return function(api)
         local l = string.format('%s %s: %s', r.kind, r.surface or '?', tostring(r.line or ''):gsub('[%c]+', ' '))
         lines[#lines+1] = #l > 300 and l:sub(1, 297) .. '...' or l
       end
-      return {counts=counts, lines=#lines > 0 and lines or nil, scanned=scanned, refresh_failed=failed, cursor=cursor, since_note=since_note,
-        new=a.since ~= nil and not since_note and new_n or nil, gone_since=gone,
-        note=#rows == 0 and (a.since ~= nil and not since_note and 'no new alert or warning since the cursor' or 'no alerts or warnings') .. (kinds and ' of ' .. table.concat(kinds, ', ') or '') .. (a.surface and ' on ' .. a.surface or '') .. (claim_filter and ' in the claim' .. (a.mine and 's named' or '') or '') or nil}
+      return {counts=counts, lines=#lines > 0 and lines or nil, scanned=scanned, pending=c.pending, refresh_failed=failed, cursor=cursor, since_note=since_note,
+        new=not c.pending and a.since ~= nil and not since_note and new_n or nil, gone_since=gone,
+        note=c.pending and 'Alert scan in progress; no complete snapshot yet.' or #rows == 0 and (a.since ~= nil and not since_note and 'no new alert or warning since the cursor' or 'no alerts or warnings') .. (kinds and ' of ' .. table.concat(kinds, ', ') or '') .. (a.surface and ' on ' .. a.surface or '') .. (claim_filter and ' in the claim' .. (a.mine and 's named' or '') or '') or nil}
     end
-    return {counts=counts, groups=rows, scanned=scanned, refresh_failed=failed,
-      note=#rows == 0 and 'no alerts or warnings' or nil}
+    return {counts=counts, groups=rows, scanned=scanned, pending=c.pending, refresh_failed=failed,
+      note=c.pending and 'Alert scan in progress; no complete snapshot yet.' or #rows == 0 and 'no alerts or warnings' or nil}
   end
   M.schema = {
     game_alerts = {freshness='scanned: the scan\'s age; refresh_failed: its last background refresh failed (when, the error; the scan keeps its age); power/fuel entity groups recheck up to 128 recorded entities; hidden/capped observations are dated; belt_cut names missing formerly carrying tiles, cleared by observed replacements; frozen: on a planet whose entities need heating, our frozen entities per 64-tile area (pipes and machines with what they hold, belts as one run, how long frozen since first seen, the nearest heater with its temperature and distance from the nearest frozen one); line_cut: a long belt or pipe line (8+ tiles) cut where ours died, naming the cut tiles (and what else stands on one), how far the line runs either side and what it carried, what the belt past the cut feeds (the machines inserters take into from it, with their state) and how to rebuild each tile (a ghost there, or what to place facing which way), until a belt or pipe stands there again (at most 6 h); power_cut: a pole loss not joined again (power cut #N: the split, the machines no other pole reaches, the missing link and a ghost there or not, and each machine left alone as it stands now: a pump with its fluid), while it lasts; also a belt line blocked: a build that leaves a belt facing into a tile with no belt but another entity (not an inserter) and a belt within 2 tiles past it facing the same way, naming that entity, after 30 s, until it or either belt is gone or a belt stands there; belt_cut names what stands on a missing tile in sight; out_of_ore includes drill_site, one representative drill placement cached 60 s and computed in background',surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel (its line adds the spoiling fuel of burners of those names around it: how many burn it, how many within 60 s, the first to spoil and when), burnt_full (burners stopped by a full burnt-result slot whatever their status reads, a biochamber whose spoiled nutrients fill it: each with what fills that slot and its fuel slot), output_full (mining drills waiting for space in a chest they drop into, per 64-tile area: each drill, what it mines, the chest and its slots used, what fills it; a backed-up belt is not said), off_by_condition (assemblers, furnaces, labs, drills and silos off by their own circuit or logistic condition, each with the condition and the value it reads; a condition on what its recipe makes, a stock cap, is not said), no_ammo, flamer_dry, speaker (programmable speakers alerting now, read live: message, icon, since_tick, to: who built it and agents on its surface), artillery_empty (artillery turrets with no shell for 5+ min: each with the inserters feeding it, their requester chest\'s shell request and holdings, its network\'s shells); out_of_ore (mining drills whose patch under them is used up, by ore: out_of_ore.iron-ore, ...; each with ore, still_mining (our drills still mining that ore in the area) and untapped (the nearest patch of it no drill of ours is on, from the ores read\'s last survey: x, y, d tiles, amount));rebuilt_empty (turrets built with no ammo and still empty 60 s or more, each with its ammo request); lost_source and lost_target (inserters that had a pickup target and have none now, or whose drop target is gone; by what they feed: lost_source.boiler, .furnace, .lab, .assembler, else the entity type; each with lost: the inserter, what it read, what it puts into); per network: no_power.network (machines reporting no_power, grouped by electric network including small isolated networks, with its latest 5 s supply sample); power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of their own fuel at the draw with no fuel in their feeders\' hands or at their sources, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), feed_chest_low (a boiler\'s feed chest under 20 of its fuel with nothing put into it for 5 min: boiler, chest, count, feeder); robots_busy (no idle logistic robot for 10 min); accumulators_draining (a network\'s accumulators empty within 10 min at their net flow of the last 30 s, again under 5 and 2 min; kept 10 min after, so a Fulgora storm between lulls is not news; on Fulgora with the time to the next storm or to dawn); construction_wait (ghosts in a network\'s construction area waiting 5+ min since first seen while their items, at the ghost\'s quality, are in the network, with the construction robots and whether busy); deliveries_wait (requests unfilled 5+ min while providers or storage hold the item free at the quality asked, named item@quality when not normal, with what the logistic robots are doing); requester_full (requester chests with every slot taken while a request has been short 60+ s: per network, each chest, the item it asks and what fills its slots, spoilage counted); input_spoilage (assemblers and furnaces short of ingredients with spoilage their recipe does not take in their input: each machine, how much in how many slots); seed_spoiling (a machine whose recipe takes pentapod eggs or bacteria, not crafting while that seed in its input hatches or spoils within 3 min: the seed, when, and why it is not crafting); output_chest_full (a full_output maker whose output inserter puts into a chest with no free slot: the maker, the inserter, the chest and what fills its slots); catalyst_gone (a starved machine whose recipe takes an item it also makes, with none of it in its input: the item, what its output holds, and each inserter taking from it with its hand size);science_idle (a pack the research needs whose makers on the science surface all stood still at two science-line builds 5+ min apart, with their states and the chain\'s first short step); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',

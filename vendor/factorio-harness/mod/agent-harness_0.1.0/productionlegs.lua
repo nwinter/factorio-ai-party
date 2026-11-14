@@ -6,9 +6,12 @@ local qflow = require('qflow')
 return function(api)
   local M = {KEEP=16, CARGO_ITEMS=64}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- Immutable for this runtime. active_mods creates a fresh engine table;
+  -- reading it for every ship every tick dominated the position watch on 2.1.
+  local mods = script and script.active_mods
+  local version = mods and mods.base
   local function store()
     local s = api.state()
-    local version=script and script.active_mods and script.active_mods.base
     if version and version:match('^2%.1%.') and s.production_legs_engine~=version then
       s.production_legs_history=s.production_legs_history or {}
       s.production_legs_history[s.production_legs_engine or '2.0-unversioned']=s.production_legs
@@ -104,12 +107,13 @@ return function(api)
   -- 2.0.77 raises no state event for a mid-connection reversal. Only position
   -- properties are read here. Direction is the observed change in native distance,
   -- not the next schedule station, which may lie beyond this connection.
-  function M.watch_one(pl, tick)
-    local r = store()[pl.index]
+  function M.watch_one(pl, tick, all)
+    all = all or store()
+    local r = all[pl.index]
     local at = pl.space_location
     if at then
       if not r or r.key ~= 'at:' .. at.name then M.observe(pl, tick, 'watch', {at=at.name}) end
-      r = store()[pl.index]
+      r = all[pl.index]
       if r then r.motion_connection, r.motion_distance = nil, nil end
       return
     end
@@ -127,14 +131,15 @@ return function(api)
     end
     if heading and (not r or not r.active or r.active.heading ~= heading or r.active.position.connection ~= c.name) then
       M.observe(pl, tick, 'watch', {leg={from=from, to=heading}})
-      r = store()[pl.index]
+      r = all[pl.index]
     end
     if r then r.motion_connection, r.motion_distance, r.motion_tick = c.name, d, tick end
   end
   function M.tick(tick)
-    for _, r in pairs(store()) do
+    local all = store()
+    for _, r in pairs(all) do
       local pl = r.pl
-      if pl and pl.valid then M.watch_one(pl, tick) end
+      if pl and pl.valid then M.watch_one(pl, tick, all) end
     end
   end
   -- Cargo means rockets launched to the platform and hub pods sent down, at

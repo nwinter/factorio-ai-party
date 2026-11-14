@@ -20454,7 +20454,7 @@ M.fuelreactor=require('fuelreactor'){status_name=function(e) return M.machine_st
 M.fuelbudget=require('fuelbudget'){spoilflow=M.spoilflow,reactors=M.fuelreactor,fuel_users=function(s) return M.census.fuel_users(s) end,status_name=function(e) return M.machine_status(e) end,
   belt_line=function(p,e) return M.linecut.line(p,e) end}
 function handlers.fuel_budget(p,a) return M.fuelbudget.read(p,a) end
-M.networks=require('networks'){fluid_boxes=M.fluid_boxes,unset_target=function(e,side) return M.targets.unset(e,side) end,reqchest=function() return M.reqchest end,state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
+M.networks=require('networks'){background=true,fluid_boxes=M.fluid_boxes,unset_target=function(e,side) return M.targets.unset(e,side) end,reqchest=function() return M.reqchest end,state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
   sky=function(surface) return M.lightning and M.lightning.sky(surface) end}
 -- One item across every planet and platform (packaudit.lua; Luna, 16:50).
 M.packaudit=require('packaudit'){spoilflow=M.spoilflow,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,reuse=function(key,fn) return M.supply.reuse(key,fn) end,spoil=M.spoil,
@@ -20797,7 +20797,7 @@ function M.belt_groups_read(f)
   M.belt_groups_kept[f.name]={tick=game.tick,list=out}
   return out
 end
-M.pushalerts=require('pushalerts'){fluid_boxes=M.fluid_boxes,held_feeders=function(e,items) return M.supply.held_feeders(e,items) end,held_line=function(h,item) return M.supply.held_line(h,item) end,rest_label=function(name) local r=M.rests.get(name); return r and M.rests.label(r) or nil end,platform_eta=function(pl,loc)
+M.pushalerts=require('pushalerts'){background=true,fluid_boxes=M.fluid_boxes,held_feeders=function(e,items) return M.supply.held_feeders(e,items) end,held_line=function(h,item) return M.supply.held_line(h,item) end,rest_label=function(name) local r=M.rests.get(name); return r and M.rests.label(r) or nil end,platform_eta=function(pl,loc)
     local leg=M.freight.leg(pl)
     if leg and leg.to==loc and leg.eta_ticks then return leg.eta_ticks/60 end
     local est=M.freight.before_departure(pl,loc)
