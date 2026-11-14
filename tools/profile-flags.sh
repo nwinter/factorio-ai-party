@@ -11,7 +11,11 @@ claude_vars="ENABLE_CLAUDEAI_MCP_SERVERS=false CLAUDE_CODE_ENABLE_CFC=false CLAU
 # login lives outside settings. --tools: only the tools the game uses (also shrinks the post-compaction floor);
 # POG_FULL_TOOLS=1 adds subagents, web search and fetch and the background-job tools (tools/full_tools.py allows them).
 claude_tools="Bash,Read,Edit,Write,Grep,Glob"
-[ "${POG_FULL_TOOLS:-}" = 1 ] && claude_tools="$claude_tools,Agent,WebSearch,WebFetch,TaskStop,Monitor"
+# POG_WEB_BLOCK (tools/full_tools.py): no WebSearch (all or nothing); WebFetch with the hosts denied
+if [ "${POG_FULL_TOOLS:-}" = 1 ]; then
+  if [ -n "${POG_WEB_BLOCK:-}" ]; then claude_tools="$claude_tools,Agent,WebFetch,TaskStop,Monitor"
+  else claude_tools="$claude_tools,Agent,WebSearch,WebFetch,TaskStop,Monitor"; fi
+fi
 claude_flags="--permission-mode dontAsk --setting-sources project,local --tools $claude_tools --strict-mcp-config --mcp-config '{\"mcpServers\":{}}' --no-chrome --disable-slash-commands"
 
 # Grok Build env: skip the Claude- and Cursor-compatible skills, rules, named instruction files, hooks and MCP servers
@@ -21,7 +25,8 @@ claude_flags="--permission-mode dontAsk --setting-sources project,local --tools 
 grok_env="GROK_CLAUDE_SKILLS_ENABLED=false GROK_CLAUDE_MCPS_ENABLED=false GROK_CLAUDE_RULES_ENABLED=false GROK_CLAUDE_HOOKS_ENABLED=false GROK_CLAUDE_AGENTS_ENABLED=false GROK_CURSOR_SKILLS_ENABLED=false GROK_CURSOR_MCPS_ENABLED=false GROK_CURSOR_RULES_ENABLED=false GROK_CURSOR_HOOKS_ENABLED=false GROK_CURSOR_AGENTS_ENABLED=false GROK_MANAGED_MCPS_ENABLED=false GROK_MEMORY=0"
 # POG_FULL_TOOLS=1: subagents and workflows stay, and web_fetch joins web_search (off by default, docs
 # 05-configuration.md); tools/full_tools.py grok-args adds the team-tools and teammate rules.
-if [ "${POG_FULL_TOOLS:-}" = 1 ]; then grok_env="$grok_env GROK_WEB_FETCH=1"; else grok_env="$grok_env GROK_SUBAGENTS=0 GROK_WORKFLOWS=0"; fi
+# POG_WEB_BLOCK: web_fetch stays off (it has an allowlist only; web_search's excluded hosts: tools/grok-home.py).
+if [ "${POG_FULL_TOOLS:-}" = 1 ]; then [ -n "${POG_WEB_BLOCK:-}" ] || grok_env="$grok_env GROK_WEB_FETCH=1"; else grok_env="$grok_env GROK_SUBAGENTS=0 GROK_WORKFLOWS=0"; fi
 # Muse Code env: no skill-reminder agent (shake3: 356 decisions about the owner's skills) and no cross-session memory
 # tools or memory reminders (notes.md is the agents' memory). The owner's hooks go with -c hooks={} (clean-profile.py).
 muse_env="MUSE_EXPERIMENTAL_SKILL_REMINDER=0 MUSE_EXPERIMENTAL_MEMORY=0 MUSE_EXPERIMENTAL_MEMORY_REMINDER=0"

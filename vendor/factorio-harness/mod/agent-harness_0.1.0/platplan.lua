@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- platform_plan {platform}: a platform as planned, built and ghosts together (Sol 01:52: a 270-tile solar island no
 -- foundation joined, and two belt crossings in the ammo loops, found by his own graph audit of exported blueprints).
 -- Facts read from the surface: foundation tiles built and planned (tile ghosts) in 4-joined groups, the one with the hub
@@ -1293,7 +1296,7 @@ return function(api)
             cells = {{cx + px, cy + py}, {cx - px, cy - py}}
           else cells = {{cx, cy}} end
           local under = t == 'underground-belt' and (try(function() return e.belt_to_ground_type end) or (ghost and try(function() return e.ghost_prototype and nil end)))
-          local partner = t == 'underground-belt' and not ghost and try(function() local n = e.neighbours; return n and n.valid and n or nil end)
+          local partner = t == 'underground-belt' and not ghost and try(function() local n = e[UNDERGROUND_NEIGHBOUR]; return n and n.valid and n or nil end)
           for _, c in ipairs(cells) do
             local x, y = math.floor(c[1]), math.floor(c[2])
             local n = {name=name, ghost=ghost, dir=dir, x=x, y=y, type=t, under=under}

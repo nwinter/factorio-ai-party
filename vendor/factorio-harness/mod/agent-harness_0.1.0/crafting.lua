@@ -7,6 +7,19 @@
 -- only completions show up as differences.
 return function(api)
   local M = {}
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n, shared = p.independent_probability, p.shared_probability
+    if n == nil and shared == nil then return p.probability or 1 end
+    return (n or 1) * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
   local CHECK_TICKS = 10
   local function store()
     local s = api.state()
@@ -68,7 +81,7 @@ return function(api)
   end
   local function amount(product)
     local n = product.amount or ((product.amount_min or 0) + (product.amount_max or 0)) / 2
-    return n * (product.probability or 1)
+    return n * product_chance(product)
   end
   -- Completed crafts of one recipe: products in, ingredients out of the
   -- force's item statistics, as for a player's hand crafting.
@@ -77,9 +90,9 @@ return function(api)
     if not recipe then return end
     local force = c.force
     local stats = force.get_item_production_statistics(c.surface)
-    for _, product in ipairs(recipe.products or {}) do
+    for index, product in ipairs(recipe.products or {}) do
       if product.type == 'item' then
-        local n = math.floor(amount(product) * crafts + 0.5)
+        local n = math.floor((native_amount(recipe, index) or amount(product)) * crafts + 0.5)
         if n > 0 then
           stats.on_flow(product.name, n)
           M.crafted(force, product.name, n)

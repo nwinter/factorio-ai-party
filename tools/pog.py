@@ -7,10 +7,11 @@ Agents never get this tool: it runs privileged Lua. Usage:
   tools/pog.py score            # JSON snapshot: tick, research, production totals, entity counts
   tools/pog.py peaceful         # Space Age: give every planet surface Nauvis's peaceful/no-enemies flags
 """
-import argparse, json, os, socket, struct, sys
+import argparse, json, os, re, socket, struct, sys
 
-PORTS = {"live": 27015, "a": 27021, "b": 27022, "c": 27023, "n": 27025, "sa": 27030, "imac": 27400}
-HOSTS = {"imac": "imac.local"}  # (d27 batch279) the private copy on the iMac (tools/imac-copy.sh); others: the tunnel
+PORTS = {"live": 27015, "a": 27021, "b": 27022, "c": 27023, "n": 27025, "sa": 27030, "imac": 27400, "imac2": 27475}
+# (d27 batch279) the private copy on the iMac (tools/imac-copy.sh), and a second server there (imac2); others: the tunnel
+HOSTS = {"imac": "imac.local", "imac2": "imac.local"}
 
 
 class Rcon:
@@ -154,6 +155,19 @@ end
 """
 
 
+def for_force(lua, force=None):
+    """A read's Lua as another force's (a world with several player forces, one per team): game.forces.player,
+    force = "player" and the census request's operator line (an operator request runs as its team field) name FORCE.
+    None or "player": the Lua unchanged."""
+    if not force or force == "player":
+        return lua
+    if not re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", force):
+        raise ValueError(f"not a force name: {force!r}")
+    lua = lua.replace("game.forces.player", f'game.forces["{force}"]')
+    lua = re.sub(r'force\s*=\s*"player"', f'force = "{force}"', lua)
+    return lua.replace("operator = true,", f'operator = true, team = "{force}",')
+
+
 # Space Age: each planet surface has its own peaceful/no-enemies flags and is created on first arrival. Copy Nauvis's
 # to every planet surface (a world setting, like the map seed). Run after a new planet appears (score lists planets).
 PEACEFUL_LUA = r"""
@@ -177,6 +191,7 @@ def main():
     ap.add_argument("--port", type=int)
     ap.add_argument("cmd", choices=["rcon", "pause", "resume", "save", "quit", "score", "peaceful"])
     ap.add_argument("arg", nargs="?")
+    ap.add_argument("--force", default=os.environ.get("POG_FORCE"), help="score: this force's (default the player force)")
     a = ap.parse_args()
     port = a.port or PORTS.get(a.world) or int(os.environ["POG_RCON_PORT"])
     pw = open(os.path.expanduser(f"~/.config/pog/rcon-{a.world}.pw")).read().strip()
@@ -195,7 +210,7 @@ def main():
     elif a.cmd == "peaceful":
         out = r.command("/silent-command " + " ".join(l.strip() for l in PEACEFUL_LUA.strip().splitlines()))
     else:
-        out = r.command("/silent-command " + " ".join(l.strip() for l in SCORE_LUA.strip().splitlines()))
+        out = r.command("/silent-command " + " ".join(l.strip() for l in for_force(SCORE_LUA, a.force).strip().splitlines()))
     sys.stdout.write(out if out.endswith("\n") else out + "\n")
 
 

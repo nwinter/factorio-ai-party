@@ -203,7 +203,8 @@ return function(api)
             if api.status_name(e) == 'working' then row.working = row.working + 1 end
             local inv = try(function() return e.get_inventory(defines.inventory.lab_input) end)
             for _, pack in ipairs(job.packs) do
-              if (inv and try(function() return inv.get_item_count(pack) end) or 0) == 0 then row.lack[pack] = (row.lack[pack] or 0) + 1 end
+              local stored = try(function() return e.get_stored_durability(pack).durability end) or 0
+              if (inv and try(function() return inv.get_item_count(pack) end) or 0) == 0 and stored<=0 then row.lack[pack] = (row.lack[pack] or 0) + 1 end
             end
           end
         end

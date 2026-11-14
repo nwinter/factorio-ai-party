@@ -1,3 +1,12 @@
+-- A specific silo may override the default rocket lift on Factorio 2.1.
+local function rocket_lift(silo)
+  local ok, v = pcall(function() return silo.prototype.lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.default_rocket_lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.rocket_lift_weight end)
+  if ok then return v end
+end
 -- A rocket silo as its GUI and the entities around it show it (Gemini, shift09
 -- 00:20: "A dedicated silo status command (parts X/50, loaded cargo weight,
 -- missing ingredients)"). One read for the nearest silo or every silo on a
@@ -11,12 +20,30 @@
 -- Bounded: 16 silos, the inserters within 8 tiles of each. Read only.
 -- The factory is pure so the same module can be bundled into a hot reload.
 return function(api)
+  local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+  local function planet_request(f, from, planet, legacy_any)
+    if PORT21 then return f.request_from ~= 'platforms' and (from == nil or from == planet) end
+    return from == planet or (legacy_any and from == nil)
+  end
   local M = {}
   local MAX_SILOS, FEED_REACH, MAX_FEEDERS, MAX_RECORDS = 16, 8, 64, 32
   -- request rows: shown in a silo's row, read by default, read with requests: true, a page of those
   local REQ_SHOWN, REQ_READ, REQ_ALL, REQ_PAGE = 8, 48, 192, 48
-  local FLAG_ORDER = {'filling', 'matched', 'split_networks', 'hub_full', 'below_min_payload', 'on_the_way'}
+  local FLAG_ORDER = {'filling', 'matched', 'split_networks', 'hub_full', 'below_min_payload', 'on_the_way', 'native_batch'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- 2.1's transitional sections can carry a mixed batch. Keep each item and quality.
+  function M.auto_filters(pt)
+    local filters=pt and try(function() return pt.filters end)
+    if filters or not PORT21 then return filters or {} end
+    local out={}
+    for _,sec in ipairs(pt and try(function() return pt.sections end) or {}) do
+      if sec.active~=false then for _,f in ipairs(sec.filters or {}) do
+        local v=f.value
+        if v and (f.min or 0)>0 then out[#out+1]={name=v.name,quality=v.quality,comparator=v.comparator,count=f.min*(sec.multiplier or 1)} end
+      end end
+    end
+    return out
+  end
   -- (d20 batch55 P6, Grok #1413: a hub read "holds 0 lacks 500" while a science rocket flew to it) what rockets launched
   -- to a hub carry to it now: its requester point's deliveries on the way, the hub GUI's in-transit count (2.0.77: a
   -- launch of 100 iron plates read 100 from the launch until the pod landed, then 0). By name and quality.
@@ -495,14 +522,15 @@ return function(api)
       local w = api.cargo.weigh(loaded, lift, slots)
       -- room_kg (batch24 A4, Gemini: what is aboard and the room left without a full inspect)
       local room = math.max(0, math.floor((api.cargo.kg(lift) - w.total_kg) * 10 + 0.5) / 10)
-      row.cargo = {kg=w.total_kg, lift_kg=api.cargo.kg(lift), room_kg=room, stacks=w.stacks, slots=slots, items=items_text(loaded, 8),
+      row.cargo = {kg=w.total_kg, lift_kg=api.cargo.kg(lift), room_kg=room, stacks=w.stacks, weight_only=slots==math.huge or nil, slots=slots~=math.huge and slots or nil, items=items_text(loaded, 8),
         over_kg=w.total_kg > api.cargo.kg(lift) and math.floor((w.total_kg - api.cargo.kg(lift)) * 10 + 0.5) / 10 or nil}
-      words[#words+1] = string.format('cargo %g/%g kg (%g kg free), %d/%d slots: %s', w.total_kg, api.cargo.kg(lift), room, w.stacks, slots, row.cargo.items)
+      words[#words+1] = slots==math.huge and string.format('cargo %g/%g kg (%g kg free), %d stacks, weight only: %s',w.total_kg,api.cargo.kg(lift),room,w.stacks,row.cargo.items)
+        or string.format('cargo %g/%g kg (%g kg free), %d/%d slots: %s', w.total_kg, api.cargo.kg(lift), room, w.stacks, slots, row.cargo.items)
       -- (B2) what of it spoils, and how far it has spoiled
       row.cargo.spoil = M.spoil_lines(rocket_inv)
       if row.cargo.spoil then words[#words+1] = 'aboard: ' .. table.concat(row.cargo.spoil, '; ') end
     else
-      row.cargo = {kg=0, lift_kg=api.cargo.kg(lift), room_kg=api.cargo.kg(lift), stacks=0, slots=slots}
+      row.cargo = {kg=0, lift_kg=api.cargo.kg(lift), room_kg=api.cargo.kg(lift), stacks=0, weight_only=slots==math.huge or nil, slots=slots~=math.huge and slots or nil}
       words[#words+1] = rocket_inv and 'no cargo loaded' or 'no rocket to load yet'
     end
     local trash = defines.inventory.rocket_silo_trash and try(function() return e.get_inventory(defines.inventory.rocket_silo_trash) end)
@@ -552,7 +580,7 @@ return function(api)
     local asked = {}
     local pt = defines.logistic_member_index and defines.logistic_member_index.rocket_silo_requester
       and try(function() return e.get_logistic_point(defines.logistic_member_index.rocket_silo_requester) end)
-    for _, f in ipairs(pt and try(function() return pt.filters end) or {}) do
+    for _, f in ipairs(M.auto_filters(pt)) do
       local name = type(f.name) == 'string' and f.name or try(function() return f.name.name end)
       if name and (f.count or 0) > 0 then asked[name] = f.count end
     end
@@ -571,6 +599,15 @@ return function(api)
       for _, r in ipairs(okr and reqs or {}) do if r.flag == 'on_the_way' then covered[#covered+1] = string.format('%s %s %d', r.platform, r.item, r.on_the_way) end end
       row.auto_launch_rule = 'the game picks which platform request a rocket fills (the silo\'s target, no reason given); 2.0.77 has no priority among platform requests; a request counts what rockets launched to the hub carry on the way, so none is filled again until they land'
         .. (#covered > 0 and '; covered on the way now: ' .. table.concat(covered, ', ', 1, math.min(4, #covered)) or '')
+    end
+    if PORT21 then
+      row.next_auto_launch=nil
+      local batch={}
+      for _,f in ipairs(M.auto_filters(pt)) do batch[#batch+1]=M.label(f.name, M.want(f))..' '..tostring(f.count) end
+      local to=try(function() return e.transitional_request_target.name end)
+      row.native_batch={platform=to,requests=batch}
+      if to and #batch>0 then row.next_auto_launch=to..': '..table.concat(batch,', ')..' (the engine-selected mixed batch)' end
+      row.auto_launch_rule='Factorio 2.1 selects mixed cargo by weight; native_batch is the silo requester now. Per-item full-rocket thresholds do not predict the next launch; the engine may overdeliver or fall back to a single item.'
     end
     words[#words+1] = 'automatic requests ' .. (row.auto_requests and 'on (the silo launches for platforms\' requests itself)' or 'off')
     -- a load_silo auto_requests pause (B5): by whom, for how many more rockets
@@ -677,7 +714,7 @@ return function(api)
     local have = {}
     for _, s in ipairs(loaded or {}) do local k = s.name .. '@' .. (s.quality or 'normal'); have[k] = (have[k] or 0) + s.count end
     local parts = {}
-    for _, f in ipairs(pt and try(function() return pt.filters end) or {}) do
+    for _, f in ipairs(M.auto_filters(pt)) do
       local name = type(f.name) == 'string' and f.name or try(function() return f.name.name end)
       if name and (f.count or 0) > 0 then
         -- (BA1) the silo's request by its quality
@@ -687,7 +724,7 @@ return function(api)
         for _, qn in ipairs(M.qualities(q, cmp)) do held = held + (have[name .. '@' .. qn] or 0) end
         local label = M.label(name, q, cmp)
         local w = try(function() return prototypes.item[name].weight end)
-        local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end)
+        local lift = rocket_lift(e)
         local full = w and lift and w > 0 and math.floor(lift / w) or nil
         local short = f.count - held
         parts[#parts+1] = string.format('%s %d of %d aboard%s; its network holds %d more%s', label, held, f.count,
@@ -699,8 +736,9 @@ return function(api)
       local others = {}
       local n = 0
       for _, r in ipairs(M.request_rows(e, force, ln)) do if r.platform ~= target then n = n + 1; if #others < 4 then others[#others+1] = r.line end end end
-      return string.format('filling a rocket for %s: %s; it goes up once the rocket holds what the silo requests (on 2.0.77 a full rocket of the item, or the request\'s min payload)%s%s',
+      return string.format('filling a rocket for %s: %s; %s%s%s',
         target, #parts > 0 and table.concat(parts, '; ') or 'the silo requests nothing from its network now',
+        PORT21 and 'the engine selects a mixed payload and waits for its deliveries; these are the current native requests' or 'it goes up once the rocket holds what the silo requests (on 2.0.77 a full rocket of the item, or the request\'s min payload)',
         #others > 0 and '; waiting meanwhile: ' .. table.concat(others, '; ') or '',
         n > #others and string.format(' (and %d more: silo {requests: true})', n - #others) or '')
     end
@@ -730,7 +768,7 @@ return function(api)
     ln = ln or try(function() return e.surface.find_logistic_network_by_position(e.position, force) end)
     local planet = try(function() return e.surface.planet.name end)
     local target = try(function() local t = e.transitional_request_target; return t and t.valid and t.name or nil end)
-    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end)
+    local lift = rocket_lift(e)
     local rows = {}
     for _, pl in pairs(try(function() return force.platforms end) or {}) do
       local loc = pl.valid and try(function() return pl.space_location.name end)
@@ -748,8 +786,8 @@ return function(api)
             -- (BA1) the hub's holding, the networks' stock and what is on the way by the request's quality and comparator
             local q, cmp = M.want(v)
             local held = name and M.count_q(function(id) return pl.hub.get_item_count(id) end, name, q, cmp) or 0
-            if name and from == planet and (f.min or 0) > held and #rows >= cap then unread = unread + 1
-            elseif name and from == planet and (f.min or 0) > held then
+            if name and planet_request(f, from, planet) and (f.min or 0) > held and #rows >= cap then unread = unread + 1
+            elseif name and planet_request(f, from, planet) and (f.min or 0) > held then
               local w = try(function() return prototypes.item[name].weight end)
               local full = w and lift and w > 0 and math.floor(lift / w) or nil
               local way = 0
@@ -757,7 +795,8 @@ return function(api)
               local label = M.label(name, q, cmp)
               local lacks = math.max(0, f.min - held - way)
               local mp = f.minimum_delivery_count
-              local payload = mp or full
+              local payload = mp
+              if not PORT21 then payload=mp or full end
               local stack = try(function() return prototypes.item[name].stack_size end) or 1
               -- (B3) what the network can give now: its provider and storage chests (requester and buffer chests' requests
               -- are theirs), less what robots have reserved (the game's count)
@@ -767,12 +806,13 @@ return function(api)
               local need_slots = payload and math.ceil(math.min(payload, full or payload) / stack) or nil
               local r = {platform=pl.name, item=name, quality=q, comparator=cmp, custom_minimum=mp, asks=f.min, holds=held, on_the_way=way, lacks=lacks, min_payload=mp, full_rocket=full,
                 payload=payload, network_holds=net, network=ln and ln.network_id or nil, providers=from_prov, storage=from_store, slots_for_payload=need_slots, hub_free_slots=free_slots,
-                next_launch=mp and string.format('min_payload %d', mp) or (full and string.format('full %d', full) or nil),
+                next_launch=PORT21 and 'native mixed batch' or (mp and string.format('min_payload %d', mp) or (full and string.format('full %d', full) or nil)),
                 filling=target == pl.name or nil, other_filling=target and target ~= pl.name and target or nil}
               local words = {string.format('%s asks %s %d (holds %d, %slacks %d)', pl.name, label, f.min, held, way > 0 and way .. ' on the way in rockets launched to it, ' or '', lacks)}
               if lacks == 0 then words[#words+1] = 'what is on the way covers it: the game launches for it again once those land' end
               words[#words+1] = mp and string.format('min payload %d (its custom minimum)', mp)
-                or (full and string.format('no min payload: a rocket waits for a full one, %d by weight', full) or 'no min payload')
+                or (PORT21 and 'no custom minimum: the engine selects a mixed batch by weight; a full rocket of this item is not required'
+                  or (full and string.format('no min payload: a rocket waits for a full one, %d by weight', full) or 'no min payload'))
               words[#words+1] = string.format('the silo\'s network can give %d now (provider chests %d, storage chests %d, less what robots have reserved)%s', net, from_prov, from_store,
                 payload and net < payload and string.format(', under the %d a rocket waits for', payload) or '')
               if need_slots and free_slots then
@@ -809,6 +849,7 @@ return function(api)
               end
               if r.filling then r.flag = 'filling'
               elseif lacks == 0 then r.flag = 'on_the_way'
+              elseif PORT21 then r.flag='native_batch';words[#words+1]='batch selection is native; per-item stock alone does not establish launch readiness'
               elseif need_slots and free_slots and free_slots < need_slots then r.flag = 'hub_full'
               elseif payload and net >= payload then r.flag = 'matched'
               elseif payload and net + other_n >= payload then r.flag = 'split_networks'

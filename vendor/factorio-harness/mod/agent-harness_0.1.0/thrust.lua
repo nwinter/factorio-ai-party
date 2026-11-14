@@ -7,6 +7,7 @@
 -- their GUIs show them (status, contents, circuit condition); walked through
 -- the fluid boxes' pipe connections as the game joins them.
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   M.LOW = 0.5            -- a tank under half full lacks its fluid
   local MAX_BOXES = 400  -- fluid boxes walked upstream of one input
@@ -29,7 +30,7 @@ return function(api)
   -- A thruster's own tanks: {fluid, amount, capacity, share} per input box.
   local function tanks(t)
     local out = {}
-    local fb = t.fluidbox
+    local fb = fluid_boxes(t)
     for i = 1, (try(function() return #fb end) or 0) do
       local f = try(function() return fb[i] end)
       local cap = try(function() return t.prototype.fluidbox_prototypes[i].volume end) or try(function() return fb.get_capacity(i) end) or 0
@@ -95,8 +96,10 @@ return function(api)
         local cb = try(function() return e.get_control_behavior() end)
         local first = cb and try(function() return cb.circuit_condition.first_signal end)
         local n, wired = 0, false
-        for _, w in ipairs({defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green}) do
-          local net = try(function() return e.get_circuit_network(w) end)
+        local selected=cb and try(function() return cb.input_networks end)
+        for _, color in ipairs({'red','green'}) do
+          local w=defines.wire_connector_id['circuit_'..color]
+          local net = (not selected or selected[color]~=false) and try(function() return e.get_circuit_network(w) end)
           if net then wired = true; n = n + (first and try(function() return net.get_signal(first) end) or 0) end
         end
         -- (d28 batch306 QL) the signal with its quality, as the condition reads it
@@ -128,7 +131,7 @@ return function(api)
   -- What a machine holds of an ingredient: its input slots, or the fluid box of it.
   local function held(e, ing)
     if ing.type == 'fluid' then
-      local fb = e.fluidbox
+      local fb = fluid_boxes(e)
       for i = 1, (try(function() return #fb end) or 0) do
         local f = try(function() return fb[i] end)
         local filter = try(function() return fb.get_filter(i).name end)
@@ -187,7 +190,7 @@ return function(api)
         parts[#parts+1] = string.format('hub %s %d; %d asteroid collectors', ing.name, hub_count(ctx.pl, ing.name), ctx.collectors or 0)
       elseif ing.type == 'fluid' then
         local _, index = held(e, ing)
-        local up = index and M.upstream(e.fluidbox, index) or {pumps={}, makers={}, tanks={}}
+        local up = index and M.upstream(fluid_boxes(e), index) or {pumps={}, makers={}, tanks={}}
         for _, pmp in ipairs(up.pumps) do
           if status_names[try(function() return pmp.status end)] ~= 'working' then parts[#parts+1] = 'pump ' .. at(pmp) .. ': ' .. state_text(pmp) end
         end
@@ -244,10 +247,10 @@ return function(api)
       for i = 1, math.min(3, #b.low) do list[i] = 'thruster ' .. at(b.low[i].thruster) .. ' ' .. pct(b.low[i].share) end
       parts[1] = b.fluid .. ': ' .. table.concat(list, ', ') .. (#b.low > 3 and string.format(' +%d more', #b.low - 3) or '')
       local first = b.low[1]
-      local up = M.upstream(first.thruster.fluidbox, first.index)
+      local up = M.upstream(fluid_boxes(first.thruster), first.index)
       for _, pmp in ipairs(up.pumps) do parts[#parts+1] = 'pump ' .. at(pmp) .. ': ' .. state_text(pmp) end
       for _, tank in ipairs(up.tanks) do
-        local f = try(function() return tank.fluidbox[1] end)
+        local f = try(function() return fluid_boxes(tank)[1] end)
         parts[#parts+1] = string.format('tank %s holds %s %d', at(tank), f and f.name or b.fluid, f and math.floor(f.amount) or 0)
       end
       if #up.makers == 0 then
@@ -306,6 +309,9 @@ return function(api)
     .. 'to 10 km/s. Measured on 2.0.77: a 170 t, 21-tile-wide test platform with 1 normal thruster went from 0 to 86 '
     .. 'km/s in 6 s on one full tank with no supply; on a copy of Resolute, 4 legendary thrusters burned 5 of each a '
     .. 'tick at full and gave 2.5 times the thrust 4 normal ones gave at the same speed'
+  if script and script.active_mods and (script.active_mods.base or ''):match('^2%.1%.') then
+    M.RULE=M.RULE:match('^(.-) With no thrust')..' Measured on 2.1.24: normal/rare/legendary burn 2/3.2/5 of each fluid per tick above 80%; the low-fill curve is unchanged. Speed depends on mass-based drag; 2.0 speed measurements are not a 2.1 forecast.'
+  end
   -- A thruster's quality: its name and the multiplier the game applies to its burn and thrust.
   local function qual(t)
     local q = try(function() return t.quality end)
@@ -363,7 +369,7 @@ return function(api)
         local b = by[tk.fluid]
         if not b then b = {fluid=tk.fluid, thrusters=0, own=0, between=0, seen={}, pumps={}, pump_seen={}, list={}}; by[tk.fluid] = b; order[#order+1] = b end
         b.thrusters = b.thrusters + 1; b.own = b.own + tk.amount; b.list[#b.list+1] = t
-        local queue, head = {{box=t.fluidbox, i=tk.index}}, 1
+        local queue, head = {{box=fluid_boxes(t), i=tk.index}}, 1
         while head <= #queue and head <= MAX_BOXES do
           local cur = queue[head]; head = head + 1
           for _, pc in ipairs(try(function() return cur.box.get_pipe_connections(cur.i) end) or {}) do

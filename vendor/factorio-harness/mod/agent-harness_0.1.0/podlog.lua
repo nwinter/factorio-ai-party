@@ -146,7 +146,8 @@ return function(api)
     if not planet then return nil end
     st.seq = st.seq + 1
     r = {id=st.seq, unit=unit, up=up or nil, platform=pl and pl.name, stop=pl and try(function() return pl.space_location.name end),
-      sent=tick or game.tick, items=contents(pod), starter=starter, orbit=orbit}
+      sent=tick or game.tick, items=contents(pod), starter=starter, orbit=orbit,
+      destination_platform=not up and platform_of(station) and platform_of(station).name or nil}
     for k, v in pairs(info or {}) do r[k] = v end
     if up then set_silo(r, silo or origin) end
     count(r, planet, r.sent)
@@ -194,7 +195,7 @@ return function(api)
       r.free = free
       open.pad, open.counts = station, counts
     elseif station then
-      r.dest = 'hub'
+      r.dest = r.destination_platform and 'platform '..r.destination_platform..' hub' or 'hub'
     else
       r.dest = 'ground ' .. at(pod.position)
     end
@@ -215,6 +216,7 @@ return function(api)
       if r.starter and r.platform then r.dest = 'platform ' .. r.platform .. ' (its starter pack: the platform starts, its hub built)' end
     end
     open.tick, open.surface, open.position = game.tick, pod.surface, {x=pod.position.x, y=pod.position.y}
+    open.force = try(function() return pod.force.name end)
     st.after = st.after or {}
     st.after[unit] = open
   end
@@ -237,6 +239,10 @@ return function(api)
     elseif r.dest and r.dest:find('^ground') then
       local box = try(function() return open.surface.find_entities_filtered{name='cargo-pod-container', position=open.position, radius=4, limit=1}[1] end)
       if box then r.dest = 'ground ' .. at(box.position) .. ' (cargo-pod-container)' end
+      if not r.up and api.ground_landed and open.force then
+        local text = M.ground_text(open.force, r, open.planet, box and box.position or open.position, box ~= nil, tick)
+        if text then pcall(api.ground_landed, open.force, text) end
+      end
     end
   end
   -- (d26 batch229 SP) a journey whose pod is gone with no landing event: a starter pack's pod (its platform starts:
@@ -254,6 +260,40 @@ return function(api)
       r.gone = tick
       if r.starter then r.gone_state = pl and try(function() return pl.valid and M.STATES[pl.state] end) or 'its platform is gone' end
     end
+  end
+  -- (mt302) A pod come down with no landing pad to take it (none on that planet, or its pad lost on the way: on 2.1.24
+  -- such pods landed about 800 tiles from the lost pad) is told to its own team's agents only, one line: where, and
+  -- what it holds. No other team hears of it. At most TELL_MAX lines a team in TELL_WINDOW ticks; past that the pods
+  -- are counted and named in the next line.
+  M.TELL_MAX, M.TELL_WINDOW, M.TELL_KINDS = 6, 36000, 4
+  local function title(name) return (tostring(name):gsub('^%l', string.upper)) end
+  function M.summary(items)
+    local list = {}
+    for key, n in pairs(items or {}) do
+      local name, q = key:match('^([^@]+)@?(.*)$')
+      list[#list+1] = {n=n, text=n .. ' ' .. name .. (q ~= '' and ' (' .. q .. ')' or '')}
+    end
+    table.sort(list, function(a, b) if a.n ~= b.n then return a.n > b.n end return a.text < b.text end)
+    local out = {}
+    for i = 1, math.min(#list, M.TELL_KINDS) do out[i] = list[i].text end
+    if #list > M.TELL_KINDS then out[#out+1] = (#list - M.TELL_KINDS) .. ' more kinds' end
+    return #out > 0 and table.concat(out, ', ') or 'empty'
+  end
+  function M.ground_text(force, r, planet, pos, container, tick)
+    local st = store()
+    st.told = st.told or {}
+    local w = st.told[force]
+    if not w or tick - w.since >= M.TELL_WINDOW then w = {since=tick, n=0, held=w and w.held or 0}; st.told[force] = w end
+    if w.n >= M.TELL_MAX then w.held = w.held + 1; return nil end
+    w.n = w.n + 1
+    local text = 'Cargo pod' .. (r.platform and (' from ' .. r.platform) or '') .. ' landed on the ground on ' .. title(planet)
+      .. ' at ' .. at(pos) .. ', no landing pad took it: ' .. M.summary(r.items) .. '.'
+      .. (container and ' It stays there as a cargo-pod-container until emptied.' or '')
+    if w.held > 0 then
+      text = text .. ' (' .. w.held .. ' more pod' .. (w.held == 1 and '' or 's') .. ' landed on the ground before this, not told one by one: pods {} lists them.)'
+      w.held = 0
+    end
+    return text
   end
   M.STATES = {}
   for k, v in pairs(defines and defines.space_platform_state or {}) do M.STATES[v] = k end

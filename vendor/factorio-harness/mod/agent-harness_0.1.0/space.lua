@@ -1,3 +1,12 @@
+-- A specific silo may override the default rocket lift on Factorio 2.1.
+local function rocket_lift(silo)
+  local ok, v = pcall(function() return silo.prototype.lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.default_rocket_lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.rocket_lift_weight end)
+  if ok then return v end
+end
 -- Space Age logistics through the same GUIs a player has: logistic request
 -- slots (character, chests, landing pads, platform hubs), the space platform
 -- list (create, schedule, pause), and the rocket silo launch button. Platforms
@@ -5,6 +14,8 @@
 local arrival_eta=require('arrivaleta')
 local qflow=require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
+  local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M={}
   -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
   M.KEEP_MAX,M.SET_MAX,M.NAME_MAX,M.STOPS_MAX,M.DROP_ITEMS=50,100,64,32,20
@@ -139,6 +150,7 @@ return function(api)
     if f.max and f.max==f.min then text=text..'='..num(f.min)
     else text=text..' '..num(f.min or 0)..'..'..(f.max and num(f.max) or 'inf') end
     local from=hub and f.import_from and (type(f.import_from)=='string' and f.import_from or f.import_from.name)
+    if hub and PORT21 then from=(from or 'anywhere')..' via '..(f.request_from or 'planet') end
     text=from and text..' from '..from or text
     -- The GUI's custom minimum payload per request (LogisticFilter minimum_delivery_count; Astra 03:59).
     if hub and f.minimum_delivery_count then text=text..' min payload '..num(f.minimum_delivery_count) end
@@ -252,6 +264,12 @@ return function(api)
   -- read: {name, quality, min, max (nil: not named or "inf"), inf, from}.
   function M.check_requests(p,a,label,chest,secs)
     assert(a.from_buffers==nil or type(a.from_buffers)=='boolean','from_buffers must be boolean')
+    if a.providing_to_other_platforms~=nil then
+      assert(PORT21,'providing_to_other_platforms requires Factorio 2.1')
+      assert(type(a.providing_to_other_platforms)=='boolean','providing_to_other_platforms must be boolean')
+      assert(a.platform~=nil or (chest and chest.type=='space-platform-hub'),'providing_to_other_platforms is a platform hub setting')
+      assert(not a.dry_run,'providing_to_other_platforms switches at once; omit dry_run')
+    end
     assert(a.from_buffers==nil or (chest and chest.type=='logistic-container'),'from_buffers is a requester chest setting')
     if a.construction_requests~=nil then
       assert(type(a.construction_requests)=='boolean','construction_requests must be true or false (the hub\'s Request missing construction materials)')
@@ -324,6 +342,12 @@ return function(api)
         end
       end
       -- The import planet named.
+      local source=r.request_from
+      if source~=nil then
+        assert(PORT21,'request_from requires Factorio 2.1')
+        assert(a.platform~=nil or (chest and chest.type=='space-platform-hub'),'request_from is a platform hub request setting')
+        assert(source=='planet' or source=='platforms' or source=='all','request_from must be planet, platforms or all')
+      end
       local from=r.from
       -- (d17 batch31 C3, Astra) false (or ""): no import planet named, the slot's own dropped too; the game then stores
       -- nauvis (16 new hub slots set with none read back "from nauvis", Wren, Kestrel II, Meridian and Aegis stopped at
@@ -348,14 +372,14 @@ return function(api)
         -- (batch28 A3, Sol: a railgun turret min 4 silently stopped construction) heavier than a rocket lifts: refused
         if type(mp)=='number' then
           local w=try(function() return prototypes.item[name].weight end)
-          local lift=try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+          local lift=rocket_lift() or 1000000
           if w and w>0 and mp*w>lift then
             error(string.format('min_payload %s %d: %d weigh %g kg, a rocket lifts %g kg: at most %d fit%s (min_payload %d)',name,mp,mp,mp*w/1000,lift/1000,
               math.floor(lift/w),math.floor(lift/w)==1 and 's' or '',math.floor(lift/w)),0)
           end
         end
       end
-      entries[k]={name=name,quality=quality,min=min,max=max,inf=inf,from=from,min_payload=mp}
+      entries[k]={name=name,quality=quality,min=min,max=max,inf=inf,from=from,min_payload=mp,request_from=source}
     end
     return entries
   end
@@ -399,9 +423,10 @@ return function(api)
       if s_ and s_.active~=false then
         for _,f in pairs(try(function() return s_.filters end) or {}) do
           local k=slot_key(f)
-          local from=f.import_from and (type(f.import_from)=='string' and f.import_from or try(function() return f.import_from.name end)) or '?'
+          local from=f.import_from and (type(f.import_from)=='string' and f.import_from or try(function() return f.import_from.name end)) or (PORT21 and '*' or '?')
           -- (d24 batch137 PI1) what a section keeps at that planet is its max (freight.lua hub_keeps_at): the maxes add up,
           -- none (infinite) keeps it all
+          if PORT21 and f.request_from=='platforms' then from='platforms:'..from end
           if k then keep[from]=keep[from] or {}; keep[from][k]=(keep[from][k] or 0)+(f.max or math.huge) end
         end
       end
@@ -415,6 +440,12 @@ return function(api)
   M.KEEP_RULE='each item by quality: a request\'s max is for its own quality, and a landing pad\'s ask too (2.0.77, d24-d25: Kestrel IVc at Fulgora kept its legendary and normal asteroid collectors under asteroid-collector@rare 0..1 from fulgora; Fulgora\'s pad asking 2 normal took 2 normal and none of the legendary). At a stop the hub keeps what its active requests importing from that planet allow, their maxes added up over every section (a request\'s min is what the hub asks rockets for and keeps nothing by itself): no max keeps all of it; with a max it sends down all it holds above it to the landing pad there, whether the pad asks or not; an item no such request names goes down as far as the pads there ask (their ask less what they hold); a request from another planet keeps nothing there (2.0.77, d24: Petrel at Nauvis kept all 1980 calcite under 200..inf from nauvis with the pad asking 2000, and sent all above 200 under 200..200; d27: Limestone at Nauvis, small-lamp 0..60 from nauvis in two sections, kept all 100 with the pad asking 1000; with one cleared, 40 went down to the pad asking 0; under 50..inf it kept all 60 with the pad asking 1000). In flight what it holds over the hub\'s max (the maxes of its active requests for the item added up, any planet) goes to its trash within a second, as much as the trash (10 slots) has room for, and down at the first stop it waits at, asked or not; the rest stays in the hub while it flies (2.0.77, d24: Meridian-V flying to Nauvis, bioflux 20..30 from gleba: its 150 over 30 went down at Nauvis, 30 stayed aboard; d26: Kestrel II with 2000 low-density-structure over its max and 9 trash slots free: 450 in the trash the next tick, 3050 still in the hub 2346 ticks later). Stopped at a planet, what is over the max of a request from that planet goes to the trash within a few ticks and down in cargo pods, a trash load each, within about 5 s for a load (d26: Kestrel IVc at Fulgora, 3857 iron-plate over 2000: 1000 in the trash the next tick, the hub at 2000 after 120 ticks, the trash empty by 2340); over the max of a request from another planet it stays in the hub until the platform flies (2.0.77, d25: 20 barrels under barrel 0..0, from nauvis at Nauvis: trash in 8 ticks, down in 276; from fulgora at Nauvis: in the hub after 600 ticks)'
   -- Per item whose kept stock a change alters: what goes down at each stop after it. The stops: where it waits now,
   -- then its schedule's in order. before, after: hub_keep_at.
+  local function kept_at(t,planet,key)
+    local n=(t[planet] or {})[key]
+    local any=PORT21 and (t['*'] or {})[key] or nil
+    if any~=nil then return (n or 0)+any end
+    return n
+  end
   function M.sends_down(hub,pl,before,after)
     local stops,seen={},{}
     local sch=pl and try(function() return pl.schedule end)
@@ -503,7 +534,7 @@ return function(api)
           if first then dumped[first.planet]=fit end
           left=left-fit
         end
-        local keep_here=here and (after[stops[1].planet] or {})[n]
+        local keep_here=here and kept_at(after,stops[1].planet,n)
         if keep_here and keep_here~=math.huge and keep_here<left then
           parts[#parts+1]=string.format('%d over its max %d go to the hub\'s trash now and down to %s (here), asked or not',left-keep_here,keep_here,stops[1].planet)
           dumped[stops[1].planet]=left-keep_here
@@ -527,8 +558,8 @@ return function(api)
           -- (d24 batch142 PN1) a stop with unloading off: its pads take nothing (a finite max still sends down)
           local off=freight.no_unload and freight.no_unload(pl,st.planet)
           local want=off and 0 or (pd.ask[n] or 0)-(pd.hold[n] or 0)-(dumped[st.planet] or 0)
-          local named=(after[st.planet] or {})[n]~=nil
-          local keep=(after[st.planet] or {})[n] or 0
+          local named=kept_at(after,st.planet,n)~=nil
+          local keep=kept_at(after,st.planet,n) or 0
           -- (PI1) all above a finite max goes down, asked or not (a max of 0: all of it); an infinite max keeps it all
           local go=keep==math.huge and 0 or named and math.max(0,left-keep) or math.max(0,math.min(left,want))
           if go>0 then
@@ -619,6 +650,10 @@ return function(api)
     -- GUI's checkbox on a requester or buffer chest, a hub and your own logistics; robots take to storage what it holds
     -- that no request names, spoilage among it.
     local owner=chest or (a.platform~=nil and M.platform(p,a.platform).hub) or (label=='character' and p.character) or nil
+    if a.providing_to_other_platforms~=nil then
+      owner.providing_to_other_platforms=a.providing_to_other_platforms
+      mark('provide to other platforms '..(owner.providing_to_other_platforms and 'on' or 'off'))
+    end
     local tpoint=owner and try(function() return owner.get_requester_point() end)
     if a.trash_unrequested~=nil then
       assert(type(a.trash_unrequested)=='boolean','trash_unrequested must be true or false')
@@ -728,7 +763,7 @@ return function(api)
     local function note_gone(f)
       local n=f and f.value and slot_key(f)
       if n and not gone[n] then
-        gone[n]={from=f.import_from and (type(f.import_from)=='string' and f.import_from or try(function() return f.import_from.name end)),mp=f.minimum_delivery_count}
+        gone[n]={source=PORT21 and f.request_from or nil,from=f.import_from and (type(f.import_from)=='string' and f.import_from or try(function() return f.import_from.name end)),mp=f.minimum_delivery_count}
       end
     end
     if slots_changing then
@@ -847,7 +882,7 @@ return function(api)
         if mp==nil and mpmem and mpmem[mkey] then mp=mpmem[mkey]; mp_back=mp end
         if mpmem and (e.min_payload~=nil or mp_back) then mpmem[mkey]=nil end
         local was=old and filter_text(old,is_hub)
-        ssec.set_slot(i,{value={type='item',name=name,quality=quality,comparator='='},min=min,max=max,import_from=from,minimum_delivery_count=mp or nil}); changed=true
+        ssec.set_slot(i,{value={type='item',name=name,quality=quality,comparator='='},min=min,max=max,import_from=from,request_from=PORT21 and (e.request_from or (old and old.request_from) or 'planet') or nil,minimum_delivery_count=mp or nil}); changed=true
         local now=filter_text(ssec.get_slot(i),is_hub) or name
         local set_from=is_hub and not kept and e.from==nil or none
         local read_from=set_from and is_hub and now:match(' from (%S+)')
@@ -879,7 +914,7 @@ return function(api)
           local g=gone[key] or {}
           local from=g.from or (old and old.import_from and (type(old.import_from)=='string' and old.import_from or try(function() return old.import_from.name end)))
           local min=(old and old.min or 0)+need
-          ksec.set_slot(i,{value={type='item',name=name,quality=kq,comparator='='},min=min,import_from=from,minimum_delivery_count=(old and old.minimum_delivery_count) or g.mp or nil})
+          ksec.set_slot(i,{value={type='item',name=name,quality=kq,comparator='='},min=min,import_from=from,request_from=PORT21 and (g.source or (old and old.request_from) or 'planet') or nil,minimum_delivery_count=(old and old.minimum_delivery_count) or g.mp or nil})
           changed=true
           stored[#stored+1]=string.format('%s: kept at the %d the hub holds (%s in section %d)',key_label(key),held,filter_text(ksec.get_slot(i),true) or name,ksec.index)
           mark(stored[#stored])
@@ -923,6 +958,7 @@ return function(api)
     end)
     part('sections',function() out.sections=list_sections(secs,is_hub_target,logged and logged.unit_number or (chest or hub) and (chest or hub).unit_number,is_hub_target and hub or nil) end)
     out.told_of_edit=told
+    if PORT21 and is_hub_target then out.providing_to_other_platforms=owner.providing_to_other_platforms end
     part('sends_down',function()
       if before then
         local pl=a.platform~=nil and M.platform(p,a.platform) or try(function() return hub.surface.platform end)
@@ -1250,9 +1286,9 @@ return function(api)
         local low=1
         for _,t in ipairs(thrusters) do
           for i=1,2 do
-            local f=try(function() return t.fluidbox[i] end)
+            local f=try(function() return fluid_boxes(t)[i] end)
             -- the thruster's own tank, not a connected segment's capacity
-            local cap=try(function() return t.prototype.fluidbox_prototypes[i].volume end) or try(function() return t.fluidbox.get_capacity(i) end)
+            local cap=try(function() return t.prototype.fluidbox_prototypes[i].volume end) or try(function() return fluid_boxes(t).get_capacity(i) end)
             low=math.min(low,f and cap and cap>0 and f.amount/cap or 0)
           end
         end
@@ -1574,8 +1610,8 @@ return function(api)
           local q=sig.quality
           if type(q)~='string' then q=q and try(function() return q.name end) or 'normal' end
           local key=sig.name..'@'..q
-          local keep=(after[planet] or {})[key]
-          local was=(before[planet] or {})[key]
+          local keep=kept_at(after,planet,key)
+          local was=kept_at(before,planet,key)
           local cmp=({['≥']='>=',['≤']='<=',['≠']='!='})[c.comparator] or c.comparator or '<'
           local need=(cmp=='>=' or cmp=='=') and c.constant or cmp=='>' and c.constant+1 or nil
           if need and keep and keep~=math.huge and keep<need and keep~=was then
@@ -1612,6 +1648,12 @@ return function(api)
     table.sort(rows,function(x,y) return x.min-x.n>y.min-y.n end)
     return rows,total
   end
+  local function deliveries_pending(pl)
+    if not PORT21 then return false end
+    local point=try(function() return pl.hub.get_logistic_point(defines.logistic_member_index.space_platform_hub_requester) end)
+    local incoming=point and try(function() return point.targeted_items_deliver end)
+    return incoming and next(incoming)~=nil or false
+  end
   -- One wait condition in words; at the stop where the platform waits, how far it is.
   local function wait_text(pl,w,here,arrived)
     local t=w.type or '?'
@@ -1625,6 +1667,7 @@ return function(api)
     elseif t=='inactivity' and w.ticks then
       local last=try(function() return pl.get_schedule().tick_of_last_activity end) or 0
       local since=game.tick-math.max(last,arrived.tick or arrived.first or 0)
+      if deliveries_pending(pl) then since=0;text=text..' (deliveries in flight reset inactivity)' end
       text=text..string.format(': %s without activity, %s left',secs(since),secs(w.ticks-since))
     elseif t=='item_count' and w.condition and w.condition.first_signal and not w.condition.second_signal then
       local c=w.condition
@@ -1672,6 +1715,7 @@ return function(api)
       if not arrived.tick then return nil end
       return (w.ticks or 0)-(game.tick-arrived.tick)<=0
     elseif t=='inactivity' then
+      if deliveries_pending(pl) then return false end
       local last=try(function() return pl.get_schedule().tick_of_last_activity end) or 0
       return game.tick-math.max(last,arrived.tick or arrived.first or 0)>=(w.ticks or 0)
     elseif t=='item_count' and c and c.first_signal and not c.second_signal then
@@ -1742,7 +1786,9 @@ return function(api)
       line=line..(met==false and '; the game reads no_schedule while it waits there and leaves when they hold (Solstice at Nauvis, shift52)'
         or '; the game reads no_schedule')
     end
-    return {stop=cur,station=here,game_state=st,met=met,conditions=conds,line=line}
+    local blocked=api.platwait and api.platwait().departure_blocked and api.platwait().departure_blocked(pl)
+    if blocked then line=line..'; '..blocked end
+    return {stop=cur,station=here,game_state=st,met=met,departure_blocked=blocked,conditions=conds,line=line}
   end
   function M.waiting_line(pl) local w=M.waiting_now(pl); return w and w.line or nil end
   -- the state note of a platform reading no_schedule while it waits at its current stop on conditions false now
@@ -1842,8 +1888,8 @@ return function(api)
     local list=lists and lists.tanks
       or try(function() return pl.surface.find_entities_filtered{type={'thruster','storage-tank'},force=pl.force} end) or {}
     for _,e in ipairs(list) do
-      for i=1,try(function() return #e.fluidbox end) or 0 do
-        local f=try(function() return e.fluidbox[i] end)
+      for i=1,try(function() return #fluid_boxes(e) end) or 0 do
+        local f=try(function() return fluid_boxes(e)[i] end)
         if f and f.name=='thruster-fuel' then fuel=fuel+f.amount end
       end
     end
@@ -2996,7 +3042,7 @@ return function(api)
       w=w+each*s.count; items[#items+1]={name=s.name,count=s.count,each=each}
     end
     table.sort(items,function(x,y) local wx,wy=x.each*x.count,y.each*y.count; if wx~=wy then return wx>wy end return x.name<y.name end)
-    return w,try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000,items
+    return w,rocket_lift(silo) or 1000000,items
   end
   function M.rocket_weight(silo) local w,lift=M.rocket_load(silo); return kg(w)..'/'..kg(lift)..' kg' end
   -- How many of an item still fit under the lift, and the load it joins.
@@ -3043,6 +3089,7 @@ return function(api)
     if api.state then pcall(function() api.state().launch_mark={tick=game.tick,unit=silo.unit_number,by=p and p.name or nil} end) end
   end
   function M.launch(p,a)
+    if PORT21 and a.ride then assert(p.force.unlock_travel_to_space_platforms,'travel to space platforms is locked: research the travel unlock first') end
     local silo=api.remote_entity(p,{position=a.position,name=a.name,unit_number=a.unit_number})
     assert(silo.type=='rocket-silo','not a rocket silo')
     -- The silo GUI checkbox: launch on its own for platforms' requests.
@@ -3156,7 +3203,7 @@ return function(api)
       for _,c in ipairs(try(function() return silo.surface.find_entities_filtered{position=silo.position,radius=EMPTY_LOOK,type={'container','logistic-container'},force=silo.force,limit=64} end) or {}) do
         local inv=c.valid and try(function() return c.get_inventory(defines.inventory.chest) end)
         for _,s in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
-          if try(function() return prototypes.item[s.name].type end)=='tool' and #near<6 then
+          if ((api.is_science and api.is_science(s.name)) or try(function() return prototypes.item[s.name].type end)=='tool') and #near<6 then
             near[#near+1]=string.format('%s (%g,%g) %s*%d',c.name,c.position.x,c.position.y,s.name,s.count)
           end
         end
@@ -3600,5 +3647,10 @@ return function(api)
       min_cargo='optional {"item-name": count} or [{"item", "count", "quality"}]: launch only when the rocket holds at least these, read in the tick it launches (a queue step\'s launch runs whole in its tick); else refused, nothing launched, naming what is short and what the rocket holds (checked {tick, lines} in the reply)',
       arrived='optional true, with platform: launch only when the platform is stopped at this planet (not on its path), by the platform_arrived rule, read in the tick it launches; else refused, nothing launched',auto_requests='boolean: the silo GUI setting to fill and launch rockets on its own for platforms\' requests in orbit (alone: only sets it; switched on with cargo loaded by hand, the game moves that cargo to the silo\'s trash slots, which never launch: so true is refused while the rocket holds cargo no platform stopped above asks this planet for, naming it, unless force: true; then cargo_to_trash, note, trash)',force='with auto_requests: true: switch them on even though cargo aboard would go to the trash slots',returns='launched, to, cargo, spoiled_percent {item: its spoiled share by count} and went_up (a line: each spoilable item, its count and share), freshness (the cargo\'s spoilable items, each one\'s spread and how many a unit the running research takes and its units left, read before it goes); checked {tick, lines} (min_cargo, arrived); settings {silo, auto_requests, send_to_orbit_automatically, requesting_for, rocket, parts}: the silo\'s switches after the call',refused='overweight by N kg (a rocket lifts 1000 kg; the cargo listed by weight) before the game is asked; when the game refuses, what it may check'},
   }
+  if PORT21 then
+    M.KEEP_RULE='Factorio 2.1: requests from anywhere apply at every location. Planet/all requests retain their requested stock against landing-pad demand; platforms-only requests allow planetary delivery. Maxima apply by quality. The engine clears orbital trash before departure at a location with a surface. Other detailed timing and ranged-quality rules remain unmeasured on 2.1.'
+    M.schema.requests.providing_to_other_platforms='optional boolean: allow this hub to supply requesting platforms at the same location (Factorio 2.1)'
+    M.schema.requests.set='array of {item,min,max?,quality?,from?,request_from?,min_payload?}: max omitted keeps its old value if at least min; "inf" removes the cap. from is the import location; false or "" means anywhere, omitted preserves the location. request_from is planet (default), platforms, or all; omitted preserves the source. min_payload (alias minimum_delivery_count) is the custom minimum delivery count; false or 0 clears it, omitted preserves it. Source and minimum payload apply to hubs only. A planet/all request from anywhere retains stock at every stop; platforms-only requests allow planetary delivery.'
+  end
   return M
 end

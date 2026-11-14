@@ -8,6 +8,13 @@ return function(api)
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function store()
     local s = api.state()
+    local version=script and script.active_mods and script.active_mods.base
+    if version and version:match('^2%.1%.') and s.production_legs_engine~=version then
+      s.production_legs_history=s.production_legs_history or {}
+      s.production_legs_history[s.production_legs_engine or '2.0-unversioned']=s.production_legs
+      s.production_legs={};s.production_legs_engine=version
+      s.port21_started_tick=s.port21_started_tick or game.tick
+    end
     s.production_legs = s.production_legs or {}
     return s.production_legs
   end

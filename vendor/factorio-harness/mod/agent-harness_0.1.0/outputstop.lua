@@ -26,6 +26,7 @@
 -- plant at 2 and not at 4 (2 crafts' worth, 4); the inserter reads waiting_for_space_in_destination). The machine crafts on with what it holds.
 -- Pure: the factory takes the harness's try.
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   local try = api.try or function(fn) local ok, v = pcall(fn); if ok then return v end end
   M.OVERLOAD_S = 1.166
@@ -66,7 +67,7 @@ return function(api)
     local speed = try(function() return e.crafting_speed end) or 1
     local crafts = 1 + math.ceil(M.OVERLOAD_S * speed / energy - 1e-9)
     local out_inv = try(function() return e.get_output_inventory() end)
-    local fb = try(function() return e.fluidbox end)
+    local fb = try(function() return fluid_boxes(e) end)
     local rows, lines, at_limit = {}, {}, {}
     local soft_names = {}
     for _, p in ipairs(proto.products or {}) do

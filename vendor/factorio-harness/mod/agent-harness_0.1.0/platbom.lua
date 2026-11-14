@@ -1,3 +1,12 @@
+-- A specific silo may override the default rocket lift on Factorio 2.1.
+local function rocket_lift(silo)
+  local ok, v = pcall(function() return silo.prototype.lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.default_rocket_lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.rocket_lift_weight end)
+  if ok then return v end
+end
 -- platform_bom {platform, pack?} (B3, Sol 22:50: "I manually reconciled this every five minutes and found 13 mixed
 -- rockets replace 31 single-item launches"): a platform's remaining bill of materials in one read. Per item: what its
 -- ghosts still need (entity ghosts by the item that places them, tile ghosts by the tile's item), what is built of it
@@ -10,6 +19,11 @@
 -- Every count is by item and quality (d21 batch66 AB1): a ghost is built only from items of its own quality.
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
+  local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+  local function planet_request(f, from, planet, legacy_any)
+    if PORT21 then return f.request_from ~= 'platforms' and (from == nil or from == planet) end
+    return from == planet or (legacy_any and from == nil)
+  end
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function item_of(proto)
@@ -103,7 +117,7 @@ return function(api)
   -- A full rocket of an item by weight (the default minimum payload of a hub request), nil when not known.
   local function full_rocket(item)
     local w = try(function() return prototypes.item[item].weight end)
-    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+    local lift = rocket_lift() or 1000000
     if not (w and w > 0) then return nil end
     return math.max(1, math.floor(lift / w))
   end
@@ -191,7 +205,7 @@ return function(api)
       local name = v and (type(v.name) == 'string' and v.name or try(function() return v.name.name end))
       if name then name = key(name, qname(v.quality)) end
       if name and wanted[name] and not was[name] then
-        was[name] = {slot=i, min=f.min, max=f.max, mp=f.minimum_delivery_count, from=f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))}
+        was[name] = {source=PORT21 and f.request_from or nil, slot=i, min=f.min, max=f.max, mp=f.minimum_delivery_count, from=f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))}
       else
         if name then pcall(sec.clear_slot, i) end
         free[#free+1] = i
@@ -244,7 +258,7 @@ return function(api)
       it.slot = slot
       if not (w and w.min == it.n and w.mp == mp and w.from == rec.import_from) then
         sec.set_slot(slot, {value={type='item', name=it.name, quality=it.quality, comparator='='}, min=it.n, max=w and w.max or nil,
-          import_from=rec.import_from, minimum_delivery_count=mp})
+          import_from=rec.import_from, request_from=PORT21 and w and w.source or nil, minimum_delivery_count=mp})
       end
     end
     local inv = try(function() return hub.get_inventory(defines.inventory.hub_main) end)
@@ -298,7 +312,7 @@ return function(api)
             local name = v and (type(v.name) == 'string' and v.name or try(function() return v.name.name end))
             if name and key(name, qname(v.quality)) == item then
               local min = math.max(0, rec.min[item] - (was - now))
-              if pcall(sec.set_slot, i, {value=v, min=min, max=f.max, import_from=f.import_from, minimum_delivery_count=f.minimum_delivery_count}) then
+              if pcall(sec.set_slot, i, {value=v, min=min, max=f.max, import_from=f.import_from, request_from=PORT21 and f.request_from or nil, minimum_delivery_count=f.minimum_delivery_count}) then
                 rec.spent = rec.spent or {}
                 rec.spent[item] = (rec.spent[item] or 0) + rec.min[item] - min
                 rec.min[item] = min
@@ -315,7 +329,7 @@ return function(api)
   local function payload_fits(item, n, what)
     if type(n) ~= 'number' or n <= 0 then return end
     local w = try(function() return prototypes.item[item].weight end)
-    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+    local lift = rocket_lift() or 1000000
     if w and w > 0 and n * w > lift then
       error(string.format('%s %s %d: %d weigh %g kg, a rocket lifts %g kg: at most %d fit%s (%s %d)', what, item, n, n, n * w / 1000, lift / 1000,
         math.floor(lift / w), math.floor(lift / w) == 1 and 's' or '', what, math.floor(lift / w)), 0)
@@ -428,7 +442,7 @@ return function(api)
               local name = type(v) == 'table' and v.name or v
               local q = type(v) == 'table' and qname(v.quality) or 'normal'
               local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
-              if name and from == planet and (f.min or 0) > 0 then
+              if name and planet_request(f, from, planet) and (f.min or 0) > 0 then
                 local held = count_of(inv, key(name, q))
                 local short = math.max(0, f.min - held)
                 rows[#rows+1] = {platform=pl.name, item=name, quality=q, asks=f.min, holds=held, short=short, where=where}

@@ -10,6 +10,7 @@
 -- State: storage platform_waits[name] = {stops={[k]={station, conds}}, at, arrived, last}. Read only but for the go to
 -- station call.
 return function(api)
+  local PORT21=(script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0)>=1
   local M = {}
   local EVERY, TANKS = 60, 64
   M.NEVER = {first_signal={type='virtual', name='signal-dot'}, comparator='<', constant=-2147483648}
@@ -63,6 +64,15 @@ return function(api)
     end
     return all, words
   end
+  function M.departure_blocked(pl)
+    if not PORT21 then return nil end
+    local location=try(function() return pl.space_location.name end)
+    local surface=location and try(function() return game.planets[location].surface end)
+    if not surface then return nil end
+    local inv=try(function() return pl.hub.get_inventory(defines.inventory.hub_trash) end)
+    local items=inv and try(function() return inv.get_contents() end)
+    if items and next(items) then return 'orbital trash must clear before departure (Factorio 2.1)' end
+  end
   function M.tick(tick)
     if tick % EVERY ~= 0 then return end
     local w = waits()
@@ -90,6 +100,8 @@ return function(api)
         else
           if watch.at ~= cur then watch.at, watch.arrived = cur, tick end
           local all, words = check(pl, s, watch.arrived, tick)
+          local blocked=M.departure_blocked(pl)
+          if blocked then all=false;words[#words+1]=blocked end
           watch.now = string.format('waits at stop %d (%s): %s', cur, s.station, table.concat(words, '; '))
           if all and not pl.paused then
             local n = sch.get_record_count()

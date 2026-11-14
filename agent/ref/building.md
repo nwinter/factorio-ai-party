@@ -388,3 +388,12 @@
   go); `build` replies say it in words. `build` accepts a batch of up to 64 placements.
 
 - `upgrade` in remote/platform queues requires explicit `platform` or `surface`; `wait_until {until: "entity_quality", position, quality, platform, timeout}` waits for the built replacement (ref/waits-queues.md).
+
+### Fluid storage on 2.1.24
+
+Fluid stock totals count a connected segment once, including machine shares. A near read can include members
+outside the selected area; those are listed as connected remainder. A pump's private store and its two adjacent
+segments are separate. `flush` clears the selected segment, or only the selected independent store when it has no
+segment. `configure` refuses a recipe change that would drop an incompatible fluid unless `fluid: "drain"` or
+`"keep"` is explicit; the reply reports what left the machine. A normal boiler consumes 6 water/s and makes 60
+steam/s at full speed on 2.1.24 (2.0.77: 60 water/s and 60 steam/s).

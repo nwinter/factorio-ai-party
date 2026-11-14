@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Make sure every team member has a bot: tools/team_bots.py TEAM_FILE WORLD
+"""Make sure every team member has a bot: tools/team_bots.py TEAM_FILE WORLD [FORCE]
 
 A fresh world gets one bot_create per member. A resumed save (tools/start-team.sh, POG_RESUME) already holds bots:
 those are kept, and only members the save lacks are created (a second bot_create would fail with "already exists").
 Prints one line per member: "NAME kept (alive, at x,y)" or "NAME created ...".
+FORCE: each bot is created in that force (`bot_create NAME FORCE`), and a bot row that names another force is printed
+as a mismatch; members of other forces are not listed.
 """
 import json
 import os
@@ -34,7 +36,7 @@ def existing(rcon):
     return {b["name"]: b for b in bots}
 
 
-def ensure(rcon, names):
+def ensure(rcon, names, force=None):
     have = existing(rcon)
     lines = []
     for name in names:
@@ -45,21 +47,33 @@ def ensure(rcon, names):
             state = "alive" if b.get("alive") else f"dead until tick {b.get('dead_until_tick')}"
             lines.append(f"{name} kept ({state}{', ' + where if where else ''})")
         else:
-            reply = rcon.command(f'/silent-command rcon.print(remote.call("agent_harness","bot_create","{name}"))')
+            # control.lua's remote bot_create passes one argument: a force goes in a table with the name
+            arg = f'{{name="{name}",force="{force}"}}' if force else f'"{name}"'
+            reply = rcon.command(f'/silent-command rcon.print(remote.call("agent_harness","bot_create",{arg}))')
             lines.append(f"{name} created {reply.strip()[:160]}")
+    if force:
+        now = existing(rcon)
+        for name in names:
+            got = (now.get(name) or {}).get("force")
+            if got != force:
+                lines.append(f"{name} FORCE MISMATCH: wanted {force}, the bots row says {got or 'no force'}")
     extra = sorted(set(have) - set(names))
-    if extra:
+    if extra and not force:
         lines.append("not in the team (left as they are): " + ", ".join(extra))
     return lines
 
 
 def main():
     team_file, world = sys.argv[1:3]
+    force = sys.argv[3] if len(sys.argv) > 3 else None
     import pog
     pw = open(os.path.expanduser(f"~/.config/pog/rcon-{world}.pw")).read().strip()
-    rcon = pog.Rcon("127.0.0.1", pog.PORTS[world], pw)
-    for line in ensure(rcon, members(team_file)):
+    rcon = pog.Rcon(pog.HOSTS.get(world, "127.0.0.1"), pog.PORTS[world], pw)
+    lines = ensure(rcon, members(team_file), force)
+    for line in lines:
         print(line, flush=True)
+    if any("FORCE MISMATCH" in line for line in lines):
+        sys.exit(2)   # a team in another force's body: the start stops
 
 
 if __name__ == "__main__":

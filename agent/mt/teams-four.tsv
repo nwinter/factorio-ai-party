@@ -1,0 +1,14 @@
+# (mt277, private) multiteam-design.md first configuration: team (force)<TAB>name<TAB>kind<TAB>route<TAB>model<TAB>effort<TAB>label<TAB>harness
+# The third agent of green and yellow is a second copy (Nick to choose which); routes and efforts as agent/team-nine.tsv.
+red	astra	codex	codex	gpt-6-astra	low	GPT-6 Astra	Codex
+red	sol	codex	codex-b	gpt-6.1-sol	low	GPT-6.1 Sol	Codex
+red	terra	codex	codex	gpt-6.1-terra	low	GPT-6.1 Terra	Codex
+blue	opus	claude	claude-b	opus	low	Claude Opus 5.5	Claude Code
+blue	sonnet	claude	claude-b	sonnet	low	Claude Sonnet 5.5	Claude Code
+blue	haiku	claude	claude-b	haiku	low	Claude Haiku 5.5	Claude Code
+green	argon	agy	-	gemini-4-argon-high	-	Gemini 4 Argon	Antigravity
+green	gemini	agy	-	gemini-3.8-flash-high	-	Gemini 3.8 Flash	Antigravity
+green	gemini2	agy	-	gemini-3.8-flash-high	-	Gemini 3.8 Flash	Antigravity
+yellow	grok	grok	-	grok-4.7	medium	Grok 4.7	Grok Build
+yellow	muse	muse	-	muse-spark-1.3	medium	Muse Spark 1.3	Muse Code
+yellow	grok2	grok	-	grok-4.7	medium	Grok 4.7	Grok Build

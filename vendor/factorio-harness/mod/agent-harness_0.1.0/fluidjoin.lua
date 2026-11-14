@@ -10,6 +10,7 @@
 -- the centre of a built fluid entity of ours of another name replaces it: the joins that entity has now that the new
 -- one would not make are named (cut). Read only.
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function key(x, y) return x * 4194304 + y end
@@ -47,7 +48,7 @@ return function(api)
   end
   -- A built box's segment: {key, id, fluid, amount, label}.
   local function segment_of(o, box)
-    local fb = try(function() return o.fluidbox end)
+    local fb = try(function() return fluid_boxes(o) end)
     if not fb then return nil end
     local f = try(function() return fb[box] end)
     local id = try(function() return fb.get_fluid_segment_id(box) end)
@@ -327,11 +328,11 @@ return function(api)
       local u = o.unit_number or o
       if not conns[u] then
         local out = {}
-        local fb = try(function() return o.fluidbox end)
+        local fb = try(function() return fluid_boxes(o) end)
         for i = 1, fb and #fb or 0 do
           for _, c in ipairs(try(function() return fb.get_pipe_connections(i) end) or {}) do
             local t = c.target
-            if t and t.object_name == 'LuaFluidBox' then t = t.owner end
+            if t and (t.object_name == 'LuaFluidBox' or t.object_name == 'HarnessFluidStorage') then t = t.owner end
             out[#out+1] = {target=t, flow=c.flow_direction}
           end
         end
@@ -422,8 +423,8 @@ return function(api)
     for _, g in ipairs(order) do
       local G = groups[g]
       local r = G.removed[1]
-      local f = try(function() return r.fluidbox[1] end)
-      local fluid = f and f.name or (function() local lf = try(function() return r.fluidbox.get_locked_fluid(1) end); return lf and (type(lf) == 'string' and lf or lf.name) end)()
+      local f = try(function() return fluid_boxes(r)[1] end)
+      local fluid = f and f.name or (function() local lf = try(function() return fluid_boxes(r).get_locked_fluid(1) end); return lf and (type(lf) == 'string' and lf or lf.name) end)()
       local what = #G.removed == 1 and string.format('%s %s', r.name, at(r.position)) or string.format('%d pieces from %s %s', #G.removed, r.name, at(r.position))
       if cut_short then
         lines[#lines+1] = string.format('removing %s: the segment walk stopped after %d pipes (not judged)', what, WALK)

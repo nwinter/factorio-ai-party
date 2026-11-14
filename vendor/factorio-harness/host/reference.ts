@@ -3,7 +3,7 @@
  * fh wrapper): `fh help TOPIC` prints ref/TOPIC.md, `fh help` lists the topics, and an argument refusal or an unknown
  * action names the topic that documents the call (ref/commands.tsv: command, tab, topic).
  */
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
 export function refDir(env: NodeJS.ProcessEnv = process.env): string | undefined {
@@ -33,6 +33,30 @@ export function openTopic(units: TopicUnits, shut: Set<string>): string {
   // an item the runtime does not know (added since its table was built) stays open
   const items = units.items.filter(i => !shut.has(i.id)).map(i => i.text.replace(/\n*$/, '\n'));
   return units.head + (items.length ? items.join('') : 'Nothing in this topic is open for your team yet.\n');
+}
+
+/** Contact references follow the live schema even with general disclosure disabled. */
+export function syncMarketReference(dir: string | undefined, actions: Record<string, any>): string | undefined {
+  if (!dir) return undefined;
+  const units = topicUnits(dir, 'markets');
+  if (!units) return undefined;
+  const file = join(dir, 'markets.md');
+  const commands = join(dir, 'commands.tsv');
+  const lines = existsSync(commands) ? readFileSync(commands, 'utf8').split('\n').filter(l => l && l.split('\t')[1] !== 'markets') : [];
+  const names = ['offer','market','sell','buy','cancel','embargo','post'].filter(n => actions[n]);
+  for (const n of names) lines.push(`${n}\tmarkets`);
+  writeFileSync(commands, lines.join('\n') + '\n');
+  if (!actions.offer) {
+    if (existsSync(file)) unlinkSync(file);
+    return undefined;
+  }
+  const address = actions.offer.args ?? actions.offer;
+  const gates: Record<string, boolean> = {offer:true, market:!!actions.market, sell:!!actions.sell,
+    cancel:!!actions.cancel, embargo:!!actions.embargo, post:!!actions.post, 'freight-moves-cargo-in':!!actions.post,
+    'sell-2':!!address.to, 'your-home-post-holds':!!actions.market};
+  const text = units.head + units.items.filter(i => gates[i.id.split('#')[1] ?? '']).map(i => i.text.replace(/\n*$/, '\n')).join('');
+  writeFileSync(file, text);
+  return text;
 }
 
 export function topicText(dir: string, name: string): string | undefined {
@@ -84,6 +108,7 @@ export function addReference(reply: { ok?: boolean; error?: { code?: string; mes
   dir: string | undefined = refDir()): string | undefined {
   if (!dir || reply.ok !== false || !reply.error || typeof reply.error.message !== 'string') return undefined;
   const message = reply.error.message;
+  if (message === 'unsupported action; call describe' && ['offer','market','sell','buy','cancel','embargo','post'].includes(action)) return undefined;
   if (!ARGUMENT_ERROR.test(message) || /\(reference: /.test(message)) return undefined;
   const topics = commandTopics(dir);
   const step = /^steps\[\d+\] \(([a-z_]+)\)/.exec(message);

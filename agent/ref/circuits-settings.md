@@ -22,9 +22,14 @@
     the read shows it (the same as both). A queued circuit_set step (queue_submit, and its dry run) is checked for these
     values as the live call checks them, so a value live would refuse is refused before any step runs; whether the
     entity takes that setting (a decider on a decider combinator) is checked when the step runs.
-  - Requester and buffer chests: `read: {contents: true}` or `set_requests: true`, and `enable` (the chest's circuit
+  - On 2.0.77, requester and buffer chests: `read: {contents: true}` or `set_requests: true`, and `enable` (the chest's circuit
     condition); provider chests send contents whenever wired; no chest has a logistic condition. A roboport: `read:
     {logistic_network_contents: true}`.
+  - On 2.1.24, chests and cargo landing pads have independent `read.contents` and `set_requests` switches.
+    Provider and storage chests have a contents switch too. Machines use `read.fuel` (`settings.include_fuel` is
+    accepted as an alias). Tanks and pipes use `read.contents` or `read.segment_contents`, plus `read.temperature`.
+    `settings.input_networks` / `output_networks` select `red`, `green` or `both` where the control supports them;
+    inspect lists the selections, and recipe/condition explanations use the selected inputs.
   - `settings: {filters, filter_mode}` sets inserter and loader filters as `configure` does. A belt's
     `read_contents_mode`: pulse, hold (this tile), entire_belt_hold (its belt segment, as the game counts it: through
     corners, underground pairs and belt tier changes, and along the main line past a side-load; a belt side-loading

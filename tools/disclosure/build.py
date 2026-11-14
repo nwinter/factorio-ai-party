@@ -143,7 +143,9 @@ def units(describe):
         us.append({"id": f"action:{name}", "kind": "action", "condition": cond(rules.ACTIONS.get(name, ["UNASSIGNED"])),
                    "bytes": size})
         own = rules.ARGS_OF.get(name, {})
-        for arg, text in (A[name].get("args") or {}).items():
+        args = A[name].get("args")
+        args = args if isinstance(args, dict) else A[name]
+        for arg, text in args.items():
             if arg in rules.META_ARGS:
                 continue
             atoms = own.get(arg) or rules.ARGS.get(arg)

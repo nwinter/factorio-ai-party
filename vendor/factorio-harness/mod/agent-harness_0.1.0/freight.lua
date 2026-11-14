@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 local arrival_eta=require('arrivaleta')
 -- freight: what a space platform carried, stop by stop and leg by leg (Luna,
 -- shift12 12:47: of 995 agricultural science packs Sunward took from Gleba,
@@ -23,6 +26,10 @@ local arrival_eta=require('arrivaleta')
 -- in flight (their unit numbers and cargo).
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
+  local function planet_request(f, from, planet)
+    if PORT21 then return f.request_from ~= 'platforms' and (from == nil or from == planet) end
+    return from == planet
+  end
   local M = {}
   -- a signal's name, with @quality when not normal (d22 batch87 AW1: an uncommon signal read as the normal one)
   local function sigtext(s) local q = s.quality; if q and type(q) ~= 'string' then q = q.name end; return q and q ~= 'normal' and s.name .. '@' .. q or s.name end
@@ -163,6 +170,13 @@ return function(api)
   -- Counting -----------------------------------------------------------------
   local function store()
     local st = api.state()
+    local version=script and script.active_mods and script.active_mods.base
+    if version and version:match('^2%.1%.') and st.freight_engine~=version then
+      st.freight_history=st.freight_history or {}
+      st.freight_history[st.freight_engine or '2.0-unversioned']=st.freight
+      st.freight={};st.freight_engine=version
+      st.port21_started_tick=st.port21_started_tick or game.tick
+    end
     st.freight = st.freight or {}
     return st.freight
   end
@@ -559,7 +573,7 @@ return function(api)
     for _, e in ipairs(list) do
       local lines = try(function() return e.get_max_transport_line_index() end) or 0
       local partner = e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'output'
-        and try(function() local n = e.neighbours; return n and n.valid and n or nil end)
+        and try(function() local n = e[UNDERGROUND_NEIGHBOUR]; return n and n.valid and n or nil end)
       for i = 1, lines do
         local line = try(function() return e.get_transport_line(i) end)
         local same = partner and i > 2 and try(function() return line.line_equals(partner.get_transport_line(i)) end)
@@ -695,7 +709,7 @@ return function(api)
           local name = type(v) == 'table' and v.name or v
           if type(name) == 'table' then name = name.name end
           local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or pget(f.import_from, 'name'))
-          if type(name) == 'string' and from == planet then
+          if type(name) == 'string' and planet_request(f, from, planet) then
             local q, cmp = qual(v), type(v) == 'table' and v.comparator or '='
             local k = out[name] or {max=0, parts={}, q={}}
             k.max = k.max + (f.max or math.huge)
@@ -915,7 +929,7 @@ return function(api)
           local v = f.value
           local name = type(v) == 'table' and v.name or v
           local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
-          if type(name) == 'string' and from == planet and (f.min or 0) > 0 then
+          if type(name) == 'string' and planet_request(f, from, planet) and (f.min or 0) > 0 then
             local key = name .. '@' .. qual(v)
             by[key] = (by[key] or 0) + f.min
           end
@@ -1021,7 +1035,7 @@ return function(api)
     return out
   end
   local function open(rec, pl, w, counts, tick, first)
-    local seg = {start=tick, first=copy(counts), spoiled={}, partial=first or nil, ammo0=ammo_counts(pl), fuel0=fluid_counts(pl), places0=M.places_snapshot(pl)}
+    local seg = {engine_version=script and script.active_mods and script.active_mods.base,start=tick, first=copy(counts), spoiled={}, partial=first or nil, ammo0=ammo_counts(pl), fuel0=fluid_counts(pl), places0=M.places_snapshot(pl)}
     if w.stopped then
       seg.kind, seg.at = 'stop', w.at
       -- (QK1) read once, by quality; ask and hold by name are their sums
@@ -1605,7 +1619,8 @@ return function(api)
     table.insert(rec.receipts, {tick=tick, sent=p.tick, unit=p.unit, cargo=p.cargo, cargo_q=p.cargo_q, kind=kind, where=where, stop=p.at, stop_start=p.seg, dest=p.dest, asked=p.asked})
     while #rec.receipts > M.RECEIPTS do table.remove(rec.receipts, 1) end
     if kind == 'received' and api.delivered then
-      pcall(api.delivered, {surface=p.dest and p.dest.surface or (p.last and p.last.surface), from=pl and try(function() return pl.name end), cargo=p.cargo, where=where})
+      pcall(api.delivered, {surface=p.dest and p.dest.surface or (p.last and p.last.surface), from=pl and try(function() return pl.name end), cargo=p.cargo, where=where,
+        force=pl and try(function() return pl.force.name end)})
     end
   end
   local function pod_done(rec, p, tick, hub_dead, pl)
@@ -1669,7 +1684,7 @@ return function(api)
         if pl and api.delivered then
           local name = try(function() return pl.name end)
           pcall(api.delivered, {surface=try(function() return pl.surface.name end), platform=name, from=r.from, cargo=r.cargo,
-            where=string.format('%s\'s hub (a rocket from %s)', tostring(name), tostring(r.from))})
+            where=string.format('%s\'s hub (a rocket from %s)', tostring(name), tostring(r.from)), force=try(function() return pl.force.name end)})
         end
         rec.up_times = rec.up_times or {}
         rec.up_times[#rec.up_times+1] = tick - r.tick

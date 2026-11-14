@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# (mt275, private) The multi-team server on the iMac, beside tools/imac-copy.sh's copy: its own folder, ports, password
+# and write-data, this branch's mod folder (control.lua's on_chunk_charted needs the mod, not a hot deploy).
+#   tools/mt/imac_mt.sh start SAVE.zip     (or imac:PATH) copy the save and the mod folder, start the server, wait for RCON
+#   tools/mt/imac_mt.sh stop               /quit (saves over saves/mt.zip), then the server's own PID if still up
+#   tools/mt/imac_mt.sh status
+# Then: python3 tools/mt/mt_map.py ... --host imac.local --port 27475 --password-file ~/.config/pog/rcon-imac-mt.pw
+# (mt277) world `imac2` for bin/fh, tools/pog.py and the broker: ~/.config/pog/rcon-imac2.pw, a link to the same password
+set -euo pipefail
+root=$(cd "$(dirname "$0")/../.." && pwd)
+if [ -n "${POG_CLAIM_OWNER:-}" ] && [ "${1:-status}" != status ]; then
+  PYTHONPATH="$root/tools/mt${PYTHONPATH:+:$PYTHONPATH}" python3 -c 'from run_state import claim; claim()'
+fi
+host=${IMAC_HOST:-imac.local}
+dir=${MT_DIR:-/Users/owner/pog-mt}
+app=${MT_FACTORIO_APP:-/Users/owner/code/factorio-mac-2.0.77/factorio.app}
+bin=$app/Contents/MacOS/factorio
+expected=${MT_EXPECT_VERSION:-2.0.77}
+mods_file=${MT_MODS_FILE:-$root/agent/mt/mods.tsv}
+rcon_port=${MT_RCON_PORT:-27475} game_port=${MT_GAME_PORT:-34475}
+pwfile=${MT_PASSWORD_FILE:-$HOME/.config/pog/rcon-imac-mt.pw}
+mod=$root/vendor/factorio-harness/mod/agent-harness_0.1.0
+remote() { ssh -o ConnectTimeout=10 -o BatchMode=yes "$host" "$@"; }
+ready() {
+  python3 -c "
+import sys; sys.path.insert(0, '$root/tools')
+from pog import Rcon
+r = Rcon('$host', $rcon_port, open('$pwfile').read().strip(), timeout=10)
+out=r.command(\"/silent-command assert(script.active_mods.base=='$expected','wrong engine'); rcon.print('tick ' .. game.tick .. (game.tick_paused and ' (paused)' or ''))\"); assert out.strip().startswith('tick '), out; print(out)"
+}
+case ${1:-status} in
+start)
+  save=${2:?usage: imac_mt.sh start SAVE.zip}
+  if remote "[ -s '$dir/server.pid' ] && kill -0 \$(cat '$dir/server.pid') 2>/dev/null"; then echo "already running (pid $(remote "cat '$dir/server.pid'"))" >&2; exit 3; fi
+  remote "mkdir -p '$dir' && mkdir '$dir/launch.lock'" || { echo 'mt launch lock held; inspect the owner before retrying' >&2; exit 3; }
+  unlock() { remote "rmdir '$dir/launch.lock'" >/dev/null 2>&1 || true; }; trap unlock EXIT
+  remote "codesign --verify --deep --strict '$app'" || exit 1
+  actual=$(remote "cat '$app/Contents/data/base/info.json'" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')
+  [ "$actual" = "$expected" ] || { echo "expected $expected, installed $actual" >&2; exit 1; }
+  python3 - "$mod/info.json" "$expected" <<'PIN'
+import json, sys
+info = json.load(open(sys.argv[1]))
+assert info['factorio_version'] == '.'.join(sys.argv[2].split('.')[:2]), 'harness/engine version mismatch'
+PIN
+  if remote "lsof -nP -iTCP:$rcon_port -sTCP:LISTEN -t; lsof -nP -iUDP:$game_port -t" 2>/dev/null | grep -q '[0-9]'; then
+    echo 'mt ports occupied; refusing to replace another instance' >&2; exit 3
+  fi
+  mkdir -p "$(dirname "$pwfile")"
+  [ -s "$pwfile" ] || { python3 -c 'import secrets; print(secrets.token_hex(16))' > "$pwfile"; chmod 600 "$pwfile"; }
+  [ -e "$(dirname "$pwfile")/rcon-imac2.pw" ] || ln -s "$(basename "$pwfile")" "$(dirname "$pwfile")/rcon-imac2.pw"
+  remote "mkdir -p '$dir/saves' '$dir/mods' '$dir/config' '$dir/data/saves' '$dir/clients'"
+  # (mt282) POG_MT_CLIENT_MOD=1 (the default with POG_MT_HUMANS=1): the harness mod as human clients get it
+  # (tools/mt/client_mod.sh: no harness module, a stub runtime; the real one arrives by deploy). Else the full folder.
+  if [ "${POG_MT_CLIENT_MOD:-${POG_MT_HUMANS:-0}}" = 1 ]; then
+    cm=$(mktemp -d); "$root/tools/mt/client_mod.sh" "$cm" >/dev/null
+    rsync -a --delete "$cm/agent-harness_0.1.0/" "$host:$dir/mods/agent-harness_0.1.0/"
+    echo "the client build of the harness mod (tools/mt/client_mod.sh)"
+    rm -rf "$cm"
+  else
+    rsync -a --delete --exclude tests "$mod/" "$host:$dir/mods/agent-harness_0.1.0/"
+  fi
+  # the mod list: ours, and each of agent/mt/mods.tsv's mods enabled when its zip is in the mods folder (none is
+  # downloaded: Nick puts the zips there)
+  have=$(remote "ls '$dir/mods'" 2>/dev/null | tr '\n' ' ')
+  python3 - "$root/tools/imac-mod-list.json" "$mods_file" "$have" <<'PY2' | remote "cat > '$dir/mods/mod-list.json'"
+import json, sys
+ml = json.load(open(sys.argv[1]))
+have = sys.argv[3].split()
+for line in open(sys.argv[2]):
+    if line.strip() and not line.startswith("#"):
+        name, version = line.split("\t")[:2]
+        ml["mods"].append({"name": name, "enabled": f"{name}_{version}.zip" in have})
+print(json.dumps(ml, indent=1))
+PY2
+  printf '[path]\nread-data=__PATH__system-read-data__\nwrite-data=%s/data\n' "$dir" | remote "cat > '$dir/config/config.ini'"
+  # (mt278) POG_MT_HUMANS=1: a game password (~/.config/pog/mt-humans.pw, made once) and the server whitelist: the human
+  # roster (agent/mt/humans.tsv), the camera client and the setup accounts. No admin list: the console stays RCON's.
+  # require_user_verification stays off (our iMac clients have no factorio.com token), so the password guards the names.
+  humans=${POG_MT_HUMANS:-0} hpw=$HOME/.config/pog/mt-humans.pw extra=""
+  if [ "$humans" = 1 ]; then
+    [ -s "$hpw" ] || { python3 -c 'import secrets; print(secrets.token_urlsafe(12))' > "$hpw"; chmod 600 "$hpw"; }
+    python3 - "$root/agent/mt/humans.tsv" <<'EOF' | remote "cat > '$dir/server-whitelist.json'"
+import json, sys
+names = [l.split("\t")[0].strip() for l in open(sys.argv[1]) if l.strip() and not l.startswith("#")]
+print(json.dumps(names + ["pog-cam1"] + ["mt-" + t for t in ("red", "blue", "green", "yellow", "white")]))
+EOF
+    extra="--use-server-whitelist --server-whitelist '$dir/server-whitelist.json'"
+  fi
+  python3 - "$humans" "$hpw" <<'EOF' | remote "cat > '$dir/server-settings.json'"
+import json, sys
+s = {"name": "pog mt", "description": "tools/mt/imac_mt.sh", "visibility": {"public": False, "lan": False},
+     "require_user_verification": False, "max_players": 0, "allow_commands": "admins-only", "autosave_interval": 0, "autosave_slots": 1,
+     "auto_pause": False, "only_admins_can_pause_the_game": True, "autosave_only_on_server": True}
+if sys.argv[1] == "1":
+    s["game_password"] = open(sys.argv[2]).read().strip()
+print(json.dumps(s))
+EOF
+  case $save in
+    imac:$dir/saves/mt.zip) ;;   # (mt277) the server's own save as its last /quit left it (tools/mt/start-mt.sh, POG_RESUME)
+    imac:*) remote "cp '${save#imac:}' '$dir/saves/mt.zip'" ;;   # a save already on the iMac (mt_map.py seed-search)
+    *) scp -q "$save" "$host:$dir/saves/mt.zip" ;;
+  esac
+  pw=$(cat "$pwfile")
+  pid=$(remote "cd '$dir' && nohup '$bin' --config '$dir/config/config.ini' --start-server '$dir/saves/mt.zip' --mod-directory '$dir/mods' \
+    --server-settings '$dir/server-settings.json' $extra --rcon-bind 0.0.0.0:$rcon_port --rcon-password '$pw' --port $game_port \
+    > '$dir/server.out' 2>&1 < /dev/null & echo \$!")
+  echo "$pid" | remote "cat > '$dir/server.pid'"
+  echo "started pid $pid on $host ($save); waiting for RCON $host:$rcon_port"
+  for _ in $(seq 1 90); do
+    if out=$(ready 2>/dev/null) && [ -n "$out" ]; then echo "up: $out"; exit 0; fi
+    remote "kill -0 $pid 2>/dev/null" || { echo "the server exited:" >&2; remote "tail -20 '$dir/server.out'" >&2; exit 1; }
+    sleep 2
+  done
+  echo "RCON did not answer in 180 s" >&2; exit 1
+  ;;
+stop)
+  pid=$(remote "cat '$dir/server.pid' 2>/dev/null" || true)
+  [ -n "$pid" ] || { echo "not running"; exit 0; }
+  python3 -c "
+import sys; sys.path.insert(0, '$root/tools')
+from pog import Rcon
+Rcon('$host', $rcon_port, open('$pwfile').read().strip(), timeout=10).command('/quit')" >/dev/null 2>&1 || true
+  for _ in $(seq 1 20); do remote "kill -0 $pid 2>/dev/null" || break; sleep 1; done
+  if remote "kill -0 $pid 2>/dev/null"; then remote "kill $pid"; sleep 2; fi   # its own PID only
+  remote "rm -f '$dir/server.pid'"
+  echo "stopped pid $pid"
+  ;;
+status)
+  pid=$(remote "cat '$dir/server.pid' 2>/dev/null" || true)
+  if [ -n "$pid" ] && remote "kill -0 $pid 2>/dev/null"; then echo "running pid $pid: $(ready 2>/dev/null || echo 'RCON does not answer')"; else echo "not running"; fi
+  ;;
+*) echo "usage: imac_mt.sh start SAVE.zip | stop | status" >&2; exit 64 ;;
+esac

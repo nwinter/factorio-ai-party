@@ -22,6 +22,7 @@
 -- none of its own, switches the construction requests back on where the
 -- paste switched them off, and says what each holds after.
 return function(api)
+  local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   -- Entities with logistic request sections.
@@ -31,7 +32,7 @@ return function(api)
     for i, f in ipairs(list or {}) do
       local v = f.value
       out[i] = {value=v and {type=v.type, name=v.name, quality=v.quality, comparator=v.comparator} or nil, min=f.min, max=f.max,
-        minimum_delivery_count=f.minimum_delivery_count,
+        minimum_delivery_count=f.minimum_delivery_count, request_from=PORT21 and f.request_from or nil,
         import_from=f.import_from and (type(f.import_from) == 'string' and f.import_from or f.import_from.name) or nil}
     end
     return out
@@ -68,7 +69,8 @@ return function(api)
       local x, y = a[i], b[i]
       local xv, yv = x.value or {}, y.value or {}
       if xv.name ~= yv.name or (xv.quality or 'normal') ~= (yv.quality or 'normal') or (x.min or 0) ~= (y.min or 0)
-        or x.max ~= y.max or x.import_from ~= y.import_from then return false end
+        or x.max ~= y.max or x.import_from ~= y.import_from or x.request_from ~= y.request_from
+        or x.minimum_delivery_count ~= y.minimum_delivery_count then return false end
     end
     return true
   end
@@ -118,6 +120,10 @@ return function(api)
   -- gives the hub the blueprint's request sections too, so the manual ones are put back after. Returns whether the
   -- game's construction section is there now.
   function M.set_construction(e, on)
+    if PORT21 then
+      e.request_missing_construction_materials=on == true
+      return e.request_missing_construction_materials
+    end
     local snap = M.snapshot(e)
     local inv = game.create_inventory(1)
     local ok, err = pcall(function()

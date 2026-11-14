@@ -112,6 +112,7 @@ return function(api)
     -- (d17 batch14 B1) reply_to: the chat line or tell this answers (owed.lua)
     if a.reply_to ~= nil and api.on_reply then pcall(api.on_reply, p.index, a.reply_to) end
     s.log[#s.log+1] = t
+    if api.on_send then api.on_send(t) end
     while #s.log > MAX_LOG do table.remove(s.log, 1) end
     local index = {}
     for _, a2 in ipairs(api.agents()) do index[a2.name] = a2.index end

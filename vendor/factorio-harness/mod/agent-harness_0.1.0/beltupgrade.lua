@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- belt_upgrade {position, to?, tiles?, dry_run?} (batch25 B1, Opus: straight lines placed over a curve broke a trunk):
 -- the belt line through position traced both ways (each tile's own direction, an underground's entrance and exit, a
 -- splitter on its centre), and each tile replaced by hand with the faster one at the same position and direction, as a
@@ -11,7 +14,7 @@ return function(api)
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local function partner(b, kind)
     if b.type == 'underground-belt' and try(function() return b.belt_to_ground_type end) == kind then
-      local nb = try(function() return b.neighbours end)
+      local nb = try(function() return b[UNDERGROUND_NEIGHBOUR] end)
       if nb and nb.valid then return nb end
     end
   end

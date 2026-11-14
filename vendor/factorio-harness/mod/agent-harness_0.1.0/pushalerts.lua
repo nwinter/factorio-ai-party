@@ -1,3 +1,15 @@
+-- Items may burn in several fuel categories on 2.1.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local function item_fuel_categories(item)
+  if not item then return {} end
+  if PORT21 then return item.fuel_categories or {} end
+  local c = item.fuel_category
+  return c and {c} or {}
+end
+local function burns_item(cats, item)
+  for _, c in ipairs(item_fuel_categories(item)) do if cats[c] then return true end end
+  return false
+end
 -- The game's alerts and key warnings, pushed (viewer Enginerd, shift07 15:30:
 -- "The agents would be a lot more efficient if they'd react to the alerts in
 -- the UI, like reacting to unpowered buildings"). Full status listed power,
@@ -22,6 +34,11 @@
 local flameroil = require('flameroil')
 local snapfail = require('snapfail')
 return function(api)
+  local function planet_request(f, from, planet)
+    if PORT21 then return f.request_from ~= 'platforms' and (from == nil or from == planet) end
+    return from == planet
+  end
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
   M.KINDS = 16
@@ -516,7 +533,7 @@ return function(api)
           local v = f.value
           local name = v and (type(v.name) == 'string' and v.name or try(function() return v.name.name end))
           local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
-          if name and from == planet and (try(function() return prototypes.item[name].get_spoil_ticks() end) or 0) > 0 then
+          if name and planet_request(f, from, planet) and (try(function() return prototypes.item[name].get_spoil_ticks() end) or 0) > 0 then
             wants[name] = wants[name] or {}
             table.insert(wants[name], pl)
           end
@@ -640,8 +657,7 @@ return function(api)
       CAPTIVE_FUELS = {}
       local cats = try(function() return e.prototype.burner_prototype.fuel_categories end) or {}
       for name, it in pairs(prototypes.item) do
-        local cat = try(function() return it.fuel_category end)
-        if cat and cats[cat] then CAPTIVE_FUELS[#CAPTIVE_FUELS+1] = name end
+        if burns_item(cats, it) then CAPTIVE_FUELS[#CAPTIVE_FUELS+1] = name end
       end
       table.sort(CAPTIVE_FUELS)
     end
@@ -1106,7 +1122,7 @@ return function(api)
   end
   local function holds_of(e)
     if e.type == 'pipe' or e.type == 'pipe-to-ground' or e.type == 'storage-tank' or e.type == 'pump' then
-      local f = try(function() return e.fluidbox[1] end)
+      local f = try(function() return fluid_boxes(e)[1] end)
       return f and string.format('%s %d', f.name, math.floor(f.amount + 0.5)) or 'empty'
     end
     local items = {}
@@ -1706,14 +1722,16 @@ return function(api)
   -- The claims over a point on the group's surface.
   -- (d19 batch44 A2: push_lines read every board item twice for each of about 170 alert groups, 10 ms in each reply of
   -- an agent shown no new group on the private copy) the active claims with an area, built once a tick
-  local claims_tick, claims_list
+  -- (mt276 B) and of the board it was built from (each team's board sits at the key while that team's call runs)
+  local claims_tick, claims_list, claims_board
   local function active_claims()
-    if claims_tick == game.tick and claims_list then return claims_list end
-    local list, board = {}, api.state().board
+    local board = api.state().board
+    if claims_tick == game.tick and claims_list and claims_board == board then return claims_list end
+    local list = {}
     for _, i in pairs(board and board.items or {}) do
       if i.kind == 'claim' and ACTIVE[i.status] and i.owner and i.area then list[#list+1] = i end
     end
-    claims_tick, claims_list = game.tick, list
+    claims_tick, claims_list, claims_board = game.tick, list, board
     return list
   end
   local function claims_over(g, pos)
@@ -2031,8 +2049,9 @@ return function(api)
     if not FUEL_BY then
       FUEL_BY = {}
       for name, it in pairs(prototypes.item) do
-        local cat = try(function() return it.fuel_category end)
-        if cat and (try(function() return it.fuel_value end) or 0) > 0 then FUEL_BY[cat] = FUEL_BY[cat] or {}; FUEL_BY[cat][#FUEL_BY[cat]+1] = name end
+        if (try(function() return it.fuel_value end) or 0) > 0 then
+          for _, cat in ipairs(item_fuel_categories(it)) do FUEL_BY[cat] = FUEL_BY[cat] or {}; FUEL_BY[cat][#FUEL_BY[cat]+1] = name end
+        end
       end
     end
     local out, seen = {}, {}

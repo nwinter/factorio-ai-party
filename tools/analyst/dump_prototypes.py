@@ -28,6 +28,7 @@ as one line: the Lua holds no "--" comments (one commented out the rest of the e
 longer than the longest that ran live (MAX_COMMAND; tools/analyst/test_dump_prototypes.py checks both).
 """
 import argparse, json, math, os, sys
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
@@ -41,7 +42,7 @@ local function products(list)
   local r = {}
   for _, p in ipairs(list or {}) do
     r[#r+1] = {type=p.type, name=p.name, amount=p.amount, amount_min=p.amount_min, amount_max=p.amount_max,
-      probability=(p.probability ~= 1) and p.probability or nil, temperature=p.temperature}
+      probability=(p.probability ~= 1) and p.probability or nil, independent_probability=p.independent_probability, shared_probability=p.shared_probability, temperature=p.temperature}
   end
   return r
 end
@@ -61,9 +62,10 @@ LUA = {
 local src = prototypes.recipe
 local out = {}
 local list = names(src)
-local function made(list)
+local function made(list, recipe)
   local r = products(list)
   for i, p in ipairs(list or {}) do
+    r[i].expected_amount = g(function() return recipe.get_product_amount(i, 0) end)
     r[i].extra_count_fraction = p.extra_count_fraction
     r[i].ignored_by_productivity = (p.ignored_by_productivity or 0) > 0 and p.ignored_by_productivity or nil
   end
@@ -71,8 +73,8 @@ local function made(list)
 end
 for i = START, math.min(#list, START + COUNT - 1) do
   local r = src[list[i]]
-  out[#out+1] = {name=r.name, category=r.category, energy=r.energy, enabled=r.enabled, hidden=r.hidden,
-    ingredients=products(r.ingredients), products=made(r.products), subgroup=g(function() return r.subgroup.name end),
+  out[#out+1] = {name=r.name, categories=g(function() return r.categories end), category=g(function() return r.category end), energy=r.energy, enabled=r.enabled, hidden=r.hidden,
+    ingredients=products(r.ingredients), products=made(r.products, r), subgroup=g(function() return r.subgroup.name end),
     maximum_productivity=g(function() return r.maximum_productivity ~= 3 and r.maximum_productivity or nil end),
     effects_not_allowed=g(function() local no = {} for k, v in pairs(r.allowed_effects or {}) do if not v then no[#no+1] = k end end table.sort(no) return #no > 0 and no or nil end),
     main_product=g(function() return r.main_product and r.main_product.name end),
@@ -112,7 +114,9 @@ local list = names(src)
 for i = START, math.min(#list, START + COUNT - 1) do
   local it = src[list[i]]
   out[#out+1] = {name=it.name, type=it.type, stack_size=it.stack_size, subgroup=g(function() return it.subgroup.name end),
-    fuel_value=(it.fuel_value or 0) > 0 and it.fuel_value or nil, fuel_category=g(function() return it.fuel_category end),
+    fuel_value=(it.fuel_value or 0) > 0 and it.fuel_value or nil, fuel_category=g(function() return it.fuel_category end), fuel_categories=g(function() return it.fuel_categories end),
+    science_capacity=g(function() return it.science_capacity end),
+    effects_by_quality=it.type == "module" and g(function() local r={} for n,q in pairs(prototypes.quality) do if not q.hidden then r[n]=it.get_module_effects(n) end end return r end) or nil,
     place_result=g(function() return it.place_result and it.place_result.name end),
     rocket_launch_products=g(function() return products(it.rocket_launch_products) end),
     spoil_ticks=g(function() return (it.get_spoil_ticks and it.get_spoil_ticks()) or nil end),
@@ -389,7 +393,7 @@ for i = START, math.min(#list, START + COUNT - 1) do
   for _, b in ipairs(g(function() return e.fluidbox_prototypes end) or {}) do
     boxes[#boxes+1] = {production_type=g(function() return b.production_type end), filter=g(function() return b.filter.name end),
       minimum_temperature=g(function() return b.minimum_temperature end), maximum_temperature=g(function() return b.maximum_temperature end),
-      volume=g(function() return b.volume end), connections=g(function() return #b.pipe_connections end)}
+      volume=g(function() return b.get_volume() end) or g(function() return b.volume end), connections=g(function() return #b.pipe_connections end)}
   end
   if #boxes > 0 then r.fluid_boxes = boxes end
   out[#out+1] = r
@@ -533,7 +537,7 @@ def add_module_qualities(out_dir):
             it.pop("effects_by_quality", None)
             continue
         it["module_effects"] = tidy(fx)
-        it["effects_by_quality"] = {q["name"]: {k: module_effect(k, v, q["default_multiplier"]) for k, v in fx.items()} for q in quals}
+        it["effects_by_quality"] = it.get("effects_by_quality") or {q["name"]: {k: module_effect(k, v, q["default_multiplier"]) for k, v in fx.items()} for q in quals}
         n += 1
     with open(ip, "w") as f:
         json.dump(items, f, indent=0, sort_keys=True, ensure_ascii=False)
@@ -614,12 +618,22 @@ def main():
     ap.add_argument("--port", type=int)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--out", default=os.path.join(HERE, "kb", "base-2.0.77"))
+    ap.add_argument("--expect-version", help="refuse a different active base version before writing")
     ap.add_argument("--only", help="comma-separated categories")
     ap.add_argument("--password-file", help="the RCON password file (default ~/.config/pog/rcon-WORLD.pw): a private copy's")
     a = ap.parse_args()
     pw = open(a.password_file or os.path.expanduser(f"~/.config/pog/rcon-{a.world}.pw")).read().strip()
     rc = Rcon(a.host, a.port or PORTS[a.world], pw)
+    version = json.loads(rc.command("/silent-command rcon.print(helpers.table_to_json{base=script.active_mods.base,mods=script.active_mods})"))
+    if a.expect_version and version["base"] != a.expect_version:
+        raise SystemExit(f"expected {a.expect_version}, active base is {version['base']}")
+    previous = Path(a.out) / "settings.json"
+    if previous.exists():
+        old = json.loads(previous.read_text()).get("mods", {}).get("base")
+        if old and old != version["base"]:
+            raise SystemExit(f"refusing to overwrite {old} KB with {version['base']}: {a.out}")
     os.makedirs(a.out, exist_ok=True)
+    (Path(a.out) / "version.json").write_text(json.dumps(version, indent=2) + "\n")
     for cat in (a.only.split(",") if a.only else LUA):
         rows = dump(rc, cat)
         if cat == "fluid_energy":

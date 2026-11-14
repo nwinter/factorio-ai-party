@@ -1,3 +1,15 @@
+-- Items may burn in several fuel categories on 2.1.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local function item_fuel_categories(item)
+  if not item then return {} end
+  if PORT21 then return item.fuel_categories or {} end
+  local c = item.fuel_category
+  return c and {c} or {}
+end
+local function burns_item(cats, item)
+  for _, c in ipairs(item_fuel_categories(item)) do if cats[c] then return true end end
+  return false
+end
 -- fuel_budget's reactors one by one (d20 batch63 Y1, Astra #1512: at tick 40275273 fuel_budget said 6 reactors with
 -- empty fuel slots and 0 minutes left while all 6 worked: each burned the one uranium fuel cell its circuit lets in
 -- (a decider: temperature < 800 and fuel < 1 -> S=1, the inserter enabled by S > 0), and requesters held 11 each).
@@ -40,8 +52,7 @@ return function(api)
     local cats = try(function() return e.prototype.burner_prototype.fuel_categories end) or {}
     local list = {}
     for name, it in pairs(prototypes.item) do
-      local c = try(function() return it.fuel_category end)
-      if c and cats[c] then list[#list+1] = name end
+      if burns_item(cats, it) then list[#list+1] = name end
     end
     table.sort(list)
     cats_cache[key] = list

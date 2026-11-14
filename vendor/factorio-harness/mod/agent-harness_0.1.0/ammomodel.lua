@@ -16,7 +16,26 @@
 -- binds: which limit sets what is made over a time: the stock (none made aboard), the make rate, or an ingredient.
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n, shared = p.independent_probability, p.shared_probability
+    if n == nil and shared == nil then return p.probability or 1 end
+    return (n or 1) * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Native rolls include the fractional count; legacy recycling kept its remainder separately.
+  local function product_fraction(p)
+    local extra = p.extra_count_fraction or 0
+    return extra * ((p.independent_probability ~= nil or p.shared_probability ~= nil) and product_chance(p) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function round(x, d) local m = 10 ^ (d or 0); return math.floor(x * m + 0.5) / m end
   local function mins(m)
@@ -39,8 +58,8 @@ return function(api)
     local made = name and PRODUCTS[name]
     if made then return made end
     made = {}
-    for _, pr in ipairs(try(function() return r.products end) or {}) do
-      made[pr.name] = (pr.amount or ((pr.amount_min or 0) + (pr.amount_max or 0)) / 2) * (pr.probability or 1)
+    for index, pr in ipairs(try(function() return r.products end) or {}) do
+      made[pr.name] = (made[pr.name] or 0) + (native_amount(r, index) or ((pr.amount or ((pr.amount_min or 0) + (pr.amount_max or 0)) / 2) * product_chance(pr) + product_fraction(pr)))
     end
     if name then PRODUCTS[name] = made end
     return made
@@ -100,8 +119,8 @@ return function(api)
     local fluid_stock = o.fluid_stock or function(names)
       local out = {}
       for _, e in ipairs(try(function() return pl.surface.find_entities_filtered{type={'thruster', 'storage-tank'}, force=pl.force} end) or {}) do
-        for i = 1, try(function() return #e.fluidbox end) or 0 do
-          local f = try(function() return e.fluidbox[i] end)
+        for i = 1, try(function() return #fluid_boxes(e) end) or 0 do
+          local f = try(function() return fluid_boxes(e)[i] end)
           if f and names[f.name] then out[f.name] = (out[f.name] or 0) + f.amount end
         end
       end
@@ -129,8 +148,8 @@ return function(api)
           rec, per = r, made_here
           local inv = try(function() return e.get_inventory((defines.inventory.crafter_input or defines.inventory.assembling_machine_input)) end)
           for _, c in ipairs(inv and try(function() return inv.get_contents() end) or {}) do inputs[c.name] = (inputs[c.name] or 0) + c.count end
-          for i = 1, try(function() return #e.fluidbox end) or 0 do
-            local f = try(function() return e.fluidbox[i] end)
+          for i = 1, try(function() return #fluid_boxes(e) end) or 0 do
+            local f = try(function() return fluid_boxes(e)[i] end)
             if f and f.name then fluids_in[f.name] = (fluids_in[f.name] or 0) + (f.amount or 0) end
           end
         end

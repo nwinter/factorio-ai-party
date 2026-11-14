@@ -37,7 +37,8 @@ return function(api)
     local e = event.entity
     if not (e and e.valid and e.unit_number) then return end
     local force = e.force
-    if not (force and force.name == 'player') then return end
+    -- (mt276) every team's entities, each kept with its force (a reader sees its own force's)
+    if not (force and force.name ~= 'enemy' and force.name ~= 'neutral') then return end
     local pos = e.position
     if not force.is_chunk_visible(e.surface, {x=math.floor(pos.x / 32), y=math.floor(pos.y / 32)}) then return end
     local m = store()
@@ -47,7 +48,7 @@ return function(api)
       local old = m.ring[m.next]
       if old then m.by[old] = nil end
       m.ring[m.next] = k; m.next = m.next % ENTITIES + 1
-      rec = {name=e.name, surface=e.surface.name, x=pos.x, y=pos.y, rows={}}
+      rec = {name=e.name, surface=e.surface.name, x=pos.x, y=pos.y, rows={}, force=force.name ~= 'player' and force.name or nil}
       m.by[k] = rec
     end
     rec.entity = e  -- Factorio's by-unit lookup omits stationary entities; a saved reference retains their identity.
@@ -142,6 +143,7 @@ return function(api)
     local centre = a.position and api.position(a.position) or p.position
     local radius = api.integer(a.radius, 8, 1, 64, 'radius')
     local surface = p.surface.name
+    local fname = try(function() return p.force.name end) or 'player'
     local list = {}
     for unit, rec in pairs(store().by) do
       local matching = {}
@@ -150,7 +152,7 @@ return function(api)
         -- Old saves kept only the first observed position. Keep it as an explicitly labelled search anchor,
         -- never manufacture a per-hit position for those rows.
         local pos = hit.position or {x=rec.x, y=rec.y}
-        if (hit.surface or rec.surface) == surface and (pos.x-centre.x)^2 + (pos.y-centre.y)^2 <= radius^2 then
+        if (rec.force or 'player') == fname and (hit.surface or rec.surface) == surface and (pos.x-centre.x)^2 + (pos.y-centre.y)^2 <= radius^2 then
           matching[#matching+1] = hit
         end
       end

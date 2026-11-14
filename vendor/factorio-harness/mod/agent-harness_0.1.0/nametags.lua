@@ -40,7 +40,7 @@ return function(api)
     local parts = {}
     for _, f in ipairs(api.parts.fields) do parts[#parts+1] = av[f] or '' end
     return table.concat({c.unit_number or 0, c.name or '', b.name, pr and pr.display_name or '', pr and pr.glyph or '', pr and pr.color or '',
-      table.concat(parts, ','), av.accent or '', M.sprites() and 'a' or '', LAYOUT}, '|')
+      table.concat(parts, ','), av.accent or '', M.sprites() and 'a' or '', api.model and api.model(b.name) or '', LAYOUT}, '|')
   end
   local function destroy(ids)
     for _, id in ipairs(ids or {}) do
@@ -80,6 +80,8 @@ return function(api)
     end
     rec = {ids={}, key=key(b, pr, c), lift=lift, carrier=lift ~= 0 and c.unit_number or nil}
     local label = (pr and pr.display_name) or b.name
+    local model=api.model and api.model(b.name)
+    if model then label=label..' ('..(model:match('^%w+') or model)..')' end
     if pr and pr.glyph then label = pr.glyph .. ' ' .. label end
     local ok, tag = pcall(rendering.draw_text, {text=label, surface=c.surface, target={entity=c, offset={0, TAG_Y + lift}},
       color=text_colour(colour), scale=TAG_SCALE, alignment='center', vertical_alignment='bottom', use_rich_text=false})

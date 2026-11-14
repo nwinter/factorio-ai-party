@@ -85,7 +85,23 @@ script.on_init(function() state(); boot(); pcall(guest_group) end)
 -- on_load must not write storage or touch game.
 script.on_load(boot)
 script.on_configuration_changed(function() state(); boot(); runtime.stop_all(); pcall(guest_group) end)
+local function autosave_now(a,tick)
+    local slot=(a.sequence%a.slots)+1
+    local name=a.prefix..'-auto-'..string.format('%02d',slot)
+    a.sequence=a.sequence+1
+    a.next_tick=tick+a.interval_ticks
+    a.records[tostring(slot)]={name=name,tick=tick,sequence=a.sequence}
+    local saved,save_error=pcall(game.server_save,name)
+    a.error=nil
+    if not saved then a.error=tostring(save_error) end
+    if not saved then log('Server save failed: '..tostring(save_error)) end
+    return a.records[tostring(slot)]
+end
 script.on_event(defines.events.on_tick, function(event)
+  -- Operator-armed, saved clock. Independent of runtime deployment/quarantine.
+  -- No on_load writes, host clock, client callback or new module dependency.
+  local a=storage.pog_autosave
+  if a and a.enabled and event.tick>=a.next_tick then autosave_now(a,event.tick) end
   if state().runtime_fault then return end
   if not runtime then boot() end
   local ok, err = pcall(runtime.tick, event)
@@ -102,12 +118,15 @@ end)
 -- The human player log (players.lua) listens to the events after on_console_chat.
 local forwarded={}
 for _,name in ipairs{'on_script_path_request_finished','on_entity_died','on_unit_group_finished_gathering','on_entity_damaged',
+  'on_object_destroyed','on_pre_player_mined_item','on_robot_pre_mined','on_player_driving_changed_state','on_force_cease_fire_changed',
     'on_console_chat','on_built_entity','on_player_mined_entity','on_robot_mined_entity','on_marked_for_deconstruction',
     'on_marked_for_upgrade','on_cancelled_deconstruction','on_cancelled_upgrade','on_gui_opened','on_gui_closed',
     'on_player_fast_transferred','on_player_main_inventory_changed','on_player_joined_game','on_player_left_game',
     'on_research_finished','on_research_queued','on_rocket_launch_ordered','on_space_platform_changed_state',
     -- (d24 batch179) cargo pods leaving, landing and delivering: the pod ledger (podlog.lua)
     'on_cargo_pod_started_ascending','on_cargo_pod_finished_ascending','on_cargo_pod_finished_descending','on_cargo_pod_delivered_cargo',
+    -- (mt274, private) a chunk a force charted: first contact between teams (multiteam.lua)
+    'on_chunk_charted',
     -- (d25 batch216) a tile a platform built (its hub, from its foundation): foundation rebuilt after an asteroid (flightwatch.lua)
     'on_space_platform_built_tile',
     'on_space_platform_pre_mined','on_space_platform_mined_entity',
@@ -222,6 +241,25 @@ local function installing(fn)
   return helpers.table_to_json(ok and result or {ok=false,tick=game.tick,error={code='invalid_runtime',message=tostring(result)}})
 end
 remote.add_interface('agent_harness', {
+  -- Console storage belongs to the scenario, not this mod. Configure through
+  -- this RCON-only interface so the tick handler and restore see the same state.
+  autosave_status = function() return helpers.table_to_json(storage.pog_autosave or {}) end,
+  autosave_arm = function(prefix,interval,slots)
+    assert(type(prefix)=='string' and #prefix<=16 and prefix:match('^[%w_-]+$'),'invalid save prefix')
+    assert(type(interval)=='number' and interval>=3600 and interval<=216000 and interval%1==0,'invalid save interval')
+    assert(type(slots)=='number' and slots>=2 and slots<=96 and slots%1==0,'invalid save slots')
+    local a=storage.pog_autosave
+    if not a or a.prefix~=prefix then
+      a={prefix=prefix,enabled=true,interval_ticks=interval,slots=slots,sequence=0,records={},next_tick=game.tick+60}
+      storage.pog_autosave=a
+    end
+    return helpers.table_to_json(a)
+  end,
+  autosave_save = function(prefix)
+    local a=storage.pog_autosave
+    assert(a and a.enabled and a.prefix==prefix,'save clock is not armed for this run')
+    return helpers.table_to_json(autosave_now(a,game.tick))
+  end,
   bot_create = function(name) return operator('bot_create', name) end,
   bot_remove = function(name) return operator('bot_remove', name) end,
   bots = function() return operator('bots') end,

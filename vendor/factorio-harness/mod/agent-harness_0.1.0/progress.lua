@@ -59,13 +59,15 @@ return function(api)
     end
     return out
   end
-  local function built(list)
+  -- (mt276) the owner's force's buildings
+  local function built(list, owner)
     local n = 0
+    local force = api.force and try(function() return api.force(owner) end)
     for _, a in ipairs(list) do
       local s = a.surface and game.get_surface(a.surface)
       local lt, rb = a.area.left_top, a.area.right_bottom
       if s and (rb.x - lt.x) * (rb.y - lt.y) <= 512 * 512 then
-        n = n + (try(function() return s.count_entities_filtered{area={{lt.x, lt.y}, {rb.x, rb.y}}, force=api.force(), type=MOVING, invert=true} end) or 0)
+        n = n + (try(function() return s.count_entities_filtered{area={{lt.x, lt.y}, {rb.x, rb.y}}, force=force, type=MOVING, invert=true} end) or 0)
       end
     end
     return n
@@ -88,9 +90,9 @@ return function(api)
   end
   local function evidence(i)
     local ar = areas(i)
-    local e = {built=built(ar), where=ar[1] and ar[1].what or nil, needs={}, notes=#(i.notes or {}), updated=i.updated_tick or i.created_tick or 0}
+    local e = {built=built(ar, i.owner), where=ar[1] and ar[1].what or nil, needs={}, notes=#(i.notes or {}), updated=i.updated_tick or i.created_tick or 0}
     local surface = api.owner_surface(i.owner) or 'nauvis'
-    for _, n in ipairs(need_names(i)) do e.needs[n.name] = api.total(surface, n.name) or 0; e.need_count = e.need_count or {}; e.need_count[n.name] = n.count or 1 end
+    for _, n in ipairs(need_names(i)) do e.needs[n.name] = api.total(surface, n.name, i.owner) or 0; e.need_count = e.need_count or {}; e.need_count[n.name] = n.count or 1 end
     e.need_surface = surface
     e.ship = api.shipment_seq and api.shipment_seq() or 0
     return e

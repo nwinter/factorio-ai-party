@@ -17,6 +17,24 @@
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n, shared = p.independent_probability, p.shared_probability
+    if n == nil and shared == nil then return p.probability or 1 end
+    return (n or 1) * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Native rolls include the fractional count; legacy recycling kept its remainder separately.
+  local function product_fraction(p)
+    local extra = p.extra_count_fraction or 0
+    return extra * ((p.independent_probability ~= nil or p.shared_probability ~= nil) and product_chance(p) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
   local LINKS, DEPTH, READ = 16, 8, 24
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function r1(v) return v and math.floor(v * 10 + 0.5) / 10 or nil end
@@ -24,11 +42,11 @@ return function(api)
   local function amount_of(p) return p.amount or (((p.amount_min or 0) + (p.amount_max or 0)) / 2) end
   -- One craft's output of name: expected amount, productivity on the part not ignored.
   local function per_craft(recipe, name, prod)
-    for _, p in ipairs(recipe.products or {}) do
+    for index, p in ipairs(recipe.products or {}) do
       if p.name == name then
-        local amount = amount_of(p) * (p.probability or 1) + (p.extra_count_fraction or 0)
+        local amount = amount_of(p) * product_chance(p) + product_fraction(p)
         local ignored = math.min(amount, p.ignored_by_productivity or 0)
-        return amount + (amount - ignored) * prod
+        return native_amount(recipe, index, prod) or (amount + (amount - ignored) * prod)
       end
     end
     return 0
@@ -47,7 +65,7 @@ return function(api)
     local r = recipes[key]
     if r == nil then
       local pr = try(function() return prototypes.recipe[key] end)
-      r = pr and {energy=pr.energy, products=pr.products or {}, ingredients=pr.ingredients or {}} or false
+      r = pr and {prototype=pr, energy=pr.energy, products=pr.products or {}, ingredients=pr.ingredients or {}} or false
       recipes[key] = r
     end
     return r or nil
@@ -97,7 +115,7 @@ return function(api)
       local mt = g.props.mining_time or 1
       local cycles = 60 * (try(function() return e.prototype.mining_speed end) or 0) * (1 + (try(function() return e.speed_bonus end) or 0)) / mt
       local amount = 0
-      for _, p in ipairs(g.props.products or {}) do if p.name == name then amount = amount_of(p) * (p.probability or 1) end end
+      for _, p in ipairs(g.props.products or {}) do if p.name == name then amount = amount_of(p) * product_chance(p) end end
       local yield = 1
       if g.res.infinite then
         -- a pumpjack: its yield is the resource's amount over the prototype's normal amount

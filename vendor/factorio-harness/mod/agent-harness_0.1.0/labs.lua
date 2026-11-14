@@ -119,7 +119,10 @@ return function(api)
       r.unit_s = unit_s
       r.units_per_min = unit_s > 0 and 60 / unit_s or 0
       r.packs = {}
-      for _, ing in ipairs(tech.research_unit_ingredients or {}) do r.packs[ing.name] = (ing.amount or 1) * r.units_per_min * drain / 100 end
+      for _, ing in ipairs(tech.research_unit_ingredients or {}) do
+        local capacity = try(function() return prototypes.item[ing.name].science_capacity end) or 1
+        r.packs[ing.name] = (ing.amount or 1) * r.units_per_min * drain / 100 / capacity
+      end
     end
     return r
   end
@@ -230,7 +233,8 @@ return function(api)
         if status == 'working' then working = working + 1 end
         local inv = e.get_inventory(defines.inventory.lab_input)
         for _, name in ipairs(packs) do
-          if inv and inv.get_item_count(name) == 0 then
+          local stored = try(function() return e.get_stored_durability(name).durability end) or 0
+          if inv and inv.get_item_count(name) == 0 and stored <= 0 then
             lacking[name] = (lacking[name] or 0) + 1
             if #why_rows < 8 then why_rows[#why_rows+1] = {lab=e, name=name} end
           end
@@ -388,11 +392,11 @@ return function(api)
       local ok, n = pcall(qflow.flow, stats, name, category, defines.flow_precision_index.ten_minutes, true)
       return ok and math.floor(n + 0.5) or 0
     end
-    -- Agents carrying it, wherever they are.
+    -- Agents carrying it, wherever they are (mt276: the read force's agents).
     local carried = {}
     for _, ag in ipairs(api.agents and api.agents() or {}) do
       local ok, c = pcall(function() local pl = api.lookup(ag.index); return pl and pl.character end)
-      local inv = ok and c and c.valid and c.get_main_inventory()
+      local inv = ok and c and c.valid and (c.force == nil or c.force == force) and c.get_main_inventory()
       for _, name in ipairs(packs) do
         local n = inv and inv.get_item_count(name) or 0
         if n > 0 then carried[name] = carried[name] or {}; carried[name][#carried[name]+1] = ag.name .. ' ' .. n end
@@ -429,13 +433,14 @@ return function(api)
       local largest = {}
       for i = 1, math.min(3, #rows) do largest[i] = string.format('%s %s %d', at(rows[i].e.position), rows[i].e.name, rows[i].n) end
       local lacking = 0
-      for _, u in ipairs(t.users) do if u.lab and u.has == 0 then lacking = lacking + 1 end end
+      for _, u in ipairs(t.users) do if u.lab and u.has == 0 and (u.stored_capacity or 0) <= 0 then lacking = lacking + 1 end end
       local line = string.format('%s: made %d, used %d in 10 min; makers %d (%s%d working%s%s); chests %d%s%s, belts %d, labs %d',
         short(name), made, used, #t.makers, #names > 0 and table.concat(names, ', ') .. '; ' or '', working, #list > 0 and ', ' .. table.concat(list, ', ') or '',
         t.outputs > 0 and '; ' .. t.outputs .. ' in their output' or '', chests, pads > 0 and ', landing pads ' .. pads or '',
         hubs > 0 and ', platform hubs ' .. hubs or '', t.belts, t.labs)
       if needed[name] then line = line .. string.format(' (%d of %d labs have none)', lacking, labs)
       else line = line .. ' (the current research does not use it)' end
+      if t.lab_stored_capacity then line = line .. string.format('; lab-held science capacity %g (already consumed from inventory)', t.lab_stored_capacity) end
       if carried[name] then line = line .. '; carried: ' .. table.concat(carried[name], ', ') end
       -- on our platforms stopped over this planet (d15 trajectory analysis: stock in orbit was never counted)
       local orbit = api.supply.orbit_stock and api.supply.orbit_stock(surface, force, name)
@@ -458,7 +463,7 @@ return function(api)
       -- The pack's recipe tree from the scan's crafters (supply.lua chain).
       local okc, chain = pcall(api.supply.chain, scan, force, surface, name)
       out[#out+1] = {pack=name, effective_research_units=#values > 0 and values or nil, made_10min=made, used_10min=used, makers=#t.makers, makers_working=working, makers_states=#list > 0 and list or nil,
-        in_makers=t.outputs, chests=chests, landing_pads=pads > 0 and pads or nil, hubs=hubs > 0 and hubs or nil, belts=t.belts, labs=t.labs, labs_lacking=needed[name] and lacking or nil,
+        in_makers=t.outputs, chests=chests, landing_pads=pads > 0 and pads or nil, hubs=hubs > 0 and hubs or nil, belts=t.belts, labs=t.labs, lab_stored_capacity=t.lab_stored_capacity, labs_lacking=needed[name] and lacking or nil,
         carried=carried[name], largest=#largest > 0 and largest or nil, line=line, reach=api.supply.reach(t, scan, needed),
         chain=okc and chain and chain.line or nil, chain_tree=okc and chain and chain.tree or nil, chain_cut=okc and chain and chain.cut or nil}
     end

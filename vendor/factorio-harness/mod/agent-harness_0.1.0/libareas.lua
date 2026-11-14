@@ -14,6 +14,7 @@
 -- Hookups are read for HOOK_PER_READ areas a read (the ones read longest ago first; one find over each area, at most
 -- MAX_FIND of ours), kept with their tick (as_of), so a read costs a few areas' finds. Read only.
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   M.MAX_AREAS, M.HOOK_PER_READ, M.MAX_FIND, M.MAX_OPEN, M.MAX_SIDE = 48, 2, 1500, 4, 200
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -72,7 +73,7 @@ return function(api)
           end
         elseif t == 'electric-pole' then poles[#poles+1] = e end
         if FLUID[t] and near(x, y, t == 'pipe-to-ground' and 11 or 6) then
-          local fb = e.fluidbox
+          local fb = fluid_boxes(e)
           for i = 1, (try(function() return #fb end) or 0) do
             for _, pc in ipairs(try(function() return fb.get_pipe_connections(i) end) or {}) do
               local q = pc.target_position
@@ -134,9 +135,10 @@ return function(api)
       if tx ~= ty then return tx < ty end
       return x.key < y.key
     end)
-    local force = game.forces.player
     for i = 1, math.min(n_hook, #order) do
       local a = order[i]
+      -- (mt276) the hookups of the placer's force
+      local force = api.force and api.force(a.rec.by) or game.forces.player
       local surface = game.get_surface(a.rec.surface)
       local b = a.rec.box
       if surface and b.r - b.l <= M.MAX_SIDE and b.b - b.t <= M.MAX_SIDE then

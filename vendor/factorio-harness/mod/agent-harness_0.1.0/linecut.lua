@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- linecut: a long belt or pipe line cut, as a team alert naming the cut tiles (d17 batch17 C1, Opus, every shift: a
 -- 2-tile gap at (422.5,-249) idled 10 drills unnoticed; the belt-cut tells of batch13 went to the nearest agent, or to
 -- nobody when the belt carried nothing as it died). What a player sees on the map: the line's tiles either side of the
@@ -18,6 +21,8 @@
 -- it is a team alert of the same kind as a cut naming that entity, until the entity or either belt is gone or a belt
 -- stands there. A cut tile something else now stands on names it too (M.blocker).
 return function(api)
+  local fluid_neighbours = api.fluid_neighbours or function(e) return e.neighbours end
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   -- KEEP (d17 batch32 B3, Opus: one tile of a 555-tile stone belt killed, found only by tracing): a cut stays an alert
   -- while any tile of it stands open, up to 6 game hours (it was 30 min).
@@ -63,7 +68,7 @@ return function(api)
       local list = try(function() return cur.belt_neighbours[way] end) or {}
       local nxt = list[1]
       if not nxt and cur.type == 'underground-belt' then
-        local pair = try(function() return cur.neighbours end)
+        local pair = try(function() return cur[UNDERGROUND_NEIGHBOUR] end)
         local t = try(function() return cur.belt_to_ground_type end)
         if pair and try(function() return pair.valid end) and ((way == 'inputs' and t == 'output') or (way == 'outputs' and t == 'input')) then nxt = pair end
       end
@@ -79,7 +84,7 @@ return function(api)
   -- The pipes on each side of p (its fluid neighbours as two starts), up to WALK each: {{n, last}, {n, last}}, fluid
   local function pipe_walk(p)
     local starts = {}
-    for _, group in ipairs(try(function() return p.neighbours end) or {}) do
+    for _, group in ipairs(try(function() return fluid_neighbours(p) end) or {}) do
       for _, nb in ipairs(type(group) == 'table' and group or {}) do
         if try(function() return nb.valid end) and PIPES[nb.type] then starts[#starts+1] = nb end
       end
@@ -90,7 +95,7 @@ return function(api)
       seen[key(cur)] = true
       for _ = 1, WALK - 1 do
         local nxt
-        for _, group in ipairs(try(function() return cur.neighbours end) or {}) do
+        for _, group in ipairs(try(function() return fluid_neighbours(cur) end) or {}) do
           for _, nb in ipairs(type(group) == 'table' and group or {}) do
             if not nxt and try(function() return nb.valid end) and PIPES[nb.type] and not seen[key(nb)] then nxt = nb end
           end
@@ -100,7 +105,7 @@ return function(api)
       end
       out[i] = {n=n, last=last}
     end
-    local fluid = try(function() local f = p.fluidbox[1]; return f and f.name end)
+    local fluid = try(function() local f = fluid_boxes(p)[1]; return f and f.name end)
     return out, fluid
   end
 
@@ -383,7 +388,7 @@ return function(api)
           for i = 2, #list do branches[#branches+1] = string.format('%s %s also %s %s', cur.name, at(cur.position), way == 'outputs' and 'feeds' or 'is fed by', at(list[i].position)) end
         end
         if not nxt and kind(cur) == 'underground-belt' then
-          local pair = try(function() return cur.neighbours end)
+          local pair = try(function() return cur[UNDERGROUND_NEIGHBOUR] end)
           local t = try(function() return cur.belt_to_ground_type end)
           if pair and try(function() return pair.valid end) and ((way == 'inputs' and t == 'output') or (way == 'outputs' and t == 'input')) then nxt = pair end
         end

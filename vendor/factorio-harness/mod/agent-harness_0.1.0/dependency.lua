@@ -1,3 +1,12 @@
+-- A specific silo may override the default rocket lift on Factorio 2.1.
+local function rocket_lift(silo)
+  local ok, v = pcall(function() return silo.prototype.lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.default_rocket_lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.rocket_lift_weight end)
+  if ok then return v end
+end
 -- dependency {item, surface?} (backlog #818, Sol and Astra for viewer Foobator: recipe inputs were known, but whether
 -- a chain runs on a planet - throughput, other users, freight on the way, rocket weights - was put together by hand).
 -- One read joining what supply, stock and freight read apart, for an item and each ingredient of its recipe (the one
@@ -14,6 +23,24 @@
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n, shared = p.independent_probability, p.shared_probability
+    if n == nil and shared == nil then return p.probability or 1 end
+    return (n or 1) * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Native rolls include the fractional count; legacy recycling kept its remainder separately.
+  local function product_fraction(p)
+    local extra = p.extra_count_fraction or 0
+    return extra * ((p.independent_probability ~= nil or p.shared_probability ~= nil) and product_chance(p) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function r1(v) return math.floor(v * 10 + 0.5) / 10 end
   local function recipe_for(surface, force, item)
@@ -31,10 +58,10 @@ return function(api)
     return best or own or try(function() return prototypes.recipe[item] end)
   end
   local function per_craft(recipe, name)
-    for _, p in ipairs(try(function() return recipe.products end) or {}) do
+    for index, p in ipairs(try(function() return recipe.products end) or {}) do
       if p.name == name then
         local amount = p.amount or (((p.amount_min or 0) + (p.amount_max or 0)) / 2)
-        return amount * (p.probability or 1) + (p.extra_count_fraction or 0)
+        return native_amount(recipe, index) or (amount * product_chance(p) + product_fraction(p))
       end
     end
     return 0
@@ -44,10 +71,12 @@ return function(api)
   -- 2 a craft, 1 of them the egg put in; at +50% the statistics count 1.5 a craft)
   local function stats_per_craft(recipe, name, bonus)
     local n = 0
-    for _, p in ipairs(try(function() return recipe.products end) or {}) do
+    for index, p in ipairs(try(function() return recipe.products end) or {}) do
       if p.name == name then
-        local mean = (p.amount or (((p.amount_min or 0) + (p.amount_max or 0)) / 2)) * (p.probability or 1) + (p.extra_count_fraction or 0)
-        n = n + math.max(0, mean - (p.ignored_by_stats or 0)) + bonus * math.max(0, mean - (p.ignored_by_productivity or 0))
+        local mean = (p.amount or (((p.amount_min or 0) + (p.amount_max or 0)) / 2)) * product_chance(p) + product_fraction(p)
+        local base = native_amount(recipe, index) or mean
+        local total = native_amount(recipe, index, bonus) or (mean + bonus * math.max(0, mean - (p.ignored_by_productivity or 0)))
+        n = n + math.max(0, base - (p.ignored_by_stats or 0)) + total - base
       end
     end
     return n
@@ -86,7 +115,7 @@ return function(api)
     local gone = m and math.max(0, m.uncounted_per_min) or 0
     local pods, aboard = coming(force, surface, item)
     local w = try(function() return prototypes.item[item].weight end) or 0
-    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+    local lift = rocket_lift() or 1000000
     local per_rocket = w > 0 and math.floor(lift / w) or nil
     -- measured: the net is the measure's own (its window's stock change a minute), not the 10-minute rates less a
     -- 5-minute measure (Gleba: held 3,730 then 3,738 read -12/min that way)

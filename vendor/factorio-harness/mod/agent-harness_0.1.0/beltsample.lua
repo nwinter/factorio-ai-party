@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- belt_flow {position, seconds?, platform?} (batch24 B2, Astra ~10 times on Kestrel: topology alone could not tell a
 -- stationary queue from a full moving belt, nor items a minute across each merge). The belt line through position, up
 -- to WALK tiles back and on (undergrounds followed, a splitter as a merge), is cut into sections at each merge (a tile
@@ -34,7 +37,7 @@ return function(api)
   local function outputs(b) local bn = try(function() return b.belt_neighbours end); return bn and bn.outputs or {} end
   local function partner(b, kind)
     if b.type == 'underground-belt' and try(function() return b.belt_to_ground_type end) == kind then
-      local nb = try(function() return b.neighbours end)
+      local nb = try(function() return b[UNDERGROUND_NEIGHBOUR] end)
       if nb and nb.valid then return nb end
     end
   end

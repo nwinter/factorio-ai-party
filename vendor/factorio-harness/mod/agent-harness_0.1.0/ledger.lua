@@ -7,6 +7,11 @@
 -- What it cannot know: launches before this runtime ran (none recorded), more than KEEP launches a surface, more than
 -- drops.lua keeps (its last 20 on every surface), and a drop's pad asks before the pad watch began (batch34).
 return function(api)
+  local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+  local function planet_request(f, from, planet, legacy_any)
+    if PORT21 then return f.request_from ~= 'platforms' and (from == nil or from == planet) end
+    return from == planet or (legacy_any and from == nil)
+  end
   local M = {}
   M.KEEP = 64
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -37,7 +42,7 @@ return function(api)
         local v = f.value
         local n = v and name_of(v.name)
         local from = f.import_from and name_of(f.import_from)
-        if n and names[n] and (from == nil or from == planet) then
+        if n and names[n] and planet_request(f, from, planet, true) then
           local q = v.quality and name_of(v.quality) or 'normal'
           local key = q == 'normal' and n or n .. '@' .. q
           local holds = try(function() return pl.hub.get_item_count(q == 'normal' and n or {name=n, quality=q}) end) or 0

@@ -13,6 +13,10 @@
    "enabled": true
   },
   {
+   "name": "recycler",
+   "enabled": true
+  },
+  {
    "name": "space-age",
    "enabled": true
   },

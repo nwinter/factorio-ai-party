@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- Published memory contains plain snapshots. Pending refresh references are
 -- processed only while visible, at most 128 entities per call/background step.
 -- A hidden pending refresh is discarded without reading its entities.
@@ -98,7 +101,7 @@ return function(api)
     end
     if t=='underground-belt' and not ghost then
       row.belt_to_ground_type=e.belt_to_ground_type
-      local other=e.neighbours
+      local other=e[UNDERGROUND_NEIGHBOUR]
       local op=other and other.valid and other.position
       local paired=nil
       if op and (e.force.is_chunk_visible(e.surface,{x=math.floor(op.x/32),y=math.floor(op.y/32)})
@@ -153,7 +156,7 @@ return function(api)
         old.items=ok and n or nil
         if t=='underground-belt' then
           old.belt_to_ground_type=e.belt_to_ground_type
-          local other=e.neighbours
+          local other=e[UNDERGROUND_NEIGHBOUR]
           local op=other and other.valid and other.position
           if op and e.force.is_chunk_visible(e.surface,{x=math.floor(op.x/32),y=math.floor(op.y/32)}) then
             old.paired_with={x=op.x,y=op.y}

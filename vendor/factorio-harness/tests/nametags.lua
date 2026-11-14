@@ -9,7 +9,11 @@ local n=0
 local function check(a,b,m) n=n+1; eq(a,b,m) end
 
 -- Data stage: one sprite per layer, cells inside the sheet, unique names.
-data={extend=function(self,list) self.list=list end}
+table.deepcopy=function(v) if type(v)~='table' then return v end local r={} for k,x in pairs(v) do r[k]=table.deepcopy(x) end return r end
+data={raw={container={['steel-chest']={type='container',inventory_size=48}},
+  unit={['small-biter']={type='unit',attack_parameters={ammo_type={action={}}}}}},extend=function(self,list)
+  if list[1].type=='sprite' then self.list=list else self.markets=list end
+end}
 dofile('mod/agent-harness_0.1.0/data.lua')
 check(#data.list,parts.count)
 local names={}
@@ -40,11 +44,11 @@ helpers={is_valid_sprite_path=function(path) return sprites_valid and path:find(
 local unit=0
 local function character() unit=unit+1; return {valid=true,unit_number=unit,surface={index=1}} end
 local bots={{index=1000001,name='astra',character=character()},{index=1000002,name='grok',character=character()}}
-local profiles={}
+local profiles={};local models={}
 local st={}
 local function make()
   return require('nametags'){state=function() return st end,bots=function() return bots end,profile=function(i) return profiles[i] end,
-    parts=parts,avatar=avatar}
+    model=function(name) return models[name] end,parts=parts,avatar=avatar}
 end
 package.loaded.nametags=nil
 local tags=make()
@@ -128,3 +132,10 @@ tags.tick(3300); check(#live('text',landed),1); check(#live('text',hub),1); chec
 carriers[1000003]=nil
 tags.tick(3600); check(#live('text',hub),0); check(st.nametags[1000003],nil)
 print('nametags: '..n..' assertions passed')
+
+-- A trusted base-model label participates in the render key and tag.
+models[bots[1].name]='Gemini 3.8 Flash';bots[1].character=character();tags=make();tags.refresh(bots[1])
+local labelled=live('text',bots[1].character);assert(#labelled==1 and labelled[1].args.text:find('(Gemini)',1,true))
+models[bots[1].name]='Grok 4.7';tags.tick(3900);labelled=live('text',bots[1].character)
+assert(#labelled==1 and labelled[1].args.text:find('(Grok)',1,true))
+print('nametag base-model label and refresh: ok')

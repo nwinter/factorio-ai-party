@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- An inserter built to drop onto a belt (E3, Opus 19:50: copper ore put on a plate line jammed 3 branches for 20 min):
 -- what it will put there (read from its pickup side: a drill's ore, a machine's recipe products, a chest's contents, a
 -- belt's lanes) against what that belt carries now and what the inserters taking from it downstream take (the
@@ -87,7 +90,7 @@ return function(api)
       end
       local bn = try(function() return e.belt_neighbours end)
       local nxt = bn and bn.outputs and bn.outputs[1]
-      if not nxt and e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'input' then nxt = try(function() return e.neighbours end) end
+      if not nxt and e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'input' then nxt = try(function() return e[UNDERGROUND_NEIGHBOUR] end) end
       e = nxt
     end
     return {wants=wants, carried=carried, takers=takers, any=any, tiles=tiles}

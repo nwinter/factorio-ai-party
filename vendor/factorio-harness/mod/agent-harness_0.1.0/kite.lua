@@ -8,7 +8,7 @@
 return function(api)
   local M={}
   local SCAN_EVERY=6
-  local structures={['unit-spawner']=true,turret=true}
+  local structures={['unit-spawner']=true,turret=true,['ammo-turret']=true,['electric-turret']=true,['fluid-turret']=true,['artillery-turret']=true}
   local compass={'north','northeast','east','southeast','south','southwest','west','northwest'}
   local function heading(dx,dy)
     local angle=(math.atan2 or math.atan)(dx,-dy)
@@ -116,7 +116,7 @@ return function(api)
     if #forces==0 then return end
     local du,ds,seen=math.huge,math.huge,0
     for _,e in pairs(p.surface.find_entities_filtered{position=p.position,radius=action.radius,force=forces,
-        type={'unit','spider-unit','segmented-unit','unit-spawner','turret'},limit=256}) do
+        type={'unit','spider-unit','segmented-unit','character','unit-spawner','turret','ammo-turret','electric-turret','fluid-turret','artillery-turret'},limit=256}) do
       if e.valid and api.visible(p,e.position) then
         seen=seen+1
         local d=api.distance(p.position,e.position)

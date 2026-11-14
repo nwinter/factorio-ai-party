@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- trace {position, upstream: true}: from a target back along what feeds it, to the first place an ingredient stops
 -- or goes elsewhere (Sol, Luna, Astra, Grok; d15 shifts 19-20: Starling drifted backwards ~8 min while an arm at
 -- (9.5,2.5) sent all its ore onto a furnace belt; Swift's ammo starved behind a jammed mixed return; Grok walked a coal
@@ -17,6 +20,7 @@
 -- (thruster fuel and oxidizer back through crushers to the collectors). A hub, chest or belt tile: what is put into it
 -- (item: that item), each source traced the same way. Bounded: 800 belt tiles (500 a lane), 16 lane walks, depth 2.
 return function(api, H)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   local try, at, place, side, status = H.try, H.at, H.place, H.side, H.status
   local BELT, CRAFTER, CONTAINER = H.BELT, H.CRAFTER, H.CONTAINER
@@ -121,7 +125,7 @@ return function(api, H)
     bn = bn or try(function() return e.belt_neighbours end)
     for _, n in ipairs(bn and bn.inputs or {}) do cands[#cands+1] = n end
     if e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'output' then
-      local nb = try(function() return e.neighbours end)
+      local nb = try(function() return e[UNDERGROUND_NEIGHBOUR] end)
       if nb and nb.valid then cands[#cands+1] = nb end
     end
     for _, n in ipairs(cands) do
@@ -378,7 +382,7 @@ return function(api, H)
 
   -- The fluid box index of fluid in machine e (its contents, else an input box filtered to it).
   local function fluid_index(e, fluid)
-    local fb = try(function() return e.fluidbox end)
+    local fb = try(function() return fluid_boxes(e) end)
     for i = 1, (fb and try(function() return #fb end) or 0) do
       local f = try(function() return fb[i] end)
       if (f and f.name == fluid) or name_of(try(function() return fb.get_filter(i) end)) == fluid then return i end
@@ -556,10 +560,10 @@ return function(api, H)
     if e.type == 'thruster' then
       out.ingredients = {}
       local parts = {}
-      for i = 1, (try(function() return #e.fluidbox end) or 0) do
-        local f = try(function() return e.fluidbox[i] end)
-        local name = f and f.name or name_of(try(function() return e.fluidbox.get_filter(i) end)) or ('input ' .. i)
-        local up = api.fluid_upstream and api.fluid_upstream(e.fluidbox, i) or {pumps={}, makers={}, tanks={}}
+      for i = 1, (try(function() return #fluid_boxes(e) end) or 0) do
+        local f = try(function() return fluid_boxes(e)[i] end)
+        local name = f and f.name or name_of(try(function() return fluid_boxes(e).get_filter(i) end)) or ('input ' .. i)
+        local up = api.fluid_upstream and api.fluid_upstream(fluid_boxes(e), i) or {pumps={}, makers={}, tanks={}}
         local row = {fluid=name, amount=f and math.floor(f.amount) or 0, makers={}}
         local bits = {string.format('%s %d', name, row.amount)}
         for _, pmp in ipairs(up.pumps) do if status(pmp) ~= 'working' then bits[#bits+1] = 'pump ' .. at(pmp.position) .. ' ' .. machine_state(pmp) end end
@@ -621,7 +625,7 @@ return function(api, H)
       if w.fluid and (a.all or w.has < w.amount) and (a.item == nil) then
         local bits = {string.format('%s (a fluid, has %s of %s)', w.item, tostring(w.has), tostring(w.amount))}
         local index = fluid_index(e, w.item)
-        local up = index and api.fluid_upstream and api.fluid_upstream(e.fluidbox, index) or {pumps={}, makers={}, tanks={}}
+        local up = index and api.fluid_upstream and api.fluid_upstream(fluid_boxes(e), index) or {pumps={}, makers={}, tanks={}}
         for _, pmp in ipairs(up.pumps) do if status(pmp) ~= 'working' then bits[#bits+1] = 'pump ' .. at(pmp.position) .. ' ' .. machine_state(pmp) end end
         if #up.makers == 0 then bits[#bits+1] = 'no machine making ' .. w.item .. ' is connected to it' end
         local row = {item=w.item, has=w.has, needs=w.amount, fluid=true, makers={}}

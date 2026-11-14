@@ -11,6 +11,8 @@
 -- rockets on their way up bring counts at the start; each ammunition's last line says which limit binds.
 local ammodetail = require('ammodetail')
 return function(api)
+  local ENGINE=script and script.active_mods and script.active_mods.base or '2.0.77'
+  local PORT21=ENGINE:match('^2%.1%.')~=nil
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function round(x) return math.floor(x + 0.5) end
@@ -551,8 +553,9 @@ return function(api)
   -- on_the_path) meets more: Spindle 1.27, Kestrel II 1.57, Anvil 1.64 and Asterion 2.53 times the fit in 120 s of their
   -- own flights; Asterion held at one place and speed 1.8 times with its schedule, 1.03 with it removed; a test platform
   -- given a schedule 1.19. What sets the factor was not found: ON_PATH is the range read.
-  M.K, M.EXTRA = 0.0100, 20
-  M.ON_PATH = {1.19, 2.53}
+  M.K, M.EXTRA = 0.0100, PORT21 and 0 or 20
+  M.ON_PATH = PORT21 and {0.9,1.5} or {1.19,2.53}
+  M.CALIBRATION = PORT21 and '2.1.24: 3000 ticks, Nauvis-Vulcanus 10-50%, speed reset to 2 km/tick; widths 21/101/301, height16; 39/79/160 asteroids; one scheduled width101 run:93. Provisional fit; other connections, speeds, heights and scheduled hulls unmeasured.' or '2.0.77 legacy calibration'
   -- The part of a leg's connection flown (0..1 the way it is flown): the rest of the leg flown now, cut to progress
   -- {f0, f1}; with its km. nil when the connection is not read.
   local function leg_part(l, progress)
@@ -693,6 +696,13 @@ return function(api)
       shots = 'shots per asteroid as the forecast counts them: its health against a shot\'s damage after resistances and our bonuses, its fragments it can hurt, only what '
         .. (o.targets and 'effective_targets specifies' or 'its turrets aboard target'),
     }
+    basis.engine_version=ENGINE
+    basis.calibration=M.CALIBRATION
+    if PORT21 then
+      basis.count='2.1.24 provisional fit: 0.0100 x (width + native spawn-offset width) x km x mean spawn chance. Predictions 46.8/79.1/159.7 vs observations39/79/160; scheduled width101 observed93. Scheduled envelope0.9-1.5 is provisional, not a bound for every ship.'
+      basis.distance='measured only at speed reset to2 km/tick over about6000 km; other speeds and connections extrapolated'
+      basis.height=o.height and string.format('%d tiles; height is not a fit parameter, only height16 was measured',o.height) or nil
+    end
     local estimated = {
       'the count: a fit on test platforms with no schedule, about 6% off in those runs; one flight varies further (the game spawns at random: a count N varies by about its square root)',
       string.format('on a schedule: platforms flying their routes met %g to %g times the fit (Spindle 1.27, Kestrel II 1.57, Anvil 1.64, Asterion 2.53 in 120 s each; Asterion held at one place and speed 1.8 with its schedule, 1.03 without): on_path gives that range; what sets the factor is not known', M.ON_PATH[1], M.ON_PATH[2]),
@@ -734,6 +744,10 @@ return function(api)
     if current then
       basis.targets = 'effective_targets: design.targets replaces the target set for every participating turret of each named prototype; omitted prototypes retain current settings; an empty list targets nothing, "any" targets every asteroid; current_targets is the native profile, unchanged'
     end
+    if PORT21 then
+      estimated[1]='2.1.24 provisional fit: three unscheduled hulls, one connection and speed; observed/model ratios0.83/1.00/1.00. Random counts vary; no universal error bound established.'
+      estimated[2]='one scheduled hull observed1.18 times the base fit; 0.9-1.5 is a provisional envelope for that measurement, not a proven fleet-wide bound'
+    end
     return {damage_model=ammodetail.LIMITATION, basis=basis, estimated=estimated, legs=rows, ammo=ammo, lines=lines,
       ammo_source=o.ammo and 'design.ammo' or nil, ammo_details=details, stock_read=stock_read,
       target_source=current and (o.targets and next(o.targets) and 'design.targets' or 'platform') or nil,
@@ -744,7 +758,7 @@ return function(api)
   function M.basis(opts, speed_from)
     opts = opts or {}
     local off, off_from = offset()
-    return {
+    local out = {
       damage_model = ammodetail.LIMITATION,
       legs = 'the route\'s stops (route, or the schedule from its current stop), each leg its space connection\'s length (the leg flown now: the km left); minutes at the speed read (' .. tostring(speed_from or 'unknown') .. ')'
         .. (opts.speed and string.format(', times %g (pessimistic.speed)', opts.speed) or ''),
@@ -754,6 +768,12 @@ return function(api)
       speed = 'the spawn rule read on a copy of world n: as many asteroids per km at any speed 0.25..4 km a tick; the use a minute is kept at another speed (pessimistic.speed), so a slower leg uses more in all',
       progress = opts.progress and string.format('%g-%g%% of each leg\'s connection, the way it is flown: its asteroids and minutes', pct2(opts.progress[1]), pct2(opts.progress[2])) or nil,
     }
+    out.engine_version=ENGINE;out.calibration=M.CALIBRATION
+    if PORT21 then
+      out.box='2.1.24 provisional hull fit is reported separately in forecast_model; measured consumption and speed come only from this engine version'
+      out.speed='2.1.24: current speed and new flight samples; drag changes are reflected in those measurements. Speed extrapolation is an assumption.'
+    end
+    return out
   end
   -- legs: endurance's legs ({from, to, km, minutes}); rows: its ammunition rows ({name, stock, received, phases});
   -- model: endurance's ammomodel (optional: without it, made is the rate times the time).

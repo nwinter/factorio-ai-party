@@ -10,6 +10,7 @@
 -- dry_run: what it would remove, nothing flushed. The game's count can be more than the segment read before: Meridian-V's
 -- fuel segment read 12100 (its 7 thrusters' boxes, 1000 each, among it) and the flush returned 19100; the reply gives both.
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M={handlers={}}
   M.schema={flush={position='{x,y}: a pipe, tank, pump or machine of the pipeline',fluid='optional fluid name: flush only this fluid',
     index='optional fluidbox index when the entity has several holding fluid (default: the one holding fluid, or holding fluid=)',
@@ -30,7 +31,7 @@ return function(api)
     assert(a.dry_run==nil or type(a.dry_run)=='boolean','dry_run must be true or false')
     local e=api.target(p,a)
     api.friendly(p,e)
-    local boxes=e.fluidbox
+    local boxes=fluid_boxes(e)
     local n=boxes and #boxes or 0
     assert(n>0,e.name..' has no fluidbox')
     if a.fluid~=nil then assert(type(a.fluid)=='string' and prototypes.fluid[a.fluid],'unknown fluid: '..tostring(a.fluid)) end
@@ -63,12 +64,12 @@ return function(api)
       segment.extent=box
       segment.size=string.format('%gx%g tiles',math.ceil(box.right_bottom.x-box.left_top.x),math.ceil(box.right_bottom.y-box.left_top.y))
     end
-    segment.capacity=try(function() return round(boxes.get_capacity(index)) end)
+    segment.capacity=try(function() return round((boxes.object_name=='HarnessFluidStorage' and boxes.get_segment_capacity(index)) or boxes.get_capacity(index)) end)
     if box and segment.id then
       -- Count the entities with a fluidbox in this segment (capped).
       local count=0
       for _,o in ipairs(try(function() return e.surface.find_entities_filtered{area=box,force=e.force,limit=2000} end) or {}) do
-        local ob=try(function() return o.fluidbox end)
+        local ob=try(function() return fluid_boxes(o) end)
         for i=1,ob and #ob or 0 do
           if try(function() return ob.get_fluid_segment_id(i) end)==segment.id then count=count+1; break end
         end

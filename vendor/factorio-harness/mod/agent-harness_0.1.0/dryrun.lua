@@ -12,6 +12,7 @@
 -- ones were built) and Gemini.
 -- The factory is pure so the same module can be bundled into a hot reload.
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
   local rotatedbox = require('rotatedbox')
   local TC = require('tilecheck')()
@@ -733,9 +734,9 @@ return function(api)
     for _, e in ipairs(try(function() return s.find_entities_filtered{area=area, force=force, limit=4096} end) or {}) do
       if e.valid and e.type ~= 'entity-ghost' then
         if JOINS[e.type] then built[key(math.floor(e.position.x), math.floor(e.position.y))] = e
-        elseif (try(function() return #e.fluidbox end) or 0) > 0 then
-          for i = 1, #e.fluidbox do
-            for _, c in ipairs(try(function() return e.fluidbox.get_pipe_connections(i) end) or {}) do
+        elseif (try(function() return #fluid_boxes(e) end) or 0) > 0 then
+          for i = 1, #fluid_boxes(e) do
+            for _, c in ipairs(try(function() return fluid_boxes(e).get_pipe_connections(i) end) or {}) do
               local tp, from = c.target_position, c.position
               if tp and from and c.connection_type ~= 'underground' then
                 local tk = key(math.floor(tp.x), math.floor(tp.y))

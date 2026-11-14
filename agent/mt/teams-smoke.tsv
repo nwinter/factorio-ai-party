@@ -1,0 +1,5 @@
+# (mt277, private) the short test: one agent per team, the cheaper model of each lab
+red	astra	codex	codex	gpt-6-astra	low	GPT-6 Astra	Codex
+blue	haiku	claude	claude-b	haiku	low	Claude Haiku 5.5	Claude Code
+green	gemini	agy	-	gemini-3.8-flash-high	-	Gemini 3.8 Flash	Antigravity
+yellow	grok	grok	-	grok-4.7	medium	Grok 4.7	Grok Build

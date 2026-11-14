@@ -836,6 +836,8 @@ def main():
     src.add_argument("--mock", action="store_true", help="replay a synthetic 7-agent session")
     src.add_argument("--world", help="pog world to poll read-only (live, a, b, c, ...)")
     ap.add_argument("--run", help="run config JSON (agents: name -> model, harness, role; cameras; landmarks)")
+    ap.add_argument("--team", help="a world with a player force per team: read as this team's force (operator requests "
+                                   "carry it, Lua reads name it: harness.Harness team)")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8787)
     ap.add_argument("--poll", type=float, default=3.0, help="seconds between harness polls (2-5)")
@@ -881,7 +883,8 @@ def main():
     else:
         from live import LiveSource
         # the agents' fh journals (runs/RUN/AGENT/journal.jsonl) sit beside the run's stream.json: work.py tails them
-        source = LiveSource(a.world, run, profiles=a.profiles,
+        from harness import Harness
+        source = LiveSource(a.world, run, profiles=a.profiles, harness=Harness(a.world, a.team) if a.team else None,
                             journals=os.path.dirname(os.path.abspath(a.run)) if a.run else None)
         camera = source.send_camera
         if a.run:  # (d22 batch75 AK9) the charted ground's tiles, kept in the run (and read back from the runs it resumed from)

@@ -64,6 +64,10 @@ return function(api)
   end
   -- One line of text, cut to `max` bytes on a UTF-8 boundary; never fails.
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- (mt276) records of the reader's force only (force nil: the player force); an attack group: seen by that force
+  local function fname_of(p) local ok, n = pcall(function() return p.force.name end); return ok and n or 'player' end
+  local function ours(v, fname) return (v.force or 'player') == fname end
+  local function sees(g, fname) if g.seen then return g.seen[fname] == true end return fname == 'player' end
   -- (d19 batch41 A4) a text cut for a line ends in '...', so a reader sees it was cut.
   local function clip(text, max)
     text = tostring(text):gsub('[%c]+', ' ')
@@ -107,13 +111,17 @@ return function(api)
     return sec .. 's'
   end
 
-  -- Agents: every player who is not a director, and every bot.
+  -- Agents: every player who is not a director, and every bot. (mt276 B) Of the team the call runs as (api.team_now:
+  -- the player force in a one-team world); a LuaPlayer mt_assign put in a team's force (a spectator that charts) is none.
   local function agents()
     local out = {}
+    local team = api.team_now and api.team_now() or 'player'
+    local mt = api.state().mt
+    local assigned = mt and mt.players or EMPTY
     for _, p in pairs(game.players) do
-      if not api.director(p.index) then out[#out+1] = {index=p.index, name=who(p)} end
+      if not api.director(p.index) and not assigned[p.name] and fname_of(p) == team then out[#out+1] = {index=p.index, name=who(p)} end
     end
-    for _, b in ipairs(api.bots()) do out[#out+1] = {index=b.index, name=b.name} end
+    for _, b in ipairs(api.bots()) do if (b.force or 'player') == team then out[#out+1] = {index=b.index, name=b.name} end end
     for _, a in ipairs(out) do
       local pr = api.profile(a.index)
       a.display_name = pr and pr.display_name
@@ -212,6 +220,7 @@ return function(api)
       kind=item.kind, owner=item.owner, requested_by=item.requested_by, status=item.status, text=text,
       prev_owner=extra and extra.prev_owner, overlaps=extra and extra.overlaps,
       progress=total and progress(item) or nil, steps_done=done, steps_total=total}
+    if api.on_event then api.on_event(b.events[#b.events]) end
     while #b.events > MAX_EVENTS do table.remove(b.events, 1) end
   end
   -- Over the cap, finished items go first (oldest update first), then notes,
@@ -2545,13 +2554,14 @@ return function(api)
     -- told about comes again, as "continues" with its totals, only after
     -- REPEAT_ATTACK; h.attacks holds what each agent was shown (id -> tick).
     local areas, told, shown = {}, h.attacks or {}, {}
+    local fname = fname_of(p)
     for key, v in pairs(s.damage or {}) do
-      if v.id then shown[v.id] = told[v.id] end
+      if v.id and ours(v, fname) then shown[v.id] = told[v.id] end
       local new
       if v.id and told[v.id] then new = v.last > told[v.id] and game.tick - told[v.id] >= REPEAT_ATTACK
       else new = fresh(v, v.last) end
       -- An area kept from before a hot deploy has no id or point until its next hit.
-      if new and v.damage > 0 and v.id and v.at then areas[#areas+1] = {key=key, v=v} end
+      if new and v.damage > 0 and v.id and v.at and ours(v, fname) then areas[#areas+1] = {key=key, v=v} end
     end
     table.sort(areas, function(x, y) return x.v.last > y.v.last end)
     for n, area in ipairs(areas) do
@@ -2562,17 +2572,19 @@ return function(api)
     -- Only incidents still kept are remembered.
     h.attacks = next(shown) and shown or nil
     if api.news_lines then
-      for _, line in ipairs(api.news_lines(h.news_seq, game.tick - FIRST_ALERTS, p.surface and p.surface.name)) do lines[#lines+1] = line end
+      for _, line in ipairs(api.news_lines(h.news_seq, game.tick - FIRST_ALERTS, p.surface and p.surface.name, fname)) do lines[#lines+1] = line end
       h.news_seq = s.alert_seq or 0
     end
     local groups = 0
     for k = #(s.attack_groups or {}), 1, -1 do
       local g = s.attack_groups[k]
       if not fresh(g, g.tick) or groups >= 2 then break end
-      groups = groups + 1
-      local on = g.surface and p.surface and g.surface ~= p.surface.name and ' on ' .. g.surface or ''
-      lines[#lines+1] = string.format('enemy group of %d gathered%s at (%d,%d)%s, %s ago', g.size, on, g.position.x, g.position.y,
-        g.target and string.format(' heading for (%d,%d)', g.target.x, g.target.y) or '', ago(game.tick - g.tick))
+      if sees(g, fname) then
+        groups = groups + 1
+        local on = g.surface and p.surface and g.surface ~= p.surface.name and ' on ' .. g.surface or ''
+        lines[#lines+1] = string.format('enemy group of %d gathered%s at (%d,%d)%s, %s ago', g.size, on, g.position.x, g.position.y,
+          g.target and string.format(' heading for (%d,%d)', g.target.x, g.target.y) or '', ago(game.tick - g.tick))
+      end
     end
     for _, line in ipairs(losses or {}) do lines[#lines+1] = line end
     while #lines > MAX_ALERT_LINES do table.remove(lines) end
@@ -2701,9 +2713,9 @@ return function(api)
       out[#out+1] = OPERATOR_NOTE
     end
     local pr = api.profile(p.index)
-    if not (pr and pr.display_name and pr.glyph and pr.color) and not (h.reminded and game.tick - h.reminded < REMIND_EVERY) then
+    if not (pr and pr.display_name and pr.glyph and pr.color and (not api.state().mt or pr.persona and pr.persona:find('%S'))) and not (h.reminded and game.tick - h.reminded < REMIND_EVERY) then
       h.reminded = game.tick
-      out[#out+1] = 'profile: viewers see you by display_name, glyph and color; set them once with profile {display_name, glyph, color, motto}'
+      out[#out+1] = 'profile: choose your own display_name and persona; viewers see your name, glyph and color. Set profile {display_name, persona, glyph, color, motto}; keep your identity on later shifts.'
     end
     return #out > 0 and out or nil
   end
@@ -2754,7 +2766,8 @@ return function(api)
     end
     hit.seq = s.alert_seq
     hit.last = event.tick; hit.hits = hit.hits + 1; hit.damage = hit.damage + (event.final_damage_amount or 0)
-    hit.by = event.cause and event.cause.valid and event.cause.name or hit.by
+    -- (mt276 G) an attacker of another player force is named with its force
+    hit.by = event.cause and event.cause.valid and (api.cause_text and api.cause_text(event.cause, e.force.name) or event.cause.name) or hit.by
   end
   return M
 end

@@ -29,6 +29,10 @@ return function(api)
   M.CUT_MACHINES = 3
   local KEEP = 30 * 3600
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- (mt276) records of the reader's force only (force nil: the player force); an attack group: seen by that force
+  local function fname_of(p) local ok, n = pcall(function() return p.force.name end); return ok and n or 'player' end
+  local function ours(v, fname) return (v.force or 'player') == fname end
+  local function sees(g, fname) if g.seen then return g.seen[fname] == true end return fname == 'player' end
   local function round(v) return math.floor(v + 0.5) end
   local function dist(a, b) return math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) end
   local function where(p)
@@ -153,7 +157,7 @@ return function(api)
   -- told, or our structures within SPOT tiles of its target took damage since it was told. Returns wake, why (nil the
   -- first time). Each gathering is kept KEEP ticks after it was last seen.
   M.SPOT, M.CLOSER, M.GROW, M.GROW_MIN = 24, 15, 1.5, 5
-  function M.again(told, g, d, surface, s)
+  function M.again(told, g, d, surface, s, fname)
     told.gatherings = told.gatherings or {}
     local m
     for _, x in ipairs(told.gatherings) do
@@ -170,7 +174,7 @@ return function(api)
     if d <= m.d - M.CLOSER then why[#why+1] = string.format('it heads %d tiles nearer you than before (%d, was %d)', round(m.d - d), round(d), round(m.d)) end
     if size >= m.size * M.GROW and size >= m.size + M.GROW_MIN then why[#why+1] = string.format('it is larger: %d (the largest told was %d)', size, m.size) end
     for _, v in pairs(s.damage or {}) do
-      if v.at and (v.damage or 0) > 0 and (v.last or 0) > m.tick and (v.surface or 'nauvis') == surface and dist(v.at, g.target) <= M.SPOT then
+      if v.at and (v.damage or 0) > 0 and (v.last or 0) > m.tick and (v.surface or 'nauvis') == surface and (not fname or ours(v, fname)) and dist(v.at, g.target) <= M.SPOT then
         why[#why+1] = string.format('our structures near its target took damage since at (%d,%d)', v.at.x, v.at.y)
         break
       end
@@ -240,11 +244,12 @@ return function(api)
     local told = told_of(p.index)
     local since = base.tick
     local me = api.who and api.who(p) or p.name
+    local fname = fname_of(p)
     local near, group_near = base.radius or M.NEAR, base.radius or M.GROUP_NEAR
     -- Attacks on our structures near the character.
     if pos then
       for _, v in pairs(s.damage or {}) do
-        if v.id and v.at and (v.damage or 0) > 0 and v.last >= since and (v.surface or 'nauvis') == surface then
+        if v.id and v.at and (v.damage or 0) > 0 and v.last >= since and (v.surface or 'nauvis') == surface and ours(v, fname) then
           local d = dist(v.at, pos)
           local key = 'attack|' .. v.id
           if d <= near and news(told, key, v.hits or 0) then
@@ -257,14 +262,14 @@ return function(api)
       for k = #(s.attack_groups or {}), 1, -1 do
         local g = s.attack_groups[k]
         if g.tick < since then break end
-        if g.target and (g.surface or 'nauvis') == surface then
+        if g.target and (g.surface or 'nauvis') == surface and sees(g, fname) then
           local d = dist(g.target, pos)
           local key = 'group|' .. tostring(g.seq)
           if d <= group_near and news(told, key, g.size or 0) then
             tell(told, key, g.size or 0)
             -- The same staging spot again (Muse, d15 shift 20, a dozen wakes: groups re-gathering at (187,-14) for (96,-30)
             -- while 31 turrets held with no damage): told again only when it changed (M.again).
-            local again, why = M.again(told, g, d, surface, s)
+            local again, why = M.again(told, g, d, surface, s, fname)
             if again then
               local held = out(base, 'group', string.format('enemy group of %d%s gathered at (%d,%d), %d tiles from you, heading for (%d,%d), %d tiles from you%s',
                 g.size or 0, g.kinds and ' (' .. g.kinds .. ')' or '', g.position.x, g.position.y, round(dist(g.position, pos)),
@@ -422,14 +427,15 @@ return function(api)
   function M.alert_known(p)
     local s = api.state()
     local k = {loss_seq=s.loss_seq or 0, areas={}, hits={}}
-    for _, v in pairs(s.damage or {}) do if v.id then k.areas[v.id] = size_of(v); k.hits[v.id] = v.hits or 0 end end
+    local fname = fname_of(p)
+    for _, v in pairs(s.damage or {}) do if v.id and ours(v, fname) then k.areas[v.id] = size_of(v); k.hits[v.id] = v.hits or 0 end end
     return k
   end
   local function lost_near(s, v, since)
     local names, n = {}, 0
     for _, i in ipairs(s.losses or {}) do
       local b = i.box
-      if (i.seq or 0) > since and i.surface == v.surface and b and v.at.x >= b[1] - M.LOSS_NEAR and v.at.x <= b[3] + M.LOSS_NEAR
+      if (i.seq or 0) > since and i.surface == v.surface and (i.force or 'player') == (v.force or 'player') and b and v.at.x >= b[1] - M.LOSS_NEAR and v.at.x <= b[3] + M.LOSS_NEAR
         and v.at.y >= b[2] - M.LOSS_NEAR and v.at.y <= b[4] + M.LOSS_NEAR then
         for name, c in pairs(i.names or {}) do names[#names+1] = name .. ' x' .. c; n = n + c end
       end
@@ -457,9 +463,10 @@ return function(api)
     f = f or {}
     local surface = f.surface or (f.area and try(function() return p.surface.name end)) or nil
     local function here(x) return not surface or (x or 'nauvis') == surface end
+    local fname = fname_of(p)
     local best, best_seq
     for _, v in pairs(s.damage or {}) do
-      if v.id and v.at and (v.seq or 0) > from and (v.damage or 0) > 0 and here(v.surface) and inside(f, v.at) then
+      if v.id and v.at and (v.seq or 0) > from and (v.damage or 0) > 0 and here(v.surface) and ours(v, fname) and inside(f, v.at) then
         local size = size_of(v)
         local was, changed = known and known.areas[v.id], nil
         if was then
@@ -477,7 +484,7 @@ return function(api)
     for k = #(s.attack_groups or {}), 1, -1 do
       local g = s.attack_groups[k]
       if (g.seq or 0) <= from then break end
-      if here(g.surface) and (inside(f, g.target) or inside(f, g.position)) and (not f.min_size or (g.size or 0) >= f.min_size)
+      if here(g.surface) and sees(g, fname) and (inside(f, g.target) or inside(f, g.position)) and (not f.min_size or (g.size or 0) >= f.min_size)
         and (not best_seq or g.seq > best_seq) then
         best_seq = g.seq
         best = string.format('enemy group of %d gathered at (%d,%d)%s', g.size or 0, g.position.x, g.position.y,
@@ -488,7 +495,7 @@ return function(api)
       for k = #(s.enemy_news or {}), 1, -1 do
         local n = s.enemy_news[k]
         if (n.seq or 0) <= from then break end
-        if here(n.surface) and inside(f, n.position) and (not best_seq or n.seq > best_seq) then
+        if here(n.surface) and ours(n, fname) and inside(f, n.position) and (not best_seq or n.seq > best_seq) then
           best_seq = n.seq
           best = string.format('%s (%g,%g), %d spawner%s', n.kind == 'pollution_reached_nest' and 'pollution reached nest' or 'nest charted',
             n.position.x, n.position.y, n.spawners or 0, n.spawners == 1 and '' or 's')

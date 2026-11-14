@@ -57,11 +57,21 @@ def commands():
     return out
 
 
+# Launch overrides (tools/new-run.sh's environment): POG_TEAM_LINE the team section's first sentence, POG_GOAL the
+# long-term goal, POG_MAP_TEXT the map's description in place of "default map settings".
+TEAM_LINE = "{{TEAM_SIZE}} AI agents share this world as one team"
+MAP_TEXT = "default map\nsettings"
+
+
 def team_text(team_file, me, model):
     """The team section: agent/team.md with the roster from TEAM_FILE ("name|model" per line)."""
     rows = [l.strip().split("|", 1) for l in open(team_file) if l.strip()]
     roster = "\n".join(f"- `{n}`: {m}" for n, m in rows if n != me)
-    return (open(os.path.join(AGENT, "team.md")).read().replace("{{TEAM_SIZE}}", str(len(rows)))
+    text = open(os.path.join(AGENT, "team.md")).read()
+    if os.environ.get("POG_TEAM_LINE"):
+        assert TEAM_LINE in text, "agent/team.md: the team sentence changed (tools/brief.py TEAM_LINE)"
+        text = text.replace(TEAM_LINE, os.environ["POG_TEAM_LINE"])
+    return (text.replace("{{TEAM_SIZE}}", str(len(rows)))
             .replace("{{ROSTER}}", roster).replace("{{MODEL}}", model))
 
 
@@ -89,8 +99,9 @@ def fill(text, values):
 def values(player, mate="", mate_notes="", role=""):
     sa = os.environ.get("POG_SPACE_AGE") == "1"
     return {"PLAYER": player, "TEAMMATE": mate, "TEAMMATE_NOTES": mate_notes, "ROLE": role,
+            "FACTORIO_VERSION": os.environ.get("POG_FACTORIO_VERSION", "2.0.77"),
             "ENEMIES": os.environ.get("POG_ENEMIES", "peaceful"), "SEED": os.environ.get("POG_SEED", "20261010"),
-            "GOAL": "reaching the Shattered Planet, past the solar system's edge" if sa else "a rocket launch"}
+            "GOAL": os.environ.get("POG_GOAL") or ("reaching the Shattered Planet, past the solar system's edge" if sa else "a rocket launch")}
 
 
 def disclosure_open():
@@ -148,12 +159,35 @@ def expedition_text(line):
     return line.strip() + "\n" if line and line.strip() else ""
 
 
+def continuous_text(text):
+    """Remove session stopping instructions, while retaining in-game task timers."""
+    text = text.replace("In this session, get as\nfar toward the goal as you can before the deadline in `deadline.txt`.",
+                        "Keep building toward the goal and coordinate useful work with your teammate.")
+    text = text.replace(" Always read `deadline.txt`.", "")
+    text = re.sub(r"## Stopping\n.*?(?=\n## |\Z)",
+                  "## Continuing\n\nKeep playing and keep notes.md current. When your own job is finished or blocked, "
+                  "`./fh call status`, `./fh call chat` and `./fh board` show what is still open.\n", text, flags=re.S)
+    text = text.replace(", the deadline in deadline.txt", "")
+    text = text.replace("Read deadline.txt, preserve new facts", "Preserve new facts")
+    text = text.replace("at the deadline minus 2 hours", "when available")
+    text = text.replace("and the time left in the shift", "and your current work")
+    text = text.replace(", and never runs past your deadline", "")
+    return text
+
+
 def core(player, time_text, coop, mate="", mate_notes="", role="", open_=None, expedition=""):
     """AGENTS.md as tools/new-run.sh writes it: it ends with the compaction instructions (Claude Code reads a "Compact
     instructions" section, and every harness's summarizer sees the instructions file). open_ (disclosure_open()): only
     the brief items and index commands open for the team."""
     text = open(os.path.join(AGENT, "PLAYBOOK.md")).read() + coop
+    if os.environ.get("POG_IDENTITY_BRIEF"):
+        text += "\n\n## Your identity\n\n" + os.environ["POG_IDENTITY_BRIEF"].strip() + "\n"
+    if os.environ.get("POG_OPENING_BRIEF"):
+        text += "\n\n## This shift's opening\n\n" + os.environ["POG_OPENING_BRIEF"].strip() + "\n"
     text = text.rstrip("\n") + "\n\n" + (open_index(open_) if open_ else index_text()).rstrip("\n")
+    # Runtime contact gates apply even when general progressive disclosure is off.
+    # fh help/describe materializes the reference only from the caller's live schema.
+    text = re.sub(r"(?m)^- `markets`[^\n]*\n?", "", text)
     text += "\n\n## Compact instructions\n\n" + open(os.path.join(AGENT, "compact.md")).read()
     if open_:
         line = DISCLOSURE_LINE.rstrip("\n") + (REFUSE_LINE if open_.get("refuse") else "") + "\n"
@@ -162,6 +196,11 @@ def core(player, time_text, coop, mate="", mate_notes="", role="", open_=None, e
     text = text.replace("{{EXPEDITION}}\n", expedition_text(expedition))
     if os.environ.get("POG_SPACE_AGE") == "1":
         text = text.replace("base game, default map", "Space Age (with Quality and Elevated Rails), default map")
+    if os.environ.get("POG_MAP_TEXT"):
+        assert MAP_TEXT in text, "agent/PLAYBOOK.md: the map line changed (tools/brief.py MAP_TEXT)"
+        text = text.replace(MAP_TEXT, os.environ["POG_MAP_TEXT"])
+    if os.environ.get("POG_CONTINUOUS") == "1":
+        text = continuous_text(text)
     return fill(text, values(player, mate, mate_notes, role))
 
 
@@ -192,7 +231,7 @@ def topic_units(player, open_=None):
             continue
         when = when_of[topic]
         head = f"# {topic} (`./fh help {topic}`)\n\nRead it {when}.\n\n"
-        if open_ is None:
+        if open_ is None and topic != "markets":
             body = open(os.path.join(REF, topic + ".md")).read().rstrip("\n")
             if topic == "space-age" and sa_on:
                 sa = open(os.path.join(AGENT, "spaceage.md")).read().strip().split("\n", 1)[1].strip()
@@ -204,14 +243,20 @@ def topic_units(player, open_=None):
                 items += [(f"spaceage.md#{n}", t if t.startswith("- ") else t + "\n")
                           for f, n, t in _disclosure().brief_items() if f == "spaceage.md" and not t.startswith("#")]
             items += [(f"{topic}#{n}", t) for n, t in _disclosure().topic_items(topic)]
-            body = "".join(t for i, t in items if i not in open_["docs_shut"] and i not in open_["brief_shut"]).rstrip("\n")
+            visible = open_ or {"docs_shut": set(), "brief_shut": set()}
+            body = "".join(t for i, t in items if i not in visible["docs_shut"] and i not in visible["brief_shut"]).rstrip("\n")
         text = head + body + "\n"
 
         def done(x):
+            if os.environ.get("POG_CONTINUOUS") == "1":
+                x = continuous_text(x)
             return fill(x.replace("{{VOICES}}", voices() if "{{VOICES}}" in x else ""), values(player))
         units = None if items is None else {"head": done(head), "items": [{"id": i, "text": done(t)} for i, t in items]}
         out[topic] = (done(text), units)
     return out
+
+
+USAGE = "../../../vendor/factorio-harness/docs/usage.md"   # PLAYBOOK's path from runs/RUN/NAME
 
 
 def write(d, player, time_text, coop, mate="", mate_notes="", role=""):
@@ -224,17 +269,26 @@ def write(d, player, time_text, coop, mate="", mate_notes="", role=""):
         line = ""
     finally:
         sys.path.pop(0)
-    open(os.path.join(d, "AGENTS.md"), "w").write(core(player, time_text, coop, mate, mate_notes, role, open_, line))
+    text = core(player, time_text, coop, mate, mate_notes, role, open_, line)
+    # a workspace one folder deeper (runs/RUN/PART/NAME, tools/launch-agent.sh) gets the path from where it is
+    if os.path.abspath(d).startswith(os.path.join(ROOT, "runs") + os.sep):
+        text = text.replace(USAGE, os.path.relpath(os.path.join(ROOT, "vendor", "factorio-harness", "docs", "usage.md"), os.path.abspath(d)))
+    open(os.path.join(d, "AGENTS.md"), "w").write(text)
     ref = os.path.join(d, "ref")
     os.makedirs(ref, exist_ok=True)
     for topic, (text, units) in topic_units(player, open_).items():
-        open(os.path.join(ref, topic + ".md"), "w").write(text)
+        path = os.path.join(ref, topic + ".md")
+        if topic != "markets":
+            open(path, "w").write(text)
+        elif os.path.exists(path):
+            os.remove(path)
         if units is not None:
             os.makedirs(os.path.join(ref, ".units"), exist_ok=True)
             json.dump(units, open(os.path.join(ref, ".units", topic + ".json"), "w"))
     with open(os.path.join(ref, "commands.tsv"), "w") as f:
         for name, topic in sorted(commands().items()):
-            f.write(f"{name}\t{topic}\n")
+            if topic != "markets":
+                f.write(f"{name}\t{topic}\n")
 
 
 def harness_note(text, kind):

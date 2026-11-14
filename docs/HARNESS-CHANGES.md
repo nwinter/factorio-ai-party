@@ -1,5 +1,31 @@
 # Harness changes, 2026-10-10 (branch `pog-eng`, uncommitted)
 
+## mt303 (private): Freight, Orbital Posts, and stocked raid wrecks
+
+Problem: the stage-1 timer could not express raidable Freight, orders only used the Nauvis home Post, and destroying
+a stocked Post lost its goods while spilling its coin. Nick approved stage 2 and required stock and coin to share
+one recoverable wreck, with no combat reward.
+
+Change: logistic science enables buyer-force shipment units, native path requests with a fixed no-path fallback,
+64-tile endpoint protection and exact-arrival payment. Every custody loss uses the buyer/seller/third-party rule;
+pact and cease-fire membership stays sticky. Forward Posts accept same-surface orders, including other planets and
+platforms after the first platform. Destroyed Post stacks transfer intact into the coin wreck. Status, references,
+viewer losses/moving markers and private per-team money measurements follow these rules without route ETAs or
+unmet-team disclosure. Cross-surface movement remains native rocket/pod logistics; no cargo pod force is written.
+
+Verified on private 2.1.24: native path/no-path probe, all money branches, bare and raised destruction, buyer custody
+locks, protected damage, actual arrival without charting the seller's base, sticky cease-fire, live-shipment reload,
+platform-local settlement, native no-pad pod, and Post-stock wreck reload preserving rare quality and magazine ammo.
+Focused fixture: 531 assertions; full harness 796/796. Final native checks also pass immediate cease-fire set/end
+and twenty-stack swaps. Private m303: 105 matches, 102 delivered, three pending, zero losses, 150 clean audits;
+all real-agent routes used fallback, so a future rehearsal needs connected land for moving-shipment coverage.
+Full evidence is recorded in
+/Users/owner/code/pog-operator/report-mt303.md and /Users/owner/code/personal/player-of-games/artifacts/mt303.
+
+Players: use `post {position}` on an own chest, then its ID on orders. Deliveries pay only goods actually inserted;
+clear a full destination Post. An embargo stops new matches after a hostile loss. Use native pods between surfaces,
+and recover a raided Post's goods and coins from its wreck by hand.
+
 All changes live in `factorio-harness/` (working tree only). Lua changes were hot-deployed to the dev world `live` and exercised there; the CLI was rebuilt with `npm run build`. Tests: `lua mod/tests/runtime_test.lua` (657 assertions), `lua tests/*.lua`, and `npm test` (57 pass; the 4 `bridge.test` cases fail only because this sandbox refuses Unix sockets, unrelated to these changes).
 
 ## 0. Fake-engine test for `clock.lua` (turn mode)
@@ -104,3 +130,39 @@ Ready: everything above; all Lua and CLI tests pass (`npm test`: 57 pass, 4 brid
 Not addressed from the notes: `cancel_craft` of one recipe seeming to drop other queued crafts (not reproduced); a placement preview that checks pole coverage / inserter reach / belt gaps before construction (Astra's request 3; `scan fields=io|fluids` and the new `inspect` fields cover the inspection half); a screenshot that follows the controlled character (headless server; out of scope for the runtime).
 
 Note for the merge: `runtime.lua` is close to Lua's 200-local limit in the bundled chunk (a deploy was rejected once during this work); new helpers were grouped into tables (`feeding`, `collect_types`) to stay under it. Future additions should do the same or move into sibling modules.
+
+## mt296 checkpoint 1 (private): contact-gated markets core
+
+Implemented shared standing swaps and Coinage orders, persistent request/transaction receipts, one-pass matching,
+exact-count arrival settlement, pair-scoped responses, passive dispatch and home-Post coin spills. The first core
+suite has 187 assertions plus runtime/data fixtures. Full harness run passed 786/786 before the latest viewer/docs
+additions; their focused regressions pass. Real-engine save/load and agent/control runs remain required. See
+`docs/mt-markets.md`; no live-world deployment has occurred.
+
+## mt296 checkpoint 6 (private): native settlement and depot retirement
+
+Factorio 2.1.24 acceptance passed a real in-transit save/restart, replay after cache eviction, full-receiver
+partial insertion, exact arrival payment, human freeze, both 25% raids and physical-coin recovery/deposit.
+The native probe exposed array-form saved spawn positions; Post creation now normalizes both coordinate forms.
+The depot and its cut are retired: old chest stock is preserved, active diplomatic terms remain, pending depot
+proposals expire, and actual market arrivals count toward delivery obligations. A native hot-deploy migration
+preserved all 37 legacy plates and recorded a new 10-plate arrival without a cut. Full suite: 786/786; market:
+247 assertions; Lua syntax checks pass. Agent market/control experiments remain pending.
+
+## mt296 checkpoint 7 (private): prepared-base native QA
+
+Fixture holds use 2.1's writable disabled_by_script flag, position-plus-unit identity checks for static entities,
+and one fuel stack per furnace. Both 137-entity bases produced all six required products; both 1,200-ore poor
+patches exhausted within the ten-minute probe. The saved, production-held baseline survived reload with zero
+production/stock drift. Real chart contact then placed both Posts exactly at the stock chests, preserved stock,
+and issued exactly 20,000 total coin. The canonical save is unpaused only to permit runtime deployment; cp20
+pauses before clients start. The paired runs release production only at operator activation.
+
+## mt296 checkpoint 10 (private): reference launch and contact gates
+
+Native graphical startup caught and fixed the Coinage icon path. Workspace startup then caught a missing reference
+topic registration before any model ran. Markets are now omitted from startup briefs and the visible reference
+files/index; fh help/describe materializes them from the caller's live schema, adding Coinage and addressing only
+at their rungs. Unsupported market calls carry no guessed reference hints. Ordinary typo hints remain. The
+expanded full harness suite passes 787/787; full launch, brief and disclosure suites pass. Both failed startups
+are preserved as zero-agent attempts; production was held throughout.

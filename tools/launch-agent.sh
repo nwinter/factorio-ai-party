@@ -10,13 +10,66 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 # A later shift (tools/start-team.sh, POG_RESUME): one neutral sentence on the prompt, no advice.
 resume_sentence='This is a later shift of the same world: your bot and the factory are as the last shift left them. The world stays paused at the start until every agent has launched (a few minutes), then resumes by itself. Read the new deadline.txt; notes.md is where you left off, with a full read needed only if no recovery brief arrived.'
+[ "${POG_WORLD_RUNNING:-0}" != 1 ] || resume_sentence='This is a later shift of the same world, which kept running during the handoff. Keep your chosen identity. Read the new deadline.txt and your own notes.md, check current status and coordinate with your teammate before continuing.'
+if [ "${POG_CONTINUOUS:-0}" = 1 ]; then
+  resume_sentence='Continue in the same world from your own notes.md. Keep your chosen identity, check current status and coordinate with your teammate.'
+fi
 if [ "${1:-}" = --resume-sentence ]; then echo "$resume_sentence"; exit 0; fi
 . "$root/tools/profile-flags.sh"
 # agy's loop (.agy-loop.sh) for workspace $dir, model $model, fresh-start limit $limit and prompt file $prompt.
-agy_loop_script() {
+# Continuous play has no game deadline; the operator owns process handoffs.
+agy_continuous_script() {
+  local agy_web="" agy_client=agy
+  [ "${POG_ISOLATED:-0}" != 1 ] || agy_client="python3 '$root/tools/agy-local.py'"
+  [ -z "${POG_WEB_BLOCK:-}" ] || agy_web="--settings '$(python3 "$root/tools/full_tools.py" agy-web-off)' $(python3 "$root/tools/full_tools.py" agy-agent "$dir")"
   cat > "$dir/.agy-loop.sh" <<EOL
 #!/usr/bin/env bash
 cd '$dir'
+${proxy_env:+export $proxy_env}
+exec > >(tee .agy-last.txt) 2>&1
+started=0
+woke=""
+while :; do
+  tokens=\$(\${POG_AGY_TOKENS_CMD:-python3 '$root/tools/context.py' agy-tokens} '$dir')
+  memory=\$(python3 '$root/tools/agy_rules.py' digest-rules '$dir' 2>/dev/null)
+  if [ "\$started" = 0 ] || { [ "$limit" -gt 0 ] && [ "\$tokens" -ge "$limit" ]; }; then
+    args=(-p "\$(cat '$prompt') \$woke
+
+\$memory")
+  else
+    args=(-c -p "Continue your current work toward the goal. Keep your identity and notes.md current. \$woke
+
+\$memory")
+  fi
+  touch .agy-stamp
+  t0=\$(date +%s)
+  '$sleepcap_run' $agy_client "\${args[@]}" --model $model --dangerously-skip-permissions $agy_web --print-timeout ${POG_AGY_TURN_S:-300}s
+  ${POG_ONE_TURN:+exit 0}
+  # A rolling quota retry horizon is process housekeeping, not a run end.
+  q=\$(python3 '$root/tools/agy-quota.py' '$dir' .agy-stamp "\$((\$(date +%s) + 86400))")
+  case "\$q" in
+    stop) exit 0 ;;
+    "") started=1; [ "\$((\$(date +%s) - t0))" -ge 15 ] || sleep "\${POG_AGY_RETRY_WAIT:-30}" ;;
+    *) sleep "\$q" ;;
+  esac
+  woke=""
+  case "\$q" in ""|stop) ;; *) woke=\$(python3 '$root/tools/agy-quota.py' --woke '$dir') ;; esac
+done
+EOL
+  chmod +x "$dir/.agy-loop.sh"
+}
+
+agy_loop_script() {
+  if [ "${POG_CONTINUOUS:-0}" = 1 ]; then agy_continuous_script; return; fi
+  # POG_WEB_BLOCK: no web tools for agy (a workspace agent's tool list, and session settings: tools/full_tools.py)
+  local agy_web=""
+  local agy_client=agy
+  [ "${POG_ISOLATED:-0}" != 1 ] || agy_client="python3 '$root/tools/agy-local.py'"
+  [ -z "${POG_WEB_BLOCK:-}" ] || agy_web="--settings '$(python3 "$root/tools/full_tools.py" agy-web-off)' $(python3 "$root/tools/full_tools.py" agy-agent "$dir")"
+  cat > "$dir/.agy-loop.sh" <<EOL
+#!/usr/bin/env bash
+cd '$dir'
+${proxy_env:+export $proxy_env}
 # deadline.txt has minutes only; without explicit seconds date -j takes the current ones (shake2: a turn at 22:46:12).
 d=\$(cat deadline.txt)
 deadline=\$(date -j -f "%Y-%m-%d %H:%M:%S %Z" "\${d% *}:00 \${d##* }" +%s)
@@ -32,10 +85,12 @@ started=0
 turn_s=${POG_AGY_TURN_S:-300}
 timed_out=0
 turn() {
+  d=\$(cat deadline.txt)
+  deadline=\$(date -j -f "%Y-%m-%d %H:%M:%S %Z" "\${d% *}:00 \${d##* }" +%s)
   touch .agy-stamp
   t0=\$(date +%s)
   # The wait cap goes on agy only: this loop's own sleep until a quota reset stays a plain sleep.
-  '$sleepcap_run' agy "\$@" --model $model --dangerously-skip-permissions --print-timeout ${POG_AGY_TURN_S:-300}s
+  '$sleepcap_run' $agy_client "\$@" --model $model --dangerously-skip-permissions $agy_web --print-timeout ${POG_AGY_TURN_S:-300}s
   # ran into the timeout: it ends at turn_s (a turn that ends by itself much later was not cut)
   took=\$((\$(date +%s) - t0)); timed_out=0
   [ "\$took" -ge "\$((turn_s - 2))" ] && [ "\$took" -le "\$((turn_s + 30))" ] && timed_out=1
@@ -112,18 +167,31 @@ full=${POG_FULL_TOOLS:-0}
 # the core (tools/brief.py) stays under 20 KB, and tools/agy_rules.py rules warns on stderr if it ever grows past 24000.
 [ "$kind" = agy ] && python3 "$root/tools/agy_rules.py" rules "$dir" >/dev/null
 prompt="$root/runs/$run/prompt.md"
-if [ ! -f "$prompt" ]; then
+if [ "${POG_CONTINUOUS:-0}" = 1 ]; then
+  printf '%s\n' 'Read AGENTS.md for your instructions, interface and rules. Play Factorio toward the goal and keep notes.md current.' > "$prompt"
+  if [ -n "${POG_RESUME:-}" ]; then printf '%s\n' "$resume_sentence" >> "$prompt"; fi
+elif [ ! -f "$prompt" ]; then
   cat > "$prompt" <<'EOP'
 Read AGENTS.md in this directory; it has your instructions, interface, rules, and deadline. Then play Factorio until the deadline in deadline.txt, keeping notes.md current, and finish with the final summary it asks for.
 EOP
   if [ -n "${POG_RESUME:-}" ]; then printf '%s\n' "$resume_sentence" >> "$prompt"; fi
 fi
-name="pog-${POG_WS:-$world}-$run"
+# A run in parts is RUN/PART: the part's folder runs/RUN/PART holds its prompt, roster, keys or sockets and team-tools;
+# names and labels use RUN-PART
+label=${run//\//-}
+# POG_PROXY (http://127.0.0.1:PORT, POG_NETGATE=1): this agent's shell and CLI through the run's network
+# gate (only the CLI's own hosts), set in the launch's own environment only (Grok, Muse, agy)
+proxy_env=""
+if [ -n "${POG_PROXY:-}" ]; then
+  proxy_env="HTTPS_PROXY=$POG_PROXY HTTP_PROXY=$POG_PROXY ALL_PROXY=$POG_PROXY https_proxy=$POG_PROXY http_proxy=$POG_PROXY all_proxy=$POG_PROXY NO_PROXY=localhost,127.0.0.1 no_proxy=localhost,127.0.0.1"
+fi
+name="pog-${POG_WS:-$world}-$label"
 allow='"Read", "Grep", "Glob", "Edit(/**)", "Write(/**)", "Bash(./fh:*)", "Bash(./shot:*)", "Bash(echo:*)",
               "Bash(sleep:*)", "Bash(date:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(grep:*)",
               "Bash(python3:*)", "Bash(jq:*)", "Bash(ls:*)", "Bash(wc:*)", "Bash(rg:*)", "Bash(sort:*)"'
 # Compaction settings per model: agent/context.tsv, applied by tools/context.py (docs/CONTEXT-NOTES.md).
 compact_rule='After compaction, use a supplied recovery brief; if none arrived, read notes.md. Read deadline.txt before acting.'
+[ "${POG_CONTINUOUS:-0}" != 1 ] || compact_rule='After compaction, use a supplied recovery brief; if none arrived, read notes.md. Check status and chat before acting.'
 
 # Claude-style settings: Claude Code uses the sandbox; Grok Build reads the same file for its allowlist.
 claude_settings() {
@@ -136,7 +204,7 @@ claude_settings() {
   # Earlier runs' key copies (runs/*/.keys) hold the same world passwords: denied, apart from this run's own while
   # fh reads it (no broker). Rules in both forms: Claude Code reads "//" as absolute, Grok Build "/".
   local keys_read="" keys_rules="" k
-  for k in "$root"/runs/*/.keys; do
+  for k in "$root"/runs/*/.keys "$root"/runs/*/*/.keys; do
     [ -d "$k" ] || continue
     [ "${POG_BROKER:-0}" != 1 ] && [ "$k" = "$root/runs/$run/.keys" ] && continue
     keys_read="$keys_read, \"$k\""
@@ -144,7 +212,11 @@ claude_settings() {
   done
   # Other runs' folders (their notes, chat and logs) are denied too, so a run reads as a first attempt (task-hosts5);
   # this run and the shifts it resumes (resumed-from, followed back) stay readable.
-  local chain=" $run " r=$run d
+  # A run in parts (RUN/PART): the chain is of whole runs (runs/RUN/resumed-from), and in each of them every folder but
+  # this part's is denied
+  local top=${run%%/*} part="" t
+  [ "$top" = "$run" ] || part=${run#*/}
+  local chain=" $top " r=$top d
   while [ -f "$root/runs/$r/resumed-from" ]; do
     r=$(cat "$root/runs/$r/resumed-from")
     case "$chain" in *" $r "*) break ;; esac
@@ -152,19 +224,48 @@ claude_settings() {
   done
   for d in "$root"/runs/*/; do
     d=${d%/}
-    case "$chain" in *" ${d##*/} "*) continue ;; esac
+    case "$chain" in *" ${d##*/} "*)
+      if [ -n "$part" ]; then
+        for t in "$d"/*/; do
+          t=${t%/}
+          [ -d "$t" ] && [ "${t##*/}" != "$part" ] || continue
+          keys_read="$keys_read, \"$t\""
+          keys_rules="$keys_rules, \"Read(/$t/**)\", \"Read($t/**)\""
+        done
+      fi
+      continue ;; esac
     keys_read="$keys_read, \"$d\""
     keys_rules="$keys_rules, \"Read(/$d/**)\", \"Read($d/**)\""
   done
+  # POG_DENY_READ: more folders no agent reads (space-separated absolute paths)
+  for d in ${POG_DENY_READ:-}; do
+    [ "${POG_ISOLATED:-0}" != 1 ] || continue  # filesystem scope enforces this without listing private paths in model settings
+    keys_read="$keys_read, \"$d\""
+    keys_rules="$keys_rules, \"Read(/$d/**)\", \"Read($d/**)\""
+  done
+  # POG_READ_SCOPE=1, a run in parts, Claude Code: Claude Code shows the model its sandbox settings and Read rules, so
+  # the list above would name the run's other parts. Instead the shell reads nothing under ~/code or Dropbox but this
+  # tree's shared files and this part's folder (and the same part of the runs it resumes), and the Read tool the same
+  # paths (allow rules: no bare Read, Grep or Glob; the shell's grep, rg and ls stay).
+  local filesystem="\"denyRead\": [\"$HOME/.config/pog\"$keys_read]" file_allow=$allow
+  if [ "${POG_READ_SCOPE:-0}" = 1 ] && [ -n "$part" ] && [ "${1:-}" != nosandbox ]; then
+    local roots="\"$HOME/code\"" readable="" f
+    for f in "$HOME/Dropbox" "$HOME/Dropbox (Personal)"; do [ -e "$f" ] && roots="$roots, \"$f\""; done
+    for f in "$root"/*; do [ "${f##*/}" = runs ] || readable="$readable \"$f\""; done
+    for r in $chain; do readable="$readable \"$root/runs/$r/$part\""; done
+    filesystem="\"denyRead\": [\"$HOME/.config/pog\", $roots], \"allowRead\": [$(echo $readable | sed 's/" "/", "/g')]"
+    file_allow="$(for f in $readable; do f=${f//\"/}; [ -f "$f" ] && printf '"Read(/%s)", ' "$f" || printf '"Read(/%s/**)", ' "$f"; done)${allow#\"Read\", \"Grep\", \"Glob\", }"
+    keys_rules=""
+  fi
   local sandbox="\"sandbox\": {\"enabled\": true, \"autoAllowBashIfSandboxed\": true, \"allowUnsandboxedCommands\": false,
-    \"network\": {\"allowLocalBinding\": true$sockets}, \"filesystem\": {\"denyRead\": [\"$HOME/.config/pog\"$keys_read]}},"
+    \"network\": {\"allowLocalBinding\": true$sockets}, \"filesystem\": {$filesystem}},"
   [ "${1:-}" = nosandbox ] && sandbox=''   # Grok Build: allowlist only (its own sandbox flags differ)
   cat > "$dir/.claude/settings.json" <<EOS
 {
   $sandbox
   "permissions": {
     "defaultMode": "dontAsk",
-    "allow": [$allow],
+    "allow": [$file_allow],
     "deny": ["Read(~/.config/pog/**)", "Read($HOME/.config/pog/**)", "Edit(~/.config/pog/**)", "Edit($HOME/.config/pog/**)"$keys_rules]
   }
 }
@@ -178,8 +279,27 @@ new_pane() {
     anchor=$(herdr pane list --workspace "${POG_TAB%%:*}" | python3 -c "import json,sys; t=sys.argv[1]; print([p['pane_id'] for p in json.load(sys.stdin)['result']['panes'] if p['tab_id']==t][-1])" "$POG_TAB")
     herdr pane split "$anchor" --direction right --cwd "$dir" --no-focus | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['pane']['pane_id'])"
   else
-    herdr tab create --workspace "${HERDR_WORKSPACE_ID:?run inside Herdr}" --label "$run" --cwd "$dir" --no-focus | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['root_pane']['pane_id'])"
+    herdr tab create --workspace "${HERDR_WORKSPACE_ID:?run inside Herdr}" --label "$label" --cwd "$dir" --no-focus | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['root_pane']['pane_id'])"
   fi
+}
+
+run_prepared() {
+  local prepared=$2
+  if [ "${POG_ISOLATED:-0}" = 1 ]; then
+    python3 - "$2" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1]);text=p.read_text()
+guard='[ "${POG_SCOPE_ACTIVE:-}" = 1 ] || { echo "launch through the prepared process scope" >&2; exit 1; }\n'
+p.write_text(text.replace('#!/usr/bin/env bash\n','#!/usr/bin/env bash\n'+guard,1))
+PY
+    if [ "${POG_PANE_WATCH:-0}" = 1 ]; then
+      prepared="$dir/.$kind-watch.sh"
+      printf '%s\n' '#!/usr/bin/env bash' "exec python3 '$root/tools/agent-watch-run.py' '$dir' '$2'" > "$prepared"
+      chmod +x "$prepared"
+    fi
+    herdr pane run "$1" "python3 '$root/tools/agent-scope.py' '$root' '${POG_PROXY:?isolated clients require their provider proxy}' '$prepared'" >/dev/null
+  else herdr pane run "$1" "'$2'" >/dev/null; fi
 }
 
 case $kind in
@@ -190,6 +310,7 @@ case $kind in
     python3 "$root/tools/context.py" setup claude "$model" "$dir" >/dev/null
     python3 "$root/tools/clean-profile.py" claude "$dir"
     [ "$full" = 1 ] && python3 "$root/tools/full_tools.py" claude "$dir"
+    [ -z "${POG_WEB_BLOCK:-}" ] || python3 "$root/tools/full_tools.py" web-block "$dir"
     # After context.py, which writes the hooks: the wait cap's SessionStart hook (tools/sleepcap/setup.py).
     python3 "$root/tools/sleepcap/setup.py" claude "$dir"
     # (d27 batch275 HW) the team's ground rules in AGENTS.md (CLAUDE.md links to it), which Claude Code loads at the start
@@ -224,6 +345,12 @@ case $kind in
     python3 "$root/tools/clean-profile.py" "$kind" "$dir"
     # ai-session passes no environment: the wait cap goes in the workspace config's shell environment.
     python3 "$root/tools/sleepcap/setup.py" codex "$dir"
+    # POG_SHELL_NET=socket (POG_BROKER=1): the shell reaches only this bot's broker socket, by Codex's own network proxy
+    # and a permission profile in the workspace config; without --sandbox and --network, which would override it
+    if [ "${POG_SHELL_NET:-}" = socket ] && [ "${POG_BROKER:-0}" = 1 ]; then
+      args=(--route "${POG_ROUTE:-codex-b}" --model "$model" --thinking "$effort" --approval never)
+      python3 "$root/tools/full_tools.py" codex-socket-only "$dir" "$(dirname "$dir")/.sock/${POG_BOT:-$player}.sock"
+    fi
     # (d29 batch331 LS) through tools/ai-session-spawn.sh: a pane whose shell missed ai-session's 20 s is waited for
     # and the manifest run there (shift96 and shift97 failed on it); it prints the pane, or exits 1 with the output
     pane=$("$root/tools/ai-session-spawn.sh" "${args[@]}" -C "$dir" --name "$name" --herdr tab --prompt-file "$prompt" --start)
@@ -234,12 +361,13 @@ case $kind in
       herdr tab close "$tab" >/dev/null 2>&1 || true
       tab=$POG_TAB
     else
-      herdr tab rename "$tab" "$run" >/dev/null 2>&1 || true
+      herdr tab rename "$tab" "$label" >/dev/null 2>&1 || true
     fi
     ;;
   grok)
     model=${6:-grok-4.7} effort=${7:-low}
     claude_settings nosandbox
+    [ -z "${POG_WEB_BLOCK:-}" ] || python3 "$root/tools/full_tools.py" web-block "$dir"   # Grok reads the same rules
     ctx_env=$(python3 "$root/tools/context.py" setup grok "$model" "$dir")
     # Run-local GROK_HOME; the owner's login must last the run plus 15 minutes (tools/grok-home.py refreshes it).
     home_env=$(python3 "$root/tools/grok-home.py" setup "$dir" $((minutes * 60 + 900)))
@@ -249,8 +377,8 @@ case $kind in
     # tools/profile-flags.sh. Started from a script: the full command is about 1,450 characters, and typed into a
     # pane whose shell is not ready yet, input past the terminal's 1,024-byte line limit can be cut (smoke-l4g's
     # Grok never started). grok-start.log shows that the script ran.
-    grok_run_script "$dir" "$home_env $ctx_env '$sleepcap_run'" "$model" "$effort" "$prompt" "$compact_rule"
-    herdr pane run "$pane" "'$dir/.grok-run.sh'" >/dev/null
+    grok_run_script "$dir" "$home_env $ctx_env $proxy_env '$sleepcap_run'" "$model" "$effort" "$prompt" "$compact_rule"
+    run_prepared "$pane" "$dir/.grok-run.sh"
     ;;
   agy)
     model=${6:-gemini-3.8-flash-high}
@@ -262,23 +390,35 @@ case $kind in
     # conversation that picks up from notes.md. The check runs only between turns, and one turn can last the hour
     # (shake2: 53 minutes); agy's own compaction covers that case.
     agy_loop_script
-    herdr pane run "$pane" "'$dir/.agy-loop.sh'" >/dev/null
+    run_prepared "$pane" "$dir/.agy-loop.sh"
     ;;
   muse)
     model=${6:-muse-spark-1.3} effort=${7:-low}
     ctx_args=$(python3 "$root/tools/context.py" setup muse "$model" "$dir")   # -c context_compaction.* options
     clean_args=$(python3 "$root/tools/clean-profile.py" muse "$dir")         # -c 'hooks={}'; $muse_env: profile-flags.sh
+    # The outer process scope covers native tools and all descendants. macOS
+    # refuses a nested sandbox-exec; keep one enforced boundary for this route.
+    [ "${POG_ISOLATED:-0}" != 1 ] || clean_args="$clean_args -c context.foreign_personal_rules=false -c context.foreign_personal_skills=false --disable-sandbox"
+    [ -z "${POG_WEB_BLOCK:-}" ] || clean_args="$clean_args $(python3 "$root/tools/full_tools.py" muse-web-off)"
     pane=$(new_pane)
-    printf '%s\n' '#!/usr/bin/env bash' "cd '$dir'" \
-      "exec env $muse_env '$sleepcap_run' muse $ctx_args $clean_args --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace \"\$(cat '$prompt')\"" \
+    muse_client=muse
+    muse_prompt="\"\$(cat '$prompt')\""
+    if [ "${POG_ISOLATED:-0}" = 1 ]; then
+      muse_client="python3 '$root/tools/muse-local.py' '$prompt'"
+      muse_prompt=""
+    fi
+    printf '%s\n' '#!/usr/bin/env bash' "cd '$dir'" "${proxy_env:+export $proxy_env}" \
+      "exec env $muse_env '$sleepcap_run' $muse_client $ctx_args $clean_args --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace $muse_prompt" \
       > "$dir/.muse-run.sh"
     chmod +x "$dir/.muse-run.sh"
-    herdr pane run "$pane" "'$dir/.muse-run.sh'" >/dev/null
+    run_prepared "$pane" "$dir/.muse-run.sh"
     ;;
   *) echo "unknown kind $kind" >&2; exit 1 ;;
 esac
 [ -n "${tab:-}" ] || tab=$(herdr pane get "$pane" | python3 -c "import json,sys; d=json.load(sys.stdin)['result']; print(d.get('pane',d)['tab_id'])")
 herdr pane rename "$pane" "$name" >/dev/null 2>&1 || true
+# POG_WEB_BLOCK: what this harness's web tools and shell network allow, in DIR/.web-state (the launch logs it)
+[ -z "${POG_WEB_BLOCK:-}" ] || python3 "$root/tools/full_tools.py" web-state "$dir" "$kind" >/dev/null
 
 # First-run prompts we can answer: folder trust (we created it). POG_NO_WAIT=1 skips this so a team launch can start
 # every pane first and clear all prompts in one pass (tools/start-team.sh).

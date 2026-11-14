@@ -13,6 +13,7 @@
 -- packs 763 + 763 + 1000, the pad twice and the output chests left out).
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
+  local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
   local M = {}
   local CHESTS, LABS, SILOS, PADS, PLAIN = 400, 1024, 16, 16, 4000
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -255,7 +256,7 @@ return function(api)
           if name == item and ((f.min or 0) > 0 or f.max) then
             local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
             local short = math.max(0, (f.min or 0) - row.hub)
-            asks[#asks+1] = string.format('requests %s..%s%s, %d short', f.min or 0, f.max and tostring(f.max) or 'inf', from and ' from ' .. from or '', short)
+            asks[#asks+1] = string.format('requests %s..%s%s, %d short', f.min or 0, f.max and tostring(f.max) or 'inf', PORT21 and (' from ' .. (from or 'anywhere') .. ' via ' .. (f.request_from or 'planet')) or (from and ' from ' .. from or ''), short)
           end
         end
       end

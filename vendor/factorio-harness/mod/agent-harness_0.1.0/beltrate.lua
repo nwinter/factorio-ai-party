@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- trace {position, throughput: true} (B1, Opus 21:20: 14 drills added before learning both trunks were already full):
 -- a belt line's supply against its capacity, per lane. From the belt tile: every belt feeding it, walked back (straight
 -- inputs, side-loads, undergrounds), and on to the line's end (one splitter output followed). Then the mining drills
@@ -38,7 +41,7 @@ return function(api)
       local bn = try(function() return b.belt_neighbours end)
       for _, x in ipairs(bn and bn.inputs or {}) do if BELT[x.type] and add(x) then queue[#queue+1] = x end end
       if b.type == 'underground-belt' and try(function() return b.belt_to_ground_type end) == 'output' then
-        local nb = try(function() return b.neighbours end)
+        local nb = try(function() return b[UNDERGROUND_NEIGHBOUR] end)
         if nb and nb.valid and add(nb) then queue[#queue+1] = nb end
       end
     end
@@ -49,7 +52,7 @@ return function(api)
       n = n + 1
       local bn = try(function() return cur.belt_neighbours end)
       local nxt = bn and bn.outputs and bn.outputs[1]
-      if not nxt and cur.type == 'underground-belt' and try(function() return cur.belt_to_ground_type end) == 'input' then nxt = try(function() return cur.neighbours end) end
+      if not nxt and cur.type == 'underground-belt' and try(function() return cur.belt_to_ground_type end) == 'input' then nxt = try(function() return cur[UNDERGROUND_NEIGHBOUR] end) end
       if not (nxt and nxt.valid) or tiles[key(nxt)] and nxt ~= cur then
         if nxt and nxt.valid and tiles[key(nxt)] then break end
         last = cur; break

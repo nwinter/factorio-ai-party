@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- Factory awareness for status: science and plate rates, research ETA, machine
 -- states, fuel and power starvation, the character's inventory, and how much
 -- of the factory still runs through the character's hands. Numbers only: what
@@ -102,10 +105,17 @@ return function(api)
 
   -- Hand work log: per-minute buckets of items the character fed into
   -- entities, collected from machines, and started crafting.
-  function M.log_hand(kind,name,count)
+  -- (mt276) one ledger per force (fname; the player force's stays hand_log)
+  local function hand_log(fname)
+    local st=api.state()
+    if fname==nil or fname=='player' then st.hand_log=st.hand_log or {}; return st.hand_log end
+    st.hand_log_teams=st.hand_log_teams or {}
+    st.hand_log_teams[fname]=st.hand_log_teams[fname] or {}
+    return st.hand_log_teams[fname]
+  end
+  function M.log_hand(kind,name,count,fname)
     if count<=0 then return end
-    local log=api.state().hand_log or {}
-    api.state().hand_log=log
+    local log=hand_log(fname)
     local minute=math.floor(game.tick/MINUTE)
     local bucket=log[minute]
     if not bucket then
@@ -114,10 +124,10 @@ return function(api)
     end
     bucket[kind][name]=(bucket[kind][name] or 0)+count
   end
-  local function hand_totals()
+  local function hand_totals(fname)
     local out={fed={},collected={},crafted={}}
     local minute=math.floor(game.tick/MINUTE)
-    for m,bucket in pairs(api.state().hand_log or {}) do
+    for m,bucket in pairs(hand_log(fname)) do
       if m>minute-HAND_MINUTES then
         for kind,items in pairs(bucket) do
           for name,n in pairs(items) do out[kind][name]=(out[kind][name] or 0)+n end
@@ -132,9 +142,9 @@ return function(api)
   end
   -- Share of the last 10 minutes' factory flow that went through the hands:
   -- fed against consumed, collected and crafted against produced.
-  local function hand_line(stats)
+  local function hand_line(stats,fname)
     local ten=defines.flow_precision_index.ten_minutes
-    local totals,parts=hand_totals(),{}
+    local totals,parts=hand_totals(fname),{}
     for _,spec in ipairs{{'fed','output'},{'collected','input'},{'crafted','input'}} do
       local rows={}
       for name,n in pairs(totals[spec[1]]) do
@@ -218,7 +228,7 @@ return function(api)
   local function belt_one(b,surface,force,e,kind,p)
     if e.valid==false then return end  -- gone since the job's find (a slice a tick)
     if kind=='underground-belt' then
-      if not e.neighbours then b.unpaired[#b.unpaired+1]=e.belt_to_ground_type..' '..at_pos(p or e.position) end
+      if not e[UNDERGROUND_NEIGHBOUR] then b.unpaired[#b.unpaired+1]=e.belt_to_ground_type..' '..at_pos(p or e.position) end
     elseif #e.belt_neighbours.outputs==0 then
       local s=STEP[e.direction]
       p=p or e.position
@@ -387,7 +397,8 @@ return function(api)
             local inv=e.get_inventory(defines.inventory.lab_input)
             local count=inv and inv.get_item_count  -- (BT1: the method read once a lab, not once a pack)
             for _,ingredient in ipairs(tech.research_unit_ingredients) do
-              if count and count(ingredient.name)==0 then missing[ingredient.name]=(missing[ingredient.name] or 0)+1 end
+              local ok, stored=pcall(function() return e.get_stored_durability(ingredient.name).durability end)
+              if count and count(ingredient.name)==0 and (not ok or stored<=0) then missing[ingredient.name]=(missing[ingredient.name] or 0)+1 end
             end
             a.labs=a.labs+1
           end
@@ -493,7 +504,7 @@ return function(api)
     local names={}
     for name in pairs(stats.output_counts) do
       local item=prototypes.item[name]
-      if item and item.type=='tool' then names[#names+1]=name end
+      if item and ((api.is_science and api.is_science(name)) or item.type=='tool') then names[#names+1]=name end
     end
     table.sort(names)
     for _,name in ipairs(names) do
@@ -512,7 +523,7 @@ return function(api)
     local factory={belt_ends=belt_ends,science=#science>0 and table.concat(science,', ')..' /min (1m|10m)' or nil,
       research=research_line(force,warnings,lab_count),
       plates=#plates>0 and table.concat(plates,', ')..' /min (1m|10m)' or nil,
-      hand=hand_line(stats)}
+      hand=hand_line(stats,force and force.name)}
     if end_positions and #end_positions>0 then detail.belt_ends=end_positions end
     return {tick=game.tick,surface=surface.index,factory=factory,machines=summary,positions=detail,warnings=warnings,lists=lists,list_counts=counts,
       digest={tick=game.tick,machines=machines,fuel=fuel,belts={ends=#b.ends,unpaired=#b.unpaired,misdirected=#b.stuck}}}

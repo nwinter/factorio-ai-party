@@ -2,7 +2,27 @@
 -- speech bubbles `say` draws over the speaker. `profiles` is what the stream
 -- overlay polls: every player's and bot's profile, where it is and what it does.
 return function(api)
-  local M = {handlers={}}
+  local M = {handlers={},operator={}}
+  -- Base models come from the launch roster, never an agent-chosen profile.
+  function M.model(name)
+    local mt=api.state().mt
+    return mt and mt.roster and mt.roster[name] and mt.roster[name].model or nil
+  end
+  function M.operator.mt_roster(a)
+    local mt=assert(api.state().mt,'no team setup')
+    assert(type(a.agents)=='table' and #a.agents<=12,'agents: up to twelve roster entries')
+    local bots={};for _,b in ipairs(api.bots()) do bots[b.name]=b end
+    local pending={}
+    for _,r in ipairs(a.agents) do
+      assert(type(r)=='table' and bots[r.name] and mt.teams[bots[r.name].force],'unknown roster agent')
+      assert(not pending[r.name],'duplicate roster agent')
+      assert(type(r.model)=='string' and #r.model>=1 and #r.model<=60 and r.model:match('^[%w .+%-]+$'),'model: plain public label, 1..60 bytes')
+      pending[r.name]={model=r.model}
+    end
+    mt.roster=mt.roster or {}
+    for name,r in pairs(pending) do mt.roster[name]=r end
+    return {updated=#a.agents}
+  end
   local BUBBLE_TICKS, WRAP, MAX_LINES = 480, 40, 6
   local function store()
     local s = api.state()
@@ -74,7 +94,7 @@ return function(api)
   function M.get(index) return store()[index] end
   local function public(pr)
     if not pr then return {} end
-    return {display_name=pr.display_name, color=pr.color, glyph=pr.glyph, motto=pr.motto, avatar=pr.avatar, voice=pr.voice, pronouns=pr.pronouns}
+    return {display_name=pr.display_name, color=pr.color, glyph=pr.glyph, persona=pr.persona, motto=pr.motto, avatar=pr.avatar, voice=pr.voice, pronouns=pr.pronouns}
   end
   -- Paint the character (and, for a player, the player and chat name colour).
   function M.apply(p)
@@ -89,27 +109,36 @@ return function(api)
   M.schema = {
     profile = {display_name='1..24 characters', color='"#rrggbb" (character and chat name colour); one too close to another agent\'s is refused', glyph='1..2 characters: an emoji or letters (a short tag beside your name); one another agent holds is refused',
       motto='0..80 characters',
+      persona='0..160 characters: your chosen personality and approach to the factory; one line',
       voice='your stream voice (Deepgram Aura-2 speaker, lower case): apollo arcas aries atlas hermes hyperion janus jupiter mars neptune odysseus orion orpheus pluto saturn zeus (masculine); amalthea andromeda asteria athena aurora callista cora cordelia delia electra harmonia helena hera iris juno luna minerva ophelia pandora phoebe theia vesta (feminine); unset or unknown: a default picked from your name; one another agent holds is refused',
       pronouns='optional, 0..32 characters of free text (e.g. "she/her", "they/them", "it"); casters use them when they talk about you; "" clears',
       avatar='pixel portrait, every field optional (unset ones follow from your name): base engineer|robot|biter|drone, helmet none|hardhat|armor|power|crest|hood, visor none|goggles|slit|wide|mono|grid, emblem none|gear|bolt|flask|plate|circuit|rocket|leaf|star, accessory none|antenna|headlamp|scarf|tank|horns|earpiece|pipe|headset, backdrop dark|grid|hazard|glow|night, accent "#rrggbb" (second colour; suit is your color); false clears',
-      returns='your profile; with no arguments just reads it'},
-    profiles = {returns='every player and bot (directors excluded): kind bot|player, name, display_name, color, glyph, motto, avatar, voice, pronouns, position, surface, where (planet, "platform NAME" or "cargo pod to ..."), travel (bots: ascending|aboard|descending), alive, active (current action kind or false), last_said {text,tick}'},
+      returns='your profile, including the read-only base model from the launch roster; with no arguments just reads it'},
+    profiles = {returns='every player and bot of your team (directors excluded): kind bot|player, name, display_name, model (read-only base model), persona, color, glyph, motto, avatar, voice, pronouns, position, surface, where (planet, "platform NAME" or "cargo pod to ..."), travel (bots: ascending|aboard|descending), alive, active (current action kind or false), last_said {text,tick}'},
   }
   -- A glyph tags one agent: one another agent holds is refused, naming the
   -- holder (shake3: Astra and Muse both had ✦, Sol and Sonnet both S). Case
   -- and an emoji variation selector (U+FE0F) do not make a different glyph.
   local function same_glyph(g) return (g:lower():gsub('\239\184\143', '')) end
+  -- (mt276 B) the team the call runs as, and an index's team: glyphs, colours and voices are kept apart within a team
+  -- (a refusal over another team's would tell a team others exist)
+  local function team_now() return api.team_now and api.team_now() or 'player' end
+  local function team_of(index) return api.team_of and api.team_of(index) or 'player' end
   local function holder(index)
+    if team_of(index) ~= team_now() then return nil end
     for _, b in ipairs(api.bots()) do if b.index == index then return b.name end end
     local pl = game.get_player(index)
     return pl and pl.valid and pl.name or nil
+  end
+  local function holder_text(other, pr, name)
+    return pr.display_name and pr.display_name ~= name and pr.display_name .. ' (' .. name .. ')' or name
   end
   local function check_glyph(index, glyph)
     local mine = same_glyph(glyph)
     for other, pr in pairs(store()) do
       local name = other ~= index and pr.glyph and same_glyph(pr.glyph) == mine and holder(other)
       if name then
-        local who = pr.display_name and pr.display_name ~= name and pr.display_name .. ' (' .. name .. ')' or name
+        local who = holder_text(other, pr, name)
         error(string.format('glyph %s is taken by %s; pick another (profiles lists every glyph in use)', pr.glyph, who), 0)
       end
     end
@@ -130,7 +159,7 @@ return function(api)
     local taken = {}
     for other, pr in pairs(store()) do
       local name = other ~= index and pr.color and holder(other)
-      if name then taken[#taken+1] = {color=pr.color, name=name, display=pr.display_name} end
+      if name then taken[#taken+1] = {color=pr.color, name=name, display=pr.display_name, other=other, pr=pr} end
     end
     for _, t in ipairs(taken) do
       local d = color_distance(color, t.color)
@@ -141,16 +170,28 @@ return function(api)
           for _, u in ipairs(taken) do if color_distance(c, u.color) < MIN_COLOR_DISTANCE then ok = false end end
           if ok and #free < 4 then free[#free+1] = c end
         end
-        local who = t.display and t.display ~= t.name and t.display .. ' (' .. t.name .. ')' or t.name
+        local who = holder_text(t.other, t.pr, t.name)
         error(string.format("color %s is too close to %s's %s (distance %d, at least %d apart); pick another%s (profiles lists every color in use)",
           color, who, t.color, math.floor(d), MIN_COLOR_DISTANCE, #free > 0 and ', e.g. ' .. table.concat(free, ' ') or ''), 0)
       end
     end
   end
   function M.handlers.profile(p, a)
+    assert(a.model==nil and a.base_model==nil,'base model is set by the launch roster')
     local all = store()
     local pr = all[p.index] or {}
     local changed = false
+    if a.persona~=nil then text_arg(a.persona,'persona',0,160) end
+    local display_name
+    if a.display_name~=nil then
+      local name=text_arg(a.display_name,'display_name',1,24):match('^%s*(.-)%s*$');display_name=name
+      assert(name:find('%S'),'display_name must not be blank')
+      for other,opr in pairs(all) do
+        if other~=p.index and holder(other) and opr.display_name and opr.display_name:lower()==name:lower() then
+          error('display_name is already used by a teammate; choose your own name',0)
+        end
+      end
+    end
     local avatar = a.avatar ~= nil and avatar_arg(a.avatar) or nil -- validated before anything changes
     if a.glyph ~= nil then check_glyph(p.index, text_arg(a.glyph, 'glyph', 1, 2)) end -- likewise
     if a.color ~= nil then
@@ -164,13 +205,14 @@ return function(api)
       for other, opr in pairs(all) do
         local name = other ~= p.index and opr.voice == voice and holder(other)
         if name then
-          local who = opr.display_name and opr.display_name ~= name and opr.display_name .. ' (' .. name .. ')' or name
+          local who = holder_text(other, opr, name)
           error(string.format('voice %s is taken by %s; pick another (profiles lists every voice in use)', voice, who), 0)
         end
       end
     end
-    if a.display_name ~= nil then pr.display_name = text_arg(a.display_name, 'display_name', 1, 24); changed = true end
+    if a.display_name ~= nil then pr.display_name = display_name; changed = true end
     if a.motto ~= nil then pr.motto = text_arg(a.motto, 'motto', 0, 80); changed = true end
+    if a.persona ~= nil then pr.persona = text_arg(a.persona, 'persona', 0, 160); changed = true end
     if a.glyph ~= nil then pr.glyph = text_arg(a.glyph, 'glyph', 1, 2); changed = true end
     if a.voice ~= nil then pr.voice = text_arg(a.voice, 'voice', 1, 16):lower(); changed = true end
     if a.pronouns ~= nil then
@@ -186,9 +228,11 @@ return function(api)
       all[p.index] = pr
       M.apply(p)
       if api.on_apply then api.on_apply(p) end -- name tag and avatar (nametags.lua)
+      if api.on_identity and pr.display_name and pr.persona and pr.persona:find('%S') then api.on_identity(p,public(pr)) end
     end
     local out = public(all[p.index])
     out.name = p.name; out.kind = api.is_bot(p) and 'bot' or 'player'
+    out.model = M.model(p.name)
     return out
   end
   -- Space Age: where an agent is, for the overlay: a planet, "platform NAME",
@@ -206,6 +250,7 @@ return function(api)
     local pr = store()[index]
     local out = public(pr)
     out.kind = kind; out.name = name
+    out.model = M.model(name)
     local alive = character ~= nil and character.valid
     out.alive = alive
     out.position = alive and character.position or pos
@@ -221,19 +266,23 @@ return function(api)
   end
   function M.handlers.profiles()
     local out = {}
+    -- (mt276 B) the team's own agents (a LuaPlayer mt_assign put in a team's force is none)
+    local team = team_now()
+    local mt = api.state().mt
+    local assigned = mt and mt.players or {}
     for _, p in pairs(game.players) do
-      if not api.director(p.index) then
+      if not api.director(p.index) and not assigned[p.name] and team_of(p.index) == team then
         local r = row('player', p.name, p.index, p.character, p.position, p.surface)
         r.connected = p.connected
         out[#out+1] = r
       end
     end
-    for _, b in ipairs(api.bots()) do
+    for _, b in ipairs(api.bots()) do if (b.force or 'player') == team then
       local r = row('bot', b.name, b.index, b.character, b.position, game.get_surface(b.surface or 'nauvis'), b.travel)
       r.travel = b.travel and b.travel.state or nil
       r.dead_until_tick = b.dead_until_tick
       out[#out+1] = r
-    end
+    end end
     return {profiles=out, tick=game.tick}
   end
   -- Word wrap at WRAP characters (bytes; long words are cut).

@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- This file is also the hot-reload payload. Top-level execution must be pure:
 -- Factorio executes it during on_load, when game and storage writes are forbidden.
 local M = {}
@@ -189,7 +192,7 @@ local function state() return storage.agent_harness end
 -- Bots (script-driven characters), profiles/speech bubbles and director
 -- cameras. Bot indices sit above every player index (bots.BASE).
 M.crafting=require('crafting'){state=state}
-M.claims=require('claims'){state=state,crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,where_from=function(me) return M.where.from(me) end,owner_state=function(name) return M.board.owner_state(name) end,
+M.claims=require('claims'){state=state,owner_force=function(name) return M.agent_force(name) end,crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,where_from=function(me) return M.where.from(me) end,owner_state=function(name) return M.board.owner_state(name) end,
   -- the surface an agent is on now (a claim from before claims had one; claims.lua), nil in a pod or unknown
   owner_surface=function(name)
     for _,a in ipairs(M.board.agents()) do
@@ -201,9 +204,9 @@ M.claims=require('claims'){state=state,crafters=function(f,s) if M.census then r
     end
   end,
   -- whether any of our buildings stand in an area of a surface (one count, limit 1), and the planet surfaces
-  built_on=function(name,area)
+  built_on=function(name,area,owner)
     local sf=game.get_surface(name)
-    local ok,n=pcall(function() return sf and sf.count_entities_filtered{area={area.left_top,area.right_bottom},force='player',limit=1} or 0 end)
+    local ok,n=pcall(function() return sf and sf.count_entities_filtered{area={area.left_top,area.right_bottom},force=M.agent_force(owner).name,limit=1} or 0 end)
     return ok and n>0
   end,
   planets=function()
@@ -226,20 +229,120 @@ M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(in
   removes_text=function(list) return M.dryrun and M.dryrun.removes_text(list) end,
   profile=function(index) return M.profiles.get(index) end,on_spawn=function(b,kind) M.profiles.apply(M.bots.proxy(b)); M.nametags.refresh(b)
     -- (d22 batch94 BD1) a respawn runs the reminders set on.respawn for that agent
-    if kind=='respawn' and M.reminders then pcall(M.reminders.trigger,'respawn',{name=b.name}) end
+    if kind=='respawn' and M.reminders then pcall(M.as_team,b.force or 'player',M.reminders.trigger,'respawn',{name=b.name}) end
   end}
 M.cameras=require('cameras'){state=state,bot=function(name) return M.bots.named(name) end,
   controlled=function(index) return state().controlled and state().controlled[index]~=nil end}
-M.profiles=require('profiles'){state=state,is_bot=function(p) return M.bots.is(p) end,director=function(index) return M.cameras.director(index) end,
+M.profiles=require('profiles'){state=state,team_now=function() return M.team_now() end,team_of=function(index) return M.team_of_index(index) end,is_bot=function(p) return M.bots.is(p) end,director=function(index) return M.cameras.director(index) end,
+  on_identity=function(p,pr) if M.teamfeed then M.teamfeed.emit(p.name,'identity','public',pr.display_name..': '..pr.persona) end end,
   bots=function() return M.bots.list() end,active=function(index) local a=M.active(index); return a and a.kind or false end,
   on_apply=function(p) if M.bots.is(p) then M.nametags.refresh(M.bots.record(p.index)) end end,bubble_y=function(index) return M.nametags.bubble_y(index) end}
 M.nametags=require('nametags'){state=state,bots=function() return M.bots.list() end,profile=function(index) return M.profiles.get(index) end,
+  model=function(name) return M.profiles.model(name) end,
   carrier=function(b) return M.bots.carrier(b) end,
   parts=require('avatar_parts'),avatar=require('avatar')(require('avatar_parts'))}
 -- A player or bot by index, dead or alive (cleanup and status).
 function M.lookup(index)
   if M.bots.is_index(index) then return M.bots.lookup(index) end
   return game.get_player(index)
+end
+-- (mt276) The forces agents play in, sorted: every bot's force, or player alone. A one-team world reads {'player'}.
+-- Kept in storage (spoil.lua asks every tick), made again after bot_create and bot_remove.
+function M.team_names()
+  local s=state()
+  if s.team_names then return s.team_names end
+  local set,out={},{}
+  for _,b in ipairs(M.bots.list()) do local f=b.force or 'player'; if not set[f] then set[f]=true; out[#out+1]=f end end
+  -- (mt282) a human team has no bots: a team still (its census, stores and sweeps), once mt_humans sets it up
+  local h=s.mt and s.mt.humans
+  if h and h.team and game.forces[h.team] and not set[h.team] then set[h.team]=true; out[#out+1]=h.team end
+  if #out==0 then out={'player'} end
+  table.sort(out)
+  s.team_names=out
+  return out
+end
+function M.team_forces() local out={}; for _,n in ipairs(M.team_names()) do out[#out+1]=game.forces[n] end; return out end
+-- (mt276) An agent's force by its name (a bot's, else a player's), the player force for a name that is neither.
+function M.agent_force(name)
+  local b=type(name)=='string' and M.bots.named(name)
+  if b then return game.forces[b.force or 'player'] end
+  local pl=type(name)=='string' and game.get_player(name)
+  if pl and pl.valid then return pl.force end
+  return game.forces.player
+end
+-- (mt276 B) A LuaPlayer mt_assign put in a team's force (multiteam.lua: a spectator that charts for it).
+function M.mt_assigned(index)
+  local mt=state().mt
+  if not (mt and mt.players) then return false end
+  local pl=game.get_player(index)
+  return pl and pl.valid and mt.players[pl.name]~=nil or false
+end
+-- (mt276 B) An agent's team by its index: a bot's force, else the player's force (player when it has neither).
+function M.team_of_index(index)
+  local b=M.bots.is_index(index) and M.bots.record(index)
+  if b then return b.force or 'player' end
+  local pl=type(index)=='number' and game.get_player(index)
+  return pl and pl.valid and pl.force.name or 'player'
+end
+-- (mt276 B) Team stores. Each team has its own board (items, plans, item checks, progress, mention boxes and
+-- reminders), tells, chat, votes, lessons and ground rules, blueprint library and drops. The player force's stay at
+-- their old keys of the state, so a one-team world and an old save read as before. Another team's are kept in
+-- state().team_stores[name] and sit at those keys only while a call, event or tick step of that team runs
+-- (M.as_team), then go back; saves fall between ticks, so a save holds the player force's at the keys.
+M.TEAM_KEYS={'board','plans','checks','progress','mentions','owed','tells','unseen','wakes','operator_requests','chat','votes','audience','lessonbook','bplibrary','drops','reminders'}
+-- team_held: the player force's stores while another team's sit at the keys (empty between calls; never in storage)
+local team_now,team_held='player',{}
+function M.team_now() return team_now end
+local function team_in(t)
+  local s=state()
+  s.team_stores=s.team_stores or {}
+  local mine=s.team_stores[t] or {}
+  for _,k in ipairs(M.TEAM_KEYS) do team_held[k]=s[k]; s[k]=mine[k] end
+  team_now=t
+end
+local function team_out()
+  local s=state()
+  local mine=s.team_stores[team_now] or {}
+  s.team_stores[team_now]=mine
+  for _,k in ipairs(M.TEAM_KEYS) do mine[k]=s[k]; s[k]=team_held[k]; team_held[k]=nil end
+  team_now='player'
+end
+function M.as_team(t,fn,...)
+  t=t or 'player'
+  if t==team_now then return fn(...) end
+  local was=team_now
+  if was~='player' then team_out() end
+  if t~='player' then team_in(t) end
+  local r=table.pack(pcall(fn,...))
+  if team_now~='player' then team_out() end
+  if was~='player' then team_in(was) end
+  if not r[1] then error(r[2],0) end
+  return table.unpack(r,2,r.n)
+end
+-- Each team's turn, in name order (a one-team world: the player force once). key: only the teams holding that store
+-- (the player force always, as before): another team's stores come in only when there is something of it to step.
+function M.each_team(fn,...)
+  for _,t in ipairs(M.team_names()) do M.as_team(t,fn,...) end
+end
+function M.each_team_holding(key,fn,...)
+  local ts=state().team_stores
+  for _,t in ipairs(M.team_names()) do
+    if t=='player' then M.as_team(t,fn,...)
+    elseif ts and ts[t] and ts[t][key]~=nil then M.as_team(t,fn,...) end
+  end
+end
+-- (mt276 G) What hit or killed one of ours, as the game names it: an entity of another player force is named with its
+-- force ("gun-turret of force blue"); the enemy's and neutral's by name alone, as before. by_force: the event's force
+-- when the cause is gone.
+function M.cause_text(cause,own,by_force)
+  local ok,name,fname=pcall(function()
+    local c=cause and cause.valid and cause or nil
+    local f=c and c.force or by_force
+    return c and c.name or nil,f and f.name or nil
+  end)
+  if not ok then return nil end
+  if fname and fname~=own and fname~='enemy' and fname~='neutral' then return (name or 'unknown source')..' of force '..fname end
+  return name
 end
 -- Who a character belongs to: a player's name, else a bot's (nil if neither).
 function M.character_owner(e)
@@ -1202,7 +1305,7 @@ function M.note_char_death(event)
   local cause=event.cause
   local okc=cause and cause.valid
   local h=s.hurt and e.unit_number and s.hurt[e.unit_number]
-  table.insert(s.char_deaths,1,{surface=e.surface.name,position={x=e.position.x,y=e.position.y},tick=event.tick,who=M.character_owner(e),
+  table.insert(s.char_deaths,1,{surface=e.surface.name,position={x=e.position.x,y=e.position.y},tick=event.tick,who=M.character_owner(e),force=e.force.name,
     by=okc and cause.name or (h and h.by) or (event.force and event.force.name) or nil,
     at=okc and {x=math.floor(cause.position.x*10+0.5)/10,y=math.floor(cause.position.y*10+0.5)/10} or (h and h.at) or nil,
     cause=okc and cause or nil,cause_type=okc and cause.type or nil,
@@ -1218,9 +1321,13 @@ function M.death_lines(p,h)
   h.death_tick=game.tick
   local out={}
   local list=state().char_deaths or {}
+  -- (mt302) our characters only: on a map of several teams the list holds every force's deaths, and another team's
+  -- (its agent's name, where it died, what its corpse holds) is not ours to hear. A death kept before forces were
+  -- recorded is said only on a one-team map.
+  local ours,teams=p.force.name,state().mt~=nil
   for i=#list,1,-1 do
     local d=list[i]
-    if d.tick>since and d.tick<game.tick then
+    if d.tick>since and d.tick<game.tick and (d.force==ours or d.force==nil and not teams) then
       local s=game.get_surface(d.surface)
       local corpse
       for _,k in ipairs(s and s.find_entities_filtered{type='character-corpse',position=d.position,radius=3,limit=8} or {}) do
@@ -2001,7 +2108,7 @@ local function summary(e)
   -- An underground end shows what the belt GUI arrows show: which end it is
   -- (flow direction by name) and where its partner is.
   if e.type=='underground-belt' then
-    local other=e.neighbours
+    local other=e[UNDERGROUND_NEIGHBOUR]
     out.underground=e.belt_to_ground_type; out.flow=compass_names[e.direction]
     if other then out.paired_with=other.position else out.unpaired=true end
   end
@@ -2183,7 +2290,8 @@ function M.near_actions(name)
   -- a shared word only when nothing is nearer (techologies: technologies, not damage_log for "log")
   local list,weak={},{}
   for n in pairs(handlers) do
-    if type(n)=='string' and n:sub(1,1)~='_' then
+    if type(n)=='string' and n:sub(1,1)~='_' and not (M.pacts and M.pacts.schema[n] and not M.pacts.open_for(M.team_now()))
+      and not (M.market and M.market.names()[n] and not M.market.open_action(M.team_now(),n)) then
       local d=math.abs(#n-#name)<=2 and apart(n,name) or 99
       if d<=2 or (#name>=3 and (n:find(name,1,true) or name:find(n,1,true))) then list[#list+1]={n=n,d=d}
       else for w in n:gmatch('[^_]+') do if #w>2 and name:find(w,1,true) then weak[#weak+1]={n=n,d=d}; break end end end
@@ -2194,6 +2302,16 @@ function M.near_actions(name)
   local out={}
   for i=1,math.min(6,#list) do out[i]=list[i].n end
   return out
+end
+function M.describe_bundle()
+  -- Contact changes the available schema without installing another runtime. Retain the
+  -- ordinary opaque bundle before contact; nothing hints at hidden tools.
+  local bundle=BUNDLE_ID
+  if bundle and M.pacts and M.pacts.open_for(M.team_now()) then bundle=bundle..':1' end
+  if bundle and M.market and M.market.rung(M.team_now())>0 then
+    bundle=bundle..':m'..M.market.rung(M.team_now())..':'..tostring(M.market.freight(M.team_now()))..':'..tostring(M.market.orbital(M.team_now()))..':'..tostring(next(M.market.schema(M.team_now()).offer or {})~=nil and M.market.schema(M.team_now()).offer.to~=nil)
+  end
+  return bundle
 end
 function handlers.describe(_,a)
   -- (d22 batch90 AZ3: describe {action} refused 19 times in s55-57) one action's entry, or a few
@@ -2210,7 +2328,7 @@ function handlers.describe(_,a)
   end
   -- The bundle this runtime came in (host/bundle.ts BUNDLE_ID; nil for the mod's folder runtime). fh help keeps this
   -- describe per bundle (host/cli.ts helpDescribe): a call naming the bundle it holds gets two fields back, not 280 KB.
-  local bundle=BUNDLE_ID
+  local bundle=M.describe_bundle()
   if bundle and type(a)=='table' and a.if_bundle==bundle then return {bundle=bundle,unchanged=true} end
   -- walk on every call that acts on a target in reach (autowalk.lua)
   local WALK='default (omitted): a target out of reach within 32 tiles of you (transfer, collect, feed, rearm and refuel: 64; to its edge; build: to the position) is walked into reach first and the call is made there, one timed call (the reply\'s walking line says so; fh call waits for it as --wait does; a queue step waits for it); past that refused, naming this call with walk: true; true: walks there from farther too (any distance; transfer also via); false: out of reach is refused, nothing walked. The walk keeps move_to\'s enemy checks: a goal inside a weapon\'s reach the map shows is refused unless unsafe_goal, and avoid_enemies goes round the nests'
@@ -2540,6 +2658,9 @@ function handlers.describe(_,a)
   end
   description.runtime_fault=state().runtime_fault or false
   description.bundle=bundle
+  -- (mt281) the pact actions for a team with a contact (pacts.lua)
+  if M.pacts then M.pacts.describe_into(description.actions) end
+  if M.market then for name,schema in pairs(M.market.schema(M.team_now())) do description.actions[name]=schema end end
   return description
 end
 function handlers.attach(p,a)
@@ -2580,14 +2701,14 @@ local function record_loss(tick,e,cause,friendly,cause_at)
   local incident
   for _,i in ipairs(s.losses) do
     local b=i.box
-    if i.surface==surface and not i.closed and tick-(i.last or i.first or 0)<=5*3600
+    if i.surface==surface and (i.force or 'player')==e.force.name and not i.closed and tick-(i.last or i.first or 0)<=5*3600
       and x>=b[1]-LOSS.join and x<=b[3]+LOSS.join and y>=b[2]-LOSS.join and y<=b[4]+LOSS.join
       and math.max(b[3],x)-math.min(b[1],x)<=LOSS.span and math.max(b[4],y)-math.min(b[2],y)<=LOSS.span then incident=i; break end
   end
   if not incident then
     s.loss_ids=(s.loss_ids or 0)+1
     local ok,platform=pcall(function() return e.surface.platform and e.surface.platform.name end)
-    incident={id=s.loss_ids,key=math.floor(x/LOSS.cell)..','..math.floor(y/LOSS.cell),surface=surface,platform=ok and platform or nil,
+    incident={id=s.loss_ids,key=math.floor(x/LOSS.cell)..','..math.floor(y/LOSS.cell),surface=surface,platform=ok and platform or nil,force=e.force.name~='player' and e.force.name or nil,
       box={x,y,x,y},first=tick,last=tick,names={},causes={},total=0}
     s.losses[#s.losses+1]=incident
     if #s.losses>LOSS.max then
@@ -2694,10 +2815,11 @@ function LOSS.own_text(i)
   for k,r in ipairs(rows) do if k<=4 then parts[k]=string.format('%s at %s: %d',r.name,r.at,r.n); named=named+r.n end end
   return string.format('%d destroyed by our own %s%s',total,table.concat(parts,', '),total>named and string.format(' (+%d more)',total-named) or '')
 end
-local function losses_since(since)
+local function losses_since(since,fname)
   local out={}
   -- An incident without a last tick (shake11: status failed for 4 agents on 'compare number with nil') counts as old.
-  for _,i in ipairs(state().losses or {}) do if (i.last or i.first or 0)>since then out[#out+1]=i end end
+  -- (mt276) fname: that force's incidents only
+  for _,i in ipairs(state().losses or {}) do if (i.last or i.first or 0)>since and (not fname or (i.force or 'player')==fname) then out[#out+1]=i end end
   table.sort(out,function(a,b) return (a.last or a.first or 0)>(b.last or b.first or 0) end)
   return out
 end
@@ -2811,7 +2933,7 @@ end
 -- its recovery check (yours, now), false clears it.
 function LOSS.recover(p,a)
   local found
-  for _,i in ipairs(state().losses or {}) do if LOSS.id(i)==a.incident then found=i end end
+  for _,i in ipairs(state().losses or {}) do if LOSS.id(i)==a.incident and (i.force or 'player')==p.force.name then found=i end end
   assert(found,'no loss incident #'..tostring(a.incident)..' kept (status alerts.incidents lists them; the last 64 are kept)')
   local r=a.recovery
   local was=found.recovery
@@ -2848,15 +2970,18 @@ local function unseen_losses(p)
   local seen=s.losses_seen and s.losses_seen[p.index]
   if s.losses_seen then s.losses_seen[p.index]=nil end
   local kept,due={},{}
+  local fname=p.force and p.force.name or 'player'
   for _,i in ipairs(s.losses or {}) do
-    local id=LOSS.id(i)
-    local t=told[id]
-    if not t and seen and (i.seq or 0)<=seen then t={tick=game.tick,total=i.total} end
-    if t then
-      kept[id]=t
-      if i.total>t.total and game.tick-t.tick>=LOSS.again then due[#due+1]={i=i,before=t.total} end
-    elseif not (new_reader and not seen and game.tick-(i.last or i.first or 0)>LOSS.first) then due[#due+1]={i=i}
-    else kept[id]={tick=game.tick,total=i.total} end
+    if (i.force or 'player')==fname then
+      local id=LOSS.id(i)
+      local t=told[id]
+      if not t and seen and (i.seq or 0)<=seen then t={tick=game.tick,total=i.total} end
+      if t then
+        kept[id]=t
+        if i.total>t.total and game.tick-t.tick>=LOSS.again then due[#due+1]={i=i,before=t.total} end
+      elseif not (new_reader and not seen and game.tick-(i.last or i.first or 0)>LOSS.first) then due[#due+1]={i=i}
+      else kept[id]={tick=game.tick,total=i.total} end
+    end
   end
   s.losses_told[p.index]=kept
   if #due==0 then return nil end
@@ -2873,17 +2998,19 @@ end
 local function recent_alerts(a,p)
   local since=a.since or game.tick-18000
   local reader=p and p.surface and p.surface.name
+  -- (mt276) the reader's force's alerts only
+  local fname=p and p.force and p.force.name
   local counts,latest,rows={},{},{}
-  for _,i in ipairs(losses_since(since)) do
+  for _,i in ipairs(losses_since(since,fname)) do
     for name,n in pairs(i.names) do counts[name]=(counts[name] or 0)+n end
     if #latest<8 then local row=LOSS.row(i,reader); latest[#latest+1]=row.line; rows[#rows+1]=row end
   end
-  local attacks=threat.alerts(since,reader)
+  local attacks=threat.alerts(since,reader,fname)
   local kills={}
-  for _,k in ipairs(state().kills or {}) do if k.tick>since then kills[k.name]=(kills[k.name] or 0)+1 end end
-  local okp,platform_hits=pcall(M.platalerts.rows,since)
+  for _,k in ipairs(state().kills or {}) do if k.tick>since and (not fname or (k.force or 'player')==fname) then kills[k.name]=(kills[k.name] or 0)+1 end end
+  local okp,platform_hits=pcall(M.platalerts.rows,since,fname)
   platform_hits=okp and platform_hits or nil
-  local okc,power_cuts=pcall(M.powercut.since,since,reader)
+  local okc,power_cuts=pcall(M.powercut.since,since,reader,fname)
   power_cuts=okc and power_cuts or nil
   if #latest==0 and not attacks and not next(kills) and not platform_hits and not power_cuts then return nil end
   local result=attacks or {}
@@ -2970,7 +3097,7 @@ function handlers.status(p,a)
   -- running and the last results, none of the factory, threat or alert scans.
   -- The stream's overlay adds alerts (stored incidents, no scan).
   if a.brief==true then
-    return {brief=true,queues=scheduler.lanes(p.index),inventory=inv_line,active=active(p.index),retreat_guard=M.retreat_guard_line(p.index),last=state().last and state().last[p.index] or false,combat=M.combat_row(p.index,p),hurt=alive and M.hurt_row(p) or nil,flight=alive and M.flight_row(p) or nil,
+    return {market=M.market and M.market.status(M.team_now()) or nil,brief=true,queues=scheduler.lanes(p.index),inventory=inv_line,active=active(p.index),retreat_guard=M.retreat_guard_line(p.index),last=state().last and state().last[p.index] or false,combat=M.combat_row(p.index,p),hurt=alive and M.hurt_row(p) or nil,flight=alive and M.flight_row(p) or nil,
       last_combat=state().last_combat and state().last_combat[p.index] or false,alive=alive or false,riding=p.driving or nil,connected=p.connected,
       vehicle_fire=alive and (function() local ok,v=pcall(M.vehicle_fire,p); return ok and v or nil end)() or nil,
       drop_pending=M.drop_pending(p.index),last_drop=M.last_drop(p.index),
@@ -3055,7 +3182,7 @@ function handlers.status(p,a)
   -- robots per planet from the kept network view (D4, Haiku 16:50)
   local okr,robots=pcall(M.networks.robot_lines,p.force)
   local okv,overdue=pcall(M.overdue_reviews,p)
-  return {overdue_reviews=okv and overdue or nil,robots=okr and robots or nil,logistics_here=alive and (function() local ok,l=pcall(M.personal.here,p); return ok and l or nil end)() or nil,boilers=okb and boiler_line or nil,queues=scheduler.lanes(p.index),storm=oks and sky or nil,crafting=alive and crafting_line(p) or nil,retreat_guard=M.retreat_guard_line(p.index),inv=factory.inv,inventory=inv_line,factory=factory.factory,machines=factory.machines,machine_positions=factory.machine_positions,warnings=factory.warnings,factory_as_of=factory.as_of,factory_age_s=factory.age_s,factory_refresh_failed=factory.refresh_failed,survey_error=factory.error,
+  return {market=M.market and M.market.status(M.team_now()) or nil,overdue_reviews=okv and overdue or nil,robots=okr and robots or nil,logistics_here=alive and (function() local ok,l=pcall(M.personal.here,p); return ok and l or nil end)() or nil,boilers=okb and boiler_line or nil,queues=scheduler.lanes(p.index),storm=oks and sky or nil,crafting=alive and crafting_line(p) or nil,retreat_guard=M.retreat_guard_line(p.index),inv=factory.inv,inventory=inv_line,factory=factory.factory,machines=factory.machines,machine_positions=factory.machine_positions,warnings=factory.warnings,factory_as_of=factory.as_of,factory_age_s=factory.age_s,factory_refresh_failed=factory.refresh_failed,survey_error=factory.error,
     evolution=threats.evolution,pollution=threats.pollution,enemies=threats.enemies,chart=threats.chart,threats_as_of=threats.as_of,
     alerts=alerts,runtime_fault=state().runtime_fault or false,connected=p.connected,alive=p.character and p.character.valid or false,cheat_mode=p.cheat_mode,
     supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,active=now,order=M.orders.brief(p.index),
@@ -3554,8 +3681,10 @@ M.SCAN_PAGE=256  -- (d23 batch123 CF4) rows a call; page continues
 M.SCAN_BELTS,M.SCAN_HOLDING=1024,64  -- about 6 us a belt read on world n (512 on Kestrel II: 3.1 ms)
 -- A fluid entity's fluid as its segment holds it (scan rows, pipe_gaps cuts): the most of it in the segment, else what
 -- its first box holds, else its locked fluid or filter; 'empty' when none.
+function M.fluid_boxes(e) return pipes.fluid_boxes(e) end
+function M.fluid_neighbours(e) return pipes.fluid_neighbours(e) end
 function M.pipe_fluid(e)
-  local fb=e.fluidbox
+  local fb=M.fluid_boxes(e)
   local okc,contents=pcall(function() return fb.get_fluid_segment_contents(1) end)
   local best,amount
   for name,n in pairs(okc and contents or {}) do if not amount or n>amount then best,amount=name,n end end
@@ -5784,7 +5913,7 @@ end
 -- deconstruction, mines them by hand (a timed construct over them) and walks again once.
 M.move_to_plain=handlers.move_to
 -- stay_in_turret_coverage (turretcover.lua; d17 batch12 A3, Opus): the route inside our turrets' reach, as via points.
-M.turretcover=require('turretcover'){}
+M.turretcover=require('turretcover'){fluid_boxes=M.fluid_boxes,}
 function M.move_to_covered(p,a)
   if a.stay_in_turret_coverage==nil then return M.move_to_plain(p,a) end
   assert(type(a.stay_in_turret_coverage)=='boolean','stay_in_turret_coverage must be true or false')
@@ -5991,6 +6120,13 @@ function handlers.mine(p,a)
     if pr.type==nil or pr.type=='item' then
       local okc,n=pcall(function() return p.get_item_count(pr.name) end)
       action.held_before[pr.name]=okc and n or 0
+    end
+  end
+  -- (mt302) a character corpse (a coin wreck, a fallen raider) gives what it holds: last.moved counts those items
+  if e.type=='character-corpse' then
+    local okv,list=pcall(function() return e.get_inventory(defines.inventory.character_corpse).get_contents() end)
+    for _,v in ipairs(okv and list or {}) do
+      if action.held_before[v.name]==nil then local okc,n=pcall(function() return p.get_item_count(v.name) end);action.held_before[v.name]=okc and n or 0 end
     end
   end
   for _,product in ipairs(e.prototype.mineable_properties.products or {}) do
@@ -6218,11 +6354,16 @@ end
 -- Why a hand craft started fewer than asked: the raw items it runs out of,
 -- following hand-craftable intermediates (gears, cables) down like the
 -- engine does, with where our factory holds each.
--- Whether a crafter with these categories takes the recipe: its own category
--- or one of its additional ones (Space Age: pressing, electronics, ...).
-local function takes(categories,recipe)
-  if categories[recipe.category or 'crafting'] then return true end
-  for _,extra in ipairs(recipe.additional_categories or {}) do if categories[extra] then return true end end
+-- 2.1 recipes have a category list; 2.0 has a primary and additional categories.
+local function recipe_categories(recipe)
+  local ok, list = pcall(function() return recipe.categories end)
+  if ok and list then return list end
+  local out = {recipe.category or 'crafting'}
+  for _, name in ipairs(recipe.additional_categories or {}) do out[#out+1] = name end
+  return out
+end
+local function takes(categories, recipe)
+  for _, name in ipairs(recipe_categories(recipe)) do if categories[name] then return true end end
   return false
 end
 local function hand_recipe(p,item)
@@ -6352,7 +6493,7 @@ local function begin_craft(p,recipe,count,force,notes,shorts,fromq)
   -- "not hand-craftable now" with force and the ingredients held).
   local r,categories=p.force.recipes[recipe],p.character and p.character.prototype.crafting_categories
   if categories and not takes(categories,r) then
-    error(string.format('%s (category %s) cannot be hand-crafted by a character; an assembling machine can make it (configure recipe=%s, then feed it)',recipe,r.category or 'crafting',recipe),0)
+    error(string.format('%s (category %s) cannot be hand-crafted by a character; an assembling machine can make it (configure recipe=%s, then feed it)',recipe,table.concat(recipe_categories(r), ', '),recipe),0)
   end
   count=integer(count,1,1,1000,'count')
   craft_stock(p,recipe,count,force,notes)
@@ -6404,7 +6545,7 @@ local function begin_craft(p,recipe,count,force,notes,shorts,fromq)
   end
   if started<count and shorts then shorts[recipe]=craft_shortfall(p,recipe,count-started,notes) or 'not hand-craftable now' end
   for _,product in ipairs(p.force.recipes[recipe].products or {}) do
-    if product.type=='item' then survey.log_hand('crafted',product.name,started*(product.amount or product.amount_max or 1)) end
+    if product.type=='item' then survey.log_hand('crafted',product.name,started*(product.amount or product.amount_max or 1),p.force.name) end
   end
   return started
 end
@@ -6698,7 +6839,7 @@ local function underground_type(surface,proto,pos,direction)
   for k=1,proto.max_underground_distance or 0 do
     for _,e in pairs(surface.find_entities_filtered{position={x=x-step[1]*k,y=y-step[2]*k},radius=0.3,type='underground-belt'}) do
       if e.name==proto.name and e.direction==direction then
-        return (e.direction==direction and e.belt_to_ground_type=='input' and not e.neighbours) and 'output' or 'input'
+        return (e.direction==direction and e.belt_to_ground_type=='input' and not e[UNDERGROUND_NEIGHBOUR]) and 'output' or 'input'
       end
     end
   end
@@ -7174,11 +7315,11 @@ function M.recipe_for(p,proto,name)
   end
   local recipe=p.force.recipes[name]
   if not (recipe and recipe.enabled) then error('recipe '..name..' is unavailable',0) end
-  if not (proto.crafting_categories or {})[recipe.category] then
+  if not takes(proto.crafting_categories or {}, recipe) then
     local cats={}
     for c in pairs(proto.crafting_categories or {}) do cats[#cats+1]=c end
     table.sort(cats)
-    error(string.format('recipe %s (category %s) is not one %s makes (its categories: %s)',name,tostring(recipe.category),proto.name,table.concat(cats,', ')),0)
+    error(string.format('recipe %s (category %s) is not one %s makes (its categories: %s)',name,table.concat(recipe_categories(recipe), ', '),proto.name,table.concat(cats,', ')),0)
   end
   return recipe
 end
@@ -7241,7 +7382,7 @@ function M.underground_pair_ends(surface,force,place,pos)
     if e.valid and e.name~=place.name and e.prototype.fast_replaceable_group==place.fast_replaceable_group then o=e end
   end
   if not o then return nil end
-  local ok,other=pcall(function() return o.neighbours end)
+  local ok,other=pcall(function() return o[UNDERGROUND_NEIGHBOUR] end)
   if not (ok and other and other.valid and other.force==force) or other.name==place.name then return nil end
   return o,other
 end
@@ -8387,7 +8528,7 @@ do
     if okk and kd then r.kills=kd.kills; r.damage_dealt=kd.damage_dealt end
     -- (d17 batch21 B1, Sonnet: pipes read empty in every area read) an entity with fluid boxes: each box's fluid and
     -- amount over its capacity, its segment's capacity and extent (pipes.fluids, as scan fields=fluids reads them)
-    local okf,ft=pcall(function() local fb=e.fluidbox; return fb and #fb>0 and pipes.fluids(e,true) end)
+    local okf,ft=pcall(function() local fb=M.fluid_boxes(e); return fb and #fb>0 and pipes.fluids(e,true) end)
     if okf and ft then r.fluid=ft; if r.holds=='empty' then r.holds=nil end end
     return r
   end
@@ -8986,7 +9127,7 @@ local function configure_check(p,a,e,near)
   assert((ghost and e.ghost_type or e.type)=='assembling-machine','only assembling machines (and their ghosts) support recipe configuration')
   local recipe=type(a.recipe)=='string' and p.force.recipes[a.recipe]
   if not (recipe and recipe.enabled) then error(M.recipe_refusal(p,a.recipe,'configure'),0) end
-  assert((ghost and e.ghost_prototype or e.prototype).crafting_categories[recipe.category],'recipe incompatible with machine')
+  assert(takes((ghost and e.ghost_prototype or e.prototype).crafting_categories, recipe),'recipe incompatible with machine')
   if ghost then return end
   local current,current_quality=e.get_recipe()
   if current and current.name==recipe.name and (a.quality or 'normal')==((current_quality and current_quality.name) or 'normal') then return end
@@ -9912,15 +10053,19 @@ local function configure_branch(p,a)
   -- box) and keeps one it takes. So drain flushes (for a box that does have a segment), changes the recipe, and the
   -- reply says how much of each fluid left the machine (fluid_flushed) and what stays, measured after the change.
   local fluid_note,fluid_after
+  local ok_empty,empty=pcall(function() return e.fluids_count==0 end)
   if not ghost then
     assert(a.fluid==nil or a.fluid=='keep' or a.fluid=='drain','fluid: "drain" (change the recipe and let a fluid it takes none of go) or "keep" (the same change; the reply says what stayed)')
+  end
+  -- Solid-only machines have no fluid state to preserve; fluids_count exists on both engine lines.
+  if not ghost and not (ok_empty and empty) then
     local fluid_mode=a.fluid or (a.force==true and 'keep') or nil
     local takes={}
     for _,list in ipairs({recipe.ingredients or {},recipe.products or {}}) do
       for _,x in ipairs(list) do if x.type=='fluid' then takes[x.name]=true end end
     end
     local stray={}
-    local boxes=e.fluidbox
+    local boxes=M.fluid_boxes(e)
     for i=1,boxes and #boxes or 0 do
       local f=boxes[i]
       if f and f.name and not takes[f.name] and f.amount>0 then stray[#stray+1]={index=i,name=f.name,amount=f.amount} end
@@ -9930,7 +10075,7 @@ local function configure_branch(p,a)
       for _,x in ipairs(stray) do parts[#parts+1]=string.format('%s %g (fluidbox %d)',x.name,math.floor(x.amount*10+0.5)/10,x.index) end
       local text=string.format('%s holds %s, which recipe %s takes none of',e.name,table.concat(parts,', '),recipe.name)
       if fluid_mode==nil then
-        error(text..': in 2.0.77 a recipe change drops a fluid the new recipe takes none of. fluid: "drain" changes the recipe and lets it go (the reply says how much left the machine and anything that stays); nothing changed',0)
+        error(text..(PORT21 and ': a recipe change drops' or ': in 2.0.77 a recipe change drops')..' a fluid the new recipe takes none of. fluid: "drain" changes the recipe and lets it go (the reply says how much left the machine and anything that stays); nothing changed',0)
       end
       if fluid_mode=='drain' then
         for _,x in ipairs(stray) do
@@ -9946,7 +10091,7 @@ local function configure_branch(p,a)
       -- After the change: what of each fluid left the machine and what stays (by box).
       fluid_after=function()
         local left,stays,gone={},{},{}
-        local okb,now=pcall(function() return e.fluidbox end)
+        local okb,now=pcall(function() return M.fluid_boxes(e) end)
         for i=1,okb and now and #now or 0 do
           local f=now[i]
           if f and before[f.name] and f.amount>0 then
@@ -10111,16 +10256,28 @@ local function move_stacks(source,target,match,limit)
   -- keep and up_to near the cap), so every call is skipped at 0.
   local remaining,moved,order=math.max(0,limit),{},{}
   local fresh
-  for i=1,#source do
+  local rocket_id=PORT21 and defines.inventory.rocket_silo_rocket
+  local reverse=rocket_id and source.index==rocket_id
+  for i=reverse and #source or 1,reverse and 1 or #source,reverse and -1 or 1 do
     if remaining<=0 then break end
-    local stack=source[i]
-    if stack.valid_for_read and match(stack) then
+    -- Removing the final rocket stack also trims preceding empty slots. A prior
+    -- named withdrawal can leave holes, so reverse iteration alone is insufficient.
+    local stack=(not reverse or i<=#source) and source[i]
+    if stack and stack.valid_for_read and match(stack) then
       local key,name,quality,start=stack.name..'@'..stack.quality.name,stack.name,stack.quality.name,stack.count
       -- Its spoilage before the move (Sol, 22:25: the moved batch's spoil %).
       local okt,stick=pcall(function() return stack.spoil_tick end)
       local okp,spct=pcall(function() return stack.spoil_percent end)
       -- Top up partial stacks of the same item first, as a player's
       -- shift-click does, then fill empty slots.
+      if rocket_id and target.index==rocket_id then
+        local wanted=math.min(start,remaining)
+        stack.count=wanted
+        local ok,inserted=pcall(target.insert,stack)
+        stack.count=start-(ok and inserted or 0)
+        if not ok then error(inserted,0) end
+        remaining=remaining-inserted
+      else
       for pass=1,2 do
         for j=1,#target do
           if remaining<=0 or not stack.valid_for_read then break end
@@ -10131,6 +10288,7 @@ local function move_stacks(source,target,match,limit)
             remaining=math.max(0,remaining-(before-(stack.valid_for_read and stack.count or 0)))
           end
         end
+      end
       end
       local n=start-(stack.valid_for_read and stack.count or 0)
       if n>0 then
@@ -10147,6 +10305,7 @@ local function move_stacks(source,target,match,limit)
   for i,key in ipairs(order) do stacks[i]=moved[key]; total=total+moved[key].count end
   return total,stacks,fresh
 end
+M.move_stacks=move_stacks
 -- A moved batch's spoilage in lines (Sol, 22:25: choosing 2000 fresh agricultural packs for Aquilo): per item the
 -- spread (spoil.lua spread_text); a science pack the running research takes, how many a unit it takes and the units
 -- left. Effective research value uses the measured 2.0.77 spoil/durability rule (spoil.lua).
@@ -10499,7 +10658,7 @@ local function transfer_one(p,a,pos,e)
   local short=a.item and a.direction=='to_entity' and moved<wanted and not full and moved==0 and available()==0 and wanted or nil
   -- Hand share: feeding anything, and collecting from machines (not storage).
   local kind=a.direction=='to_entity' and 'fed' or (e.type~='container' and e.type~='logistic-container' and 'collected')
-  for _,s in ipairs(kind and stacks or {}) do survey.log_hand(kind,s.name,s.count) end
+  for _,s in ipairs(kind and stacks or {}) do survey.log_hand(kind,s.name,s.count,p.force.name) end
   if moved>0 then
     -- The usual inventory feedback a player sees when moving items by hand.
     local sign,parts=a.direction=='to_player' and '+' or '-',{}
@@ -11073,7 +11232,7 @@ function handlers.refuel(p,a)
           for k in pairs(M.farm.fuel_categories(e) or {}) do cats[#cats+1]=k end
           table.sort(cats)
           error(string.format('%s at (%g,%g) burns %s fuel, not %s (%s)',e.name,e.position.x,e.position.y,table.concat(cats,'/'),fuel,
-            tostring(prototypes.item[fuel].fuel_category)),0)
+            table.concat(M.farm.item_fuel_categories(prototypes.item[fuel]), '/')),0)
         end
       end
       local out=start_tour(p,a,'refuel',fuel,count,ents)
@@ -11091,7 +11250,7 @@ function handlers.refuel(p,a)
       for k in pairs(M.farm.fuel_categories(e) or {}) do cats[#cats+1]=k end
       table.sort(cats)
       error(string.format('%s at (%g,%g) burns %s fuel, not %s (%s)',e.name,e.position.x,e.position.y,table.concat(cats,'/'),fuel,
-        tostring(prototypes.item[fuel].fuel_category)),0)
+        table.concat(M.farm.item_fuel_categories(prototypes.item[fuel]), '/')),0)
     end
   end
   local args={direction='to_entity',item=fuel,inventory='fuel',count=count,up_to=count,quality=a.quality,fail_short=true}
@@ -11701,7 +11860,7 @@ function M.collect_pods(p,a)
     assert(rb.x>lt.x and rb.y>lt.y and rb.x-lt.x<=256 and rb.y-lt.y<=256,'area: {left_top, right_bottom}, up to 256x256')
     area={{lt.x,lt.y},{rb.x,rb.y}}
   end
-  local list=M.landed.containers(p.surface,p.position,area)
+  local list=M.landed.containers(p.surface,p.position,area,p.force.name)
   local seen={}
   for _,e in ipairs(list) do seen[e.unit_number]=true end
   -- not yet swept: look there now
@@ -12076,7 +12235,7 @@ function feeding.smelts(e,item)
     local ok,cats=pcall(function() return e.prototype.crafting_categories end)
     local found=false
     for _,r in pairs(ok and cats and prototypes.recipe or {}) do
-      if cats[r.category] then
+      if takes(cats,r) then
         for _,ing in ipairs(r.ingredients or {}) do if ing.type=='item' and ing.name==item then found=true; break end end
       end
       if found then break end
@@ -14521,7 +14680,7 @@ M.replace=require('replace'){filters=function(e) return M.details.filters(e) end
   circuit_snapshot=function(e) return M.circuits.snapshot(e) end,circuit_restore=function(e,s) return M.circuits.restore(e,s) end}
 -- A crafting machine's input against its recipe, and its feeders (inputs.lua; Grok, shift11).
 M.inputs=require('inputs'){try=function(fn) local ok,v=pcall(fn); if ok then return v end end}
-M.outputstop=require('outputstop'){try=function(fn) local ok,v=pcall(fn); if ok then return v end end}
+M.outputstop=require('outputstop'){fluid_boxes=M.fluid_boxes,try=function(fn) local ok,v=pcall(fn); if ok then return v end end}
 M.beltflow=require('beltflow'){try=function(fn) local ok,v=pcall(fn); if ok then return v end end,blocker=function(s,q) return M.linecut and M.linecut.blocker(s,q) end}
 -- Underground entrances fed from the side by an inserter or a belt (sidefeed.lua; Sol, shift10).
 M.routefeeds=require('routefeeds')()
@@ -14558,7 +14717,15 @@ M.makersall=require('makersall'){burnt_line=function(e) return M.burnt.line(e) e
   census_makers=function(s) if M.census then return (M.census.makers(s)) end end}  -- supply {item, makers: "all"} (d18 batch37 A1)
 M.ledger=require('ledger'){state=state,on_the_way=function(platform,item) return M.podlog.on_the_way(platform,item) end}  -- launches up per surface, for shipment {ledger} (d18 batch36 D3)
 -- (d24 batch179 QV1) every cargo pod's journey, up and down, per planet: shipment {ledger} pods (podlog.lua)
-M.podlog=require('podlog'){state=state}
+-- (mt302) a pod come down on the ground with no pad to take it: one line to its own team's agents (podlog.lua
+-- ground_text); only on a map of several teams, never to another team, never to a force that is no team
+M.podlog=require('podlog'){state=state,ground_landed=function(force,text)
+  local m=state().mt
+  if not (m and m.teams and m.teams[force]) then return end
+  M.as_team(force,function()
+    for _,ag in ipairs(M.board.agents()) do M.board.deliver(ag.index,{seq='pod',tick=game.tick,from='pods',text=text,fyi=true}) end
+  end)
+end}
 M.launchcount=require('launchcount'){ups=function(...) return M.podlog.ups(...) end,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end}  -- (d29 batch346 LC) rockets to a platform: launched + loaded
 M.launchneed=require('launchneed'){state=state,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end,elsewhere=function(...) return M.elsewhere.line(...) end}  -- a platform's stop waiting on a silo its own hub would feed (d18 batch36 A2)  -- the record lists in args, field by field (check_args; d17 batch35 A6)
 M.heating=require('heating'){footprint=function(...) return M.dryrun.footprint(...) end,heat_points=function(...) return M.dryrun.heat_points(...) end,
@@ -14581,7 +14748,7 @@ function handlers.heat_budget(p,a)
   friendly(p,e)
   return M.heating.budget(p,e,a.add_pipes)
 end
-M.dryrun=require('dryrun'){surface_block=function(s,pr,props) return M.surface_block(s,pr,props) end,railsignal=function() return M.railsignal end,rollingstock=function() return M.rollingstock end,floorcheck=function() return M.floorcheck end,one_pad=function(...) return M.one_pad(...) end,heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
+M.dryrun=require('dryrun'){fluid_boxes=M.fluid_boxes,surface_block=function(s,pr,props) return M.surface_block(s,pr,props) end,railsignal=function() return M.railsignal end,rollingstock=function() return M.rollingstock end,floorcheck=function() return M.floorcheck end,one_pad=function(...) return M.one_pad(...) end,heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
   sidefeed=M.sidefeed,coverage=function(s,force,pos,planned) return M.networks.coverage(s,force,pos,planned) end,
   placement_error=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
   ghost_placeable=function(p,proto,pos,direction) return construction.ghost_placeable(p.surface,p.force,proto,pos,direction) end,
@@ -14596,7 +14763,7 @@ M.dryrun=require('dryrun'){surface_block=function(s,pr,props) return M.surface_b
   fluid_connections=function(o) return pipes.connections(o) end}
 M.ports=require('ports'){boxes=function(proto) return pipes.boxes(proto) end,defined=function(e) return pipes.defined(e) end}
 -- The fluid segments a plan joins or cuts, and a join of two fluids refused (fluidjoin.lua; d17 batch34 B1, Sonnet).
-M.fluidjoin=require('fluidjoin'){fluid_rows=function(e,recipe) return (M.ports.rows(e,recipe and M.ports.recipe(e.prototype,recipe) or nil)) end,
+M.fluidjoin=require('fluidjoin'){fluid_boxes=M.fluid_boxes,fluid_rows=function(e,recipe) return (M.ports.rows(e,recipe and M.ports.recipe(e.prototype,recipe) or nil)) end,
   fluid_connections=function(o) return pipes.connections(o) end,direction=function(v) return M.direction_of(v) end,position=position,
   snap=function(proto,pos,dir) return M.dryrun.snap(proto,pos,dir) end}
 function M.fluid_guard(p,a,kind)
@@ -14651,7 +14818,7 @@ M.artycam=require('artycam'){state=state,range=function(e) return M.artillery.ra
 function handlers.artillery(p,a) return M.artillery.read(p,a) end
 handlers.clear_cliffs=M.capsules.handlers.clear_cliffs
 -- The fluid GUI's flush (flush.lua, Sol's request): reach as configure.
-M.flush=require('flush'){integer=integer,friendly=friendly,target=function(p,a)
+M.flush=require('flush'){fluid_boxes=M.fluid_boxes,integer=integer,friendly=friendly,target=function(p,a)
   local near,e=pcall(entity,p,a)
   if near then return e end
   local ok,far=pcall(remote_entity,p,a)
@@ -14822,7 +14989,7 @@ M.rocketload=require('rocketload'){surface_block=function(s,pr) return M.surface
   -- What a player sees moving items by hand, and the hauls and hand share they count, as transfer does.
   moved=function(p,silo,stacks)
     local parts={}
-    for _,s in ipairs(stacks) do parts[#parts+1]='-'..s.count..' [item='..s.name..']'; survey.log_hand('fed',s.name,s.count) end
+    for _,s in ipairs(stacks) do parts[#parts+1]='-'..s.count..' [item='..s.name..']'; survey.log_hand('fed',s.name,s.count,p.force.name) end
     p.create_local_flying_text{text=table.concat(parts,' '),position=silo.position}
     pcall(M.visuals.moved,p,silo.position,silo.surface,table.concat(parts,' '))
     pcall(M.selfview.moved,p,'to_entity',silo,stacks)
@@ -15174,8 +15341,8 @@ function handlers.load_silo_run(p,a)
           local t={}; for _,r in ipairs(part) do t[#t+1]=r.name..' '..r.count end
           lines[i]=string.format('rocket %d: %s',i,table.concat(t,', '))
         end
-        error(string.format('the list is over one rocket (%s kg; lift %g kg, %d slots): it would go as %d rockets (%s); launch_split: true sends it so (the default without all_or_nothing, wait_platform or launch_split: false), or load less; dry_run: true shows each item\'s weight and slots; nothing loaded or queued',
-          total,lift/1000,slots,#parts,table.concat(lines,'; ')),0)
+        error(string.format('the list is over one rocket (%s kg; lift %g kg, %s slots): it would go as %d rockets (%s); launch_split: true sends it so (the default without all_or_nothing, wait_platform or launch_split: false), or load less; dry_run: true shows each item\'s weight and slots; nothing loaded or queued',
+          total,lift/1000,slots==math.huge and 'unlimited' or tostring(slots),#parts,table.concat(lines,'; ')),0)
       end
       if parts then
         local function args_for(part,left)
@@ -15195,12 +15362,12 @@ function handlers.load_silo_run(p,a)
         for i=1,#parts do steps[#steps+1]={action='load_silo',args=args_for(parts[i],#parts-i+1),label=string.format('rocket %d of %d',i,#parts)} end
         local default=a.launch_split==nil and ' (split by default: launch_split: false refuses a list over one rocket)' or ''
         local out,at=queue_rockets(steps,function(why)
-          return string.format('the list is over one rocket (%s kg; lift %g kg, %d slots) and goes as %d rockets, which this queue step could not become in place (%s); nothing loaded or queued: load less a step, or launch_split: false for one rocket',
-            total,lift/1000,slots,#parts,why)
+          return string.format('the list is over one rocket (%s kg; lift %g kg, %s slots) and goes as %d rockets, which this queue step could not become in place (%s); nothing loaded or queued: load less a step, or launch_split: false for one rocket',
+            total,lift/1000,slots==math.huge and 'unlimited' or tostring(slots),#parts,why)
         end)
         out.rockets=#parts
         out.rocket_cargo=lines
-        out.split=string.format('%s kg over %d rockets (lift %g kg, %d slots): %s; %s, loading and launching in turn%s',total,#parts,lift/1000,slots,table.concat(lines,'; '),
+        out.split=string.format('%s kg over %d rockets (lift %g kg, %s slots): %s; %s, loading and launching in turn%s',total,#parts,lift/1000,slots==math.huge and 'unlimited' or tostring(slots),table.concat(lines,'; '),
           at and string.format('this step %s became %d load_silo steps (%s), run right after it and %s',at.step,#parts,at.ids,behind_text(at)) or 'each a load_silo step appended to your queue',default)
         return out
       end
@@ -15706,7 +15873,7 @@ do
 end
 -- ingredient_gap: per crafting machine, the next craft's ingredients held, usable and short, and who can spare them
 -- (gap.lua; d17 batch21 B3, Luna).
-M.gap=require('gap'){position=position,entity=function(p,a) return entity(p,a,true) end,spoil=function() return M.spoil end,
+M.gap=require('gap'){fluid_boxes=M.fluid_boxes,position=position,entity=function(p,a) return entity(p,a,true) end,spoil=function() return M.spoil end,
   seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) or (not (type(p)=='table' and rawget(p,'__remote')) and distance(p.position,pos)<=32) end,
   scan=function(p,item,opts) return stock.scan(p,item,opts) end,where_kept=function(p,item,need,scan,q) return M.where_kept(p,item,need,scan,q) end,
   near=function(p,box,ground) return stock.near(p,box,ground) end,ground_index=function(f,s,item) return M.ground.on_ground_index(f,s,item) end,
@@ -15757,15 +15924,15 @@ M.craftrate=require('craftrate'){}
 M.circrecipe=require('circrecipe'){status_name=function(e) return entity_status_names[e.status] end}
 M.invbar=require('invbar'){integer=integer}
 -- a fusion reactor's bonus, maximum and measured rates (d21 batch64 Z6)
-M.fusion=require('fusion'){state=state}
+M.fusion=require('fusion'){fluid_boxes=M.fluid_boxes,state=state}
 -- rail and chain signals on the ground or elevated rail layer (d20 batch71 AG1)
 M.railsignal=require('railsignal'){position=position,integer=integer}
 -- a locomotive's or wagon's facing, placed and flipped (d20 batch71 AG2)
 M.rollingstock=require('rollingstock'){}
 -- An inventory with every slot taken and what fills it; spoilage in a machine's input (slots.lua; Sol, 22:08).
 M.slots=require('slots')()
-M.spoil=require('spoil'){state=state,force=function() return game.forces.player end,
-  coverage=function(surface,pos) local s=game.get_surface(surface); return s and M.danger.coverage(s,game.forces.player,pos).line end,
+M.spoil=require('spoil'){state=state,force=function(name) return game.forces[name or 'player'] end,team_names=function() return M.team_names() end,
+  coverage=function(surface,pos,fname) local s=game.get_surface(surface); return s and M.danger.coverage(s,game.forces[fname or 'player'],pos).line end,
   characters=function()
     local out={}
     for _,b in ipairs(M.bots.list()) do if b.character and b.character.valid then out[#out+1]=b.character end end
@@ -15783,7 +15950,7 @@ function M.farm_flow(p,surface,item)
   return ok and math.floor(n+0.5) or nil
 end
 -- Nest pollution from threat.lua's memory (one reading at the cloud's edge flickers), shared with status.
-M.defense=require('defense'){unset_target=function(e,side) return M.targets.unset(e,side) end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,polluted=function(s,pos) return threat.polluted(s,pos) end,reached=function(last) return threat.reached(last) end,
+M.defense=require('defense'){fluid_boxes=M.fluid_boxes,unset_target=function(e,side) return M.targets.unset(e,side) end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,polluted=function(s,pos) return threat.polluted(s,pos) end,reached=function(last) return threat.reached(last) end,
   nest_read=function(p,limit) return threat.nest_read(p,limit) end}
 handlers.defense=M.defense.handlers.defense
 handlers.flamers=M.defense.handlers.flamers
@@ -16909,7 +17076,7 @@ end
 -- there, with what stands on that tile now.
 -- What a planned build takes away (conflicts.lua; Sonnet, shift14 21:20: rich sulfuric acid wells under pipes, poles
 -- and tanks): every entity in the way, the resource under it, and the fluid segments and power links taking them cuts.
-M.conflicts=require('conflicts'){compass=compass_names,
+M.conflicts=require('conflicts'){fluid_boxes=M.fluid_boxes,compass=compass_names,
   tile_fixes=function(surface,force,proto,pos,dir) return M.dryrun.tile_fixes(surface,force,proto,pos,dir) end,
   tile_rules=function(surface,proto,pos,dir) return (M.placewhy.tile_rules(surface,proto,pos,dir)) end}
 function handlers.conflicts(p,a)
@@ -16993,7 +17160,7 @@ function M.accepts_text(e,a)
       local okc2,cats=pcall(function() return e.prototype.crafting_categories end)
       local okr,list=pcall(function() return prototypes.get_recipe_filtered{{filter='has-ingredient-item',elem_filters={{filter='name',name=a.item}}}} end)
       local smelts=false
-      for _,r in pairs(okr and list or {}) do if okc2 and cats and cats[r.category] then smelts=true end end
+      for _,r in pairs(okr and list or {}) do if okc2 and cats and takes(cats,r) then smelts=true end end
       if okr and not smelts then return string.format('no: %s makes nothing from %s (no recipe of its crafting categories takes it)',where,a.item) end
     end
     local fr=name=='furnace_source' and select(2,pcall(function() return e.get_recipe() or e.previous_recipe end)) or nil
@@ -18098,8 +18265,8 @@ for name,handler in pairs(M.orders.handlers) do handlers[name]=handler end
 -- (d28 batch317) progressive disclosure: the kit each force sees grows with its research, buildings, encounters and
 -- habits (disclosure.lua, docs/DISCLOSURE.md); off by default. The player force until the per-force helpers are here.
 M.disclosure=require('disclosure'){state=state,units=require('disclosure_units'),
-  forces=function() return {game.forces.player} end,
-  is_team=function(force) return force.name=='player' end,
+  forces=function() return M.team_forces() end,
+  is_team=function(force) for _,t in ipairs(M.team_names()) do if t==force.name then return true end end; return false end,
   team_size=function(force)
     local n=0
     for _,b in ipairs(M.bots.list()) do if (b.force or 'player')==force.name then n=n+1 end end
@@ -18116,7 +18283,7 @@ M.disclosure=require('disclosure'){state=state,units=require('disclosure_units')
     return out
   end,
   push_groups=function(force) return (state().push_alerts or {})[force.name] end}
-handlers.disclosure=function(p,a) return M.disclosure.read(game.forces.player) end
+handlers.disclosure=function(p,a) return M.disclosure.read(p.force) end
 -- Queue writes answer briefly: the revision, state, the next steps by id and
 -- the last results; queue_status has steps in full (agent-minds study: each
 -- edit echoed 10-14 KB, and Sonnet sent its replies to /dev/null to cut them).
@@ -18175,7 +18342,9 @@ M.missed=require('missed'){state=state,clock_mode=function() return clock and cl
 -- (d18 batch39 A2) a platform as a wait woken early says it: where it is, and its latest launch up (the cargo ledger)
 function M.platform_recent(name)
   local pl
-  for _,f in pairs(game.forces) do for _,x in pairs(f.platforms) do if x.valid and x.name==name then pl=x end end end
+  for _,f in pairs(M.discovery and M.discovery.active(M.team_now()) and {game.forces[M.team_now()]} or game.forces) do
+    for _,x in pairs(f.platforms) do if x.valid and x.name==name then pl=x end end
+  end
   local parts={}
   if pl then parts[#parts+1]=name..' '..M.freight.where(pl).text end
   local r,surf=M.ledger.latest_to(name)
@@ -18202,7 +18371,13 @@ M.waits=require('waits'){state=state,measure=function(index) return M.measure_ro
   -- what is open for the sleeper (open.lua), on the sleep's first and last replies
   open_line=function(p) return M.open.line(M.board.who(p),p.force,{surface=p.surface.name,position=p.position},p.index) end}
 for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
-M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
+M.teamfeed=require('teamfeed'){state=state,team_now=function() return M.team_now() end,
+  agents=function() return M.board.agents() end,profile=function(index) return M.profiles.get(index) end}
+M.discovery=require('discovery'){state=state,bots=function() return M.bots.list() end,
+  profile=function(index) return M.profiles.get(index) end}
+M.chat=M.chat_module{state=state,on_say=function(p,text)
+  M.teamfeed.emit(M.board.who(p),'say','team-private',text);M.profiles.say(p,text)
+end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,
   on_viewer=function(m) M.board.on_viewer(m) end,on_reply=function(index,seq) return M.owed and M.owed.ack(index,seq) end,
   owed_held=function(index,text) return M.owed and M.owed.held(index,text) end,
@@ -18212,7 +18387,73 @@ M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) 
   where_from=function(index) local p=M.lookup(index); return p and p.valid and M.where.from(M.board.who(p)) or nil end}
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 -- Confessionals and the operator's viewer relay (audience.lua).
+-- (mt278, private) a team of human players and its freeze (humans.lua); nothing runs without mt_humans
+M.humans=require('humans'){state=state}
+-- (mt281, private) pacts between teams (pacts.lua): open for a team at its first contact; facts to both teams' agents
+M.pacts=require('pacts'){state=state,research_units=function(t,l) return M.research_cost.units(t,l) end,team_now=function() return M.team_now() end,who=function(p) return M.board.who(p) end,
+  shipment_seen=function(e) M.multiteam.shipment_seen(e) end,
+  market_ranks=function() local ranks={} for _,row in ipairs(M.multiteam.game.standings()) do ranks[row.team]=row.rank end return ranks end,
+  market_measure=function(rows) for _,row in ipairs(rows) do helpers.write_file('pog/mt-market-measures.jsonl',helpers.table_to_json(row)..'\n',true,0) end end,
+  roster=function(reader,other) return M.discovery.roster(reader,other) end,
+  request_id=function() return M.market_request_id end,
+  on_market=function(e) M.teamfeed.market(e) end,
+  on_message=function(m) M.teamfeed.emit(m.agent,'diplomacy','diplomacy',m.text,{m.to_team},m.seq) end,
+  as_team=function(t,fn,...) return M.as_team(t,fn,...) end,
+  fact=function(team,text,wake) M.as_team(team,function()
+    for _,ag in ipairs(M.board.agents()) do M.board.deliver(ag.index,{seq='pact',tick=game.tick,from='pact',text=text,wake=wake or nil,fyi=not wake or nil}) end
+  end) end}
+M.market=M.pacts.market
+-- (mt274, private) several teams: setup and first contact (multiteam.lua), operator only
+M.multiteam=require('multiteam'){state=state,
+  -- (mt301) the end of the game (multiteam.lua's M.game): the departures and pacts it scores by, its game-over line
+  -- to a team's agents (wakes them) and to the operator's feed
+  pacts=function() return M.pacts end,
+  fact=function(team,text,wake) M.as_team(team,function()
+    for _,ag in ipairs(M.board.agents()) do M.board.deliver(ag.index,{seq='game',tick=game.tick,from='game',text=text,wake=wake or nil,fyi=not wake or nil}) end
+  end) end,
+  feed=function(e) M.teamfeed.game(e) end,
+  -- (mt276 G) the rules of contact: an operator tell to the whole team, as that team
+  tell_team=function(team,text,summary) return M.as_team(team,M.tells.operator.tell,{to='team',text=text,summary=summary}) end,
+  -- (mt276 G) a first contact as a fact line to the agents of the teams it concerns: the game's facts (what, whose,
+  -- where), no reading of them
+  on_contact=function(rec)
+    local at=string.format('(%d,%d) on %s',math.floor(rec.x),math.floor(rec.y),tostring(rec.surface))
+    local lines={}
+    if rec.kind=='chart' then
+      lines[1]={rec.team,'chart',string.format('charted: a %s of force %s at %s',tostring(rec.entity),rec.other,at),false}
+    else
+      local by=rec.cause and (rec.cause..' of force '..rec.team) or 'force '..rec.team
+      lines[1]={rec.other,'hit',string.format('hit: our %s at %s, by %s',tostring(rec.entity),at,by),true}
+      lines[2]={rec.team,'hit',string.format('our %s hit a %s of force %s at %s',tostring(rec.cause or 'entity'),tostring(rec.entity),rec.other,at),false}
+    end
+    -- (mt281) the pact actions open for both teams at their first contact (pacts.lua; disclosure's event:contact): the
+    -- team's contact line says so the first time
+    local mt=state().mt
+    mt.pacts_open=mt.pacts_open or {}
+    local opened={}
+    for _,t in ipairs({rec.team,rec.other}) do
+      if M.disclosure and game.forces[t] then
+        pcall(M.disclosure.mark,game.forces[t],'event:contact')
+        if M.market and M.market.contact_count(t)>1 then pcall(M.disclosure.mark,game.forces[t],'event:second_contact') end
+      end
+      if not mt.pacts_open[t] then mt.pacts_open[t]=game.tick; opened[t]=true end
+    end
+    for _,l in ipairs(lines) do
+      if opened[l[1]] then
+        opened[l[1]]=nil
+        l[3]=l[3]..'. new: diplomacy_send {to: TEAM, text: MESSAGE} and diplomacy {with: TEAM} for negotiation; say/tell/board remain private to your own team. pact_propose, pact_accept, pact_decline, pact_withdraw, pact_amend, pact_end and pacts (fh help pact_propose): agreements with a contacted team'
+      end
+    end
+    for _,l in ipairs(lines) do
+      M.as_team(l[1],function()
+        for _,ag in ipairs(M.board.agents()) do
+          M.board.deliver(ag.index,{seq='contact',tick=game.tick,from=l[2],text=l[3],wake=l[4] or nil,fyi=not l[4] or nil})
+        end
+      end)
+    end
+  end}
 M.audience=require('audience'){state=state,post_viewer=function(name,text,source,id) return M.chat.viewer(name,text,source,id) end,
+  viewer_allowed=function(name,text) return M.discovery.viewer(M.team_now(),name,text) end,
   notice=function(from,text) return M.chat.notice(from,text) end,agents=function() return M.board.agents() end,
   director=function(index) return M.is_director(index) end}
 for name,handler in pairs(M.audience.handlers) do handlers[name]=handler end
@@ -18220,13 +18461,14 @@ for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
 -- Team board, reply hints, harness requests and saved plans (board.lua).
 -- Bots are never directors (and game.get_player refuses their indices).
 function M.is_director(index) return not M.bots.is_index(index) and M.cameras.director(index) end
-M.board=require('board'){wall=function() return M.wall_ms end,state=state,rest_label=function(name) local r=M.rests and M.rests.get(name); return r and M.rests.label(r) or nil end,on_update=function(by,item,removed) return M.progress and M.progress.on_update(by,item,removed) end,check_lines=function(id) return M.checks and M.checks.item_lines(id) end,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
+M.board=require('board'){wall=function() return M.wall_ms end,state=state,team_now=function() return M.team_now() end,cause_text=function(c,own) return M.cause_text(c,own) end,rest_label=function(name) local r=M.rests and M.rests.get(name); return r and M.rests.label(r) or nil end,on_update=function(by,item,removed) return M.progress and M.progress.on_update(by,item,removed) end,check_lines=function(id) return M.checks and M.checks.item_lines(id) end,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
+  on_event=function(e) M.teamfeed.emit(e.by,'board','team-private',string.format('#%s %s: %s%s',e.id,e.change,e.title or '',e.text and ' — '..e.text or ''),nil,e.seq) end,
   lesson_score=function(i) if M.lessonbook then return M.lessonbook.score(i) end end,lesson_extra=function(i) return M.lessonbook and M.lessonbook.extra(i) end,
   lesson_fields=function(a,i) return M.lessonbook and M.lessonbook.fields(a,i) end,lesson_surfaced=function(index,list,action) if M.lessonbook then M.lessonbook.surfaced(index,list,action) end end,claims=M.claims,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
   profile=function(index) return M.profiles.get(index) end,validate_plan=function(a) return scheduler.validate(a) end,
   submit=function(p,a) return handlers.queue_submit(p,a) end,
   research_lines=function(p,h) return M.research.lines(p,h) end,
-  attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,news_lines=function(from,since,reader) return threat.news_lines(from,since,reader) end,
+  attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,news_lines=function(from,since,reader,fname) return threat.news_lines(from,since,reader,fname) end,
   watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
   queue_lines=function(p,h) local out=M.queue_fresh_lines(p,h); for _,l in ipairs(M.built_lines(p,h)) do out[#out+1]=l end; return out end,platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,sight_lines=function(p,h) return M.pushalerts.sight_team(p,h) end,
   hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,captive_lines=function(p,h) return M.pushalerts.captive_lines(p,h) end,speaker_lines=function(p,h) return M.pushalerts.speaker_lines(p,h) end,
@@ -18235,8 +18477,13 @@ M.board=require('board'){wall=function() return M.wall_ms end,state=state,rest_l
   power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,delivery_lines=function(p,h) return M.delivwatch and M.delivwatch.lines(p,h) end,spider_lines=function(p,h) return M.spiderroute and M.spiderroute.lines(p,h) end,spider_retreats=function(p,h) return M.spiderroute and M.spiderroute.retreats(p,h) end,flight_lines=function(p,h) return M.flightwatch and M.flightwatch.lines(p,h) end,progress_lines=function(p,h) return M.progress and M.progress.lines(p,h) end,mixed_lines=function(p,h) return M.mixed and M.mixed.lines(p,h) end,turret_lines=function(p,h) return M.turretwatch and M.turretwatch.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
   science_line=function(p,h) return M.scienceline.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
+-- (mt276 B) a line filed for an agent (alerts, reminders, tells) goes to the mention box of the agent's team
+do
+  local deliver=M.board.deliver
+  M.board.deliver=function(index,t) return M.as_team(M.team_of_index(index),deliver,index,t) end
+end
 -- Research news, who queued what, and the queue's times (research.lua).
-M.research=require('research'){state=state,labs_of=function(f,sf) return M.census and M.census.typed(f,sf,'lab') end,board_event=function(by,item,change,text) return M.board.system_event(by,item,change,text) end,
+M.research=require('research'){state=state,labs_of=function(f,sf) return M.census and M.census.typed(f,sf,'lab') end,board_event=function(by,item,change,text,force) return M.as_team(force or 'player',M.board.system_event,by,item,change,text) end,
   use_lines=function(force) return M.research_use.lines(force) end}
 M.research_cost=require('researchcost')
 function handlers.research_done(p,a) return M.research.done(p,a) end
@@ -18245,7 +18492,7 @@ function handlers.research_options(p,a) return M.research.options(p.force,a) end
 -- Cargo pods on their way down from our platforms (pods.lua; Grok, shift13): followed from their platform's surface.
 M.pods=require('pods'){state=state,podlog_sampled=function(pod,tick) return M.podlog.sampled(pod,tick) end,podlog_gone=function(unit,tick,pad) return M.podlog.gone(unit,tick,pad) end}
 -- Landed cargo pods on the ground (landed.lua; d17 pods, Nick 15:45): the pods read, status and the team block.
-M.landed=require('landed'){state=state,position=position}
+M.landed=require('landed'){state=state,position=position,forces=function() return M.team_forces() end}
 function handlers.pods(p,a) return M.landed.read(p,a) end
 -- where a deconstructed item went (deconwent.lua; d18 batch37 D3, Astra)
 M.platformmining=require('platformmining'){state=state}
@@ -18282,6 +18529,7 @@ M.rests=require('rests'){state=state,resolve=M.board.resolve,
     return c and not c.peeked and c.call_tick or nil
   end}
 M.tells=require('tells'){state=state,resolve=M.board.resolve,resting=function(name) return M.rests.tell_line(name) end,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,read_tells=M.board.tells_read,
+  on_send=function(t) M.teamfeed.emit(t.from,'tell','team-private',t.text,t.to,t.seq) end,
   on_reply=function(index,seq) return M.owed.ack(index,seq) end,
   owed_left=function(index,names,text) if text then return M.owed.held(index,text) end return M.owed.held_for(index,names) end,
   where_from=function(me) return M.where.from(me) end,
@@ -18309,7 +18557,7 @@ M.gapfacts=require('gapfacts'){}
 function M.agent_player(name)
   for _,a in ipairs(M.board.agents()) do if a.name==name then return M.lookup(a.index) end end
 end
-M.reminders=require('reminders'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,
+M.reminders=require('reminders'){state=state,force_name=function(name) return M.agent_force(name).name end,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,
   item=function(id) return M.board.items()[id] end,
   check_items=M.gapfacts.check_items,item_known=M.gapfacts.item_known,technology_known=M.gapfacts.technology_known,is_gear=M.gapfacts.is_gear,
   gap_facts=function(name,items) local p=M.agent_player(name); return p and M.gapfacts.facts(p,items) or nil end,
@@ -18363,7 +18611,7 @@ M.hauling=require('hauling'){unset_target=function(e,side) return M.targets.unse
 -- read efficiency, its seed, and one line in the agent's 2-hour review. Hand items: the hauling counts.
 -- Who placed a ghost or built by hand, through which request (ghostlog.lua; d20 batch56 R7, Luna #1434).
 M.ghostlog=require('ghostlog'){state=state,via=function() return M.ghost_via end}
-M.efficiency=require('efficiency'){state=state,force=function() return game.forces.player end,
+M.efficiency=require('efficiency'){state=state,force=function() return M.team_forces() end,
   agent_names=function()
     local out={}
     for index in pairs(state().hauling or {}) do local ok,p=pcall(M.lookup,index); if ok and p and p.valid then out[#out+1]=M.board.who(p) end end
@@ -18403,7 +18651,15 @@ M.selfview=require('selfview'){state=state,on_failed=function(index,action,reaso
     return out
   end,
   claim_alerts=function(p) return M.pushalerts.claim_lines(p) end,
-  losses=function() return state().losses or {} end,
+  -- (mt276) with p, its force's incidents only
+  losses=function(p)
+    local all=state().losses or {}
+    local fname=p and p.force and p.force.name
+    if not fname then return all end
+    local out={}
+    for _,i in ipairs(all) do if (i.force or 'player')==fname then out[#out+1]=i end end
+    return out
+  end,
   loss_line=function(i,reader) return describe_incident(i,reader) end,
   research_between=function(force,from,to) return M.research.finished_between(force,from,to) end,
   board_items=function() return (state().board or {}).items or {} end}
@@ -18423,7 +18679,7 @@ M.where=require('where'){state=state,bot=function(index) return M.bots.record(in
         if not r then return nil end
         if bare then return M.rests.label(r) end
         -- (d22 batch113 BW1) the alert groups that go to it while it rests, and who else hears them
-        local ok,note=pcall(function() local q=M.lookup(index); return M.pushalerts and M.pushalerts.resting_note(a.name,q and q.force or game.forces.player) end)
+        local ok,note=pcall(function() local q=M.lookup(index); return M.pushalerts and M.pushalerts.resting_note(a.name,q and q.force or M.agent_force(a.name)) end)
         return M.rests.label(r)..(ok and note and '; '..note or '')
       end
     end
@@ -18467,14 +18723,16 @@ M.visuals=require('visuals'){state=state,lookup=function(index) return M.lookup(
 -- Platform health alerts in team.alerts (platalerts.lua): hits, turret ammo,
 -- repair packs, hub health, to the platform's creator, workers and riders.
 -- What a platform's thrusters lack and the chain behind it (thrust.lua): the slow-flight alert and platforms {platform}.
-M.thrust=require('thrust'){circuit=function(e) return M.circuits.read(e) end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end}
+M.thrust=require('thrust'){fluid_boxes=M.fluid_boxes,circuit=function(e) return M.circuits.read(e) end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end}
 M.platalerts=require('platalerts'){state=state,leg=function(pl) return M.freight.leg(pl) end,unset_target=function(e,side) return M.targets.unset(e,side) end,inventory_rounds=M.vehicles.inventory_rounds,fuel_outlook=function(pl) return M.endurance.fuel_outlook(pl) end,ammofeed={trace=function(pl,age) return M.ammofeed.get(pl,age,true) end},platform_events=function(p,h) return M.freight and M.freight.event_lines(p,h) end,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
   lookup=function(index) return M.lookup(index) end,who=function(p) return M.board.who(p) end,
   thrust=function(pl) return M.thrust.read(pl) end,thrust_lowest=function(t) return M.thrust.lowest_text(t) end,pump_states=function(pl) return M.thrust.pump_states(pl) end}
 -- Human players: their log and restore (players.lua). Bots, camera clients
 -- and attached agents are not humans.
 M.players=require('players'){state=state,ghost_placed=function(p,g) pcall(M.ghostlog.placed,M.board.who(p),g) end,teammates=function(p) return M.where.list(p) end,
-  is_human=function(index) return not M.bots.is_index(index) and not M.is_director(index) and not (state().controlled and state().controlled[index]) end,
+  -- (mt276 B) a LuaPlayer mt_assign put in a team's force charts for it (a spectator): no human of the game
+  is_human=function(index) return not M.bots.is_index(index) and not M.is_director(index) and not (state().controlled and state().controlled[index])
+    and not M.mt_assigned(index) end,team_now=function() return M.team_now() end,
   votes_on=function(target) return M.votes.on(target) end,
   notice=function(from,text) return M.chat.notice(from,text) end}
 -- The agents' votes on viewers (mute, unmute) and human players (kick, ban,
@@ -18486,10 +18744,11 @@ M.votes=require('votes'){state=state,notice=function(from,text) return M.chat.no
   active_agents=function(window)
     local out,clocks={},state().clocks or {}
     local function recent(c) return c and ((not c.peeked and game.tick-c.call_tick<=window) or (c.wait_tick and game.tick-c.wait_tick<=window)) end
-    for _,b in ipairs(M.bots.list()) do if recent(clocks[b.index]) then out[#out+1]=b.name end end
+    -- (mt276 B) the agents of the team the call runs as: each team votes apart (its own votes store)
+    for _,b in ipairs(M.bots.list()) do if (b.force or 'player')==team_now and recent(clocks[b.index]) then out[#out+1]=b.name end end
     for index in pairs(state().controlled or {}) do
       local p=game.get_player(index)
-      if p and recent(clocks[index]) then out[#out+1]=p.name end
+      if p and p.force.name==team_now and recent(clocks[index]) then out[#out+1]=p.name end
     end
     return out
   end,
@@ -18497,7 +18756,17 @@ M.votes=require('votes'){state=state,notice=function(from,text) return M.chat.no
   human=function(name) return M.players.find(name) end,group=function(p) return M.players.group(p) end}
 for name,handler in pairs(M.votes.handlers) do handlers[name]=handler end
 for name,handler in pairs(M.players.handlers) do handlers[name]=handler end
-function handlers.cameras() return M.cameras.list() end
+-- (mt276) with more than one team, an agent sees only the cameras that follow its own force's agents
+function handlers.cameras(p)
+  local out=M.cameras.list()
+  if #M.team_names()<=1 or not (p and p.force) then return out end
+  local keep={}
+  for _,c in ipairs(out.cameras or {}) do
+    if c.follow and M.agent_force(c.follow)==p.force then keep[#keep+1]=c end
+  end
+  out.cameras=keep; out.panels=nil
+  return out
+end
 -- A load_silo queue step paused by the agent's own build, transfer and the like (Sonnet, Astra) was requeued
 -- (scheduler.lua): the queue goes on at once when the call ran at once, or when the timed action it started ends.
 M.RESUME_AFTER={build=true,transfer=true,collect=true,feed=true,rearm=true,refuel=true,configure=true,rotate=true,pickup=true,mine=true,craft=true,load_silo=false}
@@ -18673,6 +18942,10 @@ EXTRA_ARGS.trace=TARGET
 local VIEW_SCOPES={danger=true,pipe_gaps=true,belt_gaps=true,drill_sites=true,agriculture=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
 local allowed_args
 function check_args(action,args)
+  -- Contact-gated actions validate in their own wrappers. Their schema is dynamic,
+  -- and `note` is a real argument there (DOC_ONLY treats it as prose elsewhere).
+  if M.pacts and M.pacts.handlers[action] then return end
+  if M.market and M.market.handlers[action] then return end
   if not allowed_args then
     allowed_args={}
     for name,schema in pairs(handlers.describe().actions) do
@@ -18700,7 +18973,7 @@ function check_args(action,args)
       and not (key=='helper' and type(args.helper)=='boolean') and not (key=='queue_resume_after' and type(args.queue_resume_after)=='boolean') then
       local valid={}
       for k in pairs(set) do
-        if not (M.disclosure and M.disclosure.arg_hidden(game.forces.player,action,k)) then valid[#valid+1]=k end
+        if not (M.disclosure and M.disclosure.arg_hidden(game.forces[team_now],action,k)) then valid[#valid+1]=k end
       end
       table.sort(valid)
       -- The valid name nearest the unknown one (Luna 06:20: filter on configure): a plural or singular, a name
@@ -18943,7 +19216,7 @@ end
 -- (d24 batch154) the surface name of a platform by its name (argforms.lua), any force's; nil when none
 function M.platform_surface_name(name)
   if type(name)~='string' then return nil end
-  for _,f in pairs(game.forces) do
+  for _,f in pairs(M.discovery and M.discovery.active(M.team_now()) and {game.forces[M.team_now()]} or game.forces) do
     local ok,list=pcall(function() return f.platforms end)
     for _,pl in pairs(ok and list or {}) do
       if pl.valid and pl.name==name and pl.surface and pl.surface.valid then return pl.surface.name end
@@ -19236,7 +19509,100 @@ function M.resolve_alias(request)
   request.action=real
   return called
 end
-function M.dispatch(request)
+-- (mt276 B) The team a request runs as: an operator request's team (a player force's name; default player), else the
+-- agent's (its bot's or player's force).
+function M.request_team(request)
+  if type(request)~='table' then return 'player' end
+  if request.operator==true then
+    local t=request.team
+    -- an operator tell with no team: the team of the first agent it names (tools/idle_nudge.py names one agent)
+    if t==nil and request.action=='tell' and type(request.args)=='table' then
+      local to=request.args.to
+      local first=type(to)=='table' and to[1] or type(to)=='string' and to:match('[^,%s]+') or nil
+      local b=type(first)=='string' and M.bots.named(first:gsub('^@',''):lower())
+      if b then return b.force or 'player' end
+    end
+    if t==nil then return 'player' end
+    if not (type(t)=='string' and t~='enemy' and t~='neutral' and game.forces[t]) then error('team: a player force\'s name (default player), not '..tostring(t),0) end
+    return t
+  end
+  if request.bot~=nil then
+    local b=type(request.bot)=='string' and M.bots.named(request.bot)
+    return b and (b.force or 'player') or 'player'
+  end
+  if type(request.player)=='number' then return M.team_of_index(request.player) end
+  return 'player'
+end
+-- (mt279 L2) The forces an agent's reply names, as its reader may see them (mt277 smoke test: every agent read its own
+-- force's colour in observe's entities, enemy_news and build details, which says other forces exist): the reader's
+-- own force is never named; another team's by name once the reader's team has had contact with it (multiteam's first
+-- records: its chart showed that team's entity, or a hit either way), else `other`; enemy, neutral and any force that
+-- is no team by name, as before. Applied to the whole reply of a team other than the player force (a `force` field,
+-- and "force NAME" in a text, where an own force reads `ours`); a table is copied before a change, so stored records
+-- keep theirs. The player force's replies (world n, a one-team world) are left as they are.
+function M.force_shown(name,reader,teams)
+  if name==nil or name==reader then return nil end
+  if not teams then
+    teams={}
+    for _,t in ipairs(M.team_names()) do teams[t]=true end
+    for t in pairs((state().mt or {}).teams or {}) do teams[t]=true end
+  end
+  if not teams[name] then return name end
+  local first=(state().mt or {}).first or {}
+  if first['chart '..reader..'>'..name] or first['shot '..reader..'>'..name] or first['shot '..name..'>'..reader] then return name end
+  return 'other'
+end
+function M.scrub_forces(v,reader)
+  local teams={}
+  for _,t in ipairs(M.team_names()) do teams[t]=true end
+  for t in pairs((state().mt or {}).teams or {}) do teams[t]=true end
+  local function text(pre,name)
+    if not teams[name] and name~=reader then return nil end
+    return pre..(M.force_shown(name,reader,teams) or 'ours')
+  end
+  local function scrub(x,depth)
+    local tx=type(x)
+    if tx=='string' then
+      if not x:find('force',1,true) then return x end
+      return (x:gsub('(force[ =:]+)([%w_%-]+)',text))
+    end
+    if tx~='table' or depth>24 then return x end
+    local copy
+    for k,y in pairs(x) do
+      local ny
+      if k=='force' and type(y)=='string' then ny=M.force_shown(y,reader,teams) else ny=scrub(y,depth+1) end
+      if ny~=y then
+        if not copy then copy={}; for k2,y2 in pairs(x) do copy[k2]=y2 end end
+        copy[k]=ny
+      end
+    end
+    return copy or x
+  end
+  return scrub(v,0)
+end
+local dispatch_team
+local function dispatch_scrubbed(request)
+  if type(request)=='table' and request.operator~=true and request.reader==nil and M.discovery.active(team_now)
+    and not M.discovery.open(team_now) and type(request.action)=='string'
+    and (request.action:match('^pact') or request.action:match('^diplomacy') or (M.market and M.market.names()[request.action])) then
+    if M.market and M.market.names()[request.action] then passive_failed=game.tick end
+    error('unsupported action; call describe',0)
+  end
+  local ok,result=pcall(dispatch_team,request)
+  local reader=team_now
+  if reader~='player' and type(request)=='table' and request.operator~=true then
+    if request.reader==nil and M.discovery.active(reader) then
+      local oks,scrubbed=pcall(M.discovery.project,result,reader)
+      if not oks then error('response unavailable',0) end -- fail closed; never return raw data on a projection fault
+      result=scrubbed or (ok and {} or 'request unavailable; call describe')
+    else result=M.scrub_forces(result,reader) end
+  end
+  if not ok then error(result,0) end
+  return result
+end
+function M.dispatch(request) return M.as_team(M.request_team(request),dispatch_scrubbed,request) end
+function dispatch_team(request)
+  M.market_request_id=type(request)=='table' and request.id or nil
   -- the agent the request is for, while it runs (turretwatch.lua tells it what its ghosts became)
   M.caller_index=type(request)=='table' and type(request.player)=='number' and request.player or nil
   -- (d29 batch336 FL6) the request's wall clock (ms since 1970), which fh puts in the envelope; the game has none
@@ -19253,7 +19619,7 @@ function M.dispatch(request)
   end
   -- (d28 batch317) progressive disclosure (disclosure.lua): a unit not open yet for the caller's force is refused naming
   -- its condition; the call is counted for the force's habits; describe shows the open set
-  local disc=M.disclosure and M.disclosure.mode()~='off' and type(request)=='table' and request.operator~=true and game.forces.player or nil
+  local disc=M.disclosure and M.disclosure.mode()~='off' and type(request)=='table' and request.operator~=true and game.forces[team_now] or nil
   local refused,from
   if disc then
     refused=M.disclosure.gate(request,disc)
@@ -19265,11 +19631,11 @@ function M.dispatch(request)
   local ok,result
   if refused then ok,result=false,refused
   elseif disc and request.action=='describe' and M.disclosure.mode()=='filter' and type(request.args)=='table'
-    and request.args.if_bundle~=nil and request.args.if_bundle==M.disclosure.describe_key(disc,BUNDLE_ID) then
+    and request.args.if_bundle~=nil and request.args.if_bundle==M.disclosure.describe_key(disc,M.describe_bundle()) then
     ok,result=true,{bundle=request.args.if_bundle,unchanged=true}
   else
     ok,result=pcall(M.dispatch_inner,request)
-    if ok and disc and request.action=='describe' then result=M.disclosure.filter_describe(result,disc,BUNDLE_ID) end
+    if ok and disc and request.action=='describe' then result=M.disclosure.filter_describe(result,disc,M.describe_bundle()) end
   end
   if disc then pcall(M.disclosure.count,request,ok,result,disc,from) end
   M.ghost_via=nil
@@ -19336,8 +19702,8 @@ function M.dispatch_inner(request)
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.factory_digest.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action] or M.chronicle.operator[request.action]
         or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.rests.operator[request.action] or M.lessonbook.operator[request.action] or M.bplibrary_operator[request.action]
-        or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action]) or (M.chart and M.chart.operator[request.action])
-      relay=relay or (M.disclosure and M.disclosure.operator[request.action])
+        or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action]) or (M.chart and M.chart.operator[request.action]) or M.multiteam.operator[request.action] or M.humans.operator[request.action] or M.pacts.operator[request.action] or M.market.operator[request.action]
+      relay=relay or M.teamfeed.operator[request.action] or M.profiles.operator[request.action] or (M.disclosure and M.disclosure.operator[request.action])
       relay=relay or (M.platformmetrics and M.platformmetrics.operator[request.action])
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
@@ -19449,7 +19815,7 @@ function M.dispatch_inner(request)
       if okr and gr then result.ground_rules=gr end
       -- (d28 batch317) what opened for the team since this agent's last line (disclosure.lua, filter mode)
       if M.disclosure and M.disclosure.mode()=='filter' then
-        local okn,nl=pcall(M.disclosure.reply_line,p.name,game.forces.player)
+        local okn,nl=pcall(M.disclosure.reply_line,p.name,p.force)
         if okn and nl then result.new=nl end
       end
     end
@@ -19655,7 +20021,8 @@ dispatch_request=function(request)
     error(tostring(args_err)..(ok and hint or '')..(built and built:find('for this call',1,true) and built or (built or '')..M.example_text(view,request.args)),0)
   end
   if request.action=='describe' then return handler(nil,request.args) end
-  if request.action=='profiles' or request.action=='cameras' then return handler() end
+  if request.action=='profiles' then return handler() end
+  if request.action=='cameras' then return handler(M.lookup(request.player or 1)) end
   if M.bots.is_index(request.player) and (request.action=='attach' or request.action=='detach') then
     return {bot=M.bots.record(request.player).name,attached=request.action=='attach',note='bots need no attach'}
   end
@@ -19805,12 +20172,12 @@ threat=threat_module{state=state,known=known,distance=distance,lookup=function(i
   if not ok then local st=state(); st.retreat_errors={count=((st.retreat_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
 end}
 M.threat=threat
-survey=survey_module{state=state,timed=M.timed,status_name=function(e) return M.machine_status(e) end,burnt_stuck=function(e) return M.burnt.stuck(e) end,
+survey=survey_module{is_science=function(name) return M.spoil.is_pack(name) end,state=state,timed=M.timed,status_name=function(e) return M.machine_status(e) end,burnt_stuck=function(e) return M.burnt.stuck(e) end,
   research_rate=function(force_name) return M.research.rate(force_name) end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
 -- (d28 batch325 IC) one item's complete count on belts and in robots' cargo, in the background (supply count_all)
 M.itemcount=require('itemcount'){state=state}
-M.supply=require('supply'){count_all=function(...) return M.itemcount.read(...) end,scope_line=function(...) return M.stores.scope_line(...) end,feeders_of=function(e) return M.feeders and M.feeders.of(e) end,surface_buildings=function(s) if M.census then return M.census.surface_buildings(s) end end,feeders_held=function(e,item,b) return M.feeders and M.feeders.held(e,item,b) end,elsewhere=function(...) return M.elsewhere.line(...) end,makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,spoilflow=M.spoilflow,ground_index=function(f,s,item) return M.ground and M.ground.on_ground_index(f,s,item) end,state_text=function(e) return M.thrust.state_text(e) end,
+M.supply=require('supply'){fluid_boxes=M.fluid_boxes,count_all=function(...) return M.itemcount.read(...) end,scope_line=function(...) return M.stores.scope_line(...) end,feeders_of=function(e) return M.feeders and M.feeders.of(e) end,surface_buildings=function(s) if M.census then return M.census.surface_buildings(s) end end,feeders_held=function(e,item,b) return M.feeders and M.feeders.held(e,item,b) end,elsewhere=function(...) return M.elsewhere.line(...) end,makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,spoilflow=M.spoilflow,ground_index=function(f,s,item) return M.ground and M.ground.on_ground_index(f,s,item) end,state_text=function(e) return M.thrust.state_text(e) end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
 -- compact: lines only (supply.lua M.compact).
 function M.compact_supply(out) return M.supply.compact(out) end
@@ -19867,7 +20234,7 @@ M.batch=require('batch'){position=position,integer=integer,entity=function(p,pos
   submit=function(p,a) return handlers.queue_submit(p,a) end}
 function handlers.assembler_batch(p,a) return M.batch.run(p,a) end
 function handlers.outpost(p,a) return M.outpost.read(p,a) end
-M.trace=require('trace'){refuses_ingredients=function(e) local r=e.type=='assembling-machine' and M.outputstop.read(e) return r and r.refuses_ingredients end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,circuits=function() return M.circuits end,state_text=function(e) return M.thrust.state_text(e) end,fluid_upstream=function(box,i) return M.thrust.upstream(box,i) end,held_blocked=M.details.held_blocked,observe=function(e,p) return M.readmemory.observe(e,p) end,memory_trace=function(p,a) return M.beltgaps.trace(p,a) end,end_seen=M.factory_digest.end_seen,supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return M.machine_status(e) end}
+M.trace=require('trace'){fluid_boxes=M.fluid_boxes,refuses_ingredients=function(e) local r=e.type=='assembling-machine' and M.outputstop.read(e) return r and r.refuses_ingredients end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,circuits=function() return M.circuits end,state_text=function(e) return M.thrust.state_text(e) end,fluid_upstream=function(box,i) return M.thrust.upstream(box,i) end,held_blocked=M.details.held_blocked,observe=function(e,p) return M.readmemory.observe(e,p) end,memory_trace=function(p,a) return M.beltgaps.trace(p,a) end,end_seen=M.factory_digest.end_seen,supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return M.machine_status(e) end}
 -- labs: research line diagnostics (labs.lua), an observe scope; science reads its packs through supply's scan.
 M.labs=require('labs'){research_rate=function(f) return M.research.rate(f) end,integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,
   wait_for_full_hand=function(e) return M.details.wait_for_full_hand(e) end,
@@ -19932,7 +20299,7 @@ function handlers.science(p,a)
   end
   return M.labs.science(p,a)
 end
-rates=rates_module{position=position,status_name=function(e) return M.machine_status(e) end,state_text=function(e) return M.thrust.state_text(e) end}
+rates=rates_module{fluid_boxes=M.fluid_boxes,position=position,status_name=function(e) return M.machine_status(e) end,state_text=function(e) return M.thrust.state_text(e) end}
 -- Electric and logistic networks and turrets, one line each (networks.lua):
 -- the shift block, the networks read, and the network push alerts.
 -- Space not in play yet (Nick 12:35, item 4, for a fresh run): no rocket launched, no platform, and no planet but
@@ -19976,7 +20343,7 @@ function handlers.belt_gaps(p,a)
   return M.beltgaps.read(p,a)
 end
 -- pipe_gaps: a pipe line's segments and cuts along tiles (pipegaps.lua; Muse, shift17 10:50).
-M.pipegaps=require('pipegaps'){pipe_fluid=function(e) return M.pipe_fluid(e) end,position=position,connections=function(e) return pipes.connections(e) end,
+M.pipegaps=require('pipegaps'){fluid_neighbours=M.fluid_neighbours,fluid_boxes=M.fluid_boxes,pipe_fluid=function(e) return M.pipe_fluid(e) end,position=position,connections=function(e) return pipes.connections(e) end,
   segment_box=function(e,i) return pipes.segment_box(e,i) end,visible=function(p,pos) return M.memory_visible(p,pos) end,
   fluids=function(e) return pipes.fluids(e,true) end}
 function handlers.pipe_gaps(p,a)
@@ -19998,7 +20365,7 @@ function handlers.pipe_gaps(p,a)
 end
 -- danger: a destination's nests, enemies seen, recent attacks and deaths, and the character's health and armor
 -- (danger.lua; Opus, shift17 10:51), facts only.
-M.danger=require('danger'){state=state,position=position,avoid=M.avoid,eggs=function(surface,pos,r) return M.spoil.near(surface,pos,r) end,
+M.danger=require('danger'){fluid_boxes=M.fluid_boxes,state=state,position=position,avoid=M.avoid,eggs=function(surface,pos,r,fname) return M.spoil.near(surface,pos,r,fname) end,
   surface=function(p,name) local s=game.surfaces[name]; assert(s and (s.platform==nil or s.platform.force==p.force),'unknown surface '..tostring(name)); return s end}
 function handlers.danger(p,a) return M.danger.read(p,a) end
 -- (d24 batch174 QQ1, Luna #2242) sight: which chunks are visible now, only charted, or uncharted, and from what (sight.lua)
@@ -20054,7 +20421,7 @@ M.readmemory=require('readmemory'){state=state,position=position,visible=M.memor
   belt_observe=function(e,p) return M.beltgaps.observe(e,p) end,belt_trace=function(p,a) return M.beltgaps.trace(p,a) end,
   fog_note_seen=function(e,t,pos,cx,cy,status,ctx) return M.fogmem.note_seen(e,t,pos,cx,cy,status,ctx) end,
   belt_observe_seen=function(e,t,pos,cx,cy,ctx) return M.beltgaps.observe_seen(e,t,pos,cx,cy,ctx) end}
-M.census=require('census'){state=state,timed=M.timed,observe_seen=function(e,t,pos,ctx) return M.readmemory.observe_seen(e,t,pos,ctx) end,
+M.census=require('census'){fluid_boxes=M.fluid_boxes,state=state,timed=M.timed,team_names=function() return M.team_names() end,team_now=function() return M.team_now() end,observe_seen=function(e,t,pos,ctx) return M.readmemory.observe_seen(e,t,pos,ctx) end,
   -- (d26 batch233 VM) census part vehicles: the agents by their character's unit_number, and the vehicles they drive by
   -- remote view now (vehicle {drive, remote}) with the drive's target
   vehicle_people=function()
@@ -20087,14 +20454,14 @@ M.fuelreactor=require('fuelreactor'){status_name=function(e) return M.machine_st
 M.fuelbudget=require('fuelbudget'){spoilflow=M.spoilflow,reactors=M.fuelreactor,fuel_users=function(s) return M.census.fuel_users(s) end,status_name=function(e) return M.machine_status(e) end,
   belt_line=function(p,e) return M.linecut.line(p,e) end}
 function handlers.fuel_budget(p,a) return M.fuelbudget.read(p,a) end
-M.networks=require('networks'){unset_target=function(e,side) return M.targets.unset(e,side) end,reqchest=function() return M.reqchest end,state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
+M.networks=require('networks'){fluid_boxes=M.fluid_boxes,unset_target=function(e,side) return M.targets.unset(e,side) end,reqchest=function() return M.reqchest end,state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
   sky=function(surface) return M.lightning and M.lightning.sky(surface) end}
 -- One item across every planet and platform (packaudit.lua; Luna, 16:50).
 M.packaudit=require('packaudit'){spoilflow=M.spoilflow,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,reuse=function(key,fn) return M.supply.reuse(key,fn) end,spoil=M.spoil,
   where=function(pl) return M.freight.where(pl) end,rocket_room=function(silo,item) return space.rocket_room(silo,item) end}
 function handlers.freight_audit(p,a) return M.packaudit.read(p,a) end
 -- The factory's shortages in one read (shortages.lua; Opus 13:51).
-M.shortages=require('shortages'){reuse=function(key,fn) return M.supply.reuse(key,fn) end,held_feeders=function(e,items) return M.supply.held_feeders(e,items) end,held_line=function(h,item) return M.supply.held_line(h,item) end,status_name=function(e) return entity_status_names[e.status] end}
+M.shortages=require('shortages'){fluid_boxes=M.fluid_boxes,reuse=function(key,fn) return M.supply.reuse(key,fn) end,held_feeders=function(e,items) return M.supply.held_feeders(e,items) end,held_line=function(h,item) return M.supply.held_line(h,item) end,status_name=function(e) return entity_status_names[e.status] end}
 function handlers.shortages(p,a) return M.shortages.read(p,a) end
 M.damagelog=require('damagelog'){state=state,position=position,integer=integer}
 -- A platform leaving while a launch to it waits for its rocket (launchwatch.lua; Luna 15:21).
@@ -20125,7 +20492,7 @@ M.ammofeed=require('ammofeed'){state=state,feeders=M.feeders,hand=function(e) re
 -- configure of its priority targets, and build and place_ghosts (dry runs too) of one.
 M.fireline=require('fireline'){}
 M.ammorate=require('ammorate'){inventory_rounds=M.vehicles.inventory_rounds}
-M.platdefense=require('platdefense'){state=state,position=position,platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,ammorate=M.ammorate,inventory_rounds=M.vehicles.inventory_rounds,rounds_text=M.vehicles.rounds_text,fireline=M.fireline,own_losses=function(name) return LOSS.own_on(name) end}
+M.platdefense=require('platdefense'){fluid_boxes=M.fluid_boxes,state=state,position=position,platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,ammorate=M.ammorate,inventory_rounds=M.vehicles.inventory_rounds,rounds_text=M.vehicles.rounds_text,fireline=M.fireline,own_losses=function(name) return LOSS.own_on(name) end}
 do
   local function target_surface(p,a)
     if type(a.platform)=='string' then
@@ -20409,7 +20776,7 @@ M.scienceline=require('scienceline'){state=state,supply=M.supply,networks=M.netw
 -- Lightning attractors on Fulgora whose catches have nowhere to go, and full accumulators beside them (lightning.lua).
 M.lightning=require('lightning'){state=state}
 -- A long belt or pipe line cut (linecut.lua; d17 batch17 C1, Opus): a team alert naming the cut tiles.
-M.linecut=require('linecut'){state=state}
+M.linecut=require('linecut'){fluid_neighbours=M.fluid_neighbours,fluid_boxes=M.fluid_boxes,state=state}
 M.robotloss=require('robotloss'){state=state,integer=integer,position=position}
 function handlers.robot_losses(p,a) return M.robotloss.read(p,a) end
 passive.robot_losses=true
@@ -20430,7 +20797,7 @@ function M.belt_groups_read(f)
   M.belt_groups_kept[f.name]={tick=game.tick,list=out}
   return out
 end
-M.pushalerts=require('pushalerts'){held_feeders=function(e,items) return M.supply.held_feeders(e,items) end,held_line=function(h,item) return M.supply.held_line(h,item) end,rest_label=function(name) local r=M.rests.get(name); return r and M.rests.label(r) or nil end,platform_eta=function(pl,loc)
+M.pushalerts=require('pushalerts'){fluid_boxes=M.fluid_boxes,held_feeders=function(e,items) return M.supply.held_feeders(e,items) end,held_line=function(h,item) return M.supply.held_line(h,item) end,rest_label=function(name) local r=M.rests.get(name); return r and M.rests.label(r) or nil end,platform_eta=function(pl,loc)
     local leg=M.freight.leg(pl)
     if leg and leg.to==loc and leg.eta_ticks then return leg.eta_ticks/60 end
     local est=M.freight.before_departure(pl,loc)
@@ -20490,16 +20857,16 @@ function handlers.game_alerts(p,a) return M.pushalerts.read(p,a) end
 -- Where drops landed (drops.lua): their pods followed down, told in the team block, the drops read.
 M.drops=require('drops'){state=state,podlog=function(pod,info) return M.podlog.sent(pod,info) end,integer=integer,who=M.board.who,resolve=M.board.resolve,contested=function(s,f,item,at) return M.ghostlist.contested(s,f,item,at) end}
 -- A pole's death that cut power (powercut.lua, round2120a): team.alerts and status alerts; scan rows' pole wires.
-M.powercut=require('powercut'){state=state}
+M.powercut=require('powercut'){fluid_boxes=M.fluid_boxes,state=state}
 function handlers.drops(p,a) return M.drops.read(p,a) end
 -- What each platform carried stop by stop and leg by leg, and where it is (freight.lua; Luna, shift12 12:47).
-M.freight=require('freight'){delivered=function(info) if M.reminders then M.reminders.trigger('delivered',info) end end,
+M.freight=require('freight'){delivered=function(info) if M.reminders then M.as_team(info.force or 'player',M.reminders.trigger,'delivered',info) end end,
   leg_speed=function(pl,since,past,by) if M.engine then return M.engine.leg_speed(pl,since,past,by) end end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,census_where=function(f,sf) return M.census and M.census.where_index(f,sf) end,state=state,spoil=M.spoil,pods=M.pods,departure=function(name,by) return M.departure and M.departure.lines(name,by) end,departure_all=function() return M.departure and M.departure.all() end,
   ammomodel=function() return M.ammomodel end}
 -- One ammunition model for a trip (ammomodel.lua; d20 batch51 H1, viewer Aurora 09:36): platform_endurance, its route
 -- forecast, and the ammo_rates of preflight and the platforms read count stock, rockets on their way and what is made the
 -- same way.
-M.ammomodel=require('ammomodel'){stock_places=function(pl,want) return M.freight.stock_places(pl,want) end,ammofeed=M.ammofeed,
+M.ammomodel=require('ammomodel'){fluid_boxes=M.fluid_boxes,stock_places=function(pl,want) return M.freight.stock_places(pl,want) end,ammofeed=M.ammofeed,
   incoming=function(pl) return M.freight.incoming(pl) end}
 -- One read across a shipment's native systems (shipment.lua; d17 batch15 Group B, Sol #614, Astra).
 M.shipment=require('shipment'){launches=function(p,a) return M.launchcount.read(p,a) end,integer=integer,freight=function() return M.freight end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,drops_taken=function(f) return M.drops.taken(f) end,stops=function(pl) return space.stops(pl) end,hub_counts=function(pl,q) return M.freight.hub_counts(pl,q) end,
@@ -20545,16 +20912,16 @@ function handlers.fleet(p,a) return M.fleet.read(p,a) end
 M.progress=require('progress'){state=state,items=function() return M.board.items() end,agents=function() return M.board.agents() end,
   who=function(p) return M.board.who(p) end,since_request=function(name) return M.board.since_request(name) end,
   plan_item=function() return M.board.plan_item() end,QUIET=M.board.QUIET,PROJECT_QUIET=M.board.PROJECT_QUIET,
-  force=function() return game.forces.player end,
+  force=function(owner) return M.agent_force(owner) end,
   owner_surface=function(name)
     for _,ag in ipairs(M.board.agents()) do
       if ag.name==name then local pl=M.lookup(ag.index); local c=pl and pl.valid and (pl.character or pl); return c and c.valid and c.surface and c.surface.name or nil end
     end
   end,
   claim_surface=function(c) return M.claims.surface_of(c) end,
-  total=function(surface,item)
+  total=function(surface,item,owner)
     local s=game.get_surface(surface)
-    local ok,row=pcall(M.stock_planet_row,{force=game.forces.player},s,item)
+    local ok,row=pcall(M.stock_planet_row,{force=M.agent_force(owner)},s,item)
     return ok and row and row.total or nil
   end,
   shipment_events=function() return state().shipment and state().shipment.events or {} end,
@@ -20592,7 +20959,7 @@ M.checks=require('checks'){state=state,position=position,who=function(p) return 
   condition=function(p,c) return conditions.check(p,c) end,validate=function(c) return conditions.validate(c) end,
   item_exists=function(id) return M.board.items()[id]~=nil end}
 -- The library's placed areas with their hookups, for the live map (libareas.lua; d21 batch68 AD2, viewer Aurora).
-M.libareas=require('libareas'){state=state,check_state=function(name,surface,box) return M.checks.area_state(name,surface,box) end}
+M.libareas=require('libareas'){fluid_boxes=M.fluid_boxes,state=state,force=function(name) return M.agent_force(name) end,check_state=function(name,surface,box) return M.checks.area_state(name,surface,box) end}
 -- Each planet's electric and logistic networks and items' sources and consumers, for the live map (netmap.lua; d21 batch68 AD3, viewer Aurora).
 M.netmap=require('netmap'){state=state,poles=function(f,s) return M.census.poles(f,s) end,typed=function(f,s,t) return M.census.typed(f,s,t) end}
 function handlers.checks(p,a) return M.checks.handler(p,a) end
@@ -20603,9 +20970,16 @@ M.lessonbook=require('lessonbook'){state=state,items=function() return M.board.i
   QUIET=M.board.QUIET,owner_state=function(name) return M.board.owner_state(name) end,
   player_of=function(name) for _,ag in ipairs(M.board.agents()) do if ag.name==name then local pl=M.lookup(ag.index); return pl and pl.valid and pl or nil end end end}
 for name,handler in pairs(M.lessonbook.handlers) do handlers[name]=handler end
+-- (mt281) the pact actions (pacts.lua; open per team at its first contact)
+for name,handler in pairs(M.pacts.handlers) do handlers[name]=handler end
+for name in pairs(M.pacts.reads) do reads[name]=true end
+-- a refused pact call leaves the agent's queue running (passive, as tell and vote)
+for name in pairs(M.pacts.handlers) do passive[name]=true end
+for name,handler in pairs(M.market.handlers) do handlers[name]=handler;passive[name]=true end
+for name in pairs(M.market.reads) do reads[name]=true end
 -- platform_endurance: a route's legs at the platform's speed and what its ammunition, repair packs, thruster fluids,
 -- power and hub space come to over it at today's rates (endurance.lua; Astra, d15: Wayfarer lost at Aquilo).
-M.endurance=require('endurance'){state=state,player_of=function(i) local ok,q=pcall(player,i,true); return ok and q or nil end,platform=function(p,name) return space.platform(p,name) end,platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,ammofeed=M.ammofeed,ammorate=M.ammorate,ammo_damages=M.platdefense and M.platdefense.damages,phase_rates=function(pl,name) return M.freight.phase_rates(pl,name) end,
+M.endurance=require('endurance'){fluid_boxes=M.fluid_boxes,state=state,player_of=function(i) local ok,q=pcall(player,i,true); return ok and q or nil end,platform=function(p,name) return space.platform(p,name) end,platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,ammofeed=M.ammofeed,ammorate=M.ammorate,ammo_damages=M.platdefense and M.platdefense.damages,phase_rates=function(pl,name) return M.freight.phase_rates(pl,name) end,
   leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,ammo_counts=function(pl) return M.freight.ammo_counts(pl) end,
   path=function(a,b) return M.freight.path(a,b) end,stock_places=function(pl,want,lists) return M.freight.stock_places(pl,want,lists) end,
   places_text=function(sp,name) return M.freight.places_text(sp,name) end,moved_text=function(a,b,name) return M.freight.moved_text(a,b,name) end,
@@ -20622,11 +20996,11 @@ function handlers.platform_plan(p,a) return M.platplan.read(p,a) end
 -- (d22 batch78 AN2, Astra #1774) floating chunks, collectors' reach and the collector_tally watch (collectreach.lua)
 M.collectreach=require('collectreach'){state=state,who_index=function(index) local pl=M.lookup(index); return pl and pl.valid and M.board.who(pl) or nil end,
   mixed_view=function(job) return M.mixed.view(job) end}
-M.platsupply=require('platsupply'){unset_target=function(e,side) return M.targets.unset(e,side) end,platform=function(p,name) return space.platform(p,name) end,placewhy=M.placewhy,
+M.platsupply=require('platsupply'){fluid_boxes=M.fluid_boxes,unset_target=function(e,side) return M.targets.unset(e,side) end,platform=function(p,name) return space.platform(p,name) end,placewhy=M.placewhy,
   collectreach=M.collectreach,reason=function(v) return M.measures.reason(v) end,
   thrust=function(pl) return M.thrust.read(pl) end,turret_feed=function(t) return M.platalerts.turret_feed(t) end,fuelstock=function(pl) return M.fuelstock.trace(pl) end}
 -- The fuel feedstock trace (fuelstock.lua; d17 batch31 B5, Sol).
-M.fuelstock=require('fuelstock'){}
+M.fuelstock=require('fuelstock'){fluid_boxes=M.fluid_boxes,}
 function handlers.platform_supply(p,a) return M.platsupply.read(p,a) end
 -- platform_digest (platdigest.lua, batch24 B1): one read per platform from the reads above.
 M.platdigest=require('platdigest'){jobs=function(name) return M.platjobs.lines(name) end,platform=function(p,name) return space.platform(p,name) end,
@@ -20672,7 +21046,7 @@ function handlers.platform_tiles(p,a)
   return M.tilecheck.query(pl,cells)
 end
 -- Each platform's flight over the last 60 and 180 s: speed, thruster fluids, tanks, pumps (engine.lua; Astra, 21:20).
-M.engine=require('engine'){state=state}
+M.engine=require('engine'){fluid_boxes=M.fluid_boxes,state=state}
 -- The run's chronicle: agents' entries and the events the harness saw (chronicle.lua; viewers Alex and syndesis 22:24).
 M.chronicle=require('chronicle'){state=state,platform_made=function(pl,t) return M.starterpack.made(pl,t) end,platform_gone=function(i) return M.starterpack.forget(i) end,where=function(pl) return M.freight and M.freight.where(pl) end,
   owner=function(c) return M.character_owner(c) end}
@@ -20692,7 +21066,7 @@ M.platwait=require('platwait'){state=state}
 -- Who edited a request section or a departure gate (editlog.lua; d19 batch41 B1, Sol seq 861).
 M.editlog=require('editlog'){state=state,deliver=function(index,t) return M.board.deliver(index,t) end,
   index_of=function(name) local ok,i=pcall(M.bots.index_of,name); if ok and i then return i end; local pl=game.get_player(name); return pl and pl.index or nil end}
-space=space_module{made=function(t) return M.made.mark(t) end,floor_read=function(pl) return M.flightwatch.floor_read(pl) end,platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,plat_damaged=function(pl) return M.platalerts.damaged(pl) end,plat_damaged_seed=function(pl,l) return M.platalerts.seed_damaged(pl,l) end,
+space=space_module{is_science=function(name) return M.spoil.is_pack(name) end,fluid_boxes=M.fluid_boxes,made=function(t) return M.made.mark(t) end,floor_read=function(pl) return M.flightwatch.floor_read(pl) end,platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,plat_damaged=function(pl) return M.platalerts.damaged(pl) end,plat_damaged_seed=function(pl,l) return M.platalerts.seed_damaged(pl,l) end,
   plat_damaged_forget=function(pl,u) return M.platalerts.forget_damaged(pl,u) end,editlog=M.editlog,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,deliver=function(index,t) return M.board.deliver(index,t) end,launch_need=function(pl) return M.launchneed.for_platform(pl) end,wait_need=function(pl) return M.launchneed.wait_lines(pl) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,ghost_tally=function() return M.ghosttally end,platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name,by) return M.departure and M.departure.lines(name,by) end,departure_all=function() return M.departure and M.departure.all() end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,starterpack=function() return M.starterpack end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
@@ -20709,7 +21083,7 @@ space=space_module{made=function(t) return M.made.mark(t) end,floor_read=functio
   -- A platform's defence: hub health, turrets and their ammo against the hub's, repair packs (platalerts.lua).
   defense=function(pl) return M.platalerts.defense(pl) end}
 M.space=space  -- tests reach its limits (GHOST_CAP)
-M.platformmetrics=require('platformmetrics'){state=state,platform=function(name) return space.platform({force=game.forces.player},name) end,
+M.platformmetrics=require('platformmetrics'){state=state,platform=function(name) return space.platform({force=game.forces[M.team_now()]},name) end,
   leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,
   hits=function(pl) return M.platalerts.hits(pl) end,
   losses=function(f,s,t) return M.lostlog.since(f,s,t,nil,0) end}
@@ -21381,6 +21755,18 @@ function M.combat_scan(p,action,index,tick)
   local e=cached.entity
   if e and e.valid and distance(p.position,e.position)<=action.radius and visible(p,e.position) then return e end
 end
+-- Space-bar fire ignores non-military buildings. An explicit hostile target uses
+-- the engine's selected-entity fire, like aiming Ctrl+C; cease-fires still hold.
+function M.shoot_selected(p,pos)
+  for _,e in pairs(p.surface.find_entities_filtered{position=pos}) do
+    if e.valid and e.health and e.health>0 and e.force and e.force~=p.force and e.force.name~='neutral'
+      and not p.force.get_friend(e.force) and not p.force.get_cease_fire(e.force) and visible(p,e.position) then
+      p.selected=e
+      return defines.shooting.shooting_selected
+    end
+  end
+  return defines.shooting.shooting_enemies
+end
 -- Operator measurement (profile_ticks): the harness tick's own cost, timed
 -- with LuaProfiler and written to the log. Module state on purpose: it never
 -- touches game state, and profiler readings differ between machines anyway.
@@ -21656,7 +22042,7 @@ function M.tick_body(event)
   idle_tick()
   M.research.tick(event.tick)
   M.bots.tick(event.tick)
-  M.drops.tick(event.tick)
+  if event.tick%M.drops.SAMPLE==0 then M.each_team_holding('drops',M.drops.tick,event.tick) end  -- (mt276 B) each team's drops, a step every SAMPLE ticks
   M.drop_jobs_tick(event.tick)
   M.nametags.tick(event.tick)
   pcall(M.networks.tick,event.tick)  -- the networks' samples never stop the harness tick
@@ -21696,14 +22082,22 @@ function M.tick_body(event)
   if M.itemcount and event.tick%M.itemcount.EVERY==0 then pcall(M.timed,'itemcount.step',M.itemcount.tick,event.tick) end
   if M.platalerts and M.platalerts.tick and event.tick%M.platalerts.SCAN_STEP==0 then pcall(M.timed,'platalerts.scan',M.platalerts.tick,event.tick) end
   -- platform_bom requests kept to the ghosts' need (A6)
+  -- (mt278) a human team's freeze: its checks every second, its destructible steps every tick while queued (humans.lua)
+  do local mt=state().mt; if mt and mt.humans then pcall(M.timed,'humans.tick',M.humans.tick,event.tick) end end
+  -- Market settlement propagates faults to control.lua quarantine; never silently retry half a payment.
+  if M.market then M.market.tick(event.tick) end
+  -- (mt281) pacts: proposals lapsing, cease-fires lifting after the notice, obligations, the depot's moves, departures
+  do local mt=state().mt; if mt and mt.pacts then pcall(M.timed,'pacts.tick',M.pacts.tick,event.tick) end end
+  -- (mt301) edge arrivals each second; milestones, wipes and the deadline each check_s (multiteam.lua)
+  if event.tick%60==47 then local mt=state().mt; if mt and mt.teams then pcall(M.timed,'mtgame.tick',M.multiteam.game.tick,event.tick) end end
   if event.tick%600==41 and M.disclosure then pcall(M.timed,'disclosure.sweep',M.disclosure.sweep,event.tick) end  -- atoms not met yet (disclosure.lua)
-  if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.owed.tick) end  -- unanswered mentions' reminders
+  if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.each_team_holding,'owed',M.owed.tick) end  -- unanswered mentions' reminders
   if M.platbom and M.platbom.watch then pcall(M.platbom.watch) end  -- the platform_bom request lowered as the hub spends (A3)
   if event.tick%600==17 and M.platbom then pcall(M.timed,'platbom.tick',M.platbom.tick,event.tick) end  -- each hub's items by stop and leg (freight.lua)
   if M.research_target then pcall(M.timed,'research_target.tick',M.research_target.tick,event.tick) end  -- research target levels (researchtarget.lua)
-  if event.tick%3600==61 and M.lessonbook then pcall(M.timed,'lessonbook.tick',M.lessonbook.tick) end  -- lesson checks, surfacings (lessonbook.lua)
+  if event.tick%3600==61 and M.lessonbook then pcall(M.timed,'lessonbook.tick',M.each_team_holding,'board',M.lessonbook.tick) end  -- lesson checks, surfacings (lessonbook.lua)
   if event.tick%120==65 and M.turretwatch then pcall(M.timed,'turretwatch.tick',M.turretwatch.tick) end  -- turret ghosts' targeting once built
-  if event.tick%120==53 and M.progress then pcall(M.timed,'progress.tick',M.progress.tick) end  -- owned board items' checks (progress.lua)
+  if event.tick%120==53 and M.progress then pcall(M.timed,'progress.tick',M.each_team_holding,'board',M.progress.tick) end  -- owned board items' checks (progress.lua)
   if event.tick%120==41 and M.shipment then pcall(M.timed,'shipment.tick',M.shipment.tick) end
   if event.tick%60==37 and M.spiderroute then pcall(M.timed,'spiderroute.tick',M.spiderroute.tick) end  -- spidertrons sent by go_to (spiderroute.lua)
   if event.tick%30==19 and M.spiderroute and state().spiderroute then pcall(M.timed,'spiderroute.guard_tick',M.spiderroute.guard_tick) end  -- their retreat guards (QAE1)
@@ -21741,11 +22135,14 @@ function M.tick_body(event)
     if not ok then local s=state(); s.spoil_errors={count=((s.spoil_errors or {}).count or 0)+1,last=tostring(err),tick=event.tick} end
   end
   M.seated_ok=nil
+  -- (mt276 B) with several teams, each agent's action runs as its team (its board, tells and chat at the keys)
+  local teams=#M.team_names()>1
   for index,action in pairs(state().active) do
     -- One carried over a harness update runs guarded: a shape this runtime does not expect ends it, never the tick (carry.lua).
     if action.carried then
-      local ok,err=pcall(M.tick_action,index,action,event)
+      local ok,err=pcall(M.as_team,teams and M.team_of_index(index) or 'player',M.tick_action,index,action,event)
       if not ok then M.carry_failed(index,action,err) end
+    elseif teams then M.as_team(M.team_of_index(index),M.tick_action,index,action,event)
     else M.tick_action(index,action,event) end
   end
   for index,action in pairs(state().combat or {}) do
@@ -21785,7 +22182,8 @@ function M.tick_body(event)
         target=M.melee_guard(p,action,target,event.tick)
         if target then action.fired_tick=event.tick end
       end
-      p.shooting_state={state=target and defines.shooting.shooting_enemies or defines.shooting.not_shooting,position=target or p.position}
+      local mode=target and (action.auto and defines.shooting.shooting_enemies or M.shoot_selected(p,target)) or defines.shooting.not_shooting
+      p.shooting_state={state=mode,position=target or p.position}
     end
   end
   -- Retreats due this tick: the actions end and the agents go back (outside the loops over the tables they change).
@@ -21845,7 +22243,9 @@ function M.tick_body(event)
   end
   M.orders.tick()
   do local rs=state().robot_sweeps; if rs and rs.active then local ok,err=pcall(M.timed,'reservations.tick',M.reservations.tick); if not ok then rs.error={tick=event.tick,error=tostring(err)} end end end  -- (d25 batch217 QAB1) a sweep's step
-  local okr,errr=pcall(M.timed,'reminders.tick',M.reminders.tick)
+  -- (mt276 B) each team's reminders on their check step only (reminders.lua steps once every CHECK ticks)
+  local okr,errr=true,nil
+  if game.tick%M.reminders.CHECK==0 then okr,errr=pcall(M.timed,'reminders.tick',M.each_team_holding,'reminders',M.reminders.tick) end
   if not okr then local s=state(); s.reminder_error={tick=event.tick,error=tostring(errr)} end
   clock.tick()
   M.cameras.tick()
@@ -21859,9 +22259,14 @@ end
 -- Operator-only remote functions (control.lua): never reachable through
 -- dispatch, so agents cannot spawn bots or move cameras.
 M.operator={
-  bot_create=function(name) return {ok=true,tick=game.tick,bot=M.bots.create(name)} end,
-  bot_remove=function(name) local out=M.bots.remove(name); return {ok=true,tick=game.tick,bot=out} end,
-  bots=function() local out={}; for _,b in ipairs(M.bots.list()) do out[#out+1]={name=b.name,index=b.index,alive=M.bots.alive(b),position=b.position,dead_until_tick=b.dead_until_tick} end; return {ok=true,tick=game.tick,bots=out} end,
+  -- a name, or (mt276) {name, force}
+  bot_create=function(a)
+    state().team_names=nil
+    if type(a)=='table' then return {ok=true,tick=game.tick,bot=M.bots.create(a.name,a.force)} end
+    return {ok=true,tick=game.tick,bot=M.bots.create(a)}
+  end,
+  bot_remove=function(name) state().team_names=nil; local out=M.bots.remove(name); return {ok=true,tick=game.tick,bot=out} end,
+  bots=function() local out={}; for _,b in ipairs(M.bots.list()) do out[#out+1]={name=b.name,index=b.index,force=b.force or 'player',alive=M.bots.alive(b),position=b.position,dead_until_tick=b.dead_until_tick} end; return {ok=true,tick=game.tick,bots=out} end,
   camera=function(args) return M.cameras.set(args) end,
   -- A table ({seconds=N} or {stop=true}) runs the dispatch/event profiler (profile.lua).
   profile_ticks=function(n)
@@ -21888,6 +22293,14 @@ M.operator={
   end}
 end do local MAX_ALERTS=64
 function M.on_event(event)
+  if M.market then M.market.on_event(event) end
+  if M.market and event.name==defines.events.on_entity_died then M.market.on_died(event) end
+  -- (mt301) a team's agent killed on respawn by another team (multiteam.lua's wipe)
+  if event.name==defines.events.on_entity_died and state().mt then pcall(M.multiteam.game.on_died,event) end
+  if M.market and state().mt and event.name==defines.events.on_research_finished and event.research and event.research.force then M.market.on_research_finished(event) end
+  -- (mt278) a human team's joins, chat commands and builds while frozen (humans.lua)
+  local mt=state().mt
+  if mt and mt.humans then pcall(M.humans.on_event,event) end
   if M.platformmining.events[event.name] then M.platformmining.on_event(event); return end
   -- (d29 batch356 DL) confirm the original damaged unit's removal before mined events return below.
   if M.damagelog.removal_events[event.name] then
@@ -21895,6 +22308,8 @@ function M.on_event(event)
     if not ok then local s=state(); s.damage_log_errors={count=((s.damage_log_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
   end
   if event.name~=nil and event.name==(defines.events or {}).on_space_platform_changed_state then
+    -- (mt301) a team's departure and edge arrival on their tick (pacts.lua, multiteam.lua)
+    if state().mt then pcall(M.multiteam.game.on_platform,event) end
     local pl=event.platform
     local ok,err=pcall(function() M.timed('productionlegs.event',M.freight.productionlegs.observe,pl,event.tick,'event',M.freight.where(pl)) end)
     if not ok then state().production_legs_error={tick=event.tick,error=tostring(err)} end
@@ -21943,7 +22358,7 @@ function M.on_event(event)
     end
     -- removed or destroyed: its placement record goes (ghostlog.lua); a ghost the game puts there for a destroyed one is the game's
     if (event.name==defines.events.on_player_mined_entity or event.name==defines.events.on_robot_mined_entity or event.name==defines.events.on_entity_died)
-      and M.ghostlog and event.entity and event.entity.valid and event.entity.force==game.forces.player then
+      and M.ghostlog and event.entity and event.entity.valid and event.entity.force.name~='enemy' and event.entity.force.name~='neutral' then
       pcall(M.ghostlog.forget,event.entity)
     end
     if event.name~=defines.events.on_entity_died then return end
@@ -21953,8 +22368,9 @@ function M.on_event(event)
     local ok,err=pcall(event.name==defines.events.on_research_finished and M.research.on_finished or M.research.on_queued,event)
     if not ok then local s=state(); s.research_errors={count=((s.research_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
     -- (d22 batch94 BD1) the reminders set on.research
-    if event.name==defines.events.on_research_finished and M.reminders and event.research and event.research.valid and event.research.force==game.forces.player then
-      pcall(M.reminders.trigger,'research',{name=event.research.name,gear=M.gapfacts.unlocks_gear(event.research)})
+    if event.name==defines.events.on_research_finished and M.reminders and event.research and event.research.valid then
+      local rf=event.research.force
+      pcall(M.as_team,rf and rf.name or 'player',M.reminders.trigger,'research',{name=event.research.name,gear=M.gapfacts.unlocks_gear(event.research),force=rf and rf.name or nil})
     end
     return
   end
@@ -21996,10 +22412,27 @@ function M.on_event(event)
       if not fine then M.carry_failed(index,action,err) end
     elseif ok then M.pathing.on_finished(p,nav,event) elseif nav.path_id==event.id then nav.path_state='failed' end
   elseif event.name==defines.events.on_console_chat then
-    if M.chat then M.chat.on_console_chat(event) end
+    if M.chat then
+      local pl=event.player_index and game.get_player(event.player_index)
+      M.as_team(pl and pl.valid and pl.force.name or 'player',M.chat.on_console_chat,event)
+      -- (mt281) a human team's "!pact ..." line (pacts.lua)
+      if state().mt and state().mt.humans then
+        M.market.on_console_chat(event)
+        pcall(M.pacts.on_console_chat,event)
+      end
+    end
   elseif event.name==defines.events.on_unit_group_finished_gathering then
     threat.on_group(event)
+  elseif event.name==defines.events.on_chunk_charted then
+    -- (mt274) a team's chart showing another team's entity (multiteam.lua; nothing without teams set)
+    if state().mt then pcall(M.multiteam.on_charted,event) end
   elseif event.name==defines.events.on_entity_damaged then
+    -- (mt274) the first hit between two teams (multiteam.lua)
+    if state().mt then pcall(M.multiteam.on_damaged,event) end
+    -- (mt278) a hit between a human team and another team: no freeze within quiet_min of it (humans.lua)
+    if state().mt and state().mt.humans then pcall(M.humans.on_damaged,event) end
+    -- (mt281) a hit between teams for the pacts' no_attack obligations (pacts.lua)
+    if state().mt and state().mt.pacts then pcall(M.pacts.on_damaged,event) end
     -- (AR1) an asteroid shot, or an asteroid's hit on us, on a platform an asteroid_watch watches (asteroidwatch.lua)
     if state().asteroid_watch then
       local oka,erra=pcall(M.asteroidwatch.on_damaged,event)
@@ -22080,7 +22513,7 @@ function M.on_event(event)
     if e and e.valid and (e.type=='construction-robot' or e.type=='logistic-robot') and M.robotloss then pcall(M.robotloss.note,event) end
     if e and e.valid and e.force and e.force.name=='enemy' and (e.type=='unit-spawner' or e.type=='turret') and event.force and event.force.name~='enemy' then
       s.kills=s.kills or {}
-      table.insert(s.kills,{tick=event.tick,name=e.name,position=e.position})
+      table.insert(s.kills,{tick=event.tick,name=e.name,position=e.position,force=event.force.name~='player' and event.force.name or nil})
       while #s.kills>MAX_ALERTS do table.remove(s.kills,1) end
       return
     end
@@ -22111,12 +22544,14 @@ function M.on_event(event)
     local okt,struck=pcall(M.lightning.struck,event)
     struck=not cause and not friendly and okt and struck or nil
     if struck then pcall(M.lightning.lost,e) end
+    -- (mt276 G) a cause of another player force named with it (M.cause_text)
+    local cname=cause and M.cause_text(cause,own) or (not friendly and not struck and M.cause_text(nil,own,event.force)) or nil
     -- A pole of ours: whether its loss split its network or left machines with no pole (powercut.lua); a fault is counted.
     if e.type=='electric-pole' then
-      local ok,err=pcall(M.powercut.on_died,e,cause and cause.name or (friendly and 'friendly fire') or struck)
+      local ok,err=pcall(M.powercut.on_died,e,cname or (friendly and 'friendly fire') or struck)
       if not ok then s.powercut_errors={count=((s.powercut_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
     end
-    record_loss(event.tick,e,cause and cause.name or (friendly and 'unknown source') or struck,friendly,friendly and cause and cause.position or nil)
+    record_loss(event.tick,e,cname or (friendly and 'unknown source') or struck,friendly,friendly and cause and cause.position or nil)
     -- One row a building (lostlog.lua); seen to die, the fog memory forgets it, else it stays remembered (fogmem.lua).
     local okl,errl=pcall(function()
       M.lostlog.died(e,cause and cause.name or (friendly and 'unknown source') or struck)
@@ -22217,7 +22652,7 @@ end)()
           if type(a.positions)=='table' then for _,q in ipairs(a.positions) do list[#list+1]=type(q)=='table' and (q.position or q) or q end end
           if type(a.position)=='table' then list[#list+1]=a.position end
           if type(out.position)=='table' then list[#list+1]=out.position end
-          M.mixed.at(surface_of(p,a),list,name..(#keys>0 and ' '..table.concat(keys,', ') or '')..' by '..M.board.who(p))
+          M.mixed.at(surface_of(p,a),list,name..(#keys>0 and ' '..table.concat(keys,', ') or '')..' by '..M.board.who(p),p.force)
         end)
       end
       return out

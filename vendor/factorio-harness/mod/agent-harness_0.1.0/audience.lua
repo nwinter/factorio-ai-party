@@ -107,6 +107,9 @@ return function(api)
     assert(#name > 0, 'name is required')
     if #name > VIEWER_NAME then name = name:sub(1, VIEWER_NAME) end
     local text = one_line(a.text, 'text', VIEWER_LEN):gsub('%[', '('):gsub('%]', ')')
+    if api.viewer_allowed and not api.viewer_allowed(name,text) then
+      return {posted=false,dropped='disabled'}
+    end
     local v = store().viewers
     local now = game.tick
     local recent = {}

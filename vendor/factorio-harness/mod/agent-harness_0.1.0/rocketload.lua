@@ -14,8 +14,13 @@
 -- show a player standing there. The factory is pure so the same module can be
 -- bundled into a hot reload.
 return function(api)
+  local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+  local function planet_request(f, from, planet, legacy_any)
+    if PORT21 then return f.request_from ~= 'platforms' and (from == nil or from == planet) end
+    return from == planet or (legacy_any and from == nil)
+  end
   local M = {}
-  local MAX_ITEMS, MAX_CHESTS, MAX_FROM = 20, 16, 16
+  local MAX_ITEMS, MAX_CHESTS, MAX_FROM = PORT21 and 64 or 20, 16, 16
   M.MAX_FROM = MAX_FROM  -- (d25 batch208 QU1) also a queue step's check (runtime.lua step_lengths)
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   -- (d28 batch328 SC, Astra #2725) items whose built entity the platform's surface refuses (api.surface_block: its
@@ -410,7 +415,7 @@ return function(api)
               local v = f.value
               local name = type(v) == 'table' and v.name or v
               local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
-              if name and (not items or items[name]) and (f.min or 0) > 0 and (from == nil or from == planet) then
+              if name and (not items or items[name]) and (f.min or 0) > 0 and planet_request(f, from, planet, true) then
                 local held = inv and try(function() return inv.get_item_count(name) end) or 0
                 if held < f.min then out[#out+1] = string.format('%s asks %s %d, holds %d (%d short)', pl.name, name, f.min, held, f.min - held) end
               end
@@ -528,7 +533,7 @@ return function(api)
         if room < want and moved >= room then
           row.why = string.format('weight: %d fit under the lift (%g kg each; the rocket holds %s)', room, kg(weight(r.name)), api.rocket_weight(silo))
         elseif not try(function() return inv.can_insert{name=r.name, quality=r.quality} end) then
-          row.why = string.format('the rocket\'s cargo slots are full (%d of %d)', used_slots(inv), #inv)
+          row.why = PORT21 and 'the weight-limited rocket inventory refused this item' or string.format('the rocket\'s cargo slots are full (%d of %d)', used_slots(inv), #inv)
         else
           row.why = table.concat(held, '; ')
         end
@@ -542,7 +547,7 @@ return function(api)
     -- what platform this cargo is for (D11: a launch elsewhere is refused)
     if #moved_all > 0 and (a.platform or a.for_platform) and api.loaded_for then pcall(api.loaded_for, p, silo, a.platform or a.for_platform, moved_all) end
     local out = {silo=string.format('%s at %s', silo.name, at(silo.position)), loaded=rows,
-      cargo=list_text(contents(inv)), rocket_weight=api.rocket_weight(silo), slots=used_slots(inv) .. '/' .. #inv,
+      cargo=list_text(contents(inv)), rocket_weight=api.rocket_weight(silo), slots=PORT21 and (used_slots(inv)..' occupied entries; weight only') or (used_slots(inv) .. '/' .. #inv),
       chests=#chests > 0 and #chests or nil, complete=#short == 0, short=#short > 0 and short or nil,
       switches=M.switches_text(silo)}
     -- (d26 batch229 SP) a starter pack aboard: the platform of ours it goes to with no platform named
@@ -644,7 +649,8 @@ return function(api)
     if not (recipe and input) then return nil end
     local parts = try(function() return silo.rocket_parts end) or 0
     local required = try(function() return silo.prototype.rocket_parts_required end) or 0
-    if M.rocket_inventory(silo) then return nil end
+    if (not PORT21 and M.rocket_inventory(silo)) or (PORT21 and
+      (silo.rocket_silo_status == defines.rocket_silo_status.rocket_ready or (required > 0 and parts >= required))) then return nil end
     local left = math.max(1, required - parts)
     local rows, parts_txt = {}, {}
     for _, ing in ipairs(recipe.ingredients or {}) do
@@ -853,18 +859,25 @@ return function(api)
         end
       end
     end
-    local line = string.format('%g kg in %d slots, the rocket takes %g kg and %d slots more (lift %g kg, %d slots; aboard %g kg in %d): %s',
+    local line
+    if slots==math.huge then
+      line=string.format('%g kg in %d stacks; rocket takes %g kg more (lift %g kg, weight only; aboard %g kg): %s',
+        kg(total_g),stacks,kg(math.max(0,free_g)),kg(lift),kg(aboard_g),fits and 'it fits one rocket' or
+        (split and string.format('over one rocket: %d rockets',#split) or 'over what this rocket takes now'))
+    else
+      line = string.format('%g kg in %d slots, the rocket takes %g kg and %d slots more (lift %g kg, %d slots; aboard %g kg in %d): %s',
       kg(total_g), stacks, kg(math.max(0, free_g)), math.max(0, free_slots), kg(lift), slots, kg(aboard_g), aboard_slots,
       fits and 'it fits one rocket' or (split and string.format('over one rocket: with launch it goes as %d rockets (%s) unless launch_split: false', #split, table.concat(split, '; '))
         or string.format('over what this rocket takes now (%s aboard): to_total, a smaller list, or unload first', list_text(contents(inv)))))
+    end
     local up = M.goes_up_with(silo, list)
     if up.line then line = line .. '; ' .. up.line end
     local trash = M.trash_note(p, list)
     if trash then line = line .. '; ' .. trash.line end
     if hub_room and not hub_room.fits then line = line .. '; ' .. hub_room.line end
     if unplaceable then line = line .. '; ' .. table.concat(unplaceable, '; ') .. ' (it goes up as cargo)' end
-    return {dry_run=true, unplaceable=unplaceable, platform_hub_room=hub_room and hub_room.line or nil, note='nothing loaded or queued', items=rows, kg=kg(total_g), slots=stacks, rocket={lift_kg=kg(lift), slots=slots, aboard_kg=kg(aboard_g), aboard_slots=aboard_slots,
-      free_kg=kg(math.max(0, free_g)), free_slots=math.max(0, free_slots)}, fits_one_rocket=fits, split=split,
+    return {dry_run=true, unplaceable=unplaceable, platform_hub_room=hub_room and hub_room.line or nil, note='nothing loaded or queued', items=rows, kg=kg(total_g), slots=stacks, rocket={lift_kg=kg(lift), weight_only=slots==math.huge or nil, slots=slots~=math.huge and slots or nil, aboard_kg=kg(aboard_g), aboard_slots=aboard_slots,
+      free_kg=kg(math.max(0, free_g)), free_slots=slots~=math.huge and math.max(0, free_slots) or nil}, fits_one_rocket=fits, split=split,
       platform_hub_free_slots=hub_free, foreign_cargo=up.foreign, auto_requests=up.auto_requests, personal_trash=trash and trash.line or nil, line=line}
   end
   -- Each goal still short in the rocket: {goal, need (to load), held (you), take (from the chests: no more than fits
@@ -1393,7 +1406,7 @@ return function(api)
           local quality = type(v) == 'table' and v.quality or 'normal'
           quality = quality or 'normal'
           local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
-          if type(name) == 'string' and from == planet and (f.min or 0) > 0 and (sec.multiplier or 1) > 0 then
+          if type(name) == 'string' and planet_request(f, from, planet) and (f.min or 0) > 0 and (sec.multiplier or 1) > 0 then
             local k = key(name, quality)
             if not out[k] then out[k] = {name=name, quality=quality, min=0}; order[#order+1] = out[k] end
             out[k].min = out[k].min + math.floor(f.min * (sec.multiplier or 1))
@@ -1614,8 +1627,8 @@ return function(api)
     end
     table.sort(rows, function(x, y) if x.kg ~= y.kg then return x.kg > y.kg end return x.item < y.item end)
     out.cargo = {items=inv and list_text(held) or 'no rocket to load yet', rows=#rows > 0 and rows or nil, kg=kg(g), lift_kg=kg(lift),
-      free_kg=kg(math.max(0, lift - g)), over_kg=g > lift and kg(g - lift) or nil, slots=used .. '/' .. slots, free_slots=math.max(0, slots - used)}
-    local words = {string.format('%s: %s; cargo %s, %g/%g kg, %d/%d slots', out.silo, out.rocket or 'rocket state unknown', out.cargo.items, kg(g), kg(lift), used, slots)}
+      free_kg=kg(math.max(0, lift - g)), over_kg=g > lift and kg(g - lift) or nil, weight_only=slots==math.huge or nil, slots=slots==math.huge and (used..' occupied entries; weight only') or (used .. '/' .. slots), free_slots=slots~=math.huge and math.max(0, slots - used) or nil}
+    local words = {string.format('%s: %s; cargo %s, %g/%g kg, %s', out.silo, out.rocket or 'rocket state unknown', out.cargo.items, kg(g), kg(lift),out.cargo.slots..(slots==math.huge and '' or ' slots'))}
     out.cargo.freshness = api.fresh_inv and api.fresh_inv(p.force, inv) or nil
     if out.cargo.freshness then words[#words+1] = 'rocket cargo: ' .. table.concat(out.cargo.freshness, '; ') end
     -- How many more of an item the rocket takes: by weight, and by slots (a part stack's room counted).
@@ -1672,10 +1685,10 @@ return function(api)
       end
       for _, src in ipairs(sources) do src.inv = nil end
       out.from = a.from and sources or nil
-      out.manifest = {kg=kg(manifest_g), slots=manifest_slots, lift_kg=kg(lift), cargo_slots=slots,
+      out.manifest = {kg=kg(manifest_g), slots=manifest_slots, lift_kg=kg(lift), cargo_slots=slots~=math.huge and slots or nil, weight_only=slots==math.huge or nil,
         after_kg=kg(after_g), after_slots=after_slots, fits=after_g<=lift and after_slots<=slots}
-      words[#words+1] = string.format('manifest %g kg, %d slots; cargo after filling it %g/%g kg, %d/%d slots',
-        kg(manifest_g),manifest_slots,kg(after_g),kg(lift),after_slots,slots)
+      words[#words+1] = string.format('manifest %g kg, %d slots; cargo after filling it %g/%g kg, %d/%s slots',
+        kg(manifest_g),manifest_slots,kg(after_g),kg(lift),after_slots,slots==math.huge and 'unlimited' or tostring(slots))
       if a.from then
         local counts = {}
         for _, row in ipairs(order) do counts[#counts+1] = string.format('%s: chests hold %d, short %d (short %d after your inventory)',row.item,row.from_held,row.from_short,row.short) end

@@ -67,7 +67,8 @@ return function(api)
     if sw.planet > #list then sw.planet = 1 end
     local s = list[sw.planet]
     local sq = slices()[sw.slice]
-    local okf, force = pcall(function() return game.forces.player end)
+    -- (mt276) every team's containers and pads in one find (api.forces: a list of forces)
+    local okf, force = pcall(function() return api.forces and api.forces() or game.forces.player end)
     if okf and sq then M.look_slice(s, force, sq) end
     sw.slice = sw.slice + 1
     if sw.slice > #slices() then
@@ -76,11 +77,13 @@ return function(api)
     end
   end
   -- What is kept of a planet, read now: {surface, n, total, items, at [{x, y, count, entity}], pads, pass}
-  function M.now(name)
+  -- (mt276) fname: only that force's containers and pads
+  function M.now(name, fname)
     local st = store()
     local r = {surface=name, n=0, total=0, items={}, at={}, pads={}, pass=st.pass[name]}
     for k, e in pairs(st.reg[name] or {}) do
       if not e.valid then st.reg[name][k] = nil
+      elseif fname and e.force.name ~= fname then
       else
         local inv = try(function() return e.get_inventory(defines.inventory.chest) end)
         local n = 0
@@ -91,6 +94,7 @@ return function(api)
     end
     for k, pad in pairs(st.pads[name] or {}) do
       if not pad.valid then st.pads[name][k] = nil
+      elseif fname and pad.force.name ~= fname then
       else
         local inv = try(function() return pad.get_inventory(defines.inventory.cargo_landing_pad_main) end)
         r.pads[#r.pads+1] = {position={x=pad.position.x, y=pad.position.y}, free=inv and try(function() return inv.count_empty_stacks(true, false) end), slots=inv and #inv}
@@ -136,14 +140,15 @@ return function(api)
     local surface = p.surface
     if a.surface ~= nil then surface = type(a.surface) == 'string' and game.get_surface(a.surface); assert(surface, 'no surface named ' .. tostring(a.surface)) end
     assert(surface and not try(function() return surface.platform end), 'surface: a planet (nauvis, vulcanus, gleba, fulgora, aquilo)')
-    local r = M.now(surface.name)
+    local fname = try(function() return p.force.name end)
+    local r = M.now(surface.name, fname)
     local pos = a.position and api.position(a.position) or (surface == p.surface and p.position or nil)
     local near, d = nil, nil
     if pos then near, d = nearest(r, pos) end
     local others = {}
     for _, s in ipairs(planets()) do
       if s.name ~= surface.name then
-        local o = M.now(s.name)
+        local o = M.now(s.name, fname)
         if o.n > 0 then others[#others+1] = M.line(o) end
       end
     end
@@ -155,8 +160,8 @@ return function(api)
       note='a cargo-pod-container is where a pod landed with no landing pad to take it; collect {pods: true} walks them and takes what they hold'}
   end
   -- Kept containers on a surface (collect {pods}), nearest to pos first: entities.
-  function M.containers(surface, pos, area)
-    local r = M.now(surface.name)
+  function M.containers(surface, pos, area, fname)
+    local r = M.now(surface.name, fname)
     local out = {}
     for _, q in ipairs(r.at) do
       local e = q.entity
@@ -168,8 +173,9 @@ return function(api)
   -- What status says: a line a planet with containers (nearest from you on your surface).
   function M.status_lines(p)
     local out = {}
+    local fname = try(function() return p.force.name end)
     for _, s in ipairs(planets()) do
-      local r = M.now(s.name)
+      local r = M.now(s.name, fname)
       if r.n > 0 then out[#out+1] = M.line(r, s == p.surface and p.position or nil) end
     end
     return #out > 0 and out or nil

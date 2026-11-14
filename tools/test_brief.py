@@ -38,6 +38,7 @@ def sizes():
 
 def index():
     topics = brief.topics()
+    assert set(topics) == set(brief.whens()), 'every reference topic needs its launch registration'
     files = sorted(os.path.basename(p)[:-3] for p in glob.glob(os.path.join(brief.REF, "*.md")) if not p.endswith("index.md"))
     assert sorted(topics) == files, (topics, files)
     for topic, when, cmds in brief.index():
@@ -82,15 +83,24 @@ def describe_actions():
 def write():
     with tempfile.TemporaryDirectory() as d:
         old = os.environ.get("POG_SPACE_AGE")
+        version = os.environ.get("POG_FACTORIO_VERSION")
+        os.environ["POG_FACTORIO_VERSION"] = "2.1.24"
         os.environ["POG_SPACE_AGE"] = "1"
         try:
             brief.write(d, "opus", "Real time.", brief.team_text(*team(d)), "", "", "")
         finally:
             os.environ.pop("POG_SPACE_AGE") if old is None else os.environ.__setitem__("POG_SPACE_AGE", old)
+            os.environ.pop("POG_FACTORIO_VERSION") if version is None else os.environ.__setitem__("POG_FACTORIO_VERSION", version)
         core = open(os.path.join(d, "AGENTS.md")).read()
+        assert "Factorio 2.1.24 multiplayer world" in core
         assert "{{" not in core and core.index("## Reference topics") < core.index("## Compact instructions"), core[-300:]
         assert "Space Age (with Quality and Elevated Rails)" in core and "Shattered Planet" in core
         for topic in brief.topics():
+            if topic == 'markets':
+                assert not os.path.exists(os.path.join(d, 'ref', 'markets.md'))
+                assert 'markets' not in core and '\tmarkets' not in open(os.path.join(d, 'ref', 'commands.tsv')).read()
+                assert json.load(open(os.path.join(d, 'ref', '.units', 'markets.json')))['items']
+                continue
             text = open(os.path.join(d, "ref", topic + ".md")).read()
             assert text.startswith(f"# {topic} (`./fh help {topic}`)\n\nRead it ") and "{{" not in text, text[:200]
         sa = open(os.path.join(d, "ref", "space-age.md")).read()

@@ -10,3 +10,38 @@ for i = 1, parts.count do
     width=parts.cell, height=parts.cell, scale=parts.scale, flags={'no-crop'}}
 end
 data:extend(sprites)
+
+-- Private markets: disabled per force until contact; no recipe, NPC, withdrawal or productivity issuance.
+local post=table.deepcopy(data.raw.container['steel-chest'])
+post.name='mt-trading-post';post.localised_name={'','Trading Post'}
+post.localised_description={'','Standing swaps and orders. Deposit goods here; shipments arrive here.'}
+post.minable=nil;post.next_upgrade=nil;post.fast_replaceable_group=nil;post.hidden=true;post.hidden_in_factoriopedia=true
+post.inventory_size=96
+local coin={type='item',name='mt-coin',localised_name={'','Coin'},icon='__base__/graphics/icons/coin.png',icon_size=64,
+  stack_size=1000,auto_recycle=false,hidden=true,hidden_in_factoriopedia=true,subgroup='raw-material',order='z[coin]'}
+local coinage={type='technology',name='mt-coinage',localised_name={'','Coinage'},
+  localised_description={'','Standing priced orders and earned research grants, including earlier research. Money never scores.'},
+  icon='__base__/graphics/technology/automation-1.png',icon_size=256,enabled=false,visible_when_disabled=false,
+  hidden_in_factoriopedia=true,unit={count=50,ingredients={{'automation-science-pack',1}},time=15},effects={}}
+data:extend{post,coin,coinage}
+-- mt303: native pathing, no driver/inventory UI and no charting inside the seller's base.
+-- The durable market manifest owns the cargo; the unit is its physical custody token.
+local shipment=table.deepcopy(data.raw.unit['small-biter'])
+shipment.name='mt-shipment';shipment.localised_name={'','Freight shipment'}
+shipment.localised_description={'','Goods in transit to their buyer. Protected near either Trading Post.'}
+shipment.minable=nil;shipment.loot=nil;shipment.corpse=nil;shipment.dying_explosion=nil
+shipment.max_health=300;shipment.movement_speed=.2;shipment.radar_range=0;shipment.vision_distance=0
+shipment.healing_per_tick=0;shipment.has_belt_immunity=true;shipment.can_open_gates=true
+shipment.ai_settings={allow_destroy_when_commands_fail=false,allow_try_return_to_spawner=false}
+shipment.attack_parameters.range=0;shipment.attack_parameters.ammo_type.action=nil
+shipment.hidden=true;shipment.hidden_in_factoriopedia=true
+data:extend{shipment}
+-- The 2.1 recycler would otherwise generate a 25% self-return. This is custody,
+-- not minting: exactly one coin in, one out, no productivity or quality upgrade.
+if mods and mods.recycler then
+  data:extend{{type='recipe',name='mt-coin-recycling',localised_name={'','Coin recycling'},
+    categories={'recycling'},enabled=true,hidden=true,hidden_in_factoriopedia=true,
+    auto_recycle=false,allow_productivity=false,allow_quality=false,unlock_results=false,
+    energy_required=.03125,ingredients={{type='item',name='mt-coin',amount=1}},
+    results={{type='item',name='mt-coin',amount=1}}}}
+end

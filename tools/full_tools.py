@@ -195,7 +195,7 @@ def chain(prev):
         if not os.path.isfile(f):
             break
         up = open(f).readline().strip()
-        d = os.path.join(os.path.dirname(out[-1]), up)
+        d = os.path.normpath(os.path.join(os.path.dirname(out[-1]), up))   # a run in parts: "../PREV/PART"
         if not up or not os.path.isdir(d) or d in out:
             break
         out.append(d)
@@ -451,6 +451,10 @@ def team_files(shared):
 def paragraph(kind, name=None, shared=None):
     """The "Your tools" text for AGENTS.md: what the agent has, not what to do with it. shared: the run's team-tools."""
     text = open(os.path.join(ROOT, "agent", "full-tools.md")).read()
+    if os.environ.get('POG_ISOLATED')=='1':
+        text='\n'.join(l for l in text.splitlines() if not l.startswith(('Aethera and Peregrine,','as a source (Nick,')))+'\n'
+        text=text.replace('Designs come from the team: blueprint strings made by viewers or found on the web are not imported, placed or used',
+                          'Make your own designs and coordinate them with your teammate.')
     lines = {}
     for line in text.split("<!-- harness -->", 1)[1].strip().splitlines():
         k, _, v = line.partition(":")
@@ -561,6 +565,143 @@ def grok_args(d):
     return " ".join(words) + grok_sandbox(d)
 
 
+# POG_WEB_BLOCK (space-separated hosts): hosts the agents' web tools may not reach. Per harness, what each one allows:
+# Claude Code drops WebSearch (all or nothing) and denies WebFetch and the sandbox's network those hosts (web_block);
+# Codex's web_search has only an allowlist, so it is disabled (tools/clean-profile.py); Grok's web_search excludes the
+# hosts and web_fetch stays off (tools/grok-home.py, tools/profile-flags.sh); Muse has no host list, so web_search and
+# web_fetch are off (MUSE_WEB_OFF); agy (1.x) takes session settings (--settings), and a deny rule holds under
+# --dangerously-skip-permissions: read_url(*) and execute_url(*) take read_url_content and the browser subagent out of
+# its tools (AGY_WEB_OFF, checked d29); search_web has no rule or switch, so it stays on. web_state writes that in
+# DIR/.web-state.
+MUSE_WEB_OFF = "-c 'tools.web_search.mode=\"off\"' -c 'tools.web_fetch.enabled=false'"
+AGY_WEB_OFF = json.dumps({"permissions": {"deny": ["read_url(*)", "execute_url(*)"]}}, separators=(",", ":"))
+# (mt280 W1) and search_web off too: a workspace agent (.agents/agents/main/agent.md, run with --agent main) whose
+# `tools:` allowlist is agy's default tool set less search_web, read_url_content and browser_subagent (checked with agy
+# 1.x in a throwaway workspace: "No web search tool available", "No URL tool available", the shell as before; the
+# frontmatter's disabledTools and enabledTools had no effect). The settings above stay: they hold if the file is edited.
+# (mt284 X) The run's network gate (netgate.py, POG_NETGATE=1): each CLI's own API, auth and
+# telemetry hosts, as its traffic showed through the gate in a throwaway session (d29: Grok 1.0.70, Muse 1.4.14, agy
+# 1.x); everything else a shell asks for is refused. npm's registry and the owner's MCP servers are left out.
+NETGATE_ALLOW = {
+    "grok": ["grok.com", "cli-chat-proxy.grok.com", "api.x.ai", "api.mixpanel.com"],
+    "muse": ["api.meta.ai", "auth.meta.com", "lookaside.facebook.com"],
+    "agy": ["oauth2.googleapis.com", "www.googleapis.com", "daily-cloudcode-pa.googleapis.com", "cloudcode-pa.googleapis.com",
+            "aicode.googleapis.com", "play.googleapis.com", "antigravity-unleash.goog", "lh3.googleusercontent.com"],
+}
+
+
+def netgate_config(team_files, out_json, out_tsv, base=18101):
+    """The gate's config for a run: a port per Grok, Muse or agy agent of the teams' team.tsv files (name kind ...)."""
+    agents, port = {}, base
+    for tf in team_files:
+        for line in open(tf):
+            f = line.rstrip("\n").split("\t")
+            if line.startswith("#") or len(f) < 2 or f[1] not in NETGATE_ALLOW:
+                continue
+            agents[f[0]] = {"port": port, "allow": NETGATE_ALLOW[f[1]], "kind": f[1]}
+            port += 1
+    json.dump({"agents": agents}, open(out_json, "w"), indent=1)
+    with open(out_tsv, "w") as t:
+        for name, a in agents.items():
+            t.write(f"{name}\t{a['port']}\n")
+    return agents
+
+
+AGY_AGENT = "main"
+AGY_TOOLS = ["ask_question", "define_subagent", "edit_file", "invoke_subagent", "manage_subagents", "manage_task",
+             "read_file", "run_command", "schedule", "send_message", "write_file"]
+
+
+def agy_agent(d):
+    """DIR/.agents/agents/main/agent.md: the workspace agent without web tools; returns the --agent flag."""
+    path = os.path.join(d, ".agents", "agents", AGY_AGENT)
+    os.makedirs(path, exist_ok=True)
+    with open(os.path.join(path, "agent.md"), "w") as f:
+        f.write("---\nname: %s\ndescription: plays the game from this workspace\nmainAgent: true\ntools:\n%s---\n# %s\n"
+                "Follow the instructions in AGENTS.md.\n" % (AGY_AGENT, "".join(f"  - {t}\n" for t in AGY_TOOLS), AGY_AGENT))
+    return f"--agent {AGY_AGENT}"
+
+
+# POG_SHELL_NET=socket: the shell reaches no host, only the agent's own broker socket. Codex (codex-cli 0.164): its
+# network proxy with a permission profile allowing that one Unix socket and no domain (checked: the socket answers,
+# github.com and wiki.factorio.com do not, direct or through the proxy); ai-session's --sandbox/--network are left out
+# so the profile applies (tools/launch-agent.sh). Muse's restricted and proxy-only modes block Unix sockets and
+# loopback TCP alike (muse 1.4.14), so fh could not reach the broker: Muse's shell network stays enabled. (mt280) A
+# Muse permission profile (-c permissions={...} --permission-profile ID) can allow one socket only with network mode
+# proxy_only, which requires prompting approval with a human reviewer, and the live session refused every filesystem
+# shape tried: no unattended profile found. Grok (1.0.70): its sandbox's restrict_network is Linux-only ("the network
+# filter exists only on Linux"); on macOS it adds container-socket denies only, which fail here on OrbStack's
+# symlinked /var/run/docker.sock, and sandbox-exec cannot nest inside Grok's own Seatbelt profile.
+CODEX_PROFILE = "pog_socket"
+
+
+def shell_net():
+    return os.environ.get("POG_SHELL_NET", "")
+
+
+def codex_socket_only(d, sock):
+    """DIR/.codex/config.toml: default_permissions (a top-level key, so first), features.network_proxy in [features],
+    and the profile: the workspace's file access, network on through the proxy, the one socket allowed."""
+    path = os.path.join(d, ".codex", "config.toml")
+    text = open(path).read() if os.path.exists(path) else ""
+    if f'default_permissions = "{CODEX_PROFILE}"' in text:
+        return
+    lines = text.splitlines()
+    if "[features]" in lines:
+        lines.insert(lines.index("[features]") + 1, "network_proxy = true")
+    else:
+        lines += ["[features]", "network_proxy = true"]
+    head = ["# Written by tools/full_tools.py (POG_SHELL_NET=socket): the shell reaches only this agent's broker socket",
+            f'default_permissions = "{CODEX_PROFILE}"']
+    tail = [f"[permissions.{CODEX_PROFILE}]", 'extends = ":workspace"', f"[permissions.{CODEX_PROFILE}.network]", "enabled = true",
+            f"[permissions.{CODEX_PROFILE}.network.unix_sockets]", f"{json.dumps(sock)} = \"allow\""]
+    with open(path, "w") as f:
+        f.write("\n".join(head + lines + tail) + "\n")
+
+
+def web_blocked():
+    return os.environ.get("POG_WEB_BLOCK", "").split()
+
+
+def web_block(d):
+    path = os.path.join(d, ".claude", "settings.json")
+    cfg = json.load(open(path))
+    deny = cfg.setdefault("permissions", {}).setdefault("deny", [])
+    for rule in ["WebSearch"] + [f"WebFetch(domain:{h})" for h in web_blocked()]:
+        if rule not in deny:
+            deny.append(rule)
+    # The shell's own hosts: only where the sandbox lets it reach any (allowedDomains); with none it reaches no host
+    # anyway, and Claude Code shows the model the sandbox's host lists.
+    net = (cfg.get("sandbox") or {}).get("network") or {}
+    if net.get("allowedDomains"):
+        dd = net.setdefault("deniedDomains", [])
+        dd += [h for h in web_blocked() if h not in dd]
+    with open(path, "w") as f:
+        json.dump(cfg, f, indent=2)
+
+
+def web_state(d, kind):
+    full, hosts = os.environ.get("POG_FULL_TOOLS") == "1", ", ".join(web_blocked()) or "none"
+    web = {"claude": (f"WebFetch with {hosts} denied" if full else "no web tools") + ", no WebSearch",
+           "codex": "web_search disabled",
+           "grok": f"web_search excluding {hosts}, web_fetch off",
+           "muse": "web_search and web_fetch off (-c options)",
+           "agy": "search_web, read_url_content and browser_subagent off (a workspace agent's tools; read_url and execute_url denied)"}.get(kind, "?")
+    net = {"claude": "shell in the sandbox (no network but the broker socket)" if os.environ.get("POG_BROKER") == "1"
+                     else "shell in the sandbox (local network only)",
+           "codex": "shell network: the broker socket only (Codex's network proxy, no host)" if shell_net() == "socket"
+                    else "shell network open (--network)",
+           "grok": "shell network open" + ("; Grok's network filter is Linux-only" if shell_net() == "socket" else ""),
+           "muse": "shell network open (--sandbox-network enabled)" + ("; Muse's restricted modes block the broker socket, and a profile allowing it needs a human approver" if shell_net() == "socket" else ""),
+           "agy": "shell network open"}.get(kind, "?")
+    if os.environ.get("POG_PROXY") and kind in NETGATE_ALLOW:
+        net = f"shell network through the run's gate ({os.environ['POG_PROXY']}: only {kind}'s own hosts; a client that ignores proxy settings goes around it)"
+    line = f"{kind}: {web}; {net}"
+    with open(os.path.join(d, ".web-state"), "w") as f:
+        f.write(line + "\n")
+    return line
+
+
 SANDBOX_PROFILE = "pog"
 
 
@@ -573,18 +714,27 @@ def grok_sandbox(d):
     - kernel-denied reads and writes: ~/.config/pog, ~/.ssh, runs' key copies (all but this run's own when fh reads
       it), and teammates' private files. These also hold for bin/fh run directly and for subagents.
     POG_GROK_SANDBOX=0 keeps the allowlist (no subagents) instead. Returns the extra flag words."""
+    if os.environ.get('POG_ISOLATED')=='1':
+        return ''  # agent-scope.py enforces the process boundary; avoid nested Seatbelt
     if os.environ.get("POG_GROK_SANDBOX", "1") == "0":
         return ""
     run = os.path.dirname(os.path.abspath(d))
-    root = os.path.dirname(os.path.dirname(run))
+    runs = os.path.join(ROOT, "runs")
     home = os.path.expanduser("~")
     deny = [os.path.join(home, ".config", "pog"), os.path.join(home, ".ssh")]
     deny += [p for p in (os.path.realpath(os.path.join(home, ".ssh")),) if p not in deny]
-    for k in sorted(glob.glob(os.path.join(root, "runs", "*", ".keys"))):
+    # a run in parts keeps each part's keys in runs/RUN/PART/.keys
+    for k in sorted(glob.glob(os.path.join(runs, "*", ".keys")) + glob.glob(os.path.join(runs, "*", "*", ".keys"))):
         if os.environ.get("POG_BROKER") == "1" or os.path.dirname(k) != run:
             deny.append(k)
+    # a run in parts (runs/RUN/PART/NAME): the run's other folders
+    if os.path.dirname(os.path.dirname(run)) == runs:
+        top = os.path.dirname(run)
+        deny += [os.path.join(top, t) for t in sorted(os.listdir(top))
+                 if os.path.isdir(os.path.join(top, t)) and os.path.join(top, t) != run]
     for o in others(d):
         deny += [os.path.join(o, s) for s in PRIVATE_FILES + PRIVATE_DIRS]
+    deny += os.environ.get("POG_DENY_READ", "").split()   # more folders no agent reads (tools/launch-agent.sh)
     rw = [os.path.join(run, "team-tools"), os.path.join(home, ".grok")]
     text = (f"# Written by tools/full_tools.py (POG_FULL_TOOLS=1) for this workspace's Grok.\n"
             f"[profiles.{SANDBOX_PROFILE}]\nextends = \"workspace\"\n"
@@ -604,6 +754,21 @@ if __name__ == "__main__":
         claude(sys.argv[2])
     elif cmd == "grok-args":
         print(grok_args(sys.argv[2]))
+    elif cmd == "web-block":
+        web_block(sys.argv[2])
+    elif cmd == "web-state":
+        print(web_state(sys.argv[2], sys.argv[3]))
+    elif cmd == "codex-socket-only":   # codex-socket-only DIR SOCKET
+        codex_socket_only(sys.argv[2], sys.argv[3])
+    elif cmd == "agy-web-off":
+        print(AGY_WEB_OFF)
+    elif cmd == "netgate-config":   # netgate-config OUT_JSON OUT_TSV TEAM_TSV...
+        for name, a in netgate_config(sys.argv[4:], sys.argv[2], sys.argv[3]).items():
+            print(f"{name} {a['kind']} 127.0.0.1:{a['port']}")
+    elif cmd == "agy-agent":   # agy-agent DIR: writes the workspace agent, prints --agent NAME
+        print(agy_agent(sys.argv[2]))
+    elif cmd == "muse-web-off":
+        print(MUSE_WEB_OFF)
     elif cmd == "sync":   # sync RUN_DIR [SECONDS]: once, or every SECONDS until killed (stdout: >> team-tools-sync.log)
         while True:
             for line in sync(sys.argv[2]):

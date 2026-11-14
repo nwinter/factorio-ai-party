@@ -1,3 +1,12 @@
+-- A specific silo may override the default rocket lift on Factorio 2.1.
+local function rocket_lift(silo)
+  local ok, v = pcall(function() return silo.prototype.lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.default_rocket_lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.rocket_lift_weight end)
+  if ok then return v end
+end
 -- platform_endurance (d15 trajectory analysis: Wayfarer was lost at Aquilo at 11:02 after its rockets, fuel and repair
 -- packs ran out; nothing projected the trip before it left): for a planned route, each leg's length and time at the
 -- platform's speed, and what its ammunition, repair packs, thruster fuel and oxidizer, power and hub space come to over
@@ -13,7 +22,29 @@ local budgetwindows = require('budgetwindows')
 local turnaround = require('turnaround')
 local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
+  local fluid_boxes = api.fluid_boxes or function(e) return e.fluidbox end
   local M = {}
+  -- Products use independent and shared rolls in 2.1; mining products have no recipe method.
+  local function product_chance(p)
+    local n, shared = p.independent_probability, p.shared_probability
+    if n == nil and shared == nil then return p.probability or 1 end
+    return (n or 1) * (shared and (shared.max - shared.min) or 1)
+  end
+  -- Prefer the engine's mean, including productivity-exempt products and shared rolls.
+  local function native_amount(recipe, index, productivity)
+    local has_proto, proto = pcall(function() return recipe.prototype end)
+    proto = has_proto and proto or recipe
+    local ok, method = pcall(function() return proto.get_product_amount end)
+    if ok and method then return method(index, productivity or 0) end
+  end
+  -- 2.1 recipes have a category list; 2.0 has a primary and additional categories.
+  local function recipe_categories(recipe)
+    local ok, list = pcall(function() return recipe.categories end)
+    if ok and list then return list end
+    local out = {recipe.category or 'crafting'}
+    for _, name in ipairs(recipe.additional_categories or {}) do out[#out+1] = name end
+    return out
+  end
   -- (d25 batch208 QU1) the most a call takes, also a queue step's check (runtime.lua step_lengths)
   M.ROUTE_MAX = 12
   local STARTUP_S = 60  -- (d29 batch339) a leg's first minute: what the return budget's window leaves out
@@ -179,8 +210,8 @@ return function(api)
       all = {amount={}, tanks={}, list=list}
       for _, e in ipairs(list) do
         local tank = e.type == 'storage-tank'
-        for i = 1, try(function() return #e.fluidbox end) or 0 do
-          local f = try(function() return e.fluidbox[i] end)
+        for i = 1, try(function() return #fluid_boxes(e) end) or 0 do
+          local f = try(function() return fluid_boxes(e)[i] end)
           if f then
             all.amount[f.name] = (all.amount[f.name] or 0) + f.amount
             if tank then all.tanks[f.name] = (all.tanks[f.name] or 0) + f.amount end
@@ -201,7 +232,7 @@ return function(api)
   local FUELS, PARTS_KEEP, LOW_MIN = {['thruster-fuel']=true, ['thruster-oxidizer']=true}, 3600, 2
   local function product_amount(p)
     local n = p.amount or ((p.amount_min or 0) + (p.amount_max or 0)) / 2
-    return n * (p.probability or 1)
+    return n * product_chance(p)
   end
   -- The machines that can craft a recipe making either fluid (chemical plants in 2.0.77), by the recipes' categories,
   -- and the pumps, for one find by name; nil (found by type) when the prototypes cannot say. (EC) in_scan: all of them
@@ -212,7 +243,9 @@ return function(api)
     maker_names_ = try(function()
       local cats, names = {}, {}
       for name in pairs(FUELS) do
-        for _, r in pairs(prototypes.get_recipe_filtered{{filter='has-product-fluid', elem_filters={{filter='name', name=name}}}}) do cats[r.category] = true end
+        for _, r in pairs(prototypes.get_recipe_filtered{{filter='has-product-fluid', elem_filters={{filter='name', name=name}}}}) do
+          for _, cat in ipairs(recipe_categories(r)) do cats[cat] = true end
+        end
       end
       for cat in pairs(cats) do
         for n in pairs(prototypes.get_entity_filtered{{filter='crafting-category', crafting_category=cat}}) do names[#names+1] = n end
@@ -257,9 +290,9 @@ return function(api)
     for _, e in ipairs(found) do
       if e.type == 'pump' then rec.pumps[#rec.pumps+1] = e end
       local r = e.type ~= 'pump' and try(function() return e.get_recipe() end)
-      for _, p in ipairs(r and try(function() return r.products end) or {}) do
+      for index, p in ipairs(r and try(function() return r.products end) or {}) do
         if p.type == 'fluid' and FUELS[p.name] then
-          rec.makers[#rec.makers+1] = {entity=e, fluid=p.name, recipe=r.name, batch=product_amount(p), energy=r.energy}
+          rec.makers[#rec.makers+1] = {entity=e, fluid=p.name, recipe=r.name, batch=native_amount(r, index) or product_amount(p), energy=r.energy}
         end
       end
     end
@@ -288,11 +321,11 @@ return function(api)
       return true
     end
     local function own_and_beside(e)
-      local fb = e.fluidbox
+      local fb = fluid_boxes(e)
       for i = 1, try(function() return #fb end) or 0 do
         local f = try(function() return fb[i] end)
-        if f and FUELS[f.name] then
-          add(f)
+        if fb.object_name=='HarnessFluidStorage' or (f and FUELS[f.name]) then
+          if fb.object_name~='HarnessFluidStorage' or not segment(fb,i) then add(f) end
           for _, pc in ipairs(try(function() return fb.get_pipe_connections(i) end) or {}) do
             if pc.target then segment(pc.target, pc.target_fluidbox_index or 1) end
           end
@@ -300,16 +333,19 @@ return function(api)
       end
     end
     for _, e in ipairs(list) do
-      local fb = e.valid and e.fluidbox
+      local fb = e.valid and fluid_boxes(e)
       for i = 1, fb and try(function() return #fb end) or 0 do
         local f = try(function() return fb[i] end)
-        if f and FUELS[f.name] and (not segment(fb, i) or e.type ~= 'storage-tank') then add(f) end
+        if fb.object_name=='HarnessFluidStorage' then
+          if not segment(fb,i) then add(f) end
+        elseif f and FUELS[f.name] and (not segment(fb, i) or e.type ~= 'storage-tank') then add(f) end
       end
     end
     for _, e in ipairs(parts.pumps) do if e.valid then own_and_beside(e) end end
     for _, m in ipairs(parts.makers) do if m.entity.valid then own_and_beside(m.entity) end end
     return out
   end
+  M.fuel_aboard=fuel_aboard
   -- A fluid's makers: {makers, batch (the largest), recipes, craft_s (the quickest at full speed), full_per_min (all of
   -- them crafting without a pause), step (a batch a maker: what a window's count can differ from their steady output by,
   -- each counted at the end of its craft)}.
@@ -351,6 +387,10 @@ return function(api)
   -- makers, a craft's time at full speed, and the share of their full output made over the window.
   -- (EC) ctx: optional, platform_endurance's call (its one find, fluids and speed shared).
   function M.fuel_outlook(pl, ctx)
+    local epoch=api.state and try(function() return api.state().port21_started_tick end)
+    if epoch and game.tick-epoch<3600 then
+      return {line=pl.name..': fuel use unknown: less than one minute on this engine version',rows={},window_s=0,rate_unknown=true}
+    end
     local names = FUELS
     local stock, in_tanks, list = fluid_stock(pl, names, ctx)
     local parts_ = try(function() return pl.surface and fuel_parts(pl, ctx) end)
@@ -478,7 +518,7 @@ return function(api)
   end
   local routeammo, ammomodel_
   local function ammomodel()
-    ammomodel_ = ammomodel_ or api.ammomodel or require('ammomodel'){stock_places=api.stock_places, ammofeed=api.ammofeed, incoming=api.incoming}
+    ammomodel_ = ammomodel_ or api.ammomodel or require('ammomodel'){fluid_boxes=fluid_boxes,stock_places=api.stock_places, ammofeed=api.ammofeed, incoming=api.incoming}
     return ammomodel_
   end
   -- (d24 batch183 QZ1, Sol #2055) design {width, height | tiles, mass?, speed, ammo?} and progress {from, to}.
@@ -803,6 +843,14 @@ return function(api)
           or string.format('last 1 min, flying %s: the window holds the stop it left too', mins(leg_min))
       end
     end
+    local epoch=api.state and try(function() return api.state().port21_started_tick end)
+    local engine_age=epoch and (game.tick-epoch)/3600
+    if engine_age and engine_age<win_min then
+      if engine_age>=5 and P.five_minutes then win_min,win_p=5,P.five_minutes
+      elseif engine_age>=1 and P.one_minute then win_min,win_p=1,P.one_minute
+      else win_p=nil end
+      win_text=win_p and ('last '..win_min..' min, within this engine version') or 'rolling rate unavailable: less than one minute on this engine version'
+    end
     -- (PX1) items at every quality; fluids by name (a pair fails there). (EC) With the statistics' totals since the game
     -- began (input_counts, output_counts: every quality's), read once a call: an item never counted reads 0 with no read,
     -- one only ever counted at normal is read at normal alone (qflow's all); each was read at all 6 qualities before.
@@ -818,7 +866,7 @@ return function(api)
       if all == 0 then return 0 end
       return qflow.flow(stats, name, cat, pi, true, all)
     end
-    local function rate1(stats, name, cat) return stats and P.one_minute and (try(function() return flow(stats, name, cat, P.one_minute) end) or 0) or 0 end
+    local function rate1(stats, name, cat) return (not engine_age or engine_age>=1) and stats and P.one_minute and (try(function() return flow(stats, name, cat, P.one_minute) end) or 0) or 0 end
     local function rate(stats, name, cat) return stats and win_p and (try(function() return flow(stats, name, cat, win_p) end) or 0) / win_min or 0 end
     local ammo_now
     local function leg_now_rate(name)
@@ -885,6 +933,7 @@ return function(api)
         row.flight_rate = 'unknown'
         row.line = string.format('%s: %s%s now%s; flight use unknown: %s (at the stop, last 10 min: made %g/min, used %g/min)', name, row.stock, unit,
           row.places and ' (' .. row.places .. ')' or '', from, row.made_per_min, row.used_per_min)
+        if not win_p then row.line=row.line:gsub('at the stop, last 10 min','available sample',1) end
         rows[#rows+1] = row
         return
       end
@@ -944,7 +993,7 @@ return function(api)
         local lm2, lu2, from2
         if flying and win_text and is_ammo then lm2, lu2, from2 = leg_now_rate(name) end
         if lm2 then x = {lm2, lu2, from2}
-        elseif flying then x = {made, used, win_text or 'last 10 min, flying'}
+        elseif flying then x = {made, used, win_text or 'last 10 min, flying',not win_p}
         else
           local lm, lu, from = nil, nil, nil
           if is_ammo then lm, lu, from = leg_rate(name) end
@@ -1024,7 +1073,7 @@ return function(api)
     -- The departure check (Sol 13:50: Swift left with too little ammunition, repeatedly): for each ammunition used over
     -- the route at the rates above, what it needs, what is aboard and made on the way, and a rocket's lift of it.
     local departure = {}
-    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+    local lift = rocket_lift() or 1000000
     for _, row in ipairs(rows) do
       local item = prototypes.item[row.name]
       if total_min and total_min > 0 and row.used_per_min > 0 and item and item.type == 'ammo' then
@@ -1048,7 +1097,7 @@ return function(api)
       if try(function() return prototypes.fluid[name] end) then
         local made, used = rate(fluid_stats, name, 'input'), rate(fluid_stats, name, 'output')
         if (fstock[name] or 0) > 0 or made > 0 or used > 0 then
-          if flying then project(name, fstock[name] or 0, made, used, ' units', win_text or 'last 10 min, flying')
+          if flying then project(name, fstock[name] or 0, made, used, ' units', win_text or 'last 10 min, flying',not win_p)
           else project(name, fstock[name] or 0, made, used, ' units', 'stopped; the thrusters burn only in flight', true) end
         end
       end
@@ -1090,7 +1139,10 @@ return function(api)
         end
         windows.whole_leg=budgetrates.whole(open_leg,row.name,stats,fluid,game.tick,is_ammo)
         for _,w in pairs(windows) do
-          if type(w)=='table' and w.start_tick and open_leg then w.includes_before_leg=w.start_tick<open_leg.start or nil end
+          if type(w)=='table' and w.start_tick then
+            if open_leg then w.includes_before_leg=w.start_tick<open_leg.start or nil end
+            if epoch and w.start_tick<epoch then w.unavailable='sample includes the previous engine version' end
+          end
         end
         diagnostics[row.name]=windows
       end
@@ -1361,7 +1413,7 @@ return function(api)
     assert(a.fresh == nil or type(a.fresh) == 'boolean', 'fresh is true or false')
     return M.read(p, a)
   end
-  M.schema = {platform_endurance = {damage_model='all damage forecasts: area/splash and multi-target effects not modelled; each ammunition estimated independently', ammo_details='design.details: true with design.ammo adds cached 2.0.77 prototype direct_damage, area_damage (by type, radius, friendly_fire yes/no/unknown), nested actions and referenced projectile actions, repeats and falloff; base values, quality multiplier separate; existing flattened one-target forecast damage unchanged; no native settings changed', turnaround='(d29 batch329, Astra #2727) {km | fraction, back_to?, direct?, speed_floor?, margin?, reserve?, items?}: (d29 batch339) items: the item or fluid names that may bind (e.g. the ammunition and repair packs), the rest listed, not binding; thruster fuel and oxidizer counted as fuel_outlook counts them (everything aboard, its clean sample of the last 180 or 60 s in the leg; a deficit within a batch a maker: none); the 10-minute rate only when it lies wholly after the leg\'s first 60 s, else the last 5 or 1 minute that does (window); each row\'s stock_scope, usable and usable_basis. a ship in flight read as a partial return: from where it is now, km farther out on the connection it flies (or to the turn point at fraction of the connection from its start), back along it to its start, and on to back_to (a space location; default that start). direct:true opts into direct endpoint recovery: when back_to is the current destination, back_km is remaining km minus the planned advance; at the origin the existing reversal remains. Other endpoints and return_allowance with direct are refused. Default destination recovery remains via origin, with warning and direct_remaining_km. Budget evidence includes mode, from/to, direction, remaining_km, reverse_km, via_origin_km and total_km. Direct destination out_km_max = usable / net x speed - direct_remaining_km; spare_km subtracts the advance and measures the whole plan surplus/deficit. budget_below and windows keep the same threshold comparison. return_budget: per item the stock that reaches it, its net use the worse of the current phase (this leg so far; ammunition also its moving phase) and the last 10 minutes (both given, phase_from), at the planning speed (speed_floor km/s when below the speed read), with margin (a share kept spare, default 0.1) and reserve (a count for every item or {item: count}): out_km_max (how much farther out it can go before the way back needs the rest: (usable / net x speed - flown - back) / 2), lasts_min, spare_km and left_at_return for the planned turn; binds (the item that binds first); line. (d29 batch351) return_allowance {legs (1..8 "from->to" among the legs back after the connection\'s start, as legs names them), items {item: count (0 or more)}, label, evidence_ticks?}: the caller\'s own count of each item over those legs, in place of net x time there; taken as given (not measured or checked), refused when a leg is not one of them or names more than one; each such item: allowance, allowance_replaces (what the net rate gave there), costs {turn, legs_at_net, allowance} and unadjusted {out_km_max, spare_km, left_at_return}; return_budget.allowance {by, label, evidence_ticks, legs, km, items} and binds_unadjusted. Optional windows=[60,180,300,600,"leg"] (any distinct subset), require="all" (default) or a count, missing="binding" (default) or "pending": one same item must bind in enough full same-leg windows. Windows never cross a connection/direction/leg boundary or use a shorter fallback. Missing data binds or remains pending as requested; pending says its eligibility tick, or unknown when no baseline exists. window_budgets keeps each item and measured NET; window_check compares against the planned turnaround km. Omitting windows keeps the default unchanged. Each budget item also gives rate_basis, windows (whole_leg, last_1_min, last_3_min, last_5_min; made/used/NET=made-used and measured endpoints), cap_conditions as read, and usable_after_reserve_margin: budget usable (stock - reserve) / (1 + margin), with extrema observed at reads only; item window follows authoritative rate_basis.window, recent_window labels the comparison candidate; unavailable endpoints/baselines are explicit. The conservative formula is unchanged. No route, design or forecast with it. Read only: nothing lowers a floor or changes the route',forecast='true: forecast, per leg of the route: the asteroids its space connection spawns by kind (the game\'s spawn chance, its mean over the leg; beside it, the legs flown in the last 2 hours, each over the part of its connection flown), for each ammunition aboard the shots one asteroid of each kind takes (its health against the damage after resistances and our bonuses; none hurt: under 1 a hit), and the use: the moving rate on the legs flown scaled by how much more shooting this leg\'s asteroids take, what is made meanwhile, and what is left at each arrival. An estimate from prototypes and measured rates; a shot\'s damage is platform_defense ammo_use\'s (bonuses researched, ammo quality), the "damage a shot" lines give each asteroid\'s resistance arithmetic, forecast_damage [{ammo, turret, damage_per_shot, asteroid, hp, per_hit, shots}]; the calibration: the legs flown in the last 2 hours and the one flown now, each with the part of its connection flown (from freight\'s distance along it), their asteroids the game\'s spawn chance over that part; each route leg says how much of it the legs flown cover and that the rest is the game\'s spawn definition, not measured: forecast_coverage [{leg, flown (the parts flown, joined, the way the leg flies), flights, covered (0..1)}]; (turret targets) the shots count for each ammunition only the asteroids its turrets target as built (each turret\'s priority list: with ignore unprioritised targets on, the listed ones only; off, any), and an asteroid no turret aboard targets counts for none, nor its fragments; an asteroid targeted by turrets of two ammunitions counts in full for each: forecast_targets {ammo [{ammo, turrets, settings [{turret, count, targets (names, any, or unknown)}], mixed}], asteroids [{asteroid, turrets [{turret, count, ammo}]}]}',
+  M.schema = {platform_endurance = {damage_model='all damage forecasts: area/splash and multi-target effects not modelled; each ammunition estimated independently', ammo_details='design.details: true with design.ammo adds cached current-engine prototype direct_damage, area_damage (by type, radius, friendly_fire yes/no/unknown), nested actions and referenced projectile actions, repeats and falloff; base values, quality multiplier separate; existing flattened one-target forecast damage unchanged; no native settings changed', turnaround='(d29 batch329, Astra #2727) {km | fraction, back_to?, direct?, speed_floor?, margin?, reserve?, items?}: (d29 batch339) items: the item or fluid names that may bind (e.g. the ammunition and repair packs), the rest listed, not binding; thruster fuel and oxidizer counted as fuel_outlook counts them (everything aboard, its clean sample of the last 180 or 60 s in the leg; a deficit within a batch a maker: none); the 10-minute rate only when it lies wholly after the leg\'s first 60 s, else the last 5 or 1 minute that does (window); each row\'s stock_scope, usable and usable_basis. a ship in flight read as a partial return: from where it is now, km farther out on the connection it flies (or to the turn point at fraction of the connection from its start), back along it to its start, and on to back_to (a space location; default that start). direct:true opts into direct endpoint recovery: when back_to is the current destination, back_km is remaining km minus the planned advance; at the origin the existing reversal remains. Other endpoints and return_allowance with direct are refused. Default destination recovery remains via origin, with warning and direct_remaining_km. Budget evidence includes mode, from/to, direction, remaining_km, reverse_km, via_origin_km and total_km. Direct destination out_km_max = usable / net x speed - direct_remaining_km; spare_km subtracts the advance and measures the whole plan surplus/deficit. budget_below and windows keep the same threshold comparison. return_budget: per item the stock that reaches it, its net use the worse of the current phase (this leg so far; ammunition also its moving phase) and the last 10 minutes (both given, phase_from), at the planning speed (speed_floor km/s when below the speed read), with margin (a share kept spare, default 0.1) and reserve (a count for every item or {item: count}): out_km_max (how much farther out it can go before the way back needs the rest: (usable / net x speed - flown - back) / 2), lasts_min, spare_km and left_at_return for the planned turn; binds (the item that binds first); line. (d29 batch351) return_allowance {legs (1..8 "from->to" among the legs back after the connection\'s start, as legs names them), items {item: count (0 or more)}, label, evidence_ticks?}: the caller\'s own count of each item over those legs, in place of net x time there; taken as given (not measured or checked), refused when a leg is not one of them or names more than one; each such item: allowance, allowance_replaces (what the net rate gave there), costs {turn, legs_at_net, allowance} and unadjusted {out_km_max, spare_km, left_at_return}; return_budget.allowance {by, label, evidence_ticks, legs, km, items} and binds_unadjusted. Optional windows=[60,180,300,600,"leg"] (any distinct subset), require="all" (default) or a count, missing="binding" (default) or "pending": one same item must bind in enough full same-leg windows. Windows never cross a connection/direction/leg boundary or use a shorter fallback. Missing data binds or remains pending as requested; pending says its eligibility tick, or unknown when no baseline exists. window_budgets keeps each item and measured NET; window_check compares against the planned turnaround km. Omitting windows keeps the default unchanged. Each budget item also gives rate_basis, windows (whole_leg, last_1_min, last_3_min, last_5_min; made/used/NET=made-used and measured endpoints), cap_conditions as read, and usable_after_reserve_margin: budget usable (stock - reserve) / (1 + margin), with extrema observed at reads only; item window follows authoritative rate_basis.window, recent_window labels the comparison candidate; unavailable endpoints/baselines are explicit. The conservative formula is unchanged. No route, design or forecast with it. Read only: nothing lowers a floor or changes the route',forecast='true: forecast, per leg of the route: the asteroids its space connection spawns by kind (the game\'s spawn chance, its mean over the leg; beside it, the legs flown in the last 2 hours, each over the part of its connection flown), for each ammunition aboard the shots one asteroid of each kind takes (its health against the damage after resistances and our bonuses; none hurt: under 1 a hit), and the use: the moving rate on the legs flown scaled by how much more shooting this leg\'s asteroids take, what is made meanwhile, and what is left at each arrival. An estimate from prototypes and measured rates; a shot\'s damage is platform_defense ammo_use\'s (bonuses researched, ammo quality), the "damage a shot" lines give each asteroid\'s resistance arithmetic, forecast_damage [{ammo, turret, damage_per_shot, asteroid, hp, per_hit, shots}]; the calibration: the legs flown in the last 2 hours and the one flown now, each with the part of its connection flown (from freight\'s distance along it), their asteroids the game\'s spawn chance over that part; each route leg says how much of it the legs flown cover and that the rest is the game\'s spawn definition, not measured: forecast_coverage [{leg, flown (the parts flown, joined, the way the leg flies), flights, covered (0..1)}]; (turret targets) the shots count for each ammunition only the asteroids its turrets target as built (each turret\'s priority list: with ignore unprioritised targets on, the listed ones only; off, any), and an asteroid no turret aboard targets counts for none, nor its fragments; an asteroid targeted by turrets of two ammunitions counts in full for each: forecast_targets {ammo [{ammo, turrets, settings [{turret, count, targets (names, any, or unknown)}], mixed}], asteroids [{asteroid, turrets [{turret, count, ammo}]}]}',
     design='details: optional boolean with ammo; true adds cached prototype effects (ammo_details). optional {width, height | tiles, mass?, speed, ammo?, stock?, targets?}: a hull not built yet, read only. Width 1..2000 whole tiles, optional positive whole height, or tiles (1..256: "x0..x1,y0..y1", "x,y" or {x,y}) for their box; tiles with width or height refused. Speed >0..10000 km/s sets minutes; height is reported but does not enter the spawn count; mass is reported but does not enter the calculation at a given speed. Unknown fields refused. Without ammo: current loaded ammunition, no stock or production read. Ammo: 1..8 names, exclusively those types, with compatible turrets aboard and their effective target settings, ammo quality and researched bonuses; unknown or unsupported names refused with accepted names. Targets: optional {turret prototype: [0..64 asteroid names] | "any"}, forecast only; each named prototype must participate in this model (with ammo, compatible selected turrets only). An empty list targets nothing; omitted prototypes keep current settings. Names are validated; refusals list accepted turret or asteroid names. Stock: optional {selected-ammunition: nonnegative integer item count}, requires ammo; unspecified types use stock aboard. Returns ammo and ammo_source=design.ammo, ammo_details [{ammo, turret, quality, damage_per_shot, damage, targets, stock, stock_source, shots_per_item, shots, items_required, stock_after}], target_source (design.targets or platform), effective_targets [{turret, count, targets, source}] and current_targets (all native turret settings separately), stock_read (scope, belt/hand as_of, capped), design, legs [{from, to, part, km, minutes, asteroids, total, per_600s, total_per_600s, shots}], basis, estimated, lines. Items required are ceil(shots / magazine_size); stock_after subtracts them. Production, feed reachability, partial magazines, ammunition shared between alternatives, piercing through multiple asteroids and interception order are not modelled; native target settings are never changed',
     fresh='optional; every call reads now',
     progress='optional {from, to} (0..1), with forecast or design: each leg cut to that part of its connection, the way it is flown (the leg flown now: from where the ship is): its asteroids, km and minutes (a 600 s window\'s count in per_600s)',

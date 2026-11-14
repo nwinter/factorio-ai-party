@@ -1,3 +1,12 @@
+-- A specific silo may override the default rocket lift on Factorio 2.1.
+local function rocket_lift(silo)
+  local ok, v = pcall(function() return silo.prototype.lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.default_rocket_lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.rocket_lift_weight end)
+  if ok then return v end
+end
 -- shipment {platform | item} (d17 batch15 Group B, Sol request #614 and 08:04, Astra 07:58 and 08:05): one read across
 -- the native systems a shipment goes through, as their GUIs show them; nothing here moves or decides anything.
 -- Per stop of a platform's schedule (its station, waiting there or not, the departure conditions with what the hub holds):
@@ -13,6 +22,7 @@
 -- request is delivered, when cargo spills, and when a hub_full gate appears (M.tick, every 10 s).
 -- Read only. Bounded: 16 platforms, 8 stops, 24 requests a stop shown.
 return function(api)
+  local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   -- (d22 batch110 BT1) a property read or a method call under pcall with no closure made (shipment.tick read each
@@ -94,7 +104,8 @@ return function(api)
             local cmp = CMP[type(v) == 'table' and type(v.comparator) == 'string' and v.comparator or '='] or '='
             local key = name .. '@' .. q .. (cmp ~= '=' and cmp or '')
             out[from] = out[from] or {}
-            local r = out[from][key] or {item=name, quality=q, comparator=cmp, min=0, max=0, custom_minimum=f.minimum_delivery_count}
+            if PORT21 then key=key..'|'..(f.request_from or 'planet') end
+            local r = out[from][key] or {request_from=PORT21 and (f.request_from or 'planet') or nil,item=name, quality=q, comparator=cmp, min=0, max=0, custom_minimum=f.minimum_delivery_count}
             r.min, r.max = r.min + f.min, r.max + (f.max or math.huge)
             out[from][key] = r
           end
@@ -208,10 +219,10 @@ return function(api)
     end
     return math.max(0, n)
   end
-  local function payload_of(item, custom)
+  local function payload_of(item, custom, silo)
     if custom then return custom end
     local w = pget(pget(pget(prototypes, 'item'), item), 'weight')
-    local lift = pget(pget(prototypes, 'utility_constants'), 'rocket_lift_weight')
+    local lift = rocket_lift(silo)
     return w and lift and w > 0 and math.floor(lift / w) or nil
   end
   local function row_of(sil, x, key)
@@ -229,7 +240,7 @@ return function(api)
   -- what their networks can give
   local function judge(sil, item, qa, cmp, custom, here)
     local key = item .. '@' .. qa .. (cmp ~= '=' and cmp or '')
-    local list, payload = {}, nil
+    local list = {}
     for i, x in ipairs(sil.list) do
       local pos = pget(x.e, 'position') or {x=0, y=0}
       local s = {i=i, name=x.e.name, position={x=pos.x, y=pos.y}, auto=x.auto, parts=parts_of(x)}
@@ -242,8 +253,7 @@ return function(api)
         local ln = net_of(sil, x)
         s.network = ln and pget(ln, 'network_id') or nil
         s.can_give = ln and can_give(ln, item, qa, cmp) or 0
-        if payload == nil then payload = payload_of(item, custom) or false end
-        s.payload = payload or nil
+        s.payload = payload_of(item, custom, x.e)
         s.can_fill = x.auto and s.payload ~= nil and s.can_give >= s.payload or false
       end
       list[#list+1] = s
@@ -302,6 +312,19 @@ return function(api)
     local held = of(counts, item, qa, cmp)
     local name = label(item, qa, cmp)
     local row = {platform=pl.name, planet=planet, item=item, quality=qa, comparator=cmp, custom_minimum=q.custom_minimum, direction='up', min=min, hub=held}
+    row.request_from=q.request_from
+    if PORT21 and q.request_from=='platforms' then
+      row.direction='platform'
+      local point=try(function() return pl.hub.get_logistic_point(defines.logistic_member_index.space_platform_hub_requester) end)
+      local coming=0
+      for _,it in ipairs(point and try(function() return point.targeted_items_deliver end) or {}) do
+        if it.name==item and qname(it.quality)==qa then coming=coming+(it.count or 0) end
+      end
+      row.state=held>=min and 'delivered' or coming>0 and 'in flight' or 'waiting'
+      row.on_the_way=coming
+      row.line=string.format('%s %d via platforms at %s: %s (hub holds %d, %d on the way; provider must enable providing_to_other_platforms)',name,min,planet,row.state,held,coming)
+      return row
+    end
     local picked, ppos = picked_of(sil, pl.name)
     if picked then row.picked_silo = {name=picked.e.name, position={x=ppos.x, y=ppos.y}} end
     if held >= min then
@@ -364,6 +387,7 @@ return function(api)
           or string.format('; the game\'s pick: no silo on %s is filling a rocket for %s now', planet, pl.name))
       end
     end
+    if PORT21 and q.request_from=='all' then gate=gate..'; this is the planet path only: other providing platforms can also fill the request' end
     row.gate = gate
     row.line = string.format('%s %d from %s: waiting (the hub holds %d): %s', name, min, planet, held, gate)
     return row
@@ -392,6 +416,7 @@ return function(api)
     local segs = api.segments and call(api.segments, pl) or {}
     local planets, seen = {}, {}
     for i, r in ipairs(records) do if i <= 8 and r.station and not seen[r.station] then seen[r.station] = true; planets[#planets+1] = {i=i, name=r.station} end end
+    if PORT21 and reqs.any and w.at and not seen[w.at] then seen[w.at]=true;planets[#planets+1]={name=w.at} end
     for name in pairs(reqs) do if name ~= 'any' and not seen[name] then seen[name] = true; planets[#planets+1] = {name=name} end end
     for _, st in ipairs(planets) do
       local planet = st.name
@@ -402,14 +427,18 @@ return function(api)
       local sil
       local n = 0
       local keys = {}
-      local mine = reqs[planet] or {}
+      local mine = {}
+      for k,v in pairs(reqs[planet] or {}) do mine[k]=v end
+      if PORT21 then for k,v in pairs(reqs.any or {}) do
+        if mine[k] then local q={};for a,b in pairs(v) do q[a]=b end;q.min=q.min+mine[k].min;mine[k]=q else mine[k]=v end
+      end end
       for key in pairs(mine) do keys[#keys+1] = key end
       table.sort(keys, key_order)
       for _, key in ipairs(keys) do
         local q = mine[key]
         if not only or q.item == only then
           n = n + 1
-          sil = sil or silos_at(cache, force, planet, pl.name)
+          if not (PORT21 and q.request_from=='platforms') then sil = sil or silos_at(cache, force, planet, pl.name) end
           local row = up_row(pl, planet, q, q.min, counts_q, here, sil, inc and inc.rows, fast)
           rows[#rows+1] = row
           if parts and n <= 24 then parts[#parts+1] = row.line end

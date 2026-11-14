@@ -12,7 +12,7 @@ COLORS = {'green': '#71c98c', 'yellow': '#e6c85d', 'blue': '#6cacf0', 'red': '#e
 ACTIVITY = {'acting', 'thinking', 'resting', 'idle', 'offline', 'dead', 'unknown'}
 PRIVATE = re.compile(r'https?://|(?:^|[\s(])(?:/|~/|[A-Za-z]:[\\/])|[\w.+-]+@[\w.-]+\.[a-z]{2,}|'
                      r'\b(?:token|password|secret|api[_ -]?key|traceback|exception)\b|\bsk-[\w-]+|'
-                     r'\b' + 'multi' + r'-?teams?\b|\bPOG_[A-Z_]+|\bmt/batch\d+', re.I)
+                     r'\bPOG_[A-Z_]+|\bmt/batch\d+', re.I)
 
 
 def obj(v):

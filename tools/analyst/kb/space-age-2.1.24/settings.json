@@ -1,0 +1,151 @@
+{
+"autoplace": {
+"coal": {
+"frequency": 1,
+"richness": 1,
+"size": 1
+},
+"copper-ore": {
+"frequency": 1,
+"richness": 1,
+"size": 1
+},
+"crude-oil": {
+"frequency": 1,
+"richness": 1,
+"size": 1
+},
+"enemy-base": {
+"frequency": 1,
+"richness": 1,
+"size": 1
+},
+"iron-ore": {
+"frequency": 1,
+"richness": 1,
+"size": 1
+},
+"nauvis_cliff": {
+"frequency": 1,
+"richness": 1,
+"size": 1
+},
+"rocks": {
+"frequency": 1,
+"richness": 1,
+"size": 1
+},
+"starting_area_moisture": {
+"frequency": 1,
+"richness": 1,
+"size": 1
+},
+"stone": {
+"frequency": 1,
+"richness": 1,
+"size": 1
+},
+"trees": {
+"frequency": 1,
+"richness": 1,
+"size": 1
+},
+"uranium-ore": {
+"frequency": 1,
+"richness": 1,
+"size": 1
+},
+"water": {
+"frequency": 1,
+"richness": 1,
+"size": 1
+}
+},
+"difficulty": {
+"spoil_time_modifier": 1,
+"technology_price_multiplier": 1
+},
+"enemy_evolution": {
+"destroy_factor": 0.002,
+"enabled": true,
+"pollution_factor": 9e-07,
+"time_factor": 4e-06
+},
+"enemy_expansion": {
+"enabled": true,
+"max_expansion_cooldown": 216000,
+"max_expansion_distance": 5,
+"min_expansion_cooldown": 14400,
+"settler_group_max_size": 10,
+"settler_group_min_size": 5
+},
+"mods": {
+"agent-harness": "0.1.0",
+"base": "2.1.24",
+"elevated-rails": "2.1.24",
+"quality": "2.1.24",
+"recycler": "2.1.24",
+"space-age": "2.1.24"
+},
+"peaceful": false,
+"pollution": {
+"ageing": 1,
+"diffusion_ratio": 0.02,
+"enabled": true,
+"enemy_attack_pollution_consumption_modifier": 1,
+"expected_max_per_chunk": 150,
+"min_pollution_to_damage_trees": 60,
+"min_to_diffuse": 15,
+"min_to_show_per_chunk": 50,
+"pollution_per_tree_damage": 50,
+"pollution_restored_per_tree_damage": 10,
+"pollution_with_max_forest_damage": 150
+},
+"starting_area": 1,
+"surfaces": [
+"nauvis",
+"platform-1",
+"vulcanus",
+"fulgora",
+"gleba",
+"platform-2",
+"aquilo",
+"platform-3",
+"platform-4",
+"platform-5",
+"platform-6",
+"platform-7",
+"platform-8",
+"platform-9",
+"platform-10",
+"platform-11",
+"platform-12",
+"platform-13",
+"platform-14",
+"platform-15",
+"port21-space",
+"platform-17",
+"platform-18",
+"platform-19",
+"platform-20",
+"platform-21",
+"platform-16",
+"platform-22",
+"platform-23",
+"platform-24",
+"platform-25",
+"platform-26",
+"platform-27",
+"platform-28",
+"platform-29",
+"platform-30",
+"platform-31"
+],
+"unit_group": {
+"max_group_gathering_time": 36000,
+"max_group_radius": 30,
+"max_wait_time_for_late_members": 7200,
+"min_group_gathering_time": 3600,
+"min_group_radius": 5
+}
+}

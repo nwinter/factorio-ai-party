@@ -19,6 +19,24 @@ import argparse, difflib, json, math, os, re, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_VERSION = os.environ.get("POG_KB", "base-2.0.77")
 
+def product_mean(p):
+    if p.get("expected_amount") is not None:
+        return p["expected_amount"]
+    amount = p.get("amount")
+    if amount is None:
+        amount = (p.get("amount_min", 0) + p.get("amount_max", 0)) / 2
+    amount += p.get("extra_count_fraction", 0)
+    chance = p.get("independent_probability", p.get("probability", 1))
+    shared = p.get("shared_probability")
+    if shared:
+        chance *= shared["max"] - shared["min"]
+    return amount * chance
+
+
+def recipe_categories(r):
+    return r["categories"] if "categories" in r else [r["category"]]
+
+
 ALIASES = {
     "red science": "automation-science-pack", "red": "automation-science-pack",
     "green science": "logistic-science-pack", "green": "logistic-science-pack",
@@ -144,15 +162,14 @@ class KB:
         if not r:
             return f"no recipe named {name}"
         ing = ", ".join(f"{fmt(i['amount'])} {pretty(i['name'])}" for i in r["ingredients"]) or "nothing"
-        prod = ", ".join(f"{fmt(p.get('amount') or ((p.get('amount_min', 0) + p.get('amount_max', 0)) / 2))} "
-                         f"{pretty(p['name'])}" + (f" ({fmt(p['probability'] * 100)}%)" if p.get("probability") else "")
-                         for p in r["products"])
-        machines = self.machines_for(r["category"])
+        prod = ", ".join(f"{fmt(product_mean(p), 6)} {pretty(p['name'])} (mean)" for p in r["products"])
+        cats = recipe_categories(r)
+        machines = self.machines_for(cats)
         unlock = self.unlocked_by.get(r["name"])
         conds = r.get("surface_conditions") or []
         lines = [f"recipe {r['name']}: {ing} -> {prod} in {fmt(r['energy'])} s (at crafting speed 1); category "
-                 f"{r['category']}, made in {', '.join(machines) or 'hand only'}"
-                 + ("; hand-craftable" if r["category"] == "crafting" and not conds else "")
+                 f"{', '.join(cats)}, made in {', '.join(machines) or 'none listed'}"
+                 + ("; hand-craftable" if "crafting" in cats and not conds else "")
                  + (f"; only where {surface_text(conds)}" if conds else ""),
                  "available from the start" if r.get("enabled") else
                  f"unlocked by technology {', '.join(unlock)}" if unlock else "not unlocked by any technology"]
@@ -167,15 +184,17 @@ class KB:
         return "\n".join(lines)
 
     def machines_for(self, category):
-        return [e["name"] for e in self.entities.values() if category in (e.get("crafting_categories") or {})
+        cats = [category] if isinstance(category, str) else category
+        return [e["name"] for e in self.entities.values() if any(c in (e.get("crafting_categories") or {}) for c in cats)
                 and e["type"] in ("assembling-machine", "furnace", "rocket-silo") and not e.get("hidden")]
 
     def default_machine(self, category):
         """The machine a team typically uses: the table above, else assembling-machine-2 when it can (Space Age moved
         circuits to 'electronics' and gears to 'pressing'), else the first machine for the category."""
         ms = self.machines_for(category)
-        if category in DEFAULT_MACHINE:
-            return DEFAULT_MACHINE[category]
+        for cat in ([category] if isinstance(category, str) else category):
+            if cat in DEFAULT_MACHINE and DEFAULT_MACHINE[cat] in ms:
+                return DEFAULT_MACHINE[cat]
         return "assembling-machine-2" if "assembling-machine-2" in ms else (ms or ["?"])[0]
 
     # ---- technologies ----------------------------------------------------------------------------------------------
@@ -337,7 +356,11 @@ class KB:
         need, raw = {}, {}
         stop = set(stop)
 
-        def machine_for(cat):
+        def machine_for(cats):
+            cats = [cats] if isinstance(cats, str) else cats
+            cat = cats[0] if cats else ""
+            if assembler and assembler in self.machines_for(cats):
+                return assembler
             if cat == "smelting":
                 return furnace or DEFAULT_MACHINE[cat]
             if cat in ("crafting", "advanced-crafting", "crafting-with-fluid"):
@@ -349,7 +372,7 @@ class KB:
                 return chem
             if assembler and assembler in self.machines_for(cat):  # Space Age's electronics, pressing, ...
                 return assembler
-            return self.default_machine(cat)
+            return self.default_machine(cats)
 
         def add(it, rate, depth=0):
             if depth > 30:
@@ -361,13 +384,13 @@ class KB:
             if not r:
                 raw[it] = raw.get(it, 0) + rate
                 return
-            out_amt = sum((p.get("amount") or (p.get("amount_min", 0) + p.get("amount_max", 0)) / 2) * (p.get("probability") or 1)
+            out_amt = sum(product_mean(p)
                           for p in r["products"] if p["name"] == it)
             if not out_amt:
                 raw[it] = raw.get(it, 0) + rate
                 return
             crafts = rate / out_amt
-            m = machine_for(r["category"])
+            m = machine_for(recipe_categories(r))
             speed = self.machine_speed(m)
             n = need.setdefault(it, {"rate": 0.0, "recipe": r["name"], "machine": m, "machines": 0.0, "time": r["energy"],
                                      "per_craft": out_amt})
@@ -438,10 +461,10 @@ class KB:
         r = self.recipes.get(recipe) or self.recipe_for(self.resolve(recipe) or recipe)
         if not r:
             return f"no recipe {recipe}"
-        machine = machine or self.default_machine(r["category"])
+        machine = machine or self.default_machine(recipe_categories(r))
         speed = self.machine_speed(machine)
         crafts = 60 * speed / r["energy"] * count
-        prod = ", ".join(f"{fmt(crafts * (p.get('amount') or 1) * (p.get('probability') or 1), 2)} {pretty(p['name'])}" for p in r["products"])
+        prod = ", ".join(f"{fmt(crafts * product_mean(p), 2)} {pretty(p['name'])}" for p in r["products"])
         use = ", ".join(f"{fmt(crafts * i['amount'], 2)} {pretty(i['name'])}" for i in r["ingredients"])
         e = self.entities.get(machine) or {}
         kw = e.get("max_energy_usage_kw") or e.get("energy_usage_kw")

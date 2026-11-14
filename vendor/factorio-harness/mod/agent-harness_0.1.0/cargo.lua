@@ -1,3 +1,12 @@
+-- A specific silo may override the default rocket lift on Factorio 2.1.
+local function rocket_lift(silo)
+  local ok, v = pcall(function() return silo.prototype.lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.default_rocket_lift_weight end)
+  if ok and v ~= nil then return v end
+  ok, v = pcall(function() return prototypes.utility_constants.rocket_lift_weight end)
+  if ok then return v end
+end
 -- Rocket cargo weighed before it is staged (Sol rebuilt three kits into two
 -- after working out the weights offline): each item's weight from the 2.0
 -- prototypes, the total against a rocket's lift (utility constant
@@ -6,6 +15,7 @@
 -- rockets that keeps each within both. Weights are the game's grams.
 -- The factory is pure so the same module can be bundled into a hot reload.
 return function(api)
+  local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   -- Grams as kilograms with one decimal.
@@ -14,7 +24,8 @@ return function(api)
   -- The rocket's lift (grams) and cargo slots: a silo entity's own rocket
   -- inventory when given, else the rocket silo prototype's.
   function M.limits(silo)
-    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+    local lift = rocket_lift(silo) or 1000000
+    if PORT21 then return lift, math.huge end -- current inventory length grows with contents; weight alone limits cargo
     local slots
     if silo then
       slots = try(function() return #silo.get_inventory(defines.inventory.rocket_silo_rocket) end)
@@ -73,6 +84,7 @@ return function(api)
         local r = {weight=0, slots=0, count={}, kinds={}}
         rockets[#rockets+1] = r
         local n = math.min(left, room(r, kind))
+        assert(n>0, 'one '..kind.name..' does not fit this rocket')
         put(r, kind, n); left = left-n
       end
     end
@@ -109,6 +121,7 @@ return function(api)
       local proto = prototypes.item[top_up]
       assert(proto, 'unknown item '..tostring(top_up))
       local w = try(function() return proto.weight end) or 0
+      assert(w>0 or slots~=math.huge, 'top_up needs a positive item weight on a weight-only rocket')
       local extra = kinds_of({{name=top_up, count=w > 0 and math.ceil(lift/w) + 1 or slots*(proto.stack_size or 1)}})[1]
       extra.top = true
       kinds[#kinds+1] = extra
@@ -126,11 +139,19 @@ return function(api)
     local room_kg, room_slots = kg(lift-r.weight), slots-r.slots
     local lefts = {}
     for i, l in ipairs(left) do lefts[i] = l.name..(l.quality and '@'..l.quality or '')..' '..l.count end
-    local line = string.format('one rocket: %s = %g of %g kg, %d of %d slots%s%s', #parts > 0 and table.concat(parts, ' + ') or 'nothing', kg(r.weight), kg(lift), r.slots, slots,
+    local line
+    if slots==math.huge then
+      line=string.format('one rocket: %s = %g of %g kg, weight only; %d stacks; room left %g kg%s',
+        #parts>0 and table.concat(parts,' + ') or 'nothing',kg(r.weight),kg(lift),r.slots,room_kg,
+        #lefts>0 and '; left over: '..table.concat(lefts,', ') or '; nothing left over')
+      room_slots=nil
+    else
+    line = string.format('one rocket: %s = %g of %g kg, %d of %d slots%s%s', #parts > 0 and table.concat(parts, ' + ') or 'nothing', kg(r.weight), kg(lift), r.slots, slots,
       (room_kg > 0 or room_slots > 0) and string.format('; room left %g kg, %d slots', room_kg, room_slots) or '; full by weight and slots',
       #lefts > 0 and '; left over: '..table.concat(lefts, ', ') or '; nothing left over')
     if room_kg <= 0 and room_slots > 0 then line = line:gsub('; room left 0 kg, %d+ slots', '; full by weight') end
-    return {items=items, kg=kg(r.weight), slots=r.slots, room_kg=room_kg, room_slots=room_slots, left_over=#left > 0 and left or nil, line=line}
+    end
+    return {items=items, kg=kg(r.weight), slots=r.slots, weight_only=slots==math.huge or nil, room_kg=room_kg, room_slots=room_slots, left_over=#left > 0 and left or nil, line=line}
   end
   -- list: {{name, count, quality?}}. Returns the reply fields.
   function M.weigh(list, lift, slots)
@@ -165,8 +186,8 @@ return function(api)
       rockets = split(order, lift, slots)
     end
     local fewest = math.max(math.ceil(total/lift-1e-9), math.ceil(stacks/slots))
-    local out = {lift=string.format('%g kg and %d cargo slots a rocket', kg(lift), slots), total_kg=kg(total), stacks=stacks,
-      fewest=fewest, rockets=#too_heavy == 0 and #rockets or nil, too_heavy=#too_heavy > 0 and too_heavy or nil}
+    local out = {lift=slots==math.huge and string.format('%g kg a rocket, weight only (no cargo slot limit)',kg(lift)) or string.format('%g kg and %d cargo slots a rocket', kg(lift), slots), total_kg=kg(total), stacks=stacks,
+      weight_only=slots==math.huge or nil, fewest=fewest, rockets=#too_heavy == 0 and #rockets or nil, too_heavy=#too_heavy > 0 and too_heavy or nil}
     out.items = {}
     for i, kind in ipairs(rows) do
       out.items[i] = {name=kind.name, quality=kind.quality, count=kind.count, each_kg=kg(kind.each), kg=kg(kind.each*kind.count),

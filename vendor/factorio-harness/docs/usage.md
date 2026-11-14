@@ -18980,3 +18980,60 @@ This distinguishes the growing line from a fixed 50-tile line and from multiplyi
 The existing conservative box/wedge geometry, 17 boundary rays, result caps and read-only behavior remain.
 Tests: `tests/d37_batch458.lua` covers all five qualities, built and ghost sources, proposed footprints,
 platform rows, preview quality, mixed sources, radial hit/miss boundaries and unchanged angular limits.
+
+## Factorio 2.1.24 recipe and science reads
+
+On the private 2.1 line, recipes may have several categories. Recipe output means come from the engine,
+including shared probability rolls and products exempt from productivity. Quality chances use 2.1's fractional
+scale. `science` keeps whole inventory packs in `labs` and reports consumed packs' remaining capacity separately
+as `lab_stored_capacity`; a lab with remaining capacity is not missing that pack. `uptime` includes that capacity
+when sampling lab consumption. Product freshness flags apply to each product separately.
+
+## Factorio 2.1.24 undergrounds, fuels and circuits
+
+Underground pairing and build-side selection use the dedicated belt neighbour API. Item fuel categories are lists;
+a burner accepts a fuel if any category matches. Actual silo cargo limits and request reads use that silo's lift
+weight, while generic item manifests use the engine default. Launch-budget estimates use the smallest selected
+silo's lift and disclose when selected silos differ (the engine chooses the silo).
+
+Circuit controls preserve independent read-contents and set-requests switches on 2.1 chests and landing pads.
+`settings.input_networks` and `output_networks` select red, green, both or a `{red,green}` record where supported.
+Tank/pipe `read.contents` reads its own box; `read.segment_contents` reads the segment; these are exclusive modes.
+Temperature is independent. Assembler/furnace fuel reads use `read_fuel`; the previous `include_fuel` input remains
+an alias. Legacy exclusive chest mode names still select one mode. Readback, snapshot/restore and ghost dry checks
+use the native controls. The 2.0.77 controls and defaults remain available on that engine.
+
+## Factorio 2.1.24 fluid core
+
+Fluid reads distinguish an entity's own indexed storage from the connected segment. `scan`/`inspect` fluid text
+shows own amount/capacity, with segment capacity separately when larger. Empty storage, no segment, and unsupported
+storage are distinct. Merged crafting-box prototypes remain a list; a wagon and a turret's internal buffer can have
+storage without a fluid-box prototype or segment. A 2.1 flamer's capacity includes both indexed stores.
+
+The internal `pipes.fluid_boxes(entity)` view reads native 2.1 methods (legacy LuaFluidBox on 2.0). Its native
+`set`/`add`/`remove`/`clear` methods preserve engine return values. A write to a connected pipe redistributes at once:
+50 added to an empty two-pipe segment can read 25 per pipe immediately; clearing one then removes its proportional
+share. A caller must account for the returned applied/removed amount. Native segment mutations and conservation
+checks in topology/flush actions are handled separately from these indexed storage primitives.
+
+On 2.0.77, legacy indexed assignment replaces a connected segment's total, and assigning nil clears that segment.
+The 2.1 indexed clear removes only the selected store's proportional share; clearing a segment is a separate API.
+The port retains those engine semantics and distinguishes them in conservation checks.
+
+### Fluid storage on 2.1.24
+
+Fluid stock totals count a connected segment once, including machine shares. A near read can include members
+outside the selected area; those are listed as connected remainder. A pump's private store and its two adjacent
+segments are separate. `flush` clears the selected segment, or only the selected independent store when it has no
+segment. `configure` refuses a recipe change that would drop an incompatible fluid unless `fluid: "drain"` or
+`"keep"` is explicit; the reply reports what left the machine. A normal boiler consumes 6 water/s and makes 60
+steam/s at full speed on 2.1.24 (2.0.77: 60 water/s and 60 steam/s).
+
+### Rocket cargo on 2.1.24
+
+A rocket is limited by its silo's lift weight; it has no fixed cargo slot limit. The rocket inventory grows with
+its contents, including mixed items and qualities. `cargo`, `preflight` and `load_silo` report `weight_only: true`
+where applicable and omit finite free-slot capacities. Stack counts still describe the manifest. Loading an empty
+rocket and unloading its shrinking inventory preserve item quality, spoilage and other stack metadata. The
+`load_silo` manifest accepts up to 64 item/quality entries on 2.1 (20 on 2.0). The 2.0.77 rocket retains its slot
+limit; platform hub and cargo-pod capacity remain separate from rocket lift.

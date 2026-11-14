@@ -50,18 +50,26 @@ return function(api)
   -- extra: more positions on the surface the box reaches (MARGIN chunks around each), as the players' (census.lua: bot
   -- characters, which are no players).
   -- opts.max_chunks: at most this many chunks a band (MAX_CHUNKS by default; the census takes 1, d21 batch73).
+  -- (mt276 C) opts.force (a force's name): that force's own box (kept apart from the player force's, which stays under
+  -- the surface's index), grown by its players only (the player force's by every player, as before); with no box yet,
+  -- the box round its players and extra points (a new team's bots); with none of those either, nothing (its own
+  -- platform: one find). The player force's as before.
   function W.start(s, extra, opts)
-    local built = boxes()[s.index]
+    local fname = opts and opts.force
+    local key = fname and fname ~= 'player' and s.index .. '|' .. fname or s.index
+    local built = boxes()[key]
     local box = {}
+    local k = key ~= s.index and key or nil
     if built and built.left then
       grow(box, built.left - MARGIN, built.top - MARGIN); grow(box, built.right + MARGIN, built.bottom + MARGIN)
-    else
+    elseif not k then
       local g = generated(s.index)
       if g then grow(box, g.left, g.top); grow(box, g.right, g.bottom) end
     end
-    if box.left then
+    -- a team's box also starts round its players and bots there (never the generated chunks)
+    if box.left or k then
       for _, pl in pairs(game.players or {}) do
-        local ok, here = pcall(function() return pl.surface.index == s.index and pl.position end)
+        local ok, here = pcall(function() return pl.surface.index == s.index and (not k or pl.force.name == fname) and pl.position end)
         if ok and here then
           grow(box, chunk(here.x) - MARGIN, chunk(here.y) - MARGIN); grow(box, chunk(here.x) + MARGIN, chunk(here.y) + MARGIN)
         end
@@ -70,10 +78,17 @@ return function(api)
         grow(box, chunk(here.x) - MARGIN, chunk(here.y) - MARGIN); grow(box, chunk(here.x) + MARGIN, chunk(here.y) + MARGIN)
       end
     end
-    if not box.left then return {surface=s.index, whole=true} end
+    -- a team with nothing known on this surface (no box, no bot, no player of its own there): nothing to walk, but its
+    -- own platform (one find)
+    if k and not box.left then
+      local ok, owner = pcall(function() return s.platform and s.platform.force.name end)
+      if ok and owner == fname then return {surface=s.index, whole=true, key=k} end
+      return {surface=s.index, done=true, key=k}
+    end
+    if not box.left then return {surface=s.index, whole=true, key=k} end
     local max = opts and opts.max_chunks or MAX_CHUNKS
     return {surface=s.index, box=box, x=box.left, y=box.top, rows=1, band_rows=1, cols=math.min(max, box.right - box.left + 1),
-      max=max ~= MAX_CHUNKS and max or nil}
+      max=max ~= MAX_CHUNKS and max or nil, key=k}
   end
 
   -- (d22 batch110 BT1: census.walk made 15.4 KB of garbage a call on the private copy) a band's find filter and area,
@@ -92,8 +107,9 @@ return function(api)
   function W.band(w, s, filter, out_pos)
     if w.done then return nil end
     local all = boxes()
-    local built = all[s.index] or {}
-    all[s.index] = built
+    local key = w.key or s.index
+    local built = all[key] or {}
+    all[key] = built
     local f = filter_of(filter)
     if w.whole then
       w.done = true

@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# (mt277, private: part E) The tree a multi-team run's agents run from: this branch's HEAD (or tracked working content
+# during a pending merge) as files, with no .git and without what names the teams or this mode, plus the built
+# host. Agents' workspaces live in its runs/ (kept across updates); the operator's files stay in this checkout.
+#   tools/mt/launch-tree.sh [DIR]     make or update it (default worktrees/pog-p); prints DIR
+#   tools/mt/launch-tree.sh --scan DIR   the words that would name the mode, with the files they are in (none: exit 0)
+# Left out: tools/mt (the operator's tools), agent/mt (the teams files), the Python tests, the public repo export (its
+# scan names the mode), tools/imac-copy.sh, docs/DISCLOSURE.md (its per-force notes name line 1's part), the harness mod (only install and deploy read it: runtime.lua names the
+# teams module) and the harness's mt tests. Codex, agy and Muse read any
+# path on the Mac; this keeps incidental reads of the agents' own tree clean, not deliberate ones.
+set -euo pipefail
+root=$(cd "$(dirname "$0")/../.." && pwd)
+WORDS='multi-?team|multiteam|mt27[0-9]|mt_map|start-mt|POG_MT|other teams'
+scan() {
+  grep -rIlE -i "$WORDS" "$1" --exclude-dir=runs --exclude-dir=node_modules --exclude-dir=.git 2>/dev/null | sed "s|^$1/||" || true
+}
+if [ "${1:-}" = --scan ]; then
+  hits=$(scan "$2"); [ -z "$hits" ] && { echo "scan: clean"; exit 0; }
+  echo "scan: $(echo "$hits" | wc -l | tr -d ' ') files: $(echo "$hits" | head -20 | tr '\n' ' ')"; exit 1
+fi
+tree=${1:-/Users/owner/code/personal/player-of-games/worktrees/pog-p}
+case $tree in "$root"|"$root"/*) echo "the launch tree must be outside this checkout" >&2; exit 64 ;; esac
+[ -e "$tree" ] && [ ! -f "$tree/.launch-tree" ] && { echo "$tree exists and is not a launch tree" >&2; exit 1; }
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+archive_ref=HEAD
+if git -C "$root" rev-parse -q --verify MERGE_HEAD >/dev/null; then
+  # The gate tests an uncommitted merge. Snapshot tracked/index changes without
+  # changing the merge, index, working tree or stash list; omit untracked files.
+  archive_ref=$(git -C "$root" stash create)
+fi
+git -C "$root" archive "${archive_ref:-HEAD}" | tar -x -C "$tmp"
+rm -rf "$tmp/tools/mt" "$tmp/agent/mt" "$tmp/site" "$tmp/agent/briefs" "$tmp/agent/ENGINEER.md" "$tmp"/tools/test_*.py "$tmp"/tools/stream/test_*.py "$tmp"/site/test_*.py \
+  "$tmp/vendor/factorio-harness/mod" "$tmp"/vendor/factorio-harness/tests/mt[0-9]*.lua \
+  "$tmp"/tools/public_export.py "$tmp"/tools/public_sync.py "$tmp"/tools/public-push.sh "$tmp"/tools/public-start.sh \
+  "$tmp"/tools/imac-copy.sh "$tmp"/docs/DISCLOSURE.md "$tmp"/docs/mt-*.md "$tmp"/docs/PORT21*.md "$tmp"/tools/port21-copy.sh
+(cd "$root/vendor/factorio-harness" && npm run build >/dev/null)
+mkdir -p "$tmp/vendor/factorio-harness/dist"
+cp -R "$root/vendor/factorio-harness/dist/." "$tmp/vendor/factorio-harness/dist/"
+rm -rf "$tmp/vendor/factorio-harness/dist/tests" "$tmp/vendor/factorio-harness/tests"
+# A launch tree belongs to continuous players; leave no timed-play template in their reference tree.
+python3 - "$tmp" <<'PYCONT'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root / "tools"))
+import brief
+for path in (root / "agent").rglob("*.md"):
+    path.write_text(brief.continuous_text(path.read_text()))
+# The upstream usage file also contains historical operator run-clock notes. Supply
+# the current player reference here; keep the full engineering manual in the repo.
+usage = root / 'vendor/factorio-harness/docs/usage.md'
+refs = sorted((root / 'agent/ref').glob('*.md'))
+usage.write_text('# Player reference\n\nUse `./fh help TOPIC` for the reference available to your team.\n\n' +
+                 '\n\n'.join(p.read_text() for p in refs if p.stem != 'markets'))
+PYCONT
+git -C "$root" rev-parse --short HEAD > "$tmp/.launch-tree"
+mkdir -p "$tree"
+rsync -a --delete --exclude /runs/ "$tmp/" "$tree/"
+echo "$tree"

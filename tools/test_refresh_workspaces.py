@@ -59,11 +59,14 @@ with tempfile.TemporaryDirectory() as d:
         want = brief.topic_files(name)
         os.environ.pop("POG_SPACE_AGE")
         for topic, text in want.items():
+            if topic == "markets":
+                check(not os.path.exists(os.path.join(ws, "ref", "markets.md")), "markets require live contact")
+                continue
             check(open(os.path.join(ws, "ref", topic + ".md")).read() == text, f"{name}: ref/{topic}.md as brief writes it")
         tsv = open(os.path.join(ws, "ref", "commands.tsv")).read()
-        check(tsv == "".join(f"{c}\t{t}\n" for c, t in sorted(brief.commands().items())), f"{name}: commands.tsv")
+        check(tsv == "".join(f"{c}\t{t}\n" for c, t in sorted(brief.commands().items()) if t != "markets"), f"{name}: commands.tsv")
         core = open(os.path.join(ws, "AGENTS.md")).read()
-        check(old_index not in core and brief.index_text().rstrip("\n") in core, f"{name}: the current index")
+        check(old_index not in core and brief.re.sub(r"(?m)^- `markets`[^\n]*\n?", "", brief.index_text()).rstrip("\n") in core, f"{name}: the current index")
         check(core.startswith(head[kind] + "## Team\n\nNine of you.\n\n## Reference topics") and core.endswith(tail),
               f"{name}: the rest of AGENTS.md kept")
     sa_ref = open(os.path.join(run_dir, "astra", "ref", "space-age.md")).read()

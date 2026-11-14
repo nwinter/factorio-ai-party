@@ -1,3 +1,6 @@
+-- Factorio 2.1 splits underground belt and fluid neighbours.
+local PORT21 = (script and script.active_mods and tonumber((script.active_mods.base or ''):match('^2%.(%d+)%.')) or 0) >= 1
+local UNDERGROUND_NEIGHBOUR = PORT21 and 'underground_belt_neighbour' or 'neighbours'
 -- trace: how items move between machines, in one read. Shift09 00:20, Grok:
 -- "the wall assembler was short of bricks that sat in the chest next to the
 -- one its long inserter reads"; Luna: a science routing diagnostic took many
@@ -230,7 +233,10 @@ return function(api)
   -- Whether an inserter's drop target takes an item: a machine its recipe's ingredients, a lab the packs, else anything.
   local function accepts(t, item, pk)
     if not (t and t.valid) then return true end
-    if t.type == 'lab' then return pk[item] == true or try(function() return prototypes.item[item].type end) == 'tool' end
+    if t.type == 'lab' then
+      for _,name in ipairs(try(function() return t.prototype.lab_inputs end) or {}) do if name==item then return true end end
+      return pk[item] == true or try(function() return prototypes.item[item].type end) == 'tool'
+    end
     if CRAFTER[t.type] then
       local r = recipe_of(t)
       for _, ing in ipairs(r and r.ingredients or {}) do if ing.name == item then return true end end
@@ -410,7 +416,7 @@ return function(api)
     local bn = try(function() return e.belt_neighbours end)
     for _, n in ipairs(bn and bn.outputs or {}) do cands[#cands+1] = n end
     if e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'input' then
-      local nb = try(function() return e.neighbours end)
+      local nb = try(function() return e[UNDERGROUND_NEIGHBOUR] end)
       if nb and nb.valid then cands[#cands+1] = nb end
     end
     for _, n in ipairs(cands) do
@@ -515,7 +521,7 @@ return function(api)
     local bn = try(function() return e.belt_neighbours end)
     for _, n in ipairs(bn and bn.inputs or {}) do cands[#cands+1] = n end
     if e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'output' then
-      local nb = try(function() return e.neighbours end)
+      local nb = try(function() return e[UNDERGROUND_NEIGHBOUR] end)
       if nb and nb.valid then cands[#cands+1] = nb end
     end
     for _, n in ipairs(cands) do
