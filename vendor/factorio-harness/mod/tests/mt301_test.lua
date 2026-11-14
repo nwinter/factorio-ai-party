@@ -1,4 +1,4 @@
--- mt301 (private: multi-team end of game). Run from the harness root: lua tests/mt301.lua
+-- mt301 (private: the end of a game of several teams). Run from the harness root: lua mod/tests/mt301_test.lua
 -- Edge arrival (solo, allied by the departure's pacts, home must hold), wipe detection (never a restore), the wipe
 -- win, the deadline's milestone ranking, the frozen result, save/load, and the agents' lines naming only contacted
 -- teams.

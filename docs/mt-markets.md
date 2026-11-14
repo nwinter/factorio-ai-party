@@ -24,7 +24,14 @@ Matched goods move out of the Post into persistent stateless escrow. Each leg re
 buyer coin leaves wallet into transaction escrow. Arrival after 5,400 ticks pays only the exact inserted quantity.
 A full receiver remains waiting, with cargo and unpaid escrow intact until space is made. Cancellation, embargo and
 freeze stop new commitments/matches; existing deliveries continue. There is no distance-dependent ETA or early payment.
-Completed/quarantined transactions and request receipts persist indefinitely. Only pending transactions are ticked.
+Request receipts persist indefinitely: a used id never runs twice. Only pending transactions are ticked. (mt301) Over
+a long game the records compact once a game minute: a team's receipts older than its newest 256 drop their copied
+result, and committed ones older than its newest 4,096 keep only their tick (a replay answers `committed`,
+`compacted`, whatever its arguments); delivered transactions with no escrow older than a pair's newest 200 fold into
+per-item print counts (last price, count, tick), which `mt_market` last prices include; credited deposits older than
+the newest 100 fold into a count and coin total; fill counters and book ids of orders no longer held are dropped.
+Quarantined, waiting and in-transit transactions never fold. `mt_market {compact=true}` compacts now; its `records`
+field reports the sizes. The audit totals are unchanged by compaction.
 Errors mark both the transaction and market quarantined, then propagate to control.lua's existing runtime quarantine.
 A deployment cannot silently resume an uncertain transaction; operator reconciliation is required.
 

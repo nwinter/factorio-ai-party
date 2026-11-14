@@ -590,7 +590,7 @@ return function(api)
     if c then c.messages = kept end
     return {dropped=dropped, kept=#kept}
   end
-  -- (mt301, private) The end of the game (multiteam-design.md, Nick d27-d28). Solo edge 1.5; allied edge 1.0 each
+  -- (mt301, private) The end of the game (the private design doc, Nick d27-d28). Solo edge 1.5; allied edge 1.0 each
   -- member, split by the pact's shares (2 x share, capped by pacts' share_max_score 1.4). The alliance that counts is
   -- the one pacts.lua recorded when the edge-run platform left its last planet. The team's Nauvis home (its cargo
   -- landing pad, with power round it) must stand when the platform arrives, or the arrival does not count. A team
