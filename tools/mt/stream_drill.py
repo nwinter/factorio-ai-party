@@ -55,7 +55,7 @@ def healthy(s,op):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('run');p.add_argument('fault',choices=['obs','camera','tunnel','relay','publisher','youtube','modal','feed'])
+    p.add_argument('run');p.add_argument('fault',choices=['obs','output','camera','tunnel','relay','publisher','youtube','modal','feed'])
     p.add_argument('--execute',action='store_true');p.add_argument('--timeout',type=int,default=600)
     a=p.parse_args();op=op_dir(a.run)
     if not a.execute:
@@ -71,6 +71,10 @@ def main():
     if a.fault=='obs':
         # This stream's selected program and unlisted publication were checked.
         checked(powershell("$p=Get-CimInstance Win32_Process -Filter \"Name='obs64.exe'\"; if (@($p).Count -ne 1 -or $p.ExecutablePath -ne 'C:\\Program Files\\obs-studio\\bin\\64bit\\obs64.exe') {throw 'unexpected OBS process'}; Stop-Process -Id $p.ProcessId -Force"),capture_output=True)
+    elif a.fault=='output':
+        obs=OBS(port=4458,timeout=10)
+        try:obs.call('StopStream')
+        finally:obs.close()
     elif a.fault=='camera':
         remote_camera('stop')
     elif a.fault=='modal':
@@ -101,7 +105,7 @@ def main():
         time.sleep(5)
         try:
             after=snapshot(op)
-            if a.fault=='obs' and after['output']['outputDuration']<before['output']['outputDuration']:
+            if a.fault in ('obs','output') and after['output']['outputDuration']<before['output']['outputDuration']:
                 # The new stream may outlive the short pre-fault stream during
                 # the required healthy minute; retain the observed reset.
                 obs_restarted=True
