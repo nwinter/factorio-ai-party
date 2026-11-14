@@ -451,6 +451,8 @@ if [ "$run_mode" = full ]; then
   python3 tools/mt/full_run.py init "$run" --minutes "$minutes" --max-shifts "${POG_FULL_SHIFTS:-0}" >"$op/full-init.json"
   nohup python3 tools/mt/full_run.py watch "$run" >"$op/full-watch.log" 2>&1 &
   echo $! >> "$op/helpers.pid"
+  nohup python3 tools/mt/quota_refresh.py "$run" >"$op/quota-refresh.log" 2>&1 &
+  echo $! >> "$op/helpers.pid"
   log "persistent world: automatic agent shifts every $minutes minutes; ${POG_FULL_SHIFTS:-0} shift limit (0 means no limit)"
 fi
 log "supervisors, per-team scores and chat logs ($op/TEAM/) and the team views ($op/views.html) running"

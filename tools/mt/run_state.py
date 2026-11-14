@@ -52,7 +52,9 @@ def rcon(lua):
     return command([sys.executable, ROOT/'tools/pog.py', '--world', 'imac2', 'rcon', '/silent-command '+lua])
 
 def alert(op, event, detail):
-    row = dict(at=time.time(), run=op.parent.name, event=event, detail=str(detail))
+    now=time.time()
+    row = dict(at=now,t=now,run=op.parent.name,event=event,detail=str(detail),
+               **{'from':'run-supervisor','text':f'{op.parent.name}: {event}: {detail}'})
     for path in (op/'alerts.jsonl', Path(os.environ.get('POG_OPERATOR_WAKE', DEFAULT_WAKE))):
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open('a') as out:

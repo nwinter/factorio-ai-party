@@ -112,6 +112,9 @@ Quota at-limit windows use the existing route/model selection and quota_rest.py
 format/push. Rest is firm until the actual reset, survives shifts, and suppresses
 nudges. A limit screen with unknown reset is held until fresh quota shows room
 or an explicit release. Stale telemetry never invents a reset or available quota.
+An independent quota helper checks each minute, refreshes ai-usage when its cache
+is older than eight minutes, and alerts on missing/stale playing routes. It does
+not depend on the desktop widget. Refresh failures retain the last known cache.
 
 POG_IDLE_NUDGE defaults to 1 in full mode. Scoped idle_report and scoped tells
 use only that pair; running queue lanes and quota rests suppress reminders. The
