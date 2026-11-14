@@ -11,9 +11,36 @@ import mt_map
 import rehearse
 import stop_helpers
 import map_probe
+import rehearsal_stream
+import run_state
 
 
 class Planning(unittest.TestCase):
+    def test_stream_restore_refuses_public_before_observing_or_mutating(self):
+        with tempfile.TemporaryDirectory() as d:
+            op=Path(d)
+            run_state.write(op/'public-session.json',dict(run='r307',privacy='public',phase='live'))
+            with patch.object(rehearsal_stream,'op_dir',return_value=op),patch('stream_drill.snapshot') as snapshot:
+                with self.assertRaisesRegex(AssertionError,'unlisted owned session required'):
+                    rehearsal_stream.before_restore('r307')
+                snapshot.assert_not_called()
+
+    def test_stream_recovery_requires_continuous_tick_and_output_progress(self):
+        after=dict(session=dict(privacy='unlisted'),youtube=dict(privacyStatus='unlisted'),
+                   camera=dict(ProcessId=10),staging=dict(tunnel_pid=20),video='v',
+                   game=dict(tick=100),output=dict(outputBytes=100))
+        with tempfile.TemporaryDirectory() as d,patch.object(rehearsal_stream,'op_dir',return_value=Path(d)), \
+             patch('stream_drill.snapshot',return_value=after),patch('stream_drill.healthy',return_value=True), \
+             patch.object(rehearsal_stream.time,'time',return_value=0) as clock:
+            proof=rehearsal_stream.RecoveryProof('r307',dict(game=dict(tick=1)))
+            self.assertFalse(proof())
+            clock.return_value=61
+            self.assertFalse(proof())  # healthy receipts alone cannot certify frozen output
+            clock.return_value=100;after['game']['tick']=200;after['output']['outputBytes']=200
+            self.assertFalse(proof())
+            clock.return_value=122;after['game']['tick']=300;after['output']['outputBytes']=300
+            self.assertTrue(proof())
+
     def test_timer_fallback_fails_map_acceptance_and_pauses(self):
         teams={n:dict(post=dict(x=i*1300,y=0),iron=0) for i,n in enumerate(['green','yellow'])}
         before=dict(teams=teams,legs=[])

@@ -46,6 +46,9 @@ def main():
             row['agents']={n:{k:v.get(k) for k in ('kind','route','shift','held','hold_reason','rest_until','started','completed')}
                            for n,v in state.get('agents',{}).items()}
             row['rehearsal_phase']=read(op/'rehearsal.json',{}).get('phase')
+            row['stream']={name:{k:v for k,v in read(op/(name+'.json'),{}).items()
+                                if k in ('phase','heartbeat','health','video','privacy','warnings','available_gib','nonpaged_gib')}
+                           for name in ('public-stream','public-session','memory')}
             try:
                 pinned();row['world']=w=world()
                 assert w['version']=='2.1.24' and w['speed']==1,w

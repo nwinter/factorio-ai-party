@@ -87,6 +87,18 @@ and a separate `load_bench.py` invocation per shift, archiving each native serve
 profile log before restore/teardown. Restore the prior owner's saves, mods and
 configuration, verify the saved hashes and stopped processes, then release.
 
+When unlisted streaming is authorized, use the application Python
+(`/opt/homebrew/bin/python3`) and add `--unlisted`. Start and inspect the normal
+stream staging/publication after the controller resumes the world. Before the
+restore, this option requires an owned full-mode unlisted session, live YouTube
+privacy verification, and healthy recording, camera, site and output. The stream
+supervisors stay running while the server reloads; exact paused-state comparison
+still precedes any camera join ticks. After resuming the second shift, the
+controller requires sixty continuous healthy seconds with increasing ticks and
+stream bytes. Evidence is op/restore-stream.json. Final teardown completes the
+unlisted publication with --keep-world before stopping staging and the game.
+Without this option, restore still refuses a publication receipt.
+
 `rehearsal_metrics.py RUN --execute` writes private minute samples directly to
 POG Media. They include milestones, contacts, market records, moving shipment
 positions, account quota observations, UPS and the harness heap. Gaps and restore

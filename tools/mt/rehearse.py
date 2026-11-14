@@ -32,9 +32,10 @@ def main():
     p.add_argument('--shift-minutes',type=int,default=180)
     p.add_argument('--quota-profile',default='codex-b');p.add_argument('--quota-stop',type=float,default=70)
     p.add_argument('--measure',action='store_true')
+    p.add_argument('--unlisted',action='store_true',help='require an unlisted stream at restore and prove its recovery')
     a=p.parse_args();assert a.shift_minutes>=1 and 0<a.quota_stop<=100
     if not a.execute:print(f'Two {a.shift_minutes}-minute closed shifts; exact-save restore; teardown retaining claim for server restoration.');return
-    op=op_dir(a.run);pinned();assert os.environ.get('POG_MT_PUBLIC','0')=='0'
+    op=op_dir(a.run);pinned();assert os.environ.get('POG_MT_PUBLIC','0')=='0' or a.unlisted
     stop=threading.Event()
     for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,lambda *_:stop.set())
     receipt=op/'rehearsal.json';assert not receipt.exists(),'rehearsal already attempted'
@@ -50,7 +51,7 @@ def main():
         dest=ROOT.parent.parent/'artifacts/mt307';dest.mkdir(parents=True,exist_ok=True)
         host=os.environ.get('IMAC_HOST','imac.local')
         logcmd=shlex.join(['ssh','-o','BatchMode=yes',host,'tail -n 15000 /Users/owner/pog-mt21/data/factorio-current.log'])
-        cmd=[sys.executable,ROOT/'tools/mt/load_bench.py','--host',host,'--port','27475',
+        cmd=[sys.executable,'-u',ROOT/'tools/mt/load_bench.py','--host',host,'--port','27475',
              '--password-file',Path.home()/'.config/pog/rcon-imac2.pw','--log-cmd',logcmd,
              '--minutes',str(a.shift_minutes),'--window','60','--every','10',
              '--label',a.run+'-shift'+str(shift)+'-'+state['runtime'],
@@ -111,7 +112,7 @@ def main():
         wait_for(lambda:read(op/'full-run.json')['phase']=='shifts-complete',(a.shift_minutes+10)*60)
         record(phase='restore',shift1_complete=time.time())
         finish_bench(bench,1)
-        result=restore.drill(a.run);record(restore=result['exact'])
+        result=restore.drill(a.run,allow_unlisted_stream=a.unlisted);record(restore=result['exact'])
         with lock(op/'agents.lock'):
             current=read(op/'full-run.json');current.update(phase='running',max_shifts=2)
             full_run.change(op,current,list(current['agents']),a.shift_minutes,reason='shift')
@@ -123,12 +124,23 @@ def main():
         rcon('game.tick_paused=false; rcon.print(game.tick)')
         record(phase='shift2',shift2_resumed=time.time(),shift2_end=max(r['deadline'] for r in current['agents'].values()))
         bench=start_bench(2)
+        if a.unlisted:
+            from rehearsal_stream import RecoveryProof
+            wait_for(RecoveryProof(a.run,result['stream_before']),600)
+            record(stream_restore_verified=time.time())
         wait_for(lambda:read(op/'full-run.json')['phase']=='shifts-complete',(a.shift_minutes+10)*60)
         record(phase='completed',shift2_complete=time.time())
         finish_bench(bench,2)
     except Exception as e:
         state['errors'].append(str(e));record(phase='failed');alert(op,'rehearsal-failed',e)
     finally:
+        if a.unlisted:
+            try:
+                from rehearsal_stream import stop_publication
+                stop_publication(a.run)
+            except Exception as e:
+                state['errors'].append('publication stop: '+str(e));record(phase='failed')
+                alert(op,'rehearsal-publication-stop-failed',e)
         for proc in collectors:
             if proc.poll() is None:
                 os.killpg(proc.pid,signal.SIGTERM)

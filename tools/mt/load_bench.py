@@ -23,6 +23,14 @@ def pct(xs, p):
     return xs[min(len(xs) - 1, int(len(xs) * p))] if xs else None
 
 
+def ups_window(samples, start_tick, end_tick):
+    # Exclude intervals crossing a boundary, rather than assigning a stall
+    # before this profile to its first minute. Keep raw intervals in the file.
+    rates = [s["ups"] for s in samples if start_tick <= s["from_tick"] and s["to_tick"] <= end_tick]
+    return {"samples": len(rates), "min": min(rates) if rates else None,
+            "median": statistics.median(rates) if rates else None}
+
+
 def window_stats(text, start_tick, end_tick):
     tick, total, heap = {}, {}, {}
     for line in text.splitlines():
@@ -73,6 +81,7 @@ def main():
     r2 = pog.Rcon(a.host, a.port, pw, timeout=120)
     t_end = time.time() + a.minutes * 60
     samples = []
+    ups_samples = []
 
     def ups():
         last = None
@@ -80,7 +89,9 @@ def main():
             tk = int(r2.command("/silent-command rcon.print(game.tick)").strip())
             now = time.time()
             if last:
-                samples.append((tk - last[0]) / (now - last[1]))
+                value = (tk - last[0]) / (now - last[1])
+                samples.append(value)
+                ups_samples.append({"t": now, "from_tick": last[0], "to_tick": tk, "ups": value})
             last = (tk, now)
             time.sleep(a.every)
     th = threading.Thread(target=ups, daemon=True)
@@ -99,6 +110,7 @@ def main():
         text = subprocess.run(a.log_cmd, shell=True, capture_output=True, text=True).stdout
         w = window_stats(text, s_tick, s_tick + seconds * 60)
         w["from_tick"] = s_tick
+        w["ups"] = ups_window(ups_samples, s_tick, s_tick + seconds * 60)
         windows.append(w)
         print(json.dumps({"window": len(windows), **w}))
     t_end = time.time()  # the UPS samples stop with the last window
@@ -106,7 +118,7 @@ def main():
     res = {"label": a.label, "at": time.strftime("%Y-%m-%d %H:%M:%S %Z"),
            "ups": {"samples": len(samples), "min": round(min(samples), 1) if samples else None,
                    "median": round(statistics.median(samples), 1) if samples else None, "max": round(max(samples), 1) if samples else None},
-           "windows": windows}
+           "windows": windows, "ups_samples": ups_samples}
     json.dump(res, open(a.out, "w"), indent=1)
     print(json.dumps(res["ups"]))
 
