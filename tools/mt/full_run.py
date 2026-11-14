@@ -195,6 +195,10 @@ def change(op,state,names,minutes=None,reason='shift',hold=False):
 
 def quota(brief,team_file,now):
     if not brief or not 0<=now-float(brief.get('generated_at',0))<=900:return {},{}
+    # A newly published brief can contain an older saved provider observation.
+    # Recompute its age before either resting a client or releasing a quota hold.
+    brief=dict(brief,profiles=[p for p in brief.get('profiles',[])
+        if 0<=now-float(p.get('observed_at') or brief['generated_at'])<=900])
     return quota_check.at_limit(brief,str(team_file),now),quota_check.room(brief,str(team_file),now)
 
 def retry_delay(restarts):return min(1800,60*2**min(restarts,5))

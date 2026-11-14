@@ -107,13 +107,14 @@ class Shifts(unittest.TestCase):
             brief=dict(generated_at=1000,profiles=[dict(command='grok',available=False,stale=True,windows=[])])
             stop=unittest.mock.Mock();stop.is_set.side_effect=[False,True]
             result=unittest.mock.Mock(returncode=0,stdout=json.dumps(brief))
-            with patch.object(sys,'argv',['quota_refresh','trial','--reader','ruby','reader.rb']), \
+            with patch.object(sys,'argv',['quota_refresh','trial','--fallback-every','600','--reader-timeout','300','--reader','ruby','reader.rb']), \
                  patch.object(quota_refresh,'op_dir',return_value=op),patch.object(quota_refresh,'CACHE',cache), \
                  patch.object(quota_refresh,'pinned'),patch.object(quota_refresh.threading,'Event',return_value=stop), \
                  patch.object(quota_refresh.signal,'signal'),patch.object(quota_refresh.time,'time',return_value=1000), \
                  patch.object(quota_refresh.subprocess,'run',return_value=result) as run,patch.object(quota_refresh,'alert') as alert:
                 quota_refresh.main()
             self.assertEqual(run.call_args.args[0],['ruby','reader.rb'])
+            self.assertEqual(run.call_args.kwargs['timeout'],300)
             self.assertIn("['grok']",run_state.read(op/'quota-health.json')['error'])
             alert.assert_called_once()
 
@@ -289,6 +290,11 @@ class Shifts(unittest.TestCase):
             self.assertEqual((hits,rooms),({},{}))
             hits,rooms=full_run.quota(dict(generated_at=now,profiles=[profile]),team,now)
             self.assertEqual(hits['a']['reset'],20000)
+            profile['observed_at']=now-901
+            self.assertEqual(full_run.quota(dict(generated_at=now,profiles=[profile]),team,now),({},{}))
+            profile['windows'][0]['percent']=1
+            self.assertEqual(full_run.quota(dict(generated_at=now,profiles=[profile]),team,now),({},{}))
+            profile['observed_at']=now
             profile['stale']=True
             self.assertEqual(full_run.quota(dict(generated_at=now,profiles=[profile]),team,now),({},{}))
 

@@ -29,8 +29,11 @@ def unavailable(brief,routes,now):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('run')
+    p.add_argument('--fallback-every',type=int,default=FALLBACK_EVERY,help='minimum seconds between fallback attempts (at least 600)')
+    p.add_argument('--reader-timeout',type=int,default=240,help='bounded fallback deadline in seconds (at most 300)')
     p.add_argument('--reader',nargs='+',default=COMMAND,help='quota reader argv; must emit the normal ai-usage brief JSON')
     a=p.parse_args()
+    if a.fallback_every<600 or not 1<=a.reader_timeout<=300:p.error('fallback interval must be >=600 and timeout 1..300')
     op=op_dir(a.run);stop=threading.Event();last_alert=0
     for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,lambda *_:stop.set())
     fallback=read(op/'quota-fallback.json',{})
@@ -42,9 +45,9 @@ def main():
             try:
                 brief=read(CACHE,{})
                 now=time.time()
-                if now-brief.get('generated_at',0)>=FALLBACK_AGE and (not fallback or now-fallback.get('at',0)>=FALLBACK_EVERY):
+                if now-brief.get('generated_at',0)>=FALLBACK_AGE and (not fallback or now-fallback.get('at',0)>=a.fallback_every):
                     fallback=dict(at=now,reader=a.reader,phase='started');write(op/'quota-fallback.json',fallback)
-                    result=subprocess.run(a.reader,capture_output=True,text=True,timeout=240)
+                    result=subprocess.run(a.reader,capture_output=True,text=True,timeout=a.reader_timeout)
                     fallback.update(phase='finished',exit=result.returncode,elapsed=time.time()-now);write(op/'quota-fallback.json',fallback)
                     if result.returncode:raise RuntimeError(f'quota refresh exit {result.returncode}')
                     brief=json.loads(result.stdout)

@@ -120,6 +120,11 @@ the installed ai-usage command stalls on transcript-history scans. It must emit
 the normal brief JSON and preserve saved observation ages and unknown values.
 Record the selected reader and deployment; never fabricate zero usage when a
 reset response omits the percentage. Agent quota-hold policy stays separate.
+During a diagnosed dashboard outage, `--fallback-every 600 --reader-timeout 300`
+allows a bounded live adapter to wait for the dashboard's existing quota lock.
+This still reads the cache each minute and only refreshes after two missed
+dashboard updates. Record this override as an outage workaround; do not remove
+the shared lock or mistake it for a repair of the dashboard's refresh.
 
 `mt_map.py create --teams 3 --team-names green yellow blue ...` aligns forces
 with the six-agent roster. A failed setup join now returns failure. Native
