@@ -8,6 +8,9 @@
 # (mt277) world `imac2` for bin/fh, tools/pog.py and the broker: ~/.config/pog/rcon-imac2.pw, a link to the same password
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
+if [ -n "${POG_CLAIM_OWNER:-}" ] && [ "${1:-status}" != status ]; then
+  PYTHONPATH="$root/tools/mt${PYTHONPATH:+:$PYTHONPATH}" python3 -c 'from run_state import claim; claim()'
+fi
 host=${IMAC_HOST:-imac.local}
 dir=${MT_DIR:-/Users/owner/pog-mt}
 app=${MT_FACTORIO_APP:-/Users/owner/code/factorio-mac-2.0.77/factorio.app}

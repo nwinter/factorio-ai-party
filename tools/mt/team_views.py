@@ -248,10 +248,18 @@ def main():
     r = None
     while True:
         try:
-            r = r or Reader()
+            # collect records individual read failures instead of raising them.
+            # Use a fresh connection each pass so a restored server cannot leave
+            # every subsequent snapshot stuck on the old broken socket.
+            r = Reader()
             view = collect(r, op)
         except Exception as e:  # the world away (stopped, restarting): try again next round
-            r, view = None, {"t": time.strftime("%Y-%m-%d %H:%M:%S"), "teams": [], "errors": {"world": str(e)}}
+            view = {"t": time.strftime("%Y-%m-%d %H:%M:%S"), "teams": [], "errors": {"world": str(e)}}
+        finally:
+            if r is not None:
+                try: r.rcon.sock.close()
+                except OSError: pass
+            r = None
         json.dump(view, open(os.path.join(op, "views.json.tmp"), "w"), indent=1)
         os.replace(os.path.join(op, "views.json.tmp"), os.path.join(op, "views.json"))
         with open(os.path.join(op, "views.html.tmp"), "w") as f:

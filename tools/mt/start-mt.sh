@@ -41,6 +41,13 @@ cd "$root"
 run=${1:?usage: start-mt.sh RUN_ID MINUTES [TEAMS_FILE]} minutes=${2:?usage: start-mt.sh RUN_ID MINUTES [TEAMS_FILE]}
 teams_file=${3:-agent/mt/teams-test.tsv}
 world=imac2
+run_mode=${POG_RUN_MODE:-test}
+case $run_mode in test|full) ;; *) echo 'POG_RUN_MODE must be test or full' >&2; exit 64 ;; esac
+if [ "$run_mode" = full ]; then
+  export POG_PANE_WATCH=1 POG_WORLD_RUNNING=1
+  export POG_IDLE_NUDGE=${POG_IDLE_NUDGE:-1}
+  export POG_GAME_TEST=${POG_GAME_TEST:-0}
+fi
 paused_start=${POG_MT_PAUSED_START:-0}
 case $paused_start in 0|1) ;; *) echo "POG_MT_PAUSED_START must be 0 or 1" >&2; exit 64 ;; esac
 if [ "${POG_MT_PUBLIC:-0}" = 1 ]; then export POG_MT_STREAM=1; fi
@@ -146,6 +153,15 @@ op=$root/runs/$run/op
 mkdir -p "$op"
 log() { printf '%s %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$op/start.log"; }
 cp "$teams_file" "$op/teams.tsv"
+if [ "$run_mode" = full ]; then
+  python3 - "$teams_file" <<'PY'
+import sys
+for line in open(sys.argv[1]):
+    if line.strip() and not line.startswith('#'):
+        f=line.split('\t')
+        assert f[2] in ('agy','grok','muse') and f[3] in ('agy','grok','muse','-'), 'unapproved full-run route'
+PY
+fi
 log "mt run $run, $minutes min, teams $(echo $teams) from $teams_file; code $(git rev-parse --short HEAD)$(git diff --quiet HEAD -- tools agent vendor 2>/dev/null || echo ' plus uncommitted changes')"
 
 # 0. The launch tree and its scan (a word naming the mode in it stops the start).
@@ -208,6 +224,24 @@ deploy_runtime() (
   fi
 )
 deploy_runtime
+if [ "$run_mode" = full ]; then
+  python3 - $teams <<'PY'
+import json,sys
+sys.path.insert(0,'tools/mt')
+from run_state import rcon
+names='{'+','.join(json.dumps(t) for t in sys.argv[1:])+'}'
+result=json.loads(rcon('local out={}; for _,n in ipairs('+names+') do local f=game.forces[n]; '
+    'out[n]=f and #f.players or 0 end; rcon.print(helpers.table_to_json(out))'))
+missing=[n for n,count in result.items() if count<1]
+assert not missing, 'map is not ready: join/assign one setup LuaPlayer per force before bot play: '+','.join(missing)
+print('full-run map preflight: every selected force has a LuaPlayer for charting')
+PY
+fi
+if [ "${MT_EXPECT_VERSION:-}" = 2.1.24 ] && [ "${POG_AUTOSAVE:-1}" = 1 ]; then
+  python3 tools/mt/autosave.py arm "$run" | while read -r line; do log "autosave: $line"; done
+  nohup python3 tools/mt/autosave.py watch "$run" >"$op/autosave.log" 2>&1 &
+  echo $! >> "$op/helpers.pid"
+fi
 log "world: $(python3 tools/pog.py --world "$world" rcon "/silent-command rcon.print('tick ' .. game.tick .. (game.tick_paused and ' (paused)' or ''))" 2>&1)"
 # The game's join and leave lines of the setup's team accounts (mt-red, ...) out of the harness chat (multiteam.lua)
 # A character of the player force with no player (mt277: one at red's spawn in mt275-final, left when a setup account
@@ -352,6 +386,7 @@ log "started: $(wc -l < "$op/panes.txt" | tr -d ' ')/$wanted agents${missing:+ (
 
 # 4. Supervisors (agy runs its own loop), per-team scores and chat logs, the team views, idle nudges per team (POG_IDLE_NUDGE=1).
 while read -r t name pane kind; do
+  [ "$run_mode" != full ] || continue
   [ "$kind" = agy ] && continue
   nohup tools/supervise.sh "$pane" "$rundir/$t/$name" >/dev/null 2>&1 &
   echo $! >> "$rundir/$t/supervisors.pid"
@@ -404,7 +439,7 @@ if [ "$POG_MT_VIEWERS" = 1 ]; then
     viewer_args+=(--site "${POG_MT_SITE_CHAT:-https://player-of-games-live.your-subdomain.workers.dev}")
     [ -z "${POG_MT_YOUTUBE:-}" ] || viewer_args+=(--youtube "$POG_MT_YOUTUBE")
   fi
-  nohup python3 tools/mt/viewer_inbox.py "$run" --minutes "$minutes" "${viewer_args[@]}" >"$op/viewer-service.log" 2>&1 &
+  nohup python3 tools/mt/viewer_inbox.py "$run" --minutes "$minutes" --run-mode "$run_mode" "${viewer_args[@]}" >"$op/viewer-service.log" 2>&1 &
   echo $! >> "$op/helpers.pid"
   log "audience: operator inbox and display only; no game relay"
 fi
@@ -419,10 +454,18 @@ if [ "${POG_MT_PUBLIC:-0}" = 1 ]; then
     exit 1
   fi
 fi
-if [ "${POG_IDLE_NUDGE:-0}" = 1 ]; then
+if [ "${POG_IDLE_NUDGE:-0}" = 1 ] && [ "$run_mode" != full ]; then
   for t in $teams; do
     nohup python3 tools/idle_nudge.py --run "$rundir/$t" --world "$world" >"$rundir/$t/idle-nudge.log" 2>&1 &
     echo $! >> "$rundir/$t/supervisors.pid"
   done
+fi
+if [ "$run_mode" = full ]; then
+  python3 tools/mt/full_run.py init "$run" --minutes "$minutes" --max-shifts "${POG_FULL_SHIFTS:-0}" >"$op/full-init.json"
+  nohup python3 tools/mt/full_run.py watch "$run" >"$op/full-watch.log" 2>&1 &
+  echo $! >> "$op/helpers.pid"
+  nohup python3 tools/mt/quota_refresh.py "$run" >"$op/quota-refresh.log" 2>&1 &
+  echo $! >> "$op/helpers.pid"
+  log "persistent world: automatic agent shifts every $minutes minutes; ${POG_FULL_SHIFTS:-0} shift limit (0 means no limit)"
 fi
 log "supervisors, per-team scores and chat logs ($op/TEAM/) and the team views ($op/views.html) running"
