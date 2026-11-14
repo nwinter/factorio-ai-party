@@ -60,6 +60,20 @@ import quota_refresh
 import rehearsal_metrics
 
 class Shifts(unittest.TestCase):
+    def test_unknown_quota_does_not_rest_or_stop_a_playing_agent(self):
+        with tempfile.TemporaryDirectory() as temp:
+            op=Path(temp);team=op/'team.tsv';team.write_text('a\tgrok\tgrok\tgrok-4.7\n')
+            brief=dict(generated_at=1000,profiles=[dict(command='grok',available=False,stale=True,
+                windows=[dict(label='Grok · Weekly',percent=100,resets_at=2000)])])
+            hits,rooms=full_run.quota(brief,team,1000);self.assertEqual((hits,rooms),({},{}))
+            a=dict(name='a',folder=temp,kind='grok',pane='p',started=100,restarts=0)
+            panes=unittest.mock.Mock();panes.status.return_value='working';panes.read.return_value='Working [stop]'
+            with patch.object(full_run,'live_client',return_value=True),patch.object(full_run,'stop_client') as stop, \
+                 patch.object(full_run,'change') as change,patch.object(full_run.quota_rest,'mark') as rest:
+                full_run.watch_agent(op,dict(agents={'a':a}),a,1000,panes,hits,rooms)
+            stop.assert_not_called();change.assert_not_called();rest.assert_not_called()
+            self.assertFalse(a.get('held'));self.assertNotIn('rest_until',a)
+
     def test_quota_cache_age_overrides_saved_availability_without_zeroing_windows(self):
         brief=dict(generated_at=1000,profiles=[dict(command='grok',observed_at=1000,available=True,stale=False,windows=[dict(percent=29)])])
         self.assertEqual(quota_refresh.unavailable(brief,{'grok'},1900),[])
