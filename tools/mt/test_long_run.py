@@ -42,8 +42,31 @@ import public_session
 import launch
 import restore
 import run_state
+import stop_helpers
 
 class Shifts(unittest.TestCase):
+    def test_helper_pid_reuse_does_not_stop_another_run(self):
+        folders=[Path('/private/run/one')]
+        self.assertTrue(stop_helpers.owned(['python3','tools/mt/full_run.py','watch','one'],'one',folders))
+        self.assertTrue(stop_helpers.owned(['bash','tools/score-loop.sh','/private/run/one/op/green'],'one',folders))
+        self.assertFalse(stop_helpers.owned(['python3','tools/mt/full_run.py','watch','two'],'one',folders))
+        self.assertFalse(stop_helpers.owned(['vim','/private/run/one/notes.md'],'one',folders))
+        self.assertFalse(stop_helpers.owned(['python3','tools/mt/full_run.py','watch','one-more'],'one',folders))
+
+    def test_bounded_completion_releases_watch_lock_without_sleep(self):
+        with tempfile.TemporaryDirectory() as temp:
+            op=Path(temp);folder=op/'team';folder.mkdir()
+            run_state.write(op/'full-run.json',dict(phase='running',max_shifts=1,agents={'a':dict(name='a',team='green',kind='grok',folder=str(folder),pane='p',deadline=0,shift=1)}))
+            stop=unittest.mock.Mock();stop.is_set.side_effect=[False,True]
+            with patch.object(full_run,'op_dir',return_value=op),patch.object(full_run,'pinned'),patch.object(full_run,'stop_client'), \
+                 patch.object(full_run,'quota',return_value=({},{})),patch.object(full_run.pane_resume,'HerdrPanes'), \
+                 patch.object(full_run.signal,'signal'),patch.object(full_run.threading,'Event',return_value=stop),patch.object(full_run,'alert') as alert:
+                full_run.watch('test')
+            alert.assert_not_called()
+            stop.wait.assert_not_called()
+            self.assertEqual(run_state.read(op/'full-run.json')['phase'],'shifts-complete')
+            with run_state.lock(op/'full-watch.lock'):pass
+
     def test_quota_reset_after_deadline_starts_next_shift(self):
         a=dict(name='a',deadline=100,shift=1,held=True,hold_reason='quota')
         s=dict(max_shifts=0,agents={'a':a})

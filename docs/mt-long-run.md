@@ -143,6 +143,9 @@ POG_OPERATOR_WAKE (default /Users/owner/code/pog-operator/mt300-wake.jsonl).
 The operator must point that setting at its watched wake file. Receipts and
 shifts.jsonl stay private. One process lock prevents duplicate watchdogs and
 one mutation lock serializes watchdog recovery against manual shift commands.
+Bounded completion releases the watchdog lock immediately. Final helper cleanup
+checks each PID's current script and run/path binding, so a recycled PID belonging
+to another run is left alone.
 
 Final stop, with the same 2.1 pins and claim:
 

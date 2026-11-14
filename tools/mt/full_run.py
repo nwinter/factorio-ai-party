@@ -289,6 +289,7 @@ def watch(run):
                             if now<a['deadline']:watch_agent(op,state,a,now,panes,hits,rooms)
                         if os.environ.get('POG_IDLE_NUDGE','1')=='1':nudge(op,state,now)
                     state['heartbeat']=time.time();indexes(op,state);write(op/'full-run.json',state)
+                    if state['phase']=='shifts-complete':return
             except BlockingIOError:pass # a deliberate operator shift holds the mutation lock
             except Exception as e:alert(op,'watchdog-error',e)
             stop.wait(20)

@@ -34,9 +34,13 @@ if [ -f "$op/full-run.json" ]; then
 fi
 tree=$(cat "$op/launch-tree" 2>/dev/null || pwd)
 rundir=$tree/runs/$run
-for f in "$rundir"/*/supervisors.pid "$rundir"/*/helpers.pid "$rundir"/*/broker.pid "$op/helpers.pid"; do
-  [ -f "$f" ] && while read -r pid; do pkill -P "$pid" 2>/dev/null; kill "$pid" 2>/dev/null || true; done < "$f"
-done
+if [ -f "$op/full-run.json" ]; then
+  python3 tools/mt/stop_helpers.py "$run" --execute || exit $?
+else
+  for f in "$rundir"/*/supervisors.pid "$rundir"/*/helpers.pid "$rundir"/*/broker.pid "$op/helpers.pid"; do
+    [ -f "$f" ] && while read -r pid; do pkill -P "$pid" 2>/dev/null; kill "$pid" 2>/dev/null || true; done < "$f"
+  done
+fi
 python3 tools/pog.py --world "$world" pause || true
 saved=1
 python3 tools/pog.py --world "$world" rcon "/silent-command game.server_save('$run')" >/dev/null 2>&1 || saved=0
