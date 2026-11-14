@@ -81,7 +81,8 @@ local function reset(green)
  defines={inventory={chest=1,character_corpse=2},command={go_to_location=1,stop=2},distraction={none=0},events={}}
  for n,k in ipairs{'on_entity_died','on_entity_damaged','on_object_destroyed','on_script_path_request_finished',
   'on_pre_player_mined_item','on_robot_pre_mined','on_player_mined_entity','on_robot_mined_entity',
-  'on_marked_for_deconstruction','on_player_driving_changed_state','script_raised_destroy','on_gui_opened'} do defines.events[k]=n end
+  'on_marked_for_deconstruction','on_player_driving_changed_state','script_raised_destroy','on_gui_opened',
+  'on_force_cease_fire_changed'} do defines.events[k]=n end
  prototypes={item={}};game={tick=0,forces={},surfaces=surfaces,get_surface=function(n) return surfaces[n] end}
  game.get_player=function(n) return {force=game.forces[n]} end
  for n,t in ipairs(S.mt.order) do
@@ -174,6 +175,11 @@ S.mt.pacts={by_id={[1]={a='blue',b='green',status='active',terms={}}}}
 K.capture_sides();S.mt.pacts.by_id[1].status='ended';event(l,'on_entity_died','green');eq(tx.loss.side,'buyer');audit()
 reset();game.forces.blue.relations.green=true;game.forces.red.relations.green=true
 tx,p,l=sale();midway(l);event(l,'on_entity_died','green');eq(tx.loss.side,'shared');eq(audit().destroyed,2000)
+-- Native cease-fire events preserve even a relationship created and ended between ticks.
+reset();tx,p,l=sale();midway(l);local before_tick=game.tick
+game.forces.blue.relations.green=true;K.on_event{name=defines.events.on_force_cease_fire_changed,added=true}
+game.forces.blue.relations.green=false;K.on_event{name=defines.events.on_force_cease_fire_changed,added=false}
+eq(game.tick,before_tick);event(l,'on_entity_died','green');eq(tx.loss.side,'buyer');audit()
 
 -- Unknown third-party identity/location is absent from all participant data and facts.
 reset();tx,p,l=sale();midway(l);facts={};event(l,'on_entity_died','green')
@@ -228,8 +234,16 @@ reset();refused(function() call('blue','buy',{item='iron-plate',price=20,count=1
 tx,p,l=sale();midway(l);event(l,'on_entity_died','green');local rows=K.measure();local row
 for _,r in ipairs(rows) do if r.team=='blue' then row=r end end
 eq(row.buy_attempts,2);eq(row.buy_short,1);eq(row.buy_short_share,.5);eq(row.reference_fills,1);eq(row.destroyed,2000)
+eq(row.price_ratio_samples,1);eq(row.price_ratio_min,1);eq(row.price_ratio_max,1);eq(row.price_ratio_mean,1)
 eq(row.pool_in,0);eq(row.pool_out,0);eq(K.status('red').measurements,nil);eq(measured,rows)
 -- A busy native pathfinder retries without making the cargo disappear or inferring distance.
+reset();refused(function() call('blue','buy',{item='iron-plate',price=20,count=1000},1) end,'not enough coin')
+refused(function() call('blue','buy',{item='iron-plate',price=1,count=1},2) end,'price: integer')
+call('blue','buy',{item='iron-plate',price=20,count=1},3)
+refused(function() call('blue','buy',{item='iron-plate',price=20,count=1000},1) end,'not enough coin')
+for _,row in ipairs(K.measure()) do if row.team=='blue' then
+ eq(row.buy_attempts,3);eq(row.buy_refusals,2);eq(row.buy_short,1);eq(row.buy_short_refusal_share,.5)
+end end
 reset();local production={['iron-plate']=10,['copper-plate']=20,['steel-plate']=3}
 game.forces.blue.get_item_production_statistics=function() return {get_input_count=function(n) return production[n] end} end
 tx,p,l=sale();K.measure();production['steel-plate']=13;game.tick=game.tick+3600
@@ -250,8 +264,13 @@ call('red','offer',{give={item='iron-plate',count=100},get={item='copper-plate',
 call('blue','offer',{give={item='copper-plate',count=100},get={item='iron-plate',count=100}})
 tick(600);p=S.mt.market.pairs['blue>red'];tx=p.transactions[1];l=tx.legs[1];local other=tx.legs[2]
 midway(l);event(l,'on_entity_died','green');eq(tx.status,'in_transit');eq(l.loot,100);eq(other.loss,nil)
+local marks=K.operator.mt_market({}).markers;eq(#marks,1);eq(marks[1].item,other.item)
 midway(other);other.entity.position=copy(other.destination);tick(660)
 eq(tx.status,'lost');eq(other.delivered,100);eq(audit().destroyed,0)
+reset();post('red').inv.insert{name='iron-plate',count=1000};post('blue').inv.insert{name='copper-plate',count=1000}
+call('red','offer',{give={item='iron-plate',count=1000},get={item='copper-plate',count=1000}})
+call('blue','offer',{give={item='copper-plate',count=1000},get={item='iron-plate',count=1000}})
+tick(600);tx=S.mt.market.pairs['blue>red'].transactions[1];eq(tx.legs[1].count,1000);eq(tx.legs[2].count,1000);audit()
 
 -- Green science can precede Coinage; Post suggestions still point to an available action.
 reset();game.forces.red.technologies['mt-coinage'].researched=false

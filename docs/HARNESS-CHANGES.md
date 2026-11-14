@@ -16,7 +16,10 @@ unmet-team disclosure. Cross-surface movement remains native rocket/pod logistic
 Verified on private 2.1.24: native path/no-path probe, all money branches, bare and raised destruction, buyer custody
 locks, protected damage, actual arrival without charting the seller's base, sticky cease-fire, live-shipment reload,
 platform-local settlement, native no-pad pod, and Post-stock wreck reload preserving rare quality and magazine ammo.
-Focused fixture: 506 assertions; full harness and private two-team run evidence are recorded in
+Focused fixture: 531 assertions; full harness 796/796. Final native checks also pass immediate cease-fire set/end
+and twenty-stack swaps. Private m303: 105 matches, 102 delivered, three pending, zero losses, 150 clean audits;
+all real-agent routes used fallback, so a future rehearsal needs connected land for moving-shipment coverage.
+Full evidence is recorded in
 /Users/owner/code/pog-operator/report-mt303.md and /Users/owner/code/personal/player-of-games/artifacts/mt303.
 
 Players: use `post {position}` on an own chest, then its ID on orders. Deliveries pay only goods actually inserted;

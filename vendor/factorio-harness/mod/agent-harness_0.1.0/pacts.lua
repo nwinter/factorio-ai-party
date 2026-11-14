@@ -679,7 +679,7 @@ return function(api)
     local function selected_post(t,id)
       id=id or 1
       if type(id)~='number' or id~=math.floor(id) or id<1 or not (post(t,id) and post(t,id).valid) then
-        fail('Post unavailable','market {}')
+        fail('Post unavailable','status {}')
       end
       return id
     end
@@ -865,24 +865,28 @@ return function(api)
       local s=state();s.requests[t]=s.requests[t] or {};local journal=s.requests[t]
       local payload=canonical({action=action,args=a});local rec=journal[id]
       if type(rec)=='number' then   -- (mt301) a slimmed old receipt: committed at that tick, never run again
-        return {committed=true,compacted=true,tick=rec,next={action='market',args={}},
+        return {committed=true,compacted=true,tick=rec,next={action='status',args={}},
           note='this request id already committed at tick '..rec..'; its receipt was compacted'}
       end
       if rec then
         if rec.payload~=payload then fail('request id already used with different arguments') end
         if rec.status=='committed' and rec.compacted then
-          return {committed=true,compacted=true,tick=rec.tick,next={action='market',args={}},
+          return {committed=true,compacted=true,tick=rec.tick,next={action='status',args={}},
             note='this request already committed at tick '..rec.tick..'; its full receipt was compacted'}
         end
         if rec.status=='committed' then return copy(rec.result) end
-        error(rec.error or 'request quarantined; call market {}',0)
+        error(rec.error or 'request quarantined; call status {}',0)
       end
       rec={payload=payload,status='started',tick=game.tick};journal[id]=rec
       -- (mt301) the ids in order, so old receipts can drop their full result (K.compact)
       s.request_order=s.request_order or {};s.request_order[t]=s.request_order[t] or {next=1,done=0}
       local ro=s.request_order[t];ro[ro.next]=id;ro.next=ro.next+1
+      if action=='buy' then local m=metrics(t);m.buy_attempts=m.buy_attempts+1 end
       local ok,res=pcall(fn)
-      if not ok then rec.status='refused';rec.error=tostring(res);error(res,0) end
+      if not ok then
+        if action=='buy' then local m=metrics(t);m.buy_refusals=(m.buy_refusals or 0)+1 end
+        rec.status='refused';rec.error=tostring(res);error(res,0)
+      end
       rec.status='committed';rec.result=copy(res);return res
     end
     local function add_order(t,side,a)
@@ -896,7 +900,8 @@ return function(api)
         if type(a.get)~='table' then fail('get: {item,count}') end
         get={item=item(a.get.item,t),count=integer(a.get.count,1,10000,'get.count')}
         if get.item==name then fail('swap needs different items') end
-        if give.count/prototypes.item[give.item].stack_size+get.count/prototypes.item[get.item].stack_size>config('pair_stacks') then
+        local cap=K.freight(t) and config('freight_stacks') or config('pair_stacks')
+        if give.count/prototypes.item[give.item].stack_size+get.count/prototypes.item[get.item].stack_size>cap then
           fail('swap exceeds pair capacity; use smaller give/get counts')
         end
         for k in pairs(a.give) do if k~='item' and k~='count' then fail('give: only item,count') end end
@@ -911,7 +916,7 @@ return function(api)
           (other~='*' and (',"team":"'..other..'"') or '')..(post_id~=1 and (',"post":'..post_id) or '')))
       end
       if side=='buy' then
-        local m=metrics(t);m.buy_attempts=m.buy_attempts+1
+        local m=metrics(t)
         if n*price>s.wallet-s.reserved then m.buy_short=m.buy_short+1;fail('not enough coin; sell something or lower the count') end
       end
       local o={id=s.next,team=t,side=side,item=name,other=other,count=n,price=price,keep=keep,give=give,get=get,
@@ -1072,7 +1077,7 @@ return function(api)
       for n,schema in pairs(BASE_SCHEMA) do if K.open_action(t,n) then schemas[n]=copy(schema) end end
       if K.rung(t)==1 and schemas.cancel then schemas.cancel.side='offer' end
       if K.freight(t) then for _,name in ipairs{'offer','sell','buy','cancel'} do
-        if schemas[name] then schemas[name].post='optional own Post id from market {}; default home (1)' end
+        if schemas[name] then schemas[name].post='optional own Post id from status {}; default home (1)' end
       end end
       if #contacts(t)>1 then
         if schemas.offer then schemas.offer.to='optional contacted team' end
@@ -1161,7 +1166,8 @@ return function(api)
     end
     local function sides(l)
       l.buyer_side=l.buyer_side or {[l.to]=true};l.seller_side=l.seller_side or {[l.from]=true}
-      for _,t in ipairs(mt().order or {}) do
+      for _,other in pairs(game.forces) do
+        local t=other.name
         for _,side in ipairs{{l.to,l.buyer_side},{l.from,l.seller_side}} do
           local f,o=game.forces[side[1]],game.forces[t]
           if f and o and f.get_cease_fire and (f.get_cease_fire(o) or o.get_cease_fire(f)) then side[2][t]=true end
@@ -1217,19 +1223,21 @@ return function(api)
         for _,other in ipairs(tx.legs) do if other~=l and not other.loss and other.delivered<other.count then tx.status='in_transit' end end
         detach(l)
       end)
+      local coin_outcome=({seller='paid to seller',buyer_refund='refunded to buyer',destroyed='destroyed'})[l.loss.coin_destination]
+      local side_label={buyer='buyer',seller='seller',third_party='third party',unattributed='unattributed',shared='both trading'}
       for _,t in ipairs{p.a,p.b} do
         local shown_side=l.loss.side=='third_party' and not M.contacted(t,killer) and 'unattributed' or l.loss.side
-        local who=killer and (killer==t or M.contacted(t,killer)) and (killer..' ('..shown_side..' side)') or (shown_side..' side')
+        local who=killer and (killer==t or M.contacted(t,killer)) and (killer..' ('..side_label[shown_side]..' side)') or (side_label[shown_side]..' side')
         local sf=game.get_surface(l.surface);local at=l.position;local f=game.forces[t]
         local where='a wreck in uncharted territory'
         if sf and f.is_chunk_charted and f.is_chunk_charted(sf,{x=math.floor(at.x/32),y=math.floor(at.y/32)}) then
           where=string.format('a wreck on %s at (%.1f,%.1f)',sf.name,at.x,at.y)
         end
         fact(t,string.format('Shipment #%d lost: %s; %d coin %s; %d %s in %s. Call embargo {"team":"%s"} to stop new matches.',
-          tx.id,who,l.loss.coin,l.loss.coin_destination,l.count-l.delivered,l.item,where,t==p.a and p.b or p.a),true)
+          tx.id,who,l.loss.coin,coin_outcome,l.count-l.delivered,l.item,where,t==p.a and p.b or p.a),true)
       end
       news(p.a,p.b,'shipment_loss',string.format('%s shipment from %s lost (%s, %s); %d coin %s; cargo in wreck on %s at (%.1f,%.1f)',
-        l.to,l.from,l.loss.side,reason,l.loss.coin,l.loss.coin_destination,l.surface,l.position.x,l.position.y),tx.id)
+        l.to,l.from,side_label[l.loss.side]..' side',reason,l.loss.coin,coin_outcome,l.surface,l.position.x,l.position.y),tx.id)
     end
     local function safe(l,e)
       if not l.origin or not l.destination then return true end
@@ -1275,6 +1283,7 @@ return function(api)
     function K.on_event(event)
       local s=mt() and mt().market;if not s or s.fault then return end
       local d=defines.events
+      if event.name==d.on_force_cease_fire_changed then K.capture_sides();return end
       if event.name==d.on_script_path_request_finished then
         local p,tx,l=locate((s.shipment_paths or {})[event.id])
         if not l or l.loss or terminal(tx) then return end
@@ -1390,6 +1399,9 @@ return function(api)
         for _,t in ipairs{ask.team,bid.team} do local m=metrics(t)
           m.fills=m.fills+1;m.trade_coin=m.trade_coin+cost
           if price==PRICES[ask.item] then m.reference_fills=m.reference_fills+1 end
+          local ratio=price/PRICES[ask.item]
+          m.price_ratio_count=(m.price_ratio_count or 0)+1;m.price_ratio_sum=(m.price_ratio_sum or 0)+ratio
+          m.price_ratio_min=math.min(m.price_ratio_min or ratio,ratio);m.price_ratio_max=math.max(m.price_ratio_max or ratio,ratio)
           m.last_fill={price=price,reference=PRICES[ask.item],ratio=price/PRICES[ask.item],count=n,item=ask.item,tick=game.tick}
         end
         p.usage[#p.usage+1]={tick=game.tick,stacks=n*unitcost(ask.item)};tx.status='in_transit'
@@ -1716,8 +1728,12 @@ return function(api)
           escrow=escrow[t] or 0,accounted_coin=s.wallet+(escrow[t] or 0),physical_coin_unassigned=state().physical,
           accounted_coin_minutes_of_plate_output=rate>0 and (s.wallet+(escrow[t] or 0))/rate or nil,
           buy_attempts=m.buy_attempts,buy_short=m.buy_short,buy_short_share=m.buy_attempts>0 and m.buy_short/m.buy_attempts or 0,
+          buy_refusals=m.buy_refusals or 0,buy_short_refusal_share=(m.buy_refusals or 0)>0 and m.buy_short/m.buy_refusals or 0,
           resting_reference_sells=sells,never_filled_reference_sells=unfilled,never_filled_share=sells>0 and unfilled/sells or 0,
           fills=m.fills,reference_fills=m.reference_fills,last_fill=copy(m.last_fill),trade_coin=m.trade_coin,losses=copy(m.losses),destroyed=m.destroyed,
+          price_ratio_min=m.price_ratio_min,price_ratio_max=m.price_ratio_max,
+          price_ratio_mean=m.price_ratio_count and m.price_ratio_sum/m.price_ratio_count or nil,
+          price_ratio_samples=m.price_ratio_count or 0,
           grants=copy(s.payments or {}),pool_in=0,pool_out=0,agents= #roster(t,t),race_rank=ranks[t],
           assumed_two_agent_factor=.4,issuance=state().issuance}
         m.sample={tick=game.tick,produced=produced};rows[#rows+1]=row
@@ -1848,7 +1864,7 @@ return function(api)
           local tx=txget(p,id)
           for _,leg in ipairs(tx.legs) do
             local from,to=post(leg.from,leg.from_post),post(leg.to,leg.to_post)
-            if from and from.valid and to and to.valid then
+            if not leg.loss and leg.delivered<leg.count and from and from.valid and to and to.valid then
               local fraction=math.min(1,math.max(0,(game.tick-tx.tick)/(tx.eta-tx.tick)))
               out.markers[#out.markers+1]={id=tx.id,from=leg.from,to=leg.to,item=leg.item,count=leg.count-leg.delivered,
                 x=leg.position and leg.position.x or from.position.x+(to.position.x-from.position.x)*fraction,
