@@ -15,13 +15,19 @@ from run_state import write, read, alert
 from yt_upload import API, access_token
 
 
+class RequestRejected(RuntimeError):
+    """No broadcast was inserted: request was unsent or explicitly rejected."""
+
+
 class LiveAPI:
     """Short deadline; no blind retry of inserts. Controller owns retry/backoff."""
     def call(self, method, url, body=None):
         try:
             token = access_token()
-        except SystemExit as e:
-            raise RuntimeError('YouTube authorization unavailable') from e
+        except (Exception, SystemExit) as e:
+            # Token acquisition precedes the API request, so retrying cannot
+            # duplicate a broadcast. Do not expose credential-bearing errors.
+            raise RequestRejected('YouTube authorization unavailable') from e
         req = urllib.request.Request(url, method=method,
             headers={'Authorization':'Bearer '+token, 'Content-Type':'application/json'},
             data=json.dumps(body).encode() if body is not None else None)
@@ -30,6 +36,9 @@ class LiveAPI:
                 return json.load(response)
         except urllib.error.HTTPError as e:
             # No credential-bearing request or arbitrary provider payload in logs.
+            e.close()
+            if e.code in (401, 403, 429):
+                raise RequestRejected(f'YouTube HTTP {e.code}') from e
             raise RuntimeError(f'YouTube HTTP {e.code}') from e
 
 
@@ -91,9 +100,19 @@ class Rotation:
                     raise RuntimeError('ambiguous broadcast insert; reconciliation found '+str(len(found))+' matches; operator review required before another insert')
                 bid=found[0]['id']
             else:
+                # A rejected request may wait hours for quota/auth to recover.
+                # YouTube requires a future start time; refresh only while we
+                # know no insertion has succeeded, retaining the unique marker.
+                pending['body']['snippet']['scheduledStartTime'] = (
+                    datetime.datetime.fromtimestamp(now+60, datetime.timezone.utc).isoformat())
                 pending['attempted']=True
                 write(self.path,pending)
-                result=self.api.call('POST', API+'/liveBroadcasts?part=snippet,status,contentDetails', body=pending['body'])
+                try:
+                    result=self.api.call('POST', API+'/liveBroadcasts?part=snippet,status,contentDetails', body=pending['body'])
+                except RequestRejected:
+                    pending['attempted']=False
+                    write(self.path,pending)
+                    raise
                 bid=result['id']
             pending['new']=dict(id=bid, stream_id=receipt['stream_id'], request=pending['body'],
                                 bound=False, session_privacy=self.privacy)

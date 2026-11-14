@@ -1,16 +1,19 @@
 import copy
+import datetime
 import json
+import os
 from pathlib import Path
 import tempfile
 import threading
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 from urllib.parse import urlparse, parse_qs
 
-from broadcast_rotation import Rotation
+from broadcast_rotation import LiveAPI, RequestRejected, Rotation
 from public_session import broadcast, transition
 from public_tours import Tours
-from stream_memory import assess, GIB
+from stream_memory import assess, observe, GIB
 from stream_recovery import Recovery, FrameProgress, recording_space_ok
 from stream_feeds import owns, owned_pids
 from viewer_inbox import BroadcastChat
@@ -23,6 +26,7 @@ class API:
         self.inserts=0
         self.lose_insert=False
         self.lose_bind=False
+        self.reject_insert=False
     def call(self, method, url, body=None):
         q={k:v[0] for k,v in parse_qs(urlparse(url).query).items()}
         if '/liveStreams?' in url:
@@ -37,6 +41,9 @@ class API:
         elif '/transition?' in url:
             self.rows[q['id']]['status']['lifeCycleStatus']=q['broadcastStatus']
         else:
+            if self.reject_insert:
+                self.reject_insert=False
+                raise RequestRejected('YouTube HTTP 403')
             self.inserts+=1
             self.rows['new']={'id':'new','snippet':body['snippet'],
                 'status':dict(body['status'],lifeCycleStatus='created'),'contentDetails':{}}
@@ -78,6 +85,31 @@ class Tests(unittest.TestCase):
         with self.assertRaises(TimeoutError):self.rotation(api).advance(self.receipt(),0,400)
         new,_,_=self.rotation(api).advance(self.receipt(),0,460)
         self.assertEqual(new['id'],'new');self.assertEqual(api.inserts,1)
+    def test_rejected_insert_retries_after_restart_with_a_fresh_start_time(self):
+        api=API();api.reject_insert=True
+        with self.assertRaises(RequestRejected):self.rotation(api).advance(self.receipt(),0,400)
+        pending=json.loads((self.op/'broadcast-rotation.json').read_text())
+        self.assertFalse(pending['attempted']);self.assertEqual(api.inserts,0)
+        self.assertEqual(api.rows['old']['status']['lifeCycleStatus'],'live')
+        new,_,changed=self.rotation(api).advance(self.receipt(),0,86400)
+        self.assertTrue(changed);self.assertEqual(api.inserts,1)
+        self.assertIn(pending['marker'],new['request']['snippet']['description'])
+        self.assertEqual(datetime.datetime.fromisoformat(new['request']['snippet']['scheduledStartTime']).timestamp(),86460)
+    def test_api_distinguishes_rejections_from_uncertain_http_errors(self):
+        for code in (401,403,429,408,500,503):
+            with self.subTest(code=code),patch('broadcast_rotation.access_token',return_value='test-token'),patch(
+                    'broadcast_rotation.urllib.request.urlopen',side_effect=HTTPError('https://example.invalid',code,'error',{},None)):
+                with self.assertRaises(RuntimeError) as caught:
+                    LiveAPI().call('POST','https://example.invalid',{})
+                self.assertEqual(isinstance(caught.exception,RequestRejected),code in (401,403,429))
+                self.assertEqual(str(caught.exception),f'YouTube HTTP {code}')
+    def test_token_failure_never_sends_insert_or_exposes_credentials(self):
+        for error in (SystemExit('private-token'),RuntimeError('private-token')):
+            with self.subTest(error=type(error).__name__),patch('broadcast_rotation.access_token',side_effect=error),patch(
+                    'broadcast_rotation.urllib.request.urlopen') as request:
+                with self.assertRaisesRegex(RequestRejected,'^YouTube authorization unavailable$'):
+                    LiveAPI().call('POST','https://example.invalid',{})
+                request.assert_not_called()
     def test_lost_bind_reply_is_idempotent(self):
         api=API();api.lose_bind=True
         with self.assertRaises(TimeoutError):self.rotation(api).advance(self.receipt(),0,400)
@@ -124,6 +156,24 @@ class Tests(unittest.TestCase):
         self.assertTrue(result['warnings']);self.assertAlmostEqual(result['hours_to_4gib'],4)
         result=assess([base,dict(later,boot='b')]);self.assertEqual(result['hours'],0)
         self.assertNotIn('nonpaged_gib_per_hour',result)
+    def test_memory_early_warning_reaches_operator_wake_file_and_is_throttled(self):
+        wake=self.op/'operator-wake.jsonl'
+        base=dict(at=10000,boot='same',available_bytes=16*GIB,nonpaged_bytes=GIB,
+                  commit_bytes=20*GIB,commit_limit=70*GIB)
+        later=dict(base,at=17200,available_bytes=10*GIB,nonpaged_bytes=1.1*GIB)
+        with patch.dict(os.environ,{'POG_OPERATOR_WAKE':str(wake)}):
+            with patch('stream_memory.sample',return_value=base):observe(self.op)
+            self.assertFalse(wake.exists())
+            with patch('stream_memory.sample',return_value=later):observe(self.op)
+            with patch('stream_memory.sample',return_value=dict(later,at=17260)):observe(self.op)
+            rows=[json.loads(s) for s in wake.read_text().splitlines()]
+            self.assertEqual(len(rows),1)
+            self.assertEqual(rows[0]['event'],'pogwin-memory')
+            self.assertIn('within 12 hours',rows[0]['detail'])
+            self.assertIn('No automatic reboot',rows[0]['detail'])
+            with patch('stream_memory.sample',return_value=dict(later,at=19000)):observe(self.op)
+            self.assertEqual(len(wake.read_text().splitlines()),2)
+        self.assertEqual(len(json.loads((self.op/'memory.json').read_text())['samples']),4)
     def test_multi_day_tours_visit_every_team_and_resume(self):
         rows=[dict(team=t,stale=False,paused=False,research={'done_count':2},science={'spm':3}) for t in ('green','yellow','blue')]
         tours=Tours(self.op);seen={t:0 for t in ('green','yellow','blue')}
