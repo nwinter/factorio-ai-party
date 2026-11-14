@@ -22,7 +22,7 @@ import voices
 from public_race import speech, label, rows, obj, agent_label
 
 PRIORITY = {'death': 9, 'platform_lost': 9, 'fight': 9, 'rocket': 8,
-            'contact': 7, 'pact': 7, 'market': 6, 'research': 5, 'build': 3, 'radio': 1}
+            'contact': 7, 'pact': 7, 'market': 6, 'research': 5, 'tour': 4, 'build': 3, 'radio': 1}
 
 
 def fresh(stamp, now, seconds):
@@ -36,6 +36,12 @@ def candidates(state, now):
     teams = {t['team']: t for t in map(obj, rows(state.get('teams')))
              if t.get('team') in ('green', 'yellow', 'blue', 'red') and not t.get('stale')}
     out, contact_pairs = [], set()
+    tour=obj(state.get('tour'))
+    if (tour.get('team') in teams and tour.get('team') == obj(state.get('camera')).get('team')
+            and fresh(tour.get('at'), now, 40) and isinstance(tour.get('id'),str)):
+        text=speech(tour.get('text'),('Nick','Winter'),500)
+        if text:
+            out.append(dict(id=tour['id'],kind='tour',team=tour['team'],text=text,at=tour['at']))
     for e in map(obj, rows(state.get('events'))):
         team, kind = e.get('team'), e.get('kind')
         text = speech(e.get('text'), ('Nick', 'Winter'), 220)
