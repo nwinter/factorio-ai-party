@@ -160,3 +160,56 @@ receipt before releasing server-claim.txt. Disk growth in native histories and
 journals still requires archiving after closure; only save archives are pruned
 by the automated retention policy. Continuous multi-day streaming recovery is
 owned by separate work, beyond the agent-shift contract here.
+
+## Web searches (mt302)
+
+Nick (d44) kept Grok's web search on for the full run and asked the operator to
+watch whether agents search for the project. The watchdog runs
+`tools/mt/search_watch.py` once a minute and once more when the shifts complete,
+outside the mutation lock; `POG_SEARCH_WATCH=0` turns it off. It reads each
+playing agent's own session logs, read only, from where the last pass stopped:
+
+- Grok: `.grok-home/sessions/<quoted workspace>/*/updates.jsonl`, the completed
+  `Web search` calls (`rawOutput.action`: search with its query and result
+  sources, open_page, find_in_page) and shell commands.
+- Muse: `data/muse/sessions/...` under the workspace's `.native-root`,
+  `web_search`, `web_fetch` and `bash` calls.
+- agy: the run's `brain/*` transcripts, `search_web`, `read_url_content`,
+  `browser_subagent` and `run_command` calls.
+
+Shell commands count only for the http(s) URLs they name; localhost is ignored.
+A query, URL or shell URL that matches `tools/mt/search-terms.json` is a hit:
+
+- project, operator, site, repo, channel and "AI party" terms flag alone;
+- Factorio plus an AI word plus a team, stream or competition word flags as
+  `ai-factorio-run`;
+- another team's color flags next to a team word ("blue team"), and another
+  team's agent names (teams.tsv, the config's `extra_names`, or
+  `op/search-names.txt` lines `team<TAB>name` for chosen display names) flag
+  with a context word.
+
+The agent's own team never flags for its own color or names. Grok's result
+sources are checked against the strong terms only (kind `result`).
+
+Each hit is written once:
+
+- to `/Users/owner/code/pog-operator/search-wake.jsonl` (`{"t","from","text"}`,
+  for the operator's watcher);
+- to `op/alerts.jsonl` (event `search-hit`);
+- to `op/search-hits.jsonl` (the whole record).
+
+Every web call is counted per agent per local hour in `op/search-watch.json`,
+along with the read offsets and the counted call ids, so a restarted watchdog
+neither repeats a hit nor counts a call twice. The hours table:
+
+    python3 tools/mt/search_watch.py hours RUN
+
+To read past team folders without writing anything:
+
+    python3 tools/mt/search_watch.py report ../play-*/runs/RUN
+
+`tools/mt/start-mt.sh` sets POG_WEB_BLOCK for every team run: Grok's search
+excludes factorio.nickwinter.net, YouTube and GitHub hosts, and agy and Muse run
+with their web tools off (each workspace's `.web-state` says so). A query is
+still the agent's own and still reaches the provider, so the watcher reads all
+three kinds.

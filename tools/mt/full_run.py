@@ -23,6 +23,7 @@ import quota_rest
 import pacing
 import pane_resume
 import announce
+import search_watch
 
 ENV_KEYS=('PATH','HOME','USER','LOGNAME','SHELL','TMPDIR','LANG','TZ','HERDR_WORKSPACE_ID',
           'IMAC_HOST','IMAC_PYTHON',
@@ -260,6 +261,19 @@ def nudge(op,state,now):
             reader.op('tell',{'to':a['name'],'text':NUDGE},team=team)
             a['last_nudge']=now;event(op,'idle-nudge',agent=a['name'],team=team)
 
+_search_at=0.0
+
+def searches(op,state,force=False):
+    """The playing agents' web searches and fetched URLs (tools/mt/search_watch.py), once a minute and at the end;
+    a failure alerts and never stops the watch. POG_SEARCH_WATCH=0 turns it off."""
+    global _search_at
+    if os.environ.get('POG_SEARCH_WATCH','1')!='1' or not state or not state.get('agents'):return
+    now=time.time()
+    if not force and now-_search_at<60:return
+    _search_at=now
+    try:search_watch.scan_run(op,state)
+    except Exception as e:alert(op,'search-watch-error',e)
+
 def watch(run):
     op=op_dir(run);stop=threading.Event();panes=pane_resume.HerdrPanes()
     for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,lambda *_:stop.set())
@@ -289,7 +303,9 @@ def watch(run):
                             if now<a['deadline']:watch_agent(op,state,a,now,panes,hits,rooms)
                         if os.environ.get('POG_IDLE_NUDGE','1')=='1':nudge(op,state,now)
                     state['heartbeat']=time.time();indexes(op,state);write(op/'full-run.json',state)
-                    if state['phase']=='shifts-complete':return
+                # Outside the mutation lock: reading transcripts never holds up an operator shift.
+                searches(op,state,force=state['phase']=='shifts-complete')
+                if state['phase']=='shifts-complete':return
             except BlockingIOError:pass # a deliberate operator shift holds the mutation lock
             except Exception as e:alert(op,'watchdog-error',e)
             stop.wait(20)
