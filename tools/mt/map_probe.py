@@ -111,6 +111,8 @@ def probe(names, directory, timeout=1800):
                 s=state();assert not s.get('fault'),s
                 legs=[l for l in s['legs'] if l['from']==seller and l['to']==buyer]
                 observed.append(s)
+                with (directory/(seller+'-'+buyer+'-observations.jsonl')).open('a') as out:
+                    out.write(json.dumps(s)+'\n')
                 if legs:
                     leg=legs[-1]
                     unit_seen |= leg.get('mode')=='unit'
