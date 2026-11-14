@@ -13,6 +13,7 @@ index=${POG_PLAYER_INDEX:-1}
 if [ -n "${POG_BOT:-}" ]; then target="--bot $POG_BOT"; else target="--player $index"; fi
 dir="$root/runs/$run/$ws"
 mkdir -p "$dir/shots"
+if [ "${POG_CONTINUOUS:-0}" = 1 ]; then touch "$dir/.continuous"; fi
 mode=${POG_TIME_MODE:-realtime}
 time_text=$(cat "$root/agent/time-$mode.md")
 coop=""
@@ -39,13 +40,14 @@ else
   fi
   conn="POG_RCON_PASSWORD_FILE=\"$keys/rcon-$world.pw\""
 fi
+clock_env="export FH_DEADLINE_FILE=\"$dir/deadline.txt\""
+if [ "${POG_CONTINUOUS:-0}" = 1 ]; then clock_env="unset FH_DEADLINE_FILE; export FH_CONTINUOUS=1 POG_CONTINUOUS=1"; fi
 cat > "$dir/fh" <<EOS
 #!/usr/bin/env bash
 export POG_WORLD=$world $conn
 # The agents' wait cap (tools/sleepcap/run) is not for fh's own waits.
 export POG_SLEEP_CAP=0
-# The clock: line on every reply ends with the time left until this deadline.
-export FH_DEADLINE_FILE="$dir/deadline.txt"
+$clock_env
 # fh help TOPIC prints ref/TOPIC.md; an argument refusal names the topic of the call (ref/commands.tsv).
 export FH_REF_DIR="$dir/ref"
 # Every request and reply is journaled for the run analysis.
@@ -94,7 +96,11 @@ client=\$(printf '%s\n' "\$out" | sed -n 's/^client: //p')
 echo "screenshot failed: \${client:-the game client} rendered it but it was not copied into shots/ within 30 s (operator: is tools/shot-sync.sh running?)" >&2; exit 1
 EOS
 chmod +x "$dir/fh" "$dir/shot"
-date -v+"${minutes}"M "+%Y-%m-%d %H:%M %Z" > "$dir/deadline.txt"
+if [ "${POG_CONTINUOUS:-0}" != 1 ]; then
+  date -v+"${minutes}"M "+%Y-%m-%d %H:%M %Z" > "$dir/deadline.txt"
+else
+  rm -f "$dir/deadline.txt"
+fi
 # A later shift of the same world (tools/start-team.sh, POG_RESUME): the agent starts from its notes of that shift.
 # (d24 batch175 QR2) of the newest run up the resumed-from chain it played in (tools/full_tools.py notes-from): a start
 # killed before it reached this agent, or one where it made no request and left its notes as carried, is skipped.

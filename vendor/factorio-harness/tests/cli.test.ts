@@ -755,6 +755,8 @@ test('the clock line carries the time left from the deadline file',async()=>{
     assert.match(viaEnv.stdout,/clock: "game 1m; \+5s since your last request; deadline in 2[23]m"/);
     const viaFlag=await compact(port,['call','status','--deadline-file',`${dir}/deadline.txt`]);
     assert.match(viaFlag.stdout,/deadline in 2[23]m/);
+    const continuous=await compact(port,['call','status','--deadline-file',`${dir}/deadline.txt`],{FH_CONTINUOUS:'1',FH_DEADLINE_FILE:`${dir}/deadline.txt`});
+    assert.equal(continuous.code,0); assert.doesNotMatch(continuous.stdout,/deadline|time left/);
     const missing=await compact(port,['call','status','--deadline-file',`${dir}/none.txt`]);
     assert.equal(missing.code,0); assert.doesNotMatch(missing.stdout,/deadline/);
   });

@@ -883,15 +883,8 @@ return function(api)
         if contacted(t, w) then return string.format('The run is over: %s wiped every other team.%s', w, score) end
         return 'The run is over.' .. score
       end
-      local parts, own = {}, nil
-      for _, row in ipairs(res.standings or {}) do
-        if row.team == t then own = row end
-        if contacted(t, row.team) then parts[#parts+1] = (row.team == t and 'our team' or row.team) .. ' ' .. row.milestones end
-      end
-      if #parts > 1 then
-        return 'The run is over at its time limit, ranked by milestones toward the edge: ' .. table.concat(parts, ', ') .. '.'
-      end
-      return string.format('The run is over at its time limit; our team reached %d milestones toward the edge.', own and own.milestones or 0)
+      -- An operator stop discloses neither a time limit nor the spectator ranking.
+      return 'The run is over.' .. score
     end
     local function public_text(res)
       if res.reason == 'edge' then
@@ -903,7 +896,7 @@ return function(api)
       elseif res.reason == 'wipe' then return res.winner .. ' wiped every other team and wins' end
       local top = {}
       for _, row in ipairs(res.standings) do if row.rank == 1 then top[#top+1] = row.team end end
-      return 'Time is up; ranked by milestones toward the edge: ' .. table.concat(top, ' and ') .. (#top > 1 and ' share the lead' or ' leads')
+      return 'The run has ended; final milestones toward the edge: ' .. table.concat(top, ' and ') .. (#top > 1 and ' share the lead' or ' leads')
     end
     function G.finish(reason, r)
       local g = gs()
