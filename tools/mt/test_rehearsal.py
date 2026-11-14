@@ -2,6 +2,7 @@
 import math
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -9,9 +10,22 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 import mt_map
 import rehearse
 import stop_helpers
+import map_probe
 
 
 class Planning(unittest.TestCase):
+    def test_timer_fallback_fails_map_acceptance_and_pauses(self):
+        teams={n:dict(post=dict(x=i*1300,y=0),iron=0) for i,n in enumerate(['green','yellow'])}
+        before=dict(teams=teams,legs=[])
+        fallback=dict(teams=teams,legs=[dict(mode='timer',state='in_transit',id=1,**{'from':'green','to':'yellow'})])
+        with tempfile.TemporaryDirectory() as d,patch.object(map_probe,'pinned'),patch.object(map_probe,'setup',return_value={}), \
+             patch.object(map_probe,'native_path',return_value={'result':{'points':100}}),patch.object(map_probe,'call'), \
+             patch.object(map_probe,'lua') as lua,patch.object(map_probe,'state',side_effect=[before,fallback]):
+            with self.assertRaisesRegex(AssertionError,'no connected native freight path'):
+                map_probe.probe(['green','yellow'],Path(d))
+            self.assertFalse((Path(d)/'freight-proof.json').exists())
+            self.assertIn('game.tick_paused=true',lua.call_args.args[0])
+
     def test_metrics_cleanup_checks_exact_run(self):
         self.assertTrue(stop_helpers.owned(['python3','tools/mt/rehearsal_metrics.py','r307'],'r307',[]))
         self.assertFalse(stop_helpers.owned(['python3','tools/mt/rehearsal_metrics.py','r307a'],'r307',[]))
