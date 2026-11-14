@@ -698,7 +698,7 @@ return function(api)
           local tick = r.milestones[m[1]]
           if tick then
             n = n + 1; names[#names+1] = m[1]
-            if not last or tick > last then last, latest = tick, m[1] end
+            if not last or tick >= last then last, latest = tick, m[1] end   -- equal ticks: the later in the race
           end
         end
         rows[#rows+1] = {team=t, milestones=n, of=#MILESTONES, reached=names, latest=latest, tick=last, wiped=r.wiped and true or nil}
@@ -903,6 +903,7 @@ return function(api)
         own = own + mine
       end
       scores[t] = math.min(cap, own / #allies)
+      for u, v in pairs(scores) do scores[u] = math.floor(v * 1000 + 0.5) / 1000 end   -- 1.2, not 1.19999...
       return scores, 'allied'
     end
     function G.arrival(t, pl, tick)
