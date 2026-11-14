@@ -14,6 +14,7 @@ import time
 from run_state import ROOT,alert,command,lock,op_dir,pinned,read,rcon,write
 import full_run
 import restore
+from map_probe import call
 
 
 def weekly_usage(profile):
@@ -88,6 +89,12 @@ def main():
             'for _,n in ipairs('+names+') do local f=game.forces[n]; out.teams[n]={players=#f.players,connected=#f.connected_players} end; '
             'rcon.print(helpers.table_to_json(out))'))
         record(initial=initial,baseline=os.environ.get('POG_MT_FRESH_SAVE'),agent_count=len(first['agents']))
+        game=call('mt_game');market=call('mt_market')
+        assert game['config']['target']=='solar-system-edge' and not game['config'].get('deadline_tick'),game['config']
+        assert not game.get('result') and game['config'].get('wipe_win')!='auto',game
+        assert all(market['settings'].get(k) is True for k in ('destructible','wreck','research_enabled')),market['settings']
+        assert not market['audit']['faults'],market['audit']
+        record(game_preflight=game,market_preflight=market)
         with lock(op/'agents.lock'):
             first=read(op/'full-run.json')
             end=(int(time.time()/60)+a.shift_minutes+1)*60
