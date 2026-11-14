@@ -50,3 +50,76 @@ its receipt is not proof of a later unobserved engine write.
 The source archive, actual loaded tick, identities, and post-restore health must
 be recorded in the run's operator receipt. Never claim a hash alone proves the
 engine loaded or that the agent resumed.
+
+## World and shift lifetime
+
+    POG_MT_FRESH=1 POG_MT_PUBLIC=0 POG_FULL_TOOLS=1 \
+      agent-python tools/mt/launch.py RUN 90 --run-mode full --execute
+
+MINUTES is the agent shift length. Test mode remains the default and retains its
+90-minute launch/publication bounds. Full mode starts a persistent supervisor:
+it replaces agent conversations at shift boundaries without calling stop-mt,
+restarting the server, pausing the game, touching OBS, or completing YouTube.
+POG_FULL_SHIFTS=2 limits the rehearsal to two shifts; default 0 repeats until
+explicitly stopped. After the limited shifts the world and save copier remain
+running until the operator's explicit final stop.
+
+Public staging is still separate. After reviewing the actual staged picture:
+
+    agent-python tools/mt/public_session.py start RUN --run-mode full --execute
+
+This defaults to an unlisted broadcast created by public_broadcast.py. Public
+visibility requires both explicit creation with --privacy public and explicit
+public_session --public. Full publication has no time deadline. A publication
+failure alerts and retains the world; an explicit clean session stop performs
+final run teardown. A shift command never calls the publication lifecycle.
+Viewer inbox lifetime also follows full mode, always operator/display-only.
+
+## Agent changes and supervision
+
+    agent-python tools/mt/full_run.py shift RUN --select green --minutes 90 --execute
+    agent-python tools/mt/full_run.py shift RUN --select all --minutes 90 --execute
+    agent-python tools/mt/full_run.py hold RUN --select muse --execute
+    agent-python tools/mt/full_run.py release RUN --select muse --minutes 90 --execute
+    agent-python tools/mt/full_run.py status RUN
+
+Without --execute, mutation commands print a plan. Selection accepts a team,
+one stable routing ID, or all. The same anonymous pair tree, broker sockets,
+provider proxy and native process scope remain. Selected agents stop before
+notes/journals are snapshotted into their own pair's private handoff directory.
+POG_RESUME and POG_RESUME_DIR feed the normal notes handover. Bot state and chosen
+profiles stay in the world. Operator manifests and colored names are never added
+to the playing-agent environment. No replacement provider is selected.
+
+The native process wrapper writes its PID/exit receipt. The host watches every
+pane, verifies process ownership, stops descendants as a process group, and
+restarts dead clients with notes. Provider stops back off; four retries per
+shift exhaust the automatic retry budget and alert. Login errors hold the agent.
+Quota at-limit windows use the existing route/model selection and quota_rest.py
+format/push. Rest is firm until the actual reset, survives shifts, and suppresses
+nudges. A limit screen with unknown reset is held until fresh quota shows room
+or an explicit release. Stale telemetry never invents a reset or available quota.
+
+POG_IDLE_NUDGE defaults to 1 in full mode. Scoped idle_report and scoped tells
+use only that pair; running queue lanes and quota rests suppress reminders. The
+message asks for own status/notes and productive teammate work without rival
+hints. Interactive idle prompts are nudged only after local requests go quiet.
+The existing unscoped single-team idle helper is not used by full mode.
+
+Live shift announcements use the existing /v1/announce path as Operator and
+contain only counts and lifecycle facts. Closed runs log the same lines with
+sent:false, making no site mutation. Alerts append to op/alerts.jsonl and
+POG_OPERATOR_WAKE (default /Users/owner/code/pog-operator/mt300-wake.jsonl).
+The operator must point that setting at its watched wake file. Receipts and
+shifts.jsonl stay private. One process lock prevents duplicate watchdogs and
+one mutation lock serializes watchdog recovery against manual shift commands.
+
+Final stop, with the same 2.1 pins and claim:
+
+    POG_STOP_WORLD=1 tools/mt/stop-mt.sh RUN
+
+Check stopped clients, server status, external save receipts and any broadcast
+receipt before releasing server-claim.txt. Disk growth in native histories and
+journals still requires archiving after closure; only save archives are pruned
+by the automated retention policy. Continuous multi-day streaming recovery is
+owned by separate work, beyond the agent-shift contract here.

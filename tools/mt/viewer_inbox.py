@@ -17,8 +17,10 @@ import viewers
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('run');p.add_argument('--minutes',type=int,required=True)
+    p.add_argument('--run-mode',choices=['test','full'],default='test')
     viewers.add_args(p);a=p.parse_args()
-    assert a.run and '/' not in a.run and not a.run.startswith('.') and 1<=a.minutes<=90
+    assert a.run and '/' not in a.run and not a.run.startswith('.') and a.minutes>=1
+    assert a.run_mode=='full' or a.minutes<=90
     assert not a.relay and not a.broadcast_roster,'playing-agent relay is not supported'
     op=ROOT/'runs'/a.run/'op';assert op.is_dir()
     a.operator_only=True
@@ -31,7 +33,7 @@ def main():
         nonlocal stop
         stop=True
     signal.signal(signal.SIGTERM,halt);signal.signal(signal.SIGINT,halt)
-    while not stop and time.time()<deadline:
+    while not stop and (a.run_mode=='full' or time.time()<deadline):
         try:
             view=json.loads((op/'views.json').read_text())
             aliases=[a.get('display_name') for t in view.get('teams',[]) for a in t.get('agents',[])]

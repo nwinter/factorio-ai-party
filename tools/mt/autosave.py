@@ -64,6 +64,10 @@ def copy_new(run, keep=12):
             stamp=stat(path)
             key=json.dumps([row['sequence'],row['tick'],stamp])
             if index['seen'].get(name)==key: continue
+            # server_save queues its write. A new tick record can briefly name the
+            # previous contents of a reused slot; do not mislabel that old ZIP.
+            previous=index['seen'].get(name)
+            if previous and json.loads(previous)[2]==stamp: continue
             digest=remote('import hashlib,sys; h=hashlib.sha256(); f=open(sys.argv[1],"rb"); '
                           '[h.update(b) for b in iter(lambda:f.read(1048576),b"")]; print(h.hexdigest())',path).strip()
             partial=dest/(name+'.partial')

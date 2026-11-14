@@ -21,8 +21,10 @@ def main():
     p.add_argument('run');p.add_argument('minutes',type=int)
     p.add_argument('--roster',type=Path,default=ROOT/'agent/mt/teams-test.tsv')
     p.add_argument('--execute',action='store_true')
+    p.add_argument('--run-mode',choices=['test','full'],default='test')
     a=p.parse_args()
-    assert re.fullmatch(r'[A-Za-z0-9_-]{1,16}',a.run) and 1<=a.minutes<=90
+    assert re.fullmatch(r'[A-Za-z0-9_-]{1,16}',a.run) and a.minutes>=1
+    assert a.run_mode=='full' or a.minutes<=90, 'test runs are bounded to 90 minutes'
     assert a.roster.is_file()
     op=ROOT/'runs'/a.run/'op'
     assert not (op/'launch-process.json').exists() and not (op/'panes.txt').exists(),'run already started; choose a new ID'
@@ -31,16 +33,22 @@ def main():
              MT_MODS_FILE=str(ROOT/'agent/mt/mods-2.1.24.tsv'),POG_KB='space-age-2.1.24',
              POG_MT_TREE='/Users/owner/code/personal/player-of-games/worktrees/pog-p21')
     env.setdefault('POG_MT_FRESH_SAVE','/Users/owner/code/personal/player-of-games/artifacts/port21-p3/mt-baseline21.zip')
+    env['POG_RUN_MODE']=a.run_mode
+    if a.run_mode=='full':
+        env.setdefault('POG_GAME_TEST','0')
+        env.setdefault('POG_IDLE_NUDGE','1')
     cmd=['bash',str(ROOT/'tools/mt/start-mt.sh'),a.run,str(a.minutes),str(a.roster.resolve())]
     if not a.execute:
         subprocess.run(cmd,cwd=ROOT,env=dict(env,POG_DRY_RUN='1'),check=True)
         return
+    from run_state import claim
+    claim()
     state=subprocess.check_output(['bash',str(ROOT/'tools/mt/imac_mt.sh'),'status'],cwd=ROOT,env=env,text=True)
     assert state.startswith('not running'),'one private server at a time; stop the current run'
     op.mkdir(parents=True,exist_ok=True)
     with (op/'start-public.log').open('a') as log:
         child=subprocess.Popen(cmd,cwd=ROOT,env=env,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
-    (op/'launch-process.json').write_text(json.dumps({'pid':child.pid,'run':a.run,'minutes':a.minutes,'command':cmd,'version':'2.1.24'},indent=2))
+    (op/'launch-process.json').write_text(json.dumps({'pid':child.pid,'run':a.run,'minutes':a.minutes,'run_mode':a.run_mode,'command':cmd,'version':'2.1.24'},indent=2))
     print('launcher',child.pid,op/'start-public.log')
 
 

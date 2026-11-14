@@ -10,6 +10,7 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 # A later shift (tools/start-team.sh, POG_RESUME): one neutral sentence on the prompt, no advice.
 resume_sentence='This is a later shift of the same world: your bot and the factory are as the last shift left them. The world stays paused at the start until every agent has launched (a few minutes), then resumes by itself. Read the new deadline.txt; notes.md is where you left off, with a full read needed only if no recovery brief arrived.'
+[ "${POG_WORLD_RUNNING:-0}" != 1 ] || resume_sentence='This is a later shift of the same world, which kept running during the handoff. Keep your chosen identity. Read the new deadline.txt and your own notes.md, check current status and coordinate with your teammate before continuing.'
 if [ "${1:-}" = --resume-sentence ]; then echo "$resume_sentence"; exit 0; fi
 . "$root/tools/profile-flags.sh"
 # agy's loop (.agy-loop.sh) for workspace $dir, model $model, fresh-start limit $limit and prompt file $prompt.
@@ -231,6 +232,7 @@ new_pane() {
 }
 
 run_prepared() {
+  local prepared=$2
   if [ "${POG_ISOLATED:-0}" = 1 ]; then
     python3 - "$2" <<'PY'
 from pathlib import Path
@@ -239,7 +241,12 @@ p=Path(sys.argv[1]);text=p.read_text()
 guard='[ "${POG_SCOPE_ACTIVE:-}" = 1 ] || { echo "launch through the prepared process scope" >&2; exit 1; }\n'
 p.write_text(text.replace('#!/usr/bin/env bash\n','#!/usr/bin/env bash\n'+guard,1))
 PY
-    herdr pane run "$1" "python3 '$root/tools/agent-scope.py' '$root' '${POG_PROXY:?isolated clients require their provider proxy}' '$2'" >/dev/null
+    if [ "${POG_PANE_WATCH:-0}" = 1 ]; then
+      prepared="$dir/.$kind-watch.sh"
+      printf '%s\n' '#!/usr/bin/env bash' "exec python3 '$root/tools/agent-watch-run.py' '$dir' '$2'" > "$prepared"
+      chmod +x "$prepared"
+    fi
+    herdr pane run "$1" "python3 '$root/tools/agent-scope.py' '$root' '${POG_PROXY:?isolated clients require their provider proxy}' '$prepared'" >/dev/null
   else herdr pane run "$1" "'$2'" >/dev/null; fi
 }
 

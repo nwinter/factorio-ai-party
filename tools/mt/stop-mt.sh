@@ -29,6 +29,9 @@ PY
 if [ -f "$op/public-stream.json" ]; then
   python3 tools/mt/public_stream.py stop "$run" || exit $?
 fi
+if [ -f "$op/full-run.json" ]; then
+  python3 tools/mt/full_run.py shutdown "$run" --execute || exit $?
+fi
 tree=$(cat "$op/launch-tree" 2>/dev/null || pwd)
 rundir=$tree/runs/$run
 for f in "$rundir"/*/supervisors.pid "$rundir"/*/helpers.pid "$rundir"/*/broker.pid "$op/helpers.pid"; do
@@ -38,6 +41,9 @@ python3 tools/pog.py --world "$world" pause || true
 saved=1
 python3 tools/pog.py --world "$world" rcon "/silent-command game.server_save('$run')" >/dev/null 2>&1 || saved=0
 python3 tools/pog.py --world "$world" save >/dev/null 2>&1 || true
+if [ -f "$op/autosave-copy.json" ]; then
+  python3 tools/mt/autosave.py once "$run" >"$op/autosave-final.json" 2>"$op/autosave-final.err" || true
+fi
 rm -rf "$rundir"/*/.keys
 # The agents' panes (as tools/shift-change.sh closes a shift's); a process left after that (mt-smoke1: a Grok shell's
 # fh call, its parent gone) is listed by PID for the operator, not killed here.

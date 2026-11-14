@@ -38,7 +38,8 @@ def broadcast(api, receipt):
     rows = api.call('GET', API+'/liveBroadcasts?'+urlencode({'id':receipt['id'], 'part':'id,status,contentDetails'}))['items']
     assert len(rows) == 1, 'broadcast missing'
     row = rows[0]
-    assert row['status']['privacyStatus'] == 'unlisted', 'test must stay unlisted'
+    expected = receipt.get('session_privacy', 'unlisted')
+    assert row['status']['privacyStatus'] == expected, 'broadcast privacy changed'
     assert row['contentDetails']['boundStreamId'] == receipt['stream_id'], 'broadcast binding changed'
     return row
 
@@ -105,17 +106,21 @@ def owned_pid(pid, run):
         return False
 
 
-def supervise(run, minutes):
+def supervise(run, minutes, run_mode='test', public=False):
     op = ROOT/'runs'/run/'op'
     lock = open('/tmp/pog-team-test-session.lock', 'a+')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     receipt = read(op/'broadcast.json')
-    assert receipt['bound'] and receipt['request']['status']['privacyStatus'] == 'unlisted'
+    privacy = 'public' if public else 'unlisted'
+    assert not public or run_mode == 'full', 'public needs explicit full mode'
+    assert receipt['bound'] and receipt['request']['status']['privacyStatus'] == privacy
+    receipt['session_privacy'] = privacy
     ready = read(op/'public-stream.json')
     assert ready['phase'] == 'ready' and ready['run'] == run and ready['root'] == str(ROOT)
     assert os.environ.get('MT_DIR') == '/Users/owner/pog-mt21' and os.environ.get('MT_EXPECT_VERSION') == '2.1.24', 'missing isolated 2.1 pins'
     expected = roster_of(op)
-    state = {'pid':os.getpid(), 'run':run, 'video':receipt['id'], 'phase':'starting', 'started':time.time(), 'deadline':time.time()+minutes*60}
+    state = {'pid':os.getpid(), 'run':run, 'video':receipt['id'], 'phase':'starting', 'started':time.time(),
+             'run_mode':run_mode, 'privacy':privacy, 'deadline':None if run_mode=='full' else time.time()+minutes*60}
     statefile = op/'public-session.json'
     write(statefile,state)
     stop = threading.Event()
@@ -152,7 +157,7 @@ def supervise(run, minutes):
         write(statefile,state)
         print('LIVE https://factorio.nickwinter.net/live/ https://www.youtube.com/watch?v='+receipt['id'],flush=True)
         feed_failures = 0
-        while time.time() < state['deadline'] and not stop.wait(10):
+        while (state['deadline'] is None or time.time() < state['deadline']) and not stop.wait(10):
             if publisher.poll() is not None:
                 raise RuntimeError('site publisher exited')
             if read(op/'public-stream.json').get('phase') != 'ready':
@@ -203,10 +208,14 @@ def supervise(run, minutes):
                 subprocess.run([sys.executable,str(MAIN/'site/push_live.py'),'--team-tests-off'],check=True,timeout=40)
         except Exception as e:
             errors.append('site off: '+str(e))
-        try:
-            subprocess.run([str(ROOT/'tools/mt/stop-mt.sh'),run],cwd=ROOT,env=dict(os.environ,POG_STOP_WORLD='1'),check=True,timeout=180)
-        except Exception as e:
-            errors.append('run stop: '+str(e))
+        if run_mode == 'test' or not errors:
+            try:
+                subprocess.run([str(ROOT/'tools/mt/stop-mt.sh'),run],cwd=ROOT,env=dict(os.environ,POG_STOP_WORLD='1'),check=True,timeout=180)
+            except Exception as e:
+                errors.append('run stop: '+str(e))
+        else:
+            from run_state import alert
+            alert(op, 'broadcast-failed-world-retained', '; '.join(errors))
         state.update(phase='stopped' if not errors else 'needs-review', ended=time.time(), errors=errors)
         write(statefile,state)
         print(json.dumps(state),flush=True)
@@ -218,12 +227,15 @@ def main():
     p.add_argument('run')
     p.add_argument('--minutes',type=int,default=40)
     p.add_argument('--execute',action='store_true')
+    p.add_argument('--run-mode',choices=['test','full'],default='test')
+    p.add_argument('--public',action='store_true',help='explicitly permit a public full-run broadcast')
     a = p.parse_args()
     assert a.run and '/' not in a.run and not a.run.startswith('.')
-    assert 1 <= a.minutes <= 90
+    assert a.minutes >= 1 and (a.run_mode=='full' or a.minutes<=90)
+    assert not a.public or a.run_mode=='full', '--public requires --run-mode full'
     op = ROOT/'runs'/a.run/'op'; statefile = op/'public-session.json'
     if a.action == '_supervise':
-        supervise(a.run,a.minutes)
+        supervise(a.run,a.minutes,a.run_mode,a.public)
     elif a.action == 'status':
         print(json.dumps(read(statefile),indent=2))
     elif a.action == 'stop':
@@ -234,12 +246,14 @@ def main():
             raise SystemExit('owner not running: inspect receipt and stop explicitly')
     else:
         if not a.execute:
-            print(f'Plan: go live unlisted, publish site test mode, stop/save {a.run} after {a.minutes} minutes. Inspect staged OBS before --execute.')
+            end = 'until explicit stop; agent shifts leave the broadcast running' if a.run_mode=='full' else f'for {a.minutes} minutes, then stop/save'
+            print(f'Plan: go live {"public" if a.public else "unlisted"}, publish site test mode, {end}. Inspect staged OBS before --execute.')
             return
         if statefile.exists() and owned_pid(read(statefile).get('pid'),a.run):
             raise SystemExit('session already running')
         with (op/'public-session.log').open('a') as log:
-            child=subprocess.Popen([sys.executable,str(Path(__file__).resolve()),'_supervise',a.run,'--minutes',str(a.minutes)],cwd=ROOT,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+            child=subprocess.Popen([sys.executable,str(Path(__file__).resolve()),'_supervise',a.run,'--minutes',str(a.minutes),
+                                    '--run-mode',a.run_mode,*(['--public'] if a.public else [])],cwd=ROOT,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
         print('supervisor',child.pid,op/'public-session.log')
 
 
