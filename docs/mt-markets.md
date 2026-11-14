@@ -169,3 +169,26 @@ spills change neither physical circulation nor issuance. The home-Post wallet sp
 provides exactly 1 coin -> 1 coin, with automatic recycling, productivity and quality upgrades disabled; it is not a
 mint recipe. Audit now reads wallets + payment escrow + circulating physical coin = cumulative issuance (grants
 and research income); reservations remain part of wallets. Native and unit evidence is in report-mt295.md.
+
+## Full-game profile (mt302)
+`mt_market {profile="full"}` sets a full game's market in one call. `tools/mt/start-mt.sh` sends it in
+`POG_RUN_MODE=full` (`launch.py --run-mode full`) and refuses to start if it is refused. Test runs and prepared-base
+fixtures keep the settings their save holds (Posts indestructible, ground spills, research income as the fixture set).
+- `destructible=true`: home Posts can be destroyed. A destroyed Post is rebuilt empty at the team's home on the next
+  market pass (each second). Goods inside it go with it; only its coin is accounted.
+- `raid_share=0.25`: the destroyed home Post debits 25% of the wallet. Unmatched buy orders are cancelled first if
+  the reserve would block the debit; matched coin is already in escrow and untouched.
+- `wreck=true`: that coin lands in a coin wreck, a character corpse at the Post's spot. Inserters and robots cannot
+  take from it, and `order_deconstruction` refuses it. Any team's character loots it with `mine {position, name:
+  "character-corpse"}` (in reach, on a charted chunk). Coin put into any team's Post credits that team within a
+  second. If no wreck can be made, the coin goes on the ground as before.
+- Any other entity holding coin that dies (chest, belt, inserter hand, recycler, vehicle) spills its coin into a wreck
+  the same way. A character keeps its coin: the game leaves it in its corpse, for any team to loot.
+- Coin in a recycler comes back as coin (`mt-coin-recycling`, one for one). With nothing in front, the recycler drops
+  its first result on the ground ahead of it, the rest into its output.
+- Tier grants at their defaults, research income on (`research_enabled`, `growth_coin_per_rate`, `level_rate`).
+- Pacts keep pacts.lua's DEFAULTS (`end_notice_s` 0, `share_max_score` 1.4, `expires_min` 60, all terms on). The
+  `mt_market` reply shows `settings` and `pact_settings`.
+
+The raided team's agents get one waking line ("Home Trading Post destroyed: N coin spilled in the wreck."); no other
+team gets it. Native proof on 2.1.24: report-mt302.md, artifacts/mt302/mnative-*.json.

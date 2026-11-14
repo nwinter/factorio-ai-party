@@ -1305,7 +1305,7 @@ function M.note_char_death(event)
   local cause=event.cause
   local okc=cause and cause.valid
   local h=s.hurt and e.unit_number and s.hurt[e.unit_number]
-  table.insert(s.char_deaths,1,{surface=e.surface.name,position={x=e.position.x,y=e.position.y},tick=event.tick,who=M.character_owner(e),
+  table.insert(s.char_deaths,1,{surface=e.surface.name,position={x=e.position.x,y=e.position.y},tick=event.tick,who=M.character_owner(e),force=e.force.name,
     by=okc and cause.name or (h and h.by) or (event.force and event.force.name) or nil,
     at=okc and {x=math.floor(cause.position.x*10+0.5)/10,y=math.floor(cause.position.y*10+0.5)/10} or (h and h.at) or nil,
     cause=okc and cause or nil,cause_type=okc and cause.type or nil,
@@ -1321,9 +1321,13 @@ function M.death_lines(p,h)
   h.death_tick=game.tick
   local out={}
   local list=state().char_deaths or {}
+  -- (mt302) our characters only: on a map of several teams the list holds every force's deaths, and another team's
+  -- (its agent's name, where it died, what its corpse holds) is not ours to hear. A death kept before forces were
+  -- recorded is said only on a one-team map.
+  local ours,teams=p.force.name,state().mt~=nil
   for i=#list,1,-1 do
     local d=list[i]
-    if d.tick>since and d.tick<game.tick then
+    if d.tick>since and d.tick<game.tick and (d.force==ours or d.force==nil and not teams) then
       local s=game.get_surface(d.surface)
       local corpse
       for _,k in ipairs(s and s.find_entities_filtered{type='character-corpse',position=d.position,radius=3,limit=8} or {}) do
@@ -6116,6 +6120,13 @@ function handlers.mine(p,a)
     if pr.type==nil or pr.type=='item' then
       local okc,n=pcall(function() return p.get_item_count(pr.name) end)
       action.held_before[pr.name]=okc and n or 0
+    end
+  end
+  -- (mt302) a character corpse (a coin wreck, a fallen raider) gives what it holds: last.moved counts those items
+  if e.type=='character-corpse' then
+    local okv,list=pcall(function() return e.get_inventory(defines.inventory.character_corpse).get_contents() end)
+    for _,v in ipairs(okv and list or {}) do
+      if action.held_before[v.name]==nil then local okc,n=pcall(function() return p.get_item_count(v.name) end);action.held_before[v.name]=okc and n or 0 end
     end
   end
   for _,product in ipairs(e.prototype.mineable_properties.products or {}) do
@@ -14706,7 +14717,15 @@ M.makersall=require('makersall'){burnt_line=function(e) return M.burnt.line(e) e
   census_makers=function(s) if M.census then return (M.census.makers(s)) end end}  -- supply {item, makers: "all"} (d18 batch37 A1)
 M.ledger=require('ledger'){state=state,on_the_way=function(platform,item) return M.podlog.on_the_way(platform,item) end}  -- launches up per surface, for shipment {ledger} (d18 batch36 D3)
 -- (d24 batch179 QV1) every cargo pod's journey, up and down, per planet: shipment {ledger} pods (podlog.lua)
-M.podlog=require('podlog'){state=state}
+-- (mt302) a pod come down on the ground with no pad to take it: one line to its own team's agents (podlog.lua
+-- ground_text); only on a map of several teams, never to another team, never to a force that is no team
+M.podlog=require('podlog'){state=state,ground_landed=function(force,text)
+  local m=state().mt
+  if not (m and m.teams and m.teams[force]) then return end
+  M.as_team(force,function()
+    for _,ag in ipairs(M.board.agents()) do M.board.deliver(ag.index,{seq='pod',tick=game.tick,from='pods',text=text,fyi=true}) end
+  end)
+end}
 M.launchcount=require('launchcount'){ups=function(...) return M.podlog.ups(...) end,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end}  -- (d29 batch346 LC) rockets to a platform: launched + loaded
 M.launchneed=require('launchneed'){state=state,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end,elsewhere=function(...) return M.elsewhere.line(...) end}  -- a platform's stop waiting on a silo its own hub would feed (d18 batch36 A2)  -- the record lists in args, field by field (check_args; d17 batch35 A6)
 M.heating=require('heating'){footprint=function(...) return M.dryrun.footprint(...) end,heat_points=function(...) return M.dryrun.heat_points(...) end,
