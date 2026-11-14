@@ -55,7 +55,7 @@ def healthy(s,op):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('run');p.add_argument('fault',choices=['obs','output','camera','tunnel','relay','publisher','site-stale','youtube','modal','feed'])
+    p.add_argument('run');p.add_argument('fault',choices=['obs','output','camera','freeze','tunnel','relay','publisher','site-stale','youtube','modal','feed'])
     p.add_argument('--execute',action='store_true');p.add_argument('--timeout',type=int,default=600)
     a=p.parse_args();op=op_dir(a.run)
     if not a.execute:
@@ -74,6 +74,10 @@ def main():
     elif a.fault=='output':
         obs=OBS(port=4458,timeout=10)
         try:obs.call('StopStream')
+        finally:obs.close()
+    elif a.fault=='freeze':
+        obs=OBS(port=4458,timeout=10)
+        try:obs.call('SetInputSettings',{'inputName':'mt camera','inputSettings':{'window':''},'overlay':True})
         finally:obs.close()
     elif a.fault=='camera':
         remote_camera('stop')
@@ -112,7 +116,10 @@ def main():
                 obs_restarted=True
             if a.fault=='feed':
                 after['feed_pids']=owned_pids(config,team,urlsplit(url).port)
-            changed = (len(after['feed_pids'])==1 and result['feed_pid'] not in after['feed_pids'] if a.fault=='feed' else after['video']!=before['video'] if a.fault=='youtube' else
+            if a.fault=='freeze':
+                events=[json.loads(line) for line in (op/'stream-recovery.jsonl').read_text().splitlines()]
+                after['frame_recovery']=next((e for e in reversed(events) if e['t']>=result['injected'] and e['component']=='frame' and e['event']=='recovered'),None)
+            changed = (bool(after['frame_recovery']) if a.fault=='freeze' else len(after['feed_pids'])==1 and result['feed_pid'] not in after['feed_pids'] if a.fault=='feed' else after['video']!=before['video'] if a.fault=='youtube' else
                        after['camera'].get('ProcessId')!=before['camera'].get('ProcessId') if a.fault in ('camera','modal') else
                        after['staging'][a.fault+'_pid']!=before['staging'][a.fault+'_pid'] if a.fault in ('tunnel','relay') else
                        after['session']['publisher_pid']!=before['session']['publisher_pid'] if a.fault in ('publisher','site-stale') else
