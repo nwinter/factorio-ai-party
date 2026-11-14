@@ -32,6 +32,8 @@ from obsws import OBS
 from public_overlay import PublicOverlay, CAMERA, CAMERA_RECT
 from udp_bridge import Bridge
 from obs_audio import setup_audio, MUSIC_FILE
+from stream_recovery import Recovery, FrameProgress, require, terminate
+from run_state import pinned
 
 SCENE = 'mt-stream'
 REMOTE = 'D:/pog/mt-stream21' if os.environ.get('MT_EXPECT_VERSION') == '2.1.24' else 'D:/pog/mt-stream'
@@ -51,7 +53,7 @@ def powershell(script):
 
 
 def checked(args, **kw):
-    return subprocess.run(args, check=True, timeout=120, **kw)
+    return subprocess.run(args, check=True, timeout=kw.pop('timeout',120), **kw)
 
 
 def remote_camera(action):
@@ -62,17 +64,19 @@ def stage():
     checked(powershell(f"New-Item -ItemType Directory -Force '{REMOTE}/client/mods' | Out-Null"))
     for name in ('public-camera.ps1', 'bridge.ps1'):
         checked(['scp', '-q', str(HERE / name), f'pogwin:{REMOTE}/{name}'])
+    checked(['scp', '-q', str(HERE.parent/'win/obs-restart.ps1'), f'pogwin:{REMOTE}/obs-restart.ps1'])
     # Copy the running server's on-disk mods, not a different branch's runtime.
     with tempfile.TemporaryDirectory(prefix='mt-stream-mods-') as tmp:
         checked(['scp', '-q', '-r', f"imac.local:{os.environ.get('MT_DIR', '/Users/owner/pog-mt')}/mods", tmp])
         checked(['scp', '-q', '-r', tmp + '/mods/.', f'pogwin:{REMOTE}/client/mods/'])
 
 
-def setup_obs(obs, url, receipt):
-    if obs.call('GetStreamStatus')['outputActive']:
+def setup_obs(obs, url, receipt, recovering=False):
+    if not recovering and obs.call('GetStreamStatus')['outputActive']:
         raise RuntimeError('OBS is streaming; public staging requires it offline')
-    receipt['previous_scene'] = obs.call('GetCurrentProgramScene')['currentProgramSceneName']
-    receipt['record_was_active'] = obs.call('GetRecordStatus')['outputActive']
+    if not recovering:
+        receipt['previous_scene'] = obs.call('GetCurrentProgramScene')['currentProgramSceneName']
+        receipt['record_was_active'] = obs.call('GetRecordStatus')['outputActive']
     scenes = [s['sceneName'] for s in obs.call('GetSceneList')['scenes']]
     if SCENE not in scenes:
         obs.call('CreateScene', {'sceneName': SCENE})
@@ -107,7 +111,7 @@ def setup_obs(obs, url, receipt):
         obs.call('SetSceneItemIndex', {'sceneName': SCENE, 'sceneItemId': item, 'sceneItemIndex': order})
     receipt['audio'] = setup_audio(obs)
     obs.call('SetCurrentProgramScene', {'sceneName': SCENE})
-    if not receipt['record_was_active']:
+    if not receipt['record_was_active'] and not obs.call('GetRecordStatus')['outputActive']:
         # Mark before the request, so a lost response still gets cleanup.
         receipt['record_started'] = True
         obs.call('StartRecord')
@@ -144,6 +148,8 @@ def restore_obs(obs, receipt):
 def supervise(op, run):
     if os.environ.get('POG_TEST') == '1':
         raise RuntimeError('POG_TEST=1: no remote public stream setup')
+    if os.environ.get('MT_EXPECT_VERSION') == '2.1.24':
+        pinned()
     LOCK.parent.mkdir(parents=True, exist_ok=True)
     lock = LOCK.open('a+')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -154,6 +160,7 @@ def supervise(op, run):
     receipt = {'pid': os.getpid(), 'run': run, 'root': str(ROOT), 'phase': 'starting', 'started': time.time()}
     write(statefile, receipt)
     children, bridge, overlay, obs, camera_started = [], None, None, None, False
+    archivist = None
     try:
         tree = Path((op / 'launch-tree').read_text().strip())
         port = int(os.environ.get('POG_MT_PUBLIC_PORT', '8790'))
@@ -204,15 +211,126 @@ def supervise(op, run):
             stop.wait(2)
         else:
             raise RuntimeError('camera did not join and frame a team within 240s; inspect pogwin camera log')
+        require(not obs.call('GetRecordStatus')['outputActive'], 'existing recording must be stopped before staging')
+        require(os.path.ismount('/Volumes/POG Media'), 'POG Media must be mounted for recording archive')
+        receipt['previous_record_directory']=obs.call('GetRecordDirectory')['recordDirectory']
+        receipt['record_directory']=f'{REMOTE}/recordings/{run}'
+        checked(powershell(f"New-Item -ItemType Directory -Force '{receipt['record_directory']}' | Out-Null"),capture_output=True)
+        obs.call('SetRecordDirectory',{'recordDirectory':receipt['record_directory']})
         setup_obs(obs, f'http://127.0.0.1:{port}/?audio=1', receipt)
+        with (op/'recording-archive.log').open('a') as log:
+            archivist=subprocess.Popen([sys.executable,str(HERE/'stream_recordings.py'),str(op)],
+                                       stdout=log,stderr=subprocess.STDOUT)
         receipt.update(phase='ready', overlay=f'http://127.0.0.1:{port}/', camera=CAMERA, scene=SCENE,
                        streaming=False, recording_active=True)
         receipt['audio']['tts'] = overlay.audio.backend
         write(statefile, receipt)
         print('READY: public overlay, one camera, mt-stream scene, recording; OBS streaming is OFF', flush=True)
-        while not stop.wait(2):
-            if tunnel.poll() is not None or relay.poll() is not None:
-                raise RuntimeError('public SSH/UDP connection lost; stop and start public stream to reconnect')
+        recovery, frame = Recovery(op, 'staging'), FrameProgress()
+        last_frame, rehooked, last_split = 0, False, time.time()
+
+        def wire_check():
+            require(tunnel.poll() is None and relay.poll() is None, 'owned tunnel or UDP relay exited')
+            # Also detect a living SSH process with a broken reverse HTTP forward.
+            probe = checked(powershell(f"(Invoke-WebRequest -UseBasicParsing -TimeoutSec 8 'http://127.0.0.1:{port}/health').Content"), capture_output=True, text=True)
+            require(probe.stdout.strip() == 'ok', 'reverse overlay forward unavailable')
+
+        def wire_repair():
+            nonlocal tunnel, relay
+            terminate(relay)
+            terminate(tunnel)
+            obs.close()
+            # TCP EOF frees the remote UDP port. Keep the local Bridge and overlay.
+            if stop.wait(3):
+                return
+            tunnel = subprocess.Popen(tunnel_args)
+            children[:] = [tunnel]
+            if stop.wait(4):
+                return
+            require(tunnel.poll() is None, 'replacement tunnel exited')
+            relay = subprocess.Popen(powershell(f"& '{REMOTE}/bridge.ps1'"))
+            children.append(relay)
+
+        def obs_check():
+            obs.call('GetVersion')
+            require(obs.call('GetCurrentProgramScene')['currentProgramSceneName'] == SCENE, 'mt scene not selected')
+            require(obs.call('GetRecordStatus')['outputActive'], 'recording stopped')
+
+        def obs_repair():
+            try:
+                obs.call('GetVersion')
+            except Exception:
+                obs.close()
+                subprocess.run(powershell(f"& '{REMOTE}/obs-restart.ps1' -WaitClose 5 -WaitStart 60"),
+                               check=True, timeout=200, capture_output=True, text=True)
+            setup_obs(obs, f'http://127.0.0.1:{port}/?audio=1', receipt, recovering=True)
+
+        def camera_check():
+            p = json.loads(remote_camera('status').stdout or '{}')
+            require(p and p.get('responding', True), 'camera absent or unresponsive')
+            connected = h.lua(f"local p=game.get_player('{CAMERA}') rcon.print(helpers.table_to_json{{connected=p and p.connected or false}})")
+            require(connected.get('connected'), 'camera disconnected or in a disconnect/lag modal')
+
+        def camera_repair():
+            nonlocal relay
+            pinned()
+            remote_camera('stop')
+            # The relay pins one UDP source endpoint. A new client uses a new
+            # ephemeral port, so it needs a new relay even if SSH stayed healthy.
+            terminate(relay)
+            stop.wait(2)
+            relay = subprocess.Popen(powershell(f"& '{REMOTE}/bridge.ps1'"))
+            children[:] = [tunnel, relay]
+            stop.wait(3)
+            remote_camera('start')
+            rehook()
+
+        def rehook():
+            obs.call('SetInputSettings', {'inputName':'mt camera','inputSettings':{'window':''},'overlay':True})
+            stop.wait(1)
+            obs.call('SetInputSettings', {'inputName':'mt camera','inputSettings':{
+                'window':f"Factorio {os.environ.get('MT_EXPECT_VERSION', '2.0.77')}:Factorio:factorio-mtcam.exe"},'overlay':True})
+
+        def frame_repair():
+            nonlocal rehooked
+            if rehooked:
+                camera_repair()
+            else:
+                rehook()
+                rehooked = True
+
+        while not stop.wait(10):
+            if os.environ.get('MT_EXPECT_VERSION') == '2.1.24':
+                pinned()
+            wire_ok = recovery.run('wire', wire_check, wire_repair, grace=0)
+            obs_ok = wire_ok and recovery.run('obs', obs_check, obs_repair)
+            cam_ok = wire_ok and recovery.run('camera', camera_check, camera_repair, grace=30, cooldown=180)
+            now = time.time()
+            if obs_ok and cam_ok and now-last_frame >= 30:
+                last_frame = now
+                def frame_check():
+                    data = obs.call('GetSourceScreenshot', {'sourceName':'mt camera', 'imageFormat':'jpg',
+                                                           'imageWidth':320, 'imageHeight':180})['imageData']
+                    game = h.lua('rcon.print(helpers.table_to_json{tick=game.tick,paused=game.tick_paused})')
+                    camera = (overlay.snapshot().get('camera') or {}).get('since')
+                    require(frame.observe(data, game['tick'], camera, game['paused'], now), 'camera pixels frozen despite advancing game and camera cuts')
+                if recovery.run('frame', frame_check, frame_repair, grace=0, cooldown=60):
+                    rehooked = False
+            if obs_ok and now-last_split>=900:
+                try:
+                    obs.call('SplitRecordFile')
+                    last_split=now
+                except Exception as e:
+                    recovery.event('recording','split-error',reason=str(e))
+            if archivist.poll() is not None:
+                with (op/'recording-archive.log').open('a') as log:
+                    archivist=subprocess.Popen([sys.executable,str(HERE/'stream_recordings.py'),str(op)],stdout=log,stderr=subprocess.STDOUT)
+            # Overlay poll errors are contained in its thread; a stall still wakes the operator.
+            recovery.run('overlay', lambda: require(now-overlay.snapshot().get('now', 0)<30, 'overlay poll stalled'),
+                         lambda: None, grace=30)
+            receipt.update(heartbeat=now, tunnel_pid=tunnel.pid, relay_pid=relay.pid,
+                           health={'wire':wire_ok,'obs':bool(obs_ok),'camera':bool(cam_ok)})
+            write(statefile, receipt)
     except Exception as e:
         receipt.update(phase='failed', error=str(e))
         print(f'public stream failed: {e}', flush=True)
@@ -222,8 +340,17 @@ def supervise(op, run):
         if obs and receipt.get('previous_scene'):
             try:
                 restore_obs(obs, receipt)
+                if receipt.get('previous_record_directory') and not obs.call('GetRecordStatus')['outputActive']:
+                    obs.call('SetRecordDirectory',{'recordDirectory':receipt['previous_record_directory']})
             except Exception as e:
                 receipt['cleanup_error'] = f'OBS cleanup: {e}'
+        terminate(archivist)
+        if receipt.get('record_directory'):
+            try:
+                from stream_recordings import archive
+                archive(op,run)
+            except Exception as e:
+                receipt['cleanup_archive_error']=str(e)
         if camera_started:
             try:
                 remote_camera('stop')

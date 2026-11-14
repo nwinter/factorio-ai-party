@@ -17,7 +17,15 @@ function Owned {
     }
   }
 }
-if ($Action -eq 'status') { Owned | Select-Object ProcessId,Name | ConvertTo-Json -Compress; exit }
+if ($Action -eq 'status') {
+  $p = Owned
+  if ($p) {
+    $live = Get-Process -Id $p.ProcessId
+    @{ProcessId=$p.ProcessId; Name=$p.Name; responding=$live.Responding;
+      started=$live.StartTime.ToUniversalTime().ToString('o')} | ConvertTo-Json -Compress
+  }
+  exit
+}
 if ($Action -eq 'stop') {
   $owned = Owned
   if ($owned) { Stop-Process -Id $owned.ProcessId -Force }
