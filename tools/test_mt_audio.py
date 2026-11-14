@@ -15,7 +15,7 @@ import public_audio
 from public_audio import candidates, Picker, PublicAudio
 from public_overlay import PublicOverlay
 from obs_audio import setup_audio
-from tools.test_mt_public import FakeOBS
+from test_mt_public import FakeOBS
 
 
 def state(now=100):

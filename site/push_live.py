@@ -1074,9 +1074,22 @@ def main():
     ap.add_argument("--once", action="store_true", help="push one snapshot and exit")
     ap.add_argument("--print", action="store_true", help="print the filtered JSON instead of pushing")
     ap.add_argument("--lock", default=None, help=f"the one-pusher lock file (default {LOCK})")
+    ap.add_argument("--team-tests", action="store_true", help="publish the team-test display contract")
+    ap.add_argument("--team-tests-off", action="store_true", help="publish test mode off once; leaves ended-run status intact")
+    ap.add_argument("--youtube", default=os.environ.get("POG_YOUTUBE"), help="test broadcast video ID")
+    ap.add_argument("--team-run-id", help="public team run identifier")
+    ap.add_argument("--team-archive-dir", type=Path, help="durable public team history directory")
     a = ap.parse_args()
+    team_archive = None
+    if a.team_run_id or a.team_archive_dir:
+        import team_runs
+        if not a.team_tests or not team_runs.run_id(a.team_run_id) or not a.team_archive_dir:
+            ap.error("team history needs --team-tests, --team-run-id and --team-archive-dir")
+        team_archive = team_runs.Archive(a.team_archive_dir, a.team_run_id)
+    if a.team_tests_off:
+        a.once = True
     lock = None
-    if not (a.print or a.once):
+    if not a.print and (not a.once or a.team_tests or a.team_tests_off):
         lock, held = take_lock(a.lock)
         if not lock:
             print(f"[push] {time.strftime('%H:%M:%S')} another push_live.py holds {a.lock or LOCK} (pid {held}): "
@@ -1095,9 +1108,24 @@ def main():
     while True:
         t0 = time.time()
         try:
-            with urllib.request.urlopen(a.source, timeout=5) as r:
-                state = with_terrain(public_state(json.load(r)), site_terrain(CONFIG.get("site_url")))
-                state = with_chart(state, site_chart(CONFIG.get("site_url")))
+            if a.team_tests_off:
+                state = {"schema": 1, "mode": "team-tests", "active": False, "now": t0, "teams": []}
+            else:
+                with urllib.request.urlopen(a.source, timeout=5) as r:
+                    raw = json.load(r)
+                if a.team_tests:
+                    import team_tests
+                    state = team_tests.public_state(raw, video=a.youtube, now=t0, hidden=hidden_now())
+                    if team_archive:
+                        run = team_runs.project(raw, a.team_run_id, now=t0)
+                        if run:
+                            state["team_run"] = run
+                            if -5 <= t0 - run["now"] <= 30 and run["teams"]:
+                                team_archive.save(run)
+                            team_runs.fit_live(state)
+                else:
+                    state = with_terrain(public_state(raw), site_terrain(CONFIG.get("site_url")))
+                    state = with_chart(state, site_chart(CONFIG.get("site_url")))
             body = json.dumps(state, separators=(",", ":")).encode()
             if a.print:
                 print(json.dumps(state, indent=1))
@@ -1118,8 +1146,9 @@ def main():
             window["failed"] += 1
             if fails in (1, 3) or fails % 30 == 0:
                 print(f"[push] {time.strftime('%H:%M:%S')} failed ({fails}): {type(e).__name__}: {e}", flush=True)
-        push_board(a, tok, board)
-        push_replies(a, tok, replies)
+        if not (a.team_tests or a.team_tests_off):
+            push_board(a, tok, board)
+            push_replies(a, tok, replies)
         if a.once:
             return 1 if fails else 0
         if not a.print and time.time() >= next_report:

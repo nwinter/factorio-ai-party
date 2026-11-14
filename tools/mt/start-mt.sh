@@ -54,6 +54,9 @@ if [ "${POG_MT_PUBLIC:-0}" = 1 ]; then export POG_MT_STREAM=1; fi
 export POG_MT_VIEWERS=${POG_MT_VIEWERS:-${POG_MT_PUBLIC:-0}}
 export POG_GAME_TEST=${POG_GAME_TEST:-${POG_MT_FRESH:-0}}
 export POG_NETGATE=1
+if [ "${MT_EXPECT_VERSION:-2.0.77}" = 2.1.24 ] || [ "$run_mode" = full ]; then
+  export POG_CONTINUOUS=1 POG_PANE_WATCH=1
+fi
 if [ "$POG_MT_VIEWERS" = 1 ]; then export POG_MT_STREAM=1; fi
 case $run in */*|.*|op) echo "RUN_ID: a plain name" >&2; exit 64 ;; esac
 export POG_SPACE_AGE=1 POG_BROKER=1 POG_TIME_MODE=realtime POG_ENEMIES=${POG_ENEMIES:-normal} POG_SEED=${POG_SEED:-274274}
@@ -392,7 +395,7 @@ for t in $teams; do
   { python3 tools/quota_rest.py --at-limit "$td" "$td/team.tsv" ${carry_args[@]+"${carry_args[@]}"} 2>&1 || true; } | while read -r line; do log "$t $line"; done
 done
 [ ${#prompt_args[@]} -gt 0 ] && tools/clear-prompts.sh 90 "${prompt_args[@]}" | while read -r pane how; do log "pane $pane: $how"; done
-log "started: $(wc -l < "$op/panes.txt" | tr -d ' ')/$wanted agents${missing:+ (not started:$missing; $op/not-started.txt)}; deadline $(cat "$rundir"/*/*/deadline.txt 2>/dev/null | head -1)"
+log "started: $(wc -l < "$op/panes.txt" | tr -d ' ')/$wanted agents${missing:+ (not started:$missing; $op/not-started.txt)}"
 [ -s "$op/panes.txt" ] || { log "no agent started"; exit 1; }
 
 # 4. Supervisors (agy runs its own loop), per-team scores and chat logs, the team views, idle nudges per team (POG_IDLE_NUDGE=1).
@@ -471,12 +474,14 @@ if [ "${POG_IDLE_NUDGE:-0}" = 1 ] && [ "$run_mode" != full ]; then
     echo $! >> "$rundir/$t/supervisors.pid"
   done
 fi
-if [ "$run_mode" = full ]; then
-  python3 tools/mt/full_run.py init "$run" --minutes "$minutes" --max-shifts "${POG_FULL_SHIFTS:-0}" >"$op/full-init.json"
+if [ "${POG_CONTINUOUS:-0}" = 1 ]; then
+  shift_limit=1
+  [ "$run_mode" != full ] || shift_limit=${POG_FULL_SHIFTS:-0}
+  python3 tools/mt/full_run.py init "$run" --minutes "$minutes" --max-shifts "$shift_limit" >"$op/full-init.json"
   nohup python3 tools/mt/full_run.py watch "$run" >"$op/full-watch.log" 2>&1 &
   echo $! >> "$op/helpers.pid"
   nohup python3 tools/mt/quota_refresh.py "$run" >"$op/quota-refresh.log" 2>&1 &
   echo $! >> "$op/helpers.pid"
-  log "persistent world: automatic agent shifts every $minutes minutes; ${POG_FULL_SHIFTS:-0} shift limit (0 means no limit)"
+  log "persistent world: automatic agent shifts every $minutes minutes; $shift_limit shift limit (0 means no limit)"
 fi
 log "supervisors, per-team scores and chat logs ($op/TEAM/) and the team views ($op/views.html) running"

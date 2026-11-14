@@ -65,6 +65,7 @@ def workspace():
             if f.endswith(".md"):
                 shutil.copy(os.path.join(ROOT, "agent", f), os.path.join(tmp, "agent"))
         shutil.copytree(os.path.join(ROOT, "agent", "ref"), os.path.join(tmp, "agent", "ref"))
+        shutil.copytree(os.path.join(ROOT, "tools", "disclosure"), os.path.join(tmp, "tools", "disclosure"))
         prev = os.path.join(tmp, "runs", "shake4", "haiku")
         os.makedirs(prev)
         open(os.path.join(prev, "notes.md"), "w").write("# Notes (haiku, world n)\n\n## Now\nGoal: iron row at -40,12\n")

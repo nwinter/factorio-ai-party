@@ -50,7 +50,7 @@ SURFACES = ('nauvis', 'vulcanus', 'gleba', 'fulgora', 'aquilo')
 # Free-form public chat remains public speech, never notes, jobs, confessions or errors.
 # A path is a slash that starts a word ("/Users/x", "~/x", "C:\x"); "0.52 / 0.48" is ordinary speech.
 PRIVATE = re.compile(r'(?:https?://|(?:^|[\s("\'=])(?:~/|/(?=[\w.~])|[A-Za-z]:[\\/])|[\w.+-]+@[\w.-]+\.[a-z]{2,}|'
-                     r'\b(?:token|password|secret|api[_ -]?key|operator|traceback|exception|multi-?teams?)\b|\bsk-[\w-]+)', re.I)
+                     r'\b(?:token|password|secret|api[_ -]?key|operator|traceback|exception)\b|\bsk-[\w-]+)', re.I)
 # Moderated audience text is addressed to the operator. That ordinary role word
 # is public; keep the stricter operator/private-note exclusion for agent speech.
 VIEWER_PRIVATE = re.compile(PRIVATE.pattern.replace('|operator|', '|'), PRIVATE.flags)
@@ -470,7 +470,7 @@ def project_result(raw, teams):
     elif reason == 'wipe':
         text = f'{w} wiped every other team'
     else:
-        text = 'Time is up: ' + ' and '.join(t.capitalize() for t in winners) + (' share the lead' if len(winners) > 1 else ' leads') + ' on milestones'
+        text = ('The run has ended: ' if kind == 'operator' else 'Time is up: ') + ' and '.join(t.capitalize() for t in winners) + (' share the lead' if len(winners) > 1 else ' leads') + ' on milestones'
     return {'reason': reason, 'kind': kind, 'winners': winners, 'scores': scores, 'tick': number(raw.get('tick')),
             'time': clock(number(raw.get('tick'))), 'text': text}
 

@@ -5,6 +5,8 @@ from pathlib import Path
 import threading
 import tempfile
 import unittest
+from unittest.mock import patch
+import json
 sys.path.insert(0,str(Path(__file__).resolve().parent/'mt'))
 import public_session as session
 
@@ -20,6 +22,25 @@ class Api:
         return {'items':[{'status':{'privacyStatus':self.privacy,'lifeCycleStatus':self.phase},'contentDetails':{'boundStreamId':self.stream}}]}
 
 class TestSession(unittest.TestCase):
+    def test_publisher_recovery_keeps_archive_and_credential_checkout(self):
+        with tempfile.TemporaryDirectory() as d:
+            main=Path(d); op=main/'runs'/'trial'/'op'
+            credentials=main/'site/worker/.secrets.json'
+            credentials.parent.mkdir(parents=True)
+            credentials.write_text(json.dumps({'PUBLISH_TOKEN':'fixture-publisher-token'}))
+            with patch.object(session,'MAIN',main), patch.dict(session.os.environ,{},clear=True):
+                env=session.publisher_env('video')
+                self.assertEqual(env['POG_LIVE_TOKEN'],'fixture-publisher-token')
+                self.assertEqual(env['POG_YOUTUBE'],'video')
+                session.os.environ['POG_LIVE_TOKEN']='explicit-fixture-token'
+                self.assertEqual(session.publisher_env('video')['POG_LIVE_TOKEN'],'explicit-fixture-token')
+            cmd=session.publisher_command('trial',op,source='http://127.0.0.1:1234/state.json')
+            self.assertEqual(cmd[cmd.index('--source')+1],'http://127.0.0.1:1234/state.json')
+            self.assertEqual(cmd[1],str(session.ROOT/'site/push_live.py'))
+            self.assertEqual(cmd[cmd.index('--team-archive-dir')+1],str(op/'public-site'))
+            self.assertEqual(cmd[cmd.index('--team-run-id')+1],'trial')
+            self.assertEqual(session.publisher_command('trial',op,off=True),cmd[:2]+['--team-tests-off'])
+
     def test_stale_or_partial_roster_cannot_look_healthy(self):
         expected={t:{t+'1',t+'2'} for t in ('green','yellow','blue')}
         state={'now':100,'teams':[{'team':t,'stale':False,'agents':[{'name':n} for n in sorted(expected[t])]} for t in expected]}

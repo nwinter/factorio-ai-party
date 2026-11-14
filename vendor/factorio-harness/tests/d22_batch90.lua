@@ -81,7 +81,7 @@ end
 do
   local B=dofile('mod/agent-harness_0.1.0/batch.lua'){}
   eq(B.HOLD,' < -2147483648')
-  local src=io.open('mod/agent-harness_0.1.0/batch.lua'):read('a')
+  local src=io.open('mod/agent-harness_0.1.0/batch.lua'):read('*a')
   assert(not src:find("' < 0'",1,true),'no fixed < 0 hold left')
   -- the 32-bit least value is what a count can never be under: the condition never holds at any count, -3 included
   for _,n in ipairs({-3,-2147483647,0,5}) do assert(not (n < -2147483648)) end

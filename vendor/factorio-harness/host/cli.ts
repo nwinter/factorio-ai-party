@@ -28,7 +28,7 @@ import { refDir, topicText, topicsLine, commandTopics, addReference, topicUnits,
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const modPath = resolve(root, 'mod/agent-harness_0.1.0');
-const help = `fh — Factorio agent CLI
+const helpAll = `fh — Factorio agent CLI
 
   fh start [--name default] [--space-age]     Start a private server and a graphical client
        [--save world.zip] [--niri]           --niri: client in an unfocused nested Niri window (default: FH_NIRI=1)
@@ -131,6 +131,8 @@ Plan input: [{"action":"walk","args":{"direction":"east","ticks":60}}, ...]
 Bridge sessions (start --bridge, connect) act only through normal player input; deploy/watch/view need the harness mod.
 No automatic replay of mutations. stdout uses compact labelled tables; --format json is for programs. Diagnostics go to stderr.
 `;
+const help = process.env.FH_CONTINUOUS === '1' ? helpAll
+  .replace('; never past the deadline', '').replace(', --deadline-file PATH (FH_DEADLINE_FILE: time left on the clock line)', '') : helpAll;
 /** A via walk's legs, one line each: `(10,100) arrived 1.9s`, `(20,112) unreachable 0.2s: why`, `(32,104) not walked`. */
 function legLines(legs: unknown): string[] | undefined {
   if (!Array.isArray(legs)) return undefined;
@@ -866,7 +868,7 @@ async function main() {
   if (values.format && !['json','compact'].includes(values.format)) throw new Error('--format must be json or compact');
   outputFormat = command === 'stream' || values.format === 'json' ? 'json' : 'compact';
   streaming = command === 'stream';
-  const deadlineFile = values['deadline-file'] ?? process.env.FH_DEADLINE_FILE;
+  const deadlineFile = process.env.FH_CONTINUOUS === '1' ? undefined : values['deadline-file'] ?? process.env.FH_DEADLINE_FILE;
   if (deadlineFile) {
     // A missing or unreadable deadline only drops the time left, never the request.
     try { deadline = parseDeadline(await readFile(deadlineFile,'utf8')); }
@@ -1211,7 +1213,7 @@ async function main() {
   // pog's RUN/polls.json: the workspace is the journal's folder, the run its parent
   pollsFile = process.env.FH_POLLS_FILE || (values.journal ? resolve(dirname(dirname(resolve(values.journal))), 'polls.json') : undefined);
   pollsSeenFile = process.env.FH_POLLS_SEEN || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-polls-seen.json') : undefined);
-  targetFile = process.env.FH_TARGET_FILE || (values.journal ? resolve(dirname(dirname(resolve(values.journal))), 'target.json') : undefined);
+  targetFile = process.env.FH_CONTINUOUS === '1' ? undefined : process.env.FH_TARGET_FILE || (values.journal ? resolve(dirname(dirname(resolve(values.journal))), 'target.json') : undefined);
   {
     const inner = harness;
     harness = {request: async (...a: Parameters<Harness['request']>) => { const reply = await inner.request(...a); noteOperator(reply); noteProjects(reply); noteRules(reply); notePace(reply); return reply; }};

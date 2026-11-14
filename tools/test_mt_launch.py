@@ -9,6 +9,7 @@
 - the team files in agent/mt.
 """
 import json, os, re, shutil, subprocess, sys, tempfile
+from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -447,6 +448,81 @@ def launch_tree():
     print("launch tree: ok")
 
 
+def launch_tree_mid_merge():
+    """The gate's pending merge uses current tracked bytes, without changing its Git state."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        repo, tree, stub = root / "repo", root / "tree", root / "bin"
+        repo.mkdir(); stub.mkdir()
+        npm = stub / "npm"
+        npm.write_text("#!/bin/sh\nmkdir -p dist/host\nprintf 'built\\n' > dist/host/cli.js\n")
+        npm.chmod(0o755)
+        env = testsafe.env(PATH=str(stub) + os.pathsep + os.environ["PATH"])
+
+        def git(*args):
+            return subprocess.check_output(["git", "-C", str(repo), *args], env=env, stderr=subprocess.PIPE, text=True)
+
+        def put(name, text):
+            path = repo / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+
+        git("init", "-q", "-b", "main")
+        git("config", "user.name", "Test")
+        git("config", "user.email", "test@example.invalid")
+        put("tools/mt/launch-tree.sh", Path(ROOT, "tools/mt/launch-tree.sh").read_text())
+        put("tools/brief.py", "# Old main has no continuous_text helper.\n")
+        put("agent/PLAYBOOK.md", "Continue. Always read `deadline.txt`.\n")
+        put("agent/ref/example.md", "Player reference.\n")
+        put("vendor/factorio-harness/docs/usage.md", "Old usage.\n")
+        put(".gitignore", "ignored-secret.txt\nvendor/factorio-harness/dist/\n")
+        put("removed-by-merge.txt", "old\n")
+        put("removed-in-worktree.txt", "old\n")
+        put("run tool", "#!/bin/sh\nexit 0\n")
+        (repo / "run tool").chmod(0o755)
+        git("add", "."); git("commit", "-qm", "old main")
+        git("checkout", "-qb", "incoming")
+        put("tools/brief.py", Path(ROOT, "tools/brief.py").read_text())
+        put("tracked file.txt", "incoming\n")
+        (repo / "removed-by-merge.txt").unlink()
+        (repo / "tool-link").symlink_to("run tool")
+        git("add", "-A"); git("commit", "-qm", "incoming helper")
+        git("checkout", "-q", "main")
+        put("main-only.txt", "main\n")
+        git("add", "."); git("commit", "-qm", "main advanced")
+        git("merge", "--no-ff", "--no-commit", "incoming")
+        put("tracked file.txt", "staged resolution\n"); git("add", "tracked file.txt")
+        put("tracked file.txt", "working resolution\n")
+        (repo / "removed-in-worktree.txt").unlink()
+        put("untracked-secret.txt", "not for the agents\n")
+        put("ignored-secret.txt", "not for the agents\n")
+
+        def state():
+            return [git(*args) for args in [("rev-parse", "HEAD", "MERGE_HEAD"),
+                    ("diff", "--cached", "--binary"), ("diff", "--binary"),
+                    ("status", "--porcelain=v1"), ("stash", "list")]]
+
+        before = state()
+        sh = str(repo / "tools/mt/launch-tree.sh")
+        subprocess.run(["bash", sh, str(tree)], env=env, capture_output=True, text=True, check=True)
+        assert (tree / "tracked file.txt").read_text() == "working resolution\n"
+        assert (tree / "main-only.txt").read_text() == "main\n"
+        assert "deadline.txt" not in (tree / "agent/PLAYBOOK.md").read_text()
+        assert (tree / "tool-link").is_symlink() and os.readlink(tree / "tool-link") == "run tool"
+        assert os.access(tree / "run tool", os.X_OK)
+        for absent in (".git", "tools/mt", "untracked-secret.txt", "ignored-secret.txt",
+                       "removed-by-merge.txt", "removed-in-worktree.txt"):
+            assert not (tree / absent).exists(), absent
+        assert state() == before, "building must leave HEAD, the merge, index, working changes and stash list alone"
+
+        # Outside a merge, retain the existing committed-HEAD export behavior.
+        git("add", "-u"); git("commit", "-qm", "merge checked")
+        put("tracked file.txt", "uncommitted after merge\n")
+        subprocess.run(["bash", sh, str(tree)], env=env, capture_output=True, text=True, check=True)
+        assert (tree / "tracked file.txt").read_text() == "working resolution\n"
+    print("launch tree mid-merge: ok")
+
+
 def team_views():
     """F: reads as a team's force (pog.for_force, the stream harness's team field) and the operator's page per team."""
     import pog
@@ -598,6 +674,7 @@ if __name__ == "__main__":
     team_files()
     web_block()
     launch_tree()
+    launch_tree_mid_merge()
     team_views()
 
     client_mod()

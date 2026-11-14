@@ -42,7 +42,7 @@ class ProjectionTest(unittest.TestCase):
         message={'kind':'diplomacy','from_team':'green','to_team':'yellow','agent':'gemini',
                  'text':'Shall we end this pact?', 'tick':5900,'seq':1,'internal':'PRIVATE'}
         bad=[dict(message,kind='tell'),dict(message,from_team='hidden'),dict(message,agent='unknown'),
-             dict(message,text='/Users/private/file'),dict(message,text='multi-team'),
+             dict(message,text='/Users/private/file'),dict(message,text='/home/operator/file'),
              dict(message,source='site'),dict(message,to_team='green')]
         result=race.diplomacy([message]+bad,teams)
         self.assertEqual(len(result),1)
@@ -460,7 +460,7 @@ class ConversationTest(unittest.TestCase):
         self.assertEqual(out[0]['targets'],[])
         self.assertEqual(race.speech(text),'')
         self.assertEqual(race.project_viewers([dict(base,operator=True)],100),[])
-        for private in ['Path /Users/private/file','password hello','multi-team mode','token abc']:
+        for private in ['Path /Users/private/file','password hello','private /home/operator/file','token abc']:
             self.assertEqual(race.project_viewers([dict(base,text='Operator: '+private)],100),[])
 
 
@@ -554,7 +554,7 @@ class OrderedFeedTest(unittest.TestCase):
              dict(self.line,tick=-1),dict(self.line,kind='diplomacy',scope='diplomacy',to=['green']),
              dict(self.line,kind='identity',scope='public',to=[],identity={'display_name':'/Users/private'}),
              dict(self.line,kind='identity',scope='public',to=[],identity={'display_name':'Moderator'})]
-        bad+=[dict(self.line,text=t) for t in ('/Users/private/file','the operator fixed it','multi-team','ask Nick','password=abc','https://private.invalid')]
+        bad+=[dict(self.line,text=t) for t in ('/Users/private/file','the operator fixed it','/home/operator/file','ask Nick','password=abc','https://private.invalid')]
         self.assertEqual(self.lines(bad),[])
         ok=self.lines([dict(self.line,text='Shares green 0.52 / yellow 0.48, 50 iron/hr')])
         self.assertEqual([m['text'] for m in ok],['Shares green 0.52 / yellow 0.48, 50 iron/hr'])     # an ordinary slash is speech

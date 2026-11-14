@@ -379,7 +379,7 @@ do
     fluidbox={get_fluid_segment_id=function() return 500 end}} end
   local boilers={}
   for i=1,13 do
-    local inv={{valid_for_read=true,name='coal',count=4+math.floor(((i-1)*22)/12),prototype={fuel_value=4e6}}}
+    local inv={{valid_for_read=true,name='coal',count=4+math.floor((i-1)*22/12),prototype={fuel_value=4e6}}}
     local fb=setmetatable({get_fluid_segment_id=function() return 500 end},{__len=function() return 2 end})
     boilers[i]=put{type='boiler',name='boiler',unit_number=1000+i,position={x=-25+i*3,y=41},fluidbox=fb,
       prototype={burner_prototype={effectivity=1}},burner={remaining_burning_fuel=0,inventory=inv,currently_burning={name={name='coal'}}}}

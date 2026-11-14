@@ -1,0 +1,13 @@
+.team-run-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); gap:1rem; margin:1.2rem 0 2rem; }
+.team-run-card { border:1px solid var(--line,#465047); border-top:4px solid; border-radius:6px; padding:1rem; background:var(--surface,#fcfbf8); min-width:0; overflow-wrap:anywhere; }
+.team-run-card h2 { margin-top:0; }
+.team-run-card p { margin:.55rem 0; }
+.team-run-card progress { width:100%; accent-color:#cda55d; }
+.team-run-progress { font-size:1.4rem; font-weight:700; }
+.team-run-coins { border-top:1px solid var(--line,#dcd8cf); padding-top:.7rem; }
+.team-run-result { padding:1rem; border:2px solid #cda55d; border-radius:6px; }
+.team-run-result h2 { margin-top:0; }
+.team-run-history { list-style:none; padding:0; }
+.team-run-history li { border-bottom:1px solid var(--line,#dcd8cf); padding:.8rem 0; overflow-wrap:anywhere; }
+.team-run-history p { margin:.3rem 0; }
+#team-run-older { padding:.7rem 1.2rem; cursor:pointer; }
