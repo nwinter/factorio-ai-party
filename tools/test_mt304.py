@@ -44,8 +44,8 @@ class PrivateClock(unittest.TestCase):
                     recovered=context.brief(str(ws),'Continue.')
                     self.assertNotRegex(recovered,r'(?i)deadline|time limit|ranking')
                     refresh_workspaces.refresh(str(ws),None)
-                    for path in [ws/'AGENTS.md',ws/'ref/analysis.md',ws/'ref/team.md']:
-                        self.assertNotRegex(path.read_text(),r'deadline.txt|deadline minus|time left in the shift')
+                    for path in [ws/'AGENTS.md',*sorted((ws/'ref').glob('*.md'))]:
+                        self.assertNotRegex(path.read_text(),r'deadline.txt|deadline minus|time left in the shift|your deadline')
                 else:
                     self.assertIn('deadline.txt',core)
                     self.assertIn('FH_DEADLINE_FILE=',fh)

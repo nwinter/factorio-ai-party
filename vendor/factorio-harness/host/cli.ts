@@ -1213,7 +1213,7 @@ async function main() {
   // pog's RUN/polls.json: the workspace is the journal's folder, the run its parent
   pollsFile = process.env.FH_POLLS_FILE || (values.journal ? resolve(dirname(dirname(resolve(values.journal))), 'polls.json') : undefined);
   pollsSeenFile = process.env.FH_POLLS_SEEN || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-polls-seen.json') : undefined);
-  targetFile = process.env.FH_TARGET_FILE || (values.journal ? resolve(dirname(dirname(resolve(values.journal))), 'target.json') : undefined);
+  targetFile = process.env.FH_CONTINUOUS === '1' ? undefined : process.env.FH_TARGET_FILE || (values.journal ? resolve(dirname(dirname(resolve(values.journal))), 'target.json') : undefined);
   {
     const inner = harness;
     harness = {request: async (...a: Parameters<Harness['request']>) => { const reply = await inner.request(...a); noteOperator(reply); noteProjects(reply); noteRules(reply); notePace(reply); return reply; }};

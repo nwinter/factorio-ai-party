@@ -40,6 +40,12 @@ sys.path.insert(0, str(root / "tools"))
 import brief
 for path in (root / "agent").rglob("*.md"):
     path.write_text(brief.continuous_text(path.read_text()))
+# The upstream usage file also contains historical operator run-clock notes. Supply
+# the current player reference here; keep the full engineering manual in the repo.
+usage = root / 'vendor/factorio-harness/docs/usage.md'
+refs = sorted((root / 'agent/ref').glob('*.md'))
+usage.write_text('# Player reference\n\nUse `./fh help TOPIC` for the reference available to your team.\n\n' +
+                 '\n\n'.join(p.read_text() for p in refs if p.stem != 'markets'))
 PYCONT
 git -C "$root" rev-parse --short HEAD > "$tmp/.launch-tree"
 mkdir -p "$tree"

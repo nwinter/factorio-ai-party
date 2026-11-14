@@ -81,5 +81,7 @@ test("every status reply starts with the run's target line, computed at each rea
     writeFileSync(other, JSON.stringify({...T, goal:'Aquilo'}));
     const r2 = JSON.parse((await exec(process.execPath, ['dist/host/cli.js','--format','json','--port',String(port),'call','status'], {env:{...env, FH_TARGET_FILE:other}})).stdout);
     assert.match(r2.result.target, /^Target \(Nick, soft\): Aquilo by /);
+    const continuous = JSON.parse((await exec(process.execPath, ['dist/host/cli.js','--format','json','--port',String(port),'call','status'], {env:{...env, FH_TARGET_FILE:other, FH_CONTINUOUS:'1'}})).stdout);
+    assert.equal(continuous.result.target, undefined);  // team play has no target date, even inherited from the operator shell
   });
 });
