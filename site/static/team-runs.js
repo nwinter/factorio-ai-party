@@ -53,7 +53,7 @@
       if (t.pacts.length) card.append(el('p', 'Active pacts: ' + t.pacts.map(p => `#${p.id} with ${label(p.with)}`).join(', ')));
       cards.append(card);
     }
-    events(data.events);
+    events([...(data.events || [])].sort((a,b) => b.tick - a.tick));
   }
   async function json(url) {
     const response = await fetch(url, {cache: 'no-store'});

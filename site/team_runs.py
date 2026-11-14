@@ -75,7 +75,8 @@ def project(raw, ident, now=None):
         events.append(row)
     return {'schema': 1, 'id': ident, 'now': at, 'tick': tick,
             'status': 'ended' if result else 'live' if fresh and base['active'] else 'unavailable',
-            'ranking': ranking, 'teams': teams, 'result': result, 'events': events[-100:]}
+            'ranking': ranking, 'teams': teams, 'result': result,
+            'events': sorted(events, key=lambda e: (e['tick'], e['id']))[-100:]}
 
 
 def restore(snapshot):
@@ -143,12 +144,15 @@ def event_pages(folder, state):
     """Stream fixed-size archive pages; never load a days-long log into a browser."""
     path = Path(folder) / 'events.sqlite'
     if not path.exists():
-        yield state['events']
+        yield sorted(state['events'], key=lambda e: (e['tick'], e['id']), reverse=True)
         return
     db = sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)
     try:
         batch = []
-        for (body,) in db.execute('SELECT body FROM events ORDER BY rowid DESC'):
+        # IDs carry the save-restore epoch. Within each epoch, late-observed facts
+        # belong at their game tick, rather than at the end of the observation log.
+        order = "CASE WHEN id LIKE 'restore:%' THEN CAST(substr(id, 9) AS INTEGER) ELSE CAST(id AS INTEGER) END"
+        for (body,) in db.execute(f'SELECT body FROM events ORDER BY {order} DESC, tick DESC, rowid DESC'):
             try:
                 row = json.loads(body)
                 if row.get('kind') == 'restore':

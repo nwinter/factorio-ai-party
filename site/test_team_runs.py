@@ -72,6 +72,8 @@ class TeamRuns(unittest.TestCase):
             self.assertEqual(state['status'], 'ended')
             self.assertEqual(state['result']['text'], 'Green reached the edge alone')
             self.assertEqual([len(p) for p in tr.event_pages(folder,state)], [100,100,51])
+            ticks = [e['tick'] for page in tr.event_pages(folder,state) for e in page]
+            self.assertEqual(ticks, sorted(ticks, reverse=True))
             arc = tr.Archive(folder, 'days')
             raw['result'] = None
             for t in raw['teams']: t['tick'] = 1000
