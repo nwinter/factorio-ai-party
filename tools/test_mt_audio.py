@@ -98,6 +98,19 @@ class AudioTests(unittest.TestCase):
             self.assertEqual(tts.speak.call_args.kwargs,dict(caster='pbp',plain=True))
             self.assertEqual(tts.speak.call_args.args[0],'Green. Rocket launched.')
 
+    def test_tour_narrates_each_team_despite_similar_factory_status(self):
+        from public_tours import narration
+        p=Picker();s=state();s['teams'].append(dict(team='blue',stale=False,agents=[]))
+        p.observe(s,100)
+        for index,team in enumerate(('blue','green','yellow')):
+            now=101+index*45
+            row=dict(team=team,research=dict(done_count=10,current='engine',label='Engine'),science=dict(spm=0))
+            s.update(now=now,camera={'team':team},tour=dict(id=f'tour:1:{team}',team=team,at=now,text=narration(row)))
+            p.observe(s,now);c=p.choose(now)
+            self.assertIsNotNone(c,team);self.assertEqual(c['team'],team);p.sent(c,now,12)
+        s.update(now=236,tour=dict(s['tour'],id='tour:2:yellow',at=236))
+        p.observe(s,236);self.assertIsNone(p.choose(236))
+
     def test_audio_routes_accept_receipts_not_speech_or_game_commands(self):
         with tempfile.TemporaryDirectory() as d:
             op=Path(d);td=op/'tree/runs/test/green';td.mkdir(parents=True)

@@ -125,12 +125,13 @@ class Picker:
     def choose(self, now):
         eligible = [c for c in self.pending.values() if now >= self.next_at
                     and (c['kind'] != 'radio' or now >= self.radio_at)
-                    and not any(now - at < 180 and near_same(c['text'], text, .8) for at, text in self.aired)]
+                    and not any(now - at < 180 and (c['kind'] != 'tour' or c.get('team') == team)
+                                and near_same(c['text'], text, .8) for at, text, team in self.aired)]
         return max(eligible, key=lambda c: (PRIORITY[c['kind']], c['at']), default=None)
 
     def sent(self, c, now, duration):
         self.pending.pop(c['id'], None)
-        self.aired.append((now, c['text']))
+        self.aired.append((now, c['text'], c.get('team')))
         self.next_at = now + duration + (5 if PRIORITY[c['kind']] >= 7 else 15)
         if c['kind'] == 'radio':
             self.radio_at = now + duration + 40
