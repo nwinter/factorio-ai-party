@@ -50,6 +50,7 @@ def copy_new(run, keep=12):
     dest = ARCHIVE/run/'saves'; dest.mkdir(parents=True,exist_ok=True)
     with lock(dest/'.copy.lock'):
         index = read(dest/'index.json', {'copies':[], 'seen':{}})
+        pending=index.setdefault('pending',{});stalled=[]
         clock = json.loads(rcon('rcon.print(remote.call("agent_harness","autosave_status"))'))
         assert clock.get('prefix') == run and clock.get('enabled'), 'wrong/unarmed save clock'
         if clock.get('error'): raise RuntimeError(clock['error'])
@@ -64,7 +65,10 @@ def copy_new(run, keep=12):
             # server_save queues its write. A new tick record can briefly name the
             # previous contents of a reused slot; do not mislabel that old ZIP.
             previous=index['seen'].get(name)
-            if previous and json.loads(previous)[2]==stamp: continue
+            if previous and json.loads(previous)[2]==stamp:
+                if pending.get(name,{}).get('key')!=key:pending[name]=dict(key=key,since=time.time())
+                if time.time()-pending[name]['since']>=120:stalled.append(name)
+                continue
             digest=remote('import hashlib,sys; h=hashlib.sha256(); f=open(sys.argv[1],"rb"); '
                           '[h.update(b) for b in iter(lambda:f.read(1048576),b"")]; print(h.hexdigest())',path).strip()
             partial=dest/(name+'.partial')
@@ -85,6 +89,7 @@ def copy_new(run, keep=12):
             if not any(r['file']==filename for r in index['copies']):
                 index['copies'].append(dict(row,file=filename,sha256=digest,bytes=stamp[0],copied_at=time.time()))
             index['seen'][name]=key
+            pending.pop(name,None)
             # Commit proof before deleting any old archive. Remote rotating slots are never deleted here.
             write(dest/'index.json',index)
         survivors=retain(index['copies'],keep)
@@ -92,7 +97,8 @@ def copy_new(run, keep=12):
             if row['file'] not in survivors: (dest/row['file']).unlink(missing_ok=True)
         index['copies']=[r for r in index['copies'] if r['file'] in survivors]
         write(dest/'index.json',index)
-        write(op/'autosave-copy.json',dict(at=time.time(),clock=clock,copies=len(index['copies']),archive=str(dest)))
+        write(op/'autosave-copy.json',dict(at=time.time(),clock=clock,copies=len(index['copies']),archive=str(dest),pending=pending))
+        if stalled:raise RuntimeError('save slots were not replaced within 120 seconds: '+','.join(stalled))
         return index
 
 def verified(run, filename):

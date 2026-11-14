@@ -9,6 +9,19 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 import autosave
 
 class Saves(unittest.TestCase):
+    def test_queued_save_that_never_replaces_old_slot_alerts(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);dest=root/'trial'/'saves';dest.mkdir(parents=True);op=root/'op';op.mkdir()
+            name='trial-auto-01';stamp=[5,10]
+            run_state.write(dest/'index.json',dict(copies=[dict(file='old.zip',tick=100,copied_at=1)],seen={name:json.dumps([1,100,stamp])}))
+            clock=dict(prefix='trial',enabled=True,records={'1':dict(name=name,sequence=2,tick=200)})
+            with patch.object(autosave,'ARCHIVE',root),patch.object(autosave,'op_dir',return_value=op),patch.object(autosave,'pinned'), \
+                 patch.object(Path,'is_mount',return_value=True),patch.object(autosave,'rcon',return_value=json.dumps(clock)), \
+                 patch.object(autosave,'stat',return_value=stamp),patch.object(autosave.time,'time',return_value=1000):
+                index=autosave.copy_new('trial');self.assertEqual(len(index['copies']),1)
+                with patch.object(autosave.time,'time',return_value=1121),self.assertRaisesRegex(RuntimeError,'not replaced'):
+                    autosave.copy_new('trial')
+
     def test_retention_keeps_hourly_and_recent_after_rollback(self):
         rows=[dict(file=str(i),tick=i*54000,copied_at=i) for i in range(24)]
         rows.append(dict(file='rollback',tick=1,copied_at=30))
