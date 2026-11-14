@@ -22,6 +22,21 @@ def owns(argv, config, team, port):
         return False
 
 
+def owned_pids(config, team, port):
+    found=[]
+    for row in subprocess.check_output(['ps','-axo','pid=,command='],text=True).splitlines():
+        fields=row.strip().split(None,1)
+        if len(fields)!=2 or 'serve.py' not in fields[1]:
+            continue
+        try:
+            argv=shlex.split(fields[1])
+        except ValueError:
+            continue
+        if owns(argv,config,team,port):
+            found.append(int(fields[0]))
+    return found
+
+
 def restart_stale(op):
     pinned()
     tree=Path((op/'launch-tree').read_text().strip())
@@ -40,21 +55,17 @@ def restart_stale(op):
         config=tree/'runs'/op.parent.name/team/'stream.json'
         if not config.is_file():raise RuntimeError('missing team stream config')
         # A recycled helper PID or somebody else's listener is never signalled.
-        for row in subprocess.check_output(['ps','-axo','pid=,command='],text=True).splitlines():
-            fields=row.strip().split(None,1)
-            if len(fields)!=2:continue
-            pid=int(fields[0])
-            if owns(shlex.split(fields[1]),config,team,parsed.port):
-                os.kill(pid,signal.SIGTERM)
-                for _ in range(20):
-                    try:
-                        args=shlex.split(subprocess.check_output(['ps','-p',str(pid),'-o','command='],text=True,stderr=subprocess.DEVNULL))
-                    except subprocess.CalledProcessError:
-                        break
-                    if not owns(args,config,team,parsed.port):break
-                    time.sleep(.25)
-                else:
-                    raise RuntimeError('owned stale feed did not stop; refusing duplicate')
+        for pid in owned_pids(config,team,parsed.port):
+            os.kill(pid,signal.SIGTERM)
+            for _ in range(20):
+                try:
+                    args=shlex.split(subprocess.check_output(['ps','-p',str(pid),'-o','command='],text=True,stderr=subprocess.DEVNULL))
+                except (subprocess.CalledProcessError,ValueError):
+                    break
+                if not owns(args,config,team,parsed.port):break
+                time.sleep(.25)
+            else:
+                raise RuntimeError('owned stale feed did not stop; refusing duplicate')
         with (op/team/'stream-service.log').open('a') as log:
             child=subprocess.Popen([sys.executable,str(ROOT/'tools/stream/serve.py'),'--world','imac2','--team',team,
                  '--run',str(config),'--port',str(parsed.port),'--poll','5','--no-camera','--no-highlights',

@@ -24,6 +24,7 @@ from yt_upload import Api, API
 from obsws import OBS
 from stream_recovery import Recovery, require, terminate
 from broadcast_rotation import LiveAPI, Rotation
+from run_state import pinned
 
 
 def read(path):
@@ -109,6 +110,7 @@ def owned_pid(pid, run):
 
 
 def supervise(run, minutes, run_mode='test', public=False, closed_drill=False):
+    pinned()
     op = ROOT/'runs'/run/'op'
     lock = open('/tmp/pog-team-test-session.lock', 'a+')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -222,6 +224,7 @@ def supervise(run, minutes, run_mode='test', public=False, closed_drill=False):
             require(fresh_feed(remote,time.time(),expected), 'site live data stale or roster incomplete')
 
         while (state['deadline'] is None or time.time() < state['deadline']) and not stop.wait(10):
+            pinned()
             recovery.run('output', stream_check, stream_repair, grace=30)
             if time.time()-last_youtube>=60:
                 last_youtube=time.time()

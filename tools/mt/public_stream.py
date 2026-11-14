@@ -32,13 +32,14 @@ from obsws import OBS
 from public_overlay import PublicOverlay, CAMERA, CAMERA_RECT
 from udp_bridge import Bridge
 from obs_audio import setup_audio, MUSIC_FILE
-from stream_recovery import Recovery, FrameProgress, require, terminate
+from stream_recovery import Recovery, FrameProgress, require, terminate, recording_space_ok
 from run_state import pinned
 
 SCENE = 'mt-stream'
 REMOTE = 'D:/pog/mt-stream21' if os.environ.get('MT_EXPECT_VERSION') == '2.1.24' else 'D:/pog/mt-stream'
 SSH = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'ControlMaster=no', '-o', 'ControlPath=none']
 LOCK = Path.home() / '.local/state/pog/mt-public.lock'
+SPLIT_SETTINGS = {'RecSplitFile':'true', 'RecSplitFileType':'Time', 'RecSplitFileTime':'15'}
 
 
 def write(path, data):
@@ -111,6 +112,8 @@ def setup_obs(obs, url, receipt, recovering=False):
         obs.call('SetSceneItemIndex', {'sceneName': SCENE, 'sceneItemId': item, 'sceneItemIndex': order})
     receipt['audio'] = setup_audio(obs)
     obs.call('SetCurrentProgramScene', {'sceneName': SCENE})
+    if receipt.get('recording_hold'):
+        return
     if not receipt['record_was_active'] and not obs.call('GetRecordStatus')['outputActive']:
         # Mark before the request, so a lost response still gets cleanup.
         receipt['record_started'] = True
@@ -145,11 +148,15 @@ def restore_obs(obs, receipt):
         obs.call('SetCurrentProgramScene', {'sceneName': receipt['previous_scene']})
 
 
+def split_settings(obs, values):
+    for key, value in values.items():
+        obs.call('SetProfileParameter', {'parameterCategory':'AdvOut','parameterName':key,'parameterValue':value})
+
+
 def supervise(op, run):
     if os.environ.get('POG_TEST') == '1':
         raise RuntimeError('POG_TEST=1: no remote public stream setup')
-    if os.environ.get('MT_EXPECT_VERSION') == '2.1.24':
-        pinned()
+    pinned()
     LOCK.parent.mkdir(parents=True, exist_ok=True)
     lock = LOCK.open('a+')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -216,8 +223,12 @@ def supervise(op, run):
         require(os.path.ismount('/Volumes/POG Media'), 'POG Media must be mounted for recording archive')
         receipt['previous_record_directory']=obs.call('GetRecordDirectory')['recordDirectory']
         receipt['record_directory']=f'{REMOTE}/recordings/{run}'
+        receipt['previous_split_settings']={key:obs.call('GetProfileParameter',{
+            'parameterCategory':'AdvOut','parameterName':key})['parameterValue'] for key in SPLIT_SETTINGS}
+        write(statefile,receipt)
         checked(powershell(f"New-Item -ItemType Directory -Force '{receipt['record_directory']}' | Out-Null"),capture_output=True)
         obs.call('SetRecordDirectory',{'recordDirectory':receipt['record_directory']})
+        split_settings(obs,SPLIT_SETTINGS)
         setup_obs(obs, f'http://127.0.0.1:{port}/?audio=1', receipt)
         with (op/'recording-archive.log').open('a') as log:
             archivist=subprocess.Popen([sys.executable,str(HERE/'stream_recordings.py'),str(op)],
@@ -232,7 +243,7 @@ def supervise(op, run):
         write(statefile, receipt)
         print('READY: public overlay, one camera, mt-stream scene, recording; OBS streaming is OFF', flush=True)
         recovery, frame = Recovery(op, 'staging'), FrameProgress()
-        last_frame, rehooked, last_split = 0, False, time.time()
+        last_frame, rehooked = 0, False
         last_memory_spawn = last_archive_spawn = time.time()
 
         def wire_check():
@@ -260,7 +271,7 @@ def supervise(op, run):
         def obs_check():
             obs.call('GetVersion')
             require(obs.call('GetCurrentProgramScene')['currentProgramSceneName'] == SCENE, 'mt scene not selected')
-            require(obs.call('GetRecordStatus')['outputActive'], 'recording stopped')
+            require(receipt.get('recording_hold') or obs.call('GetRecordStatus')['outputActive'], 'recording stopped')
 
         def obs_repair():
             restart = recovery.states.get('obs',{}).get('attempts',0)>=2
@@ -272,6 +283,7 @@ def supervise(op, run):
                 obs.close()
                 subprocess.run(powershell(f"& '{REMOTE}/obs-restart.ps1' -WaitClose 5 -WaitStart 60"),
                                check=True, timeout=200, capture_output=True, text=True)
+            split_settings(obs,SPLIT_SETTINGS)
             setup_obs(obs, f'http://127.0.0.1:{port}/?audio=1', receipt, recovering=True)
 
         def camera_check():
@@ -279,6 +291,11 @@ def supervise(op, run):
             require(p and p.get('responding', True), 'camera absent or unresponsive')
             connected = h.lua(f"local p=game.get_player('{CAMERA}') rcon.print(helpers.table_to_json{{connected=p and p.connected or false}})")
             require(connected.get('connected'), 'camera disconnected or in a disconnect/lag modal')
+            snap=overlay.snapshot()
+            eligible=[t for t in snap.get('teams',[]) if not t.get('stale') and not t.get('paused')]
+            if len(eligible)>=2:
+                require(time.time()-(snap.get('camera') or {}).get('since',0)<max(180,dwell*len(eligible)*3),
+                        'camera director has not framed any fresh team within its rotation window')
 
         def camera_repair():
             pinned()
@@ -305,10 +322,28 @@ def supervise(op, run):
                 rehook()
                 rehooked = True
 
+        def space_check(free):
+            require(recording_space_ok(free,receipt.get('recording_hold',False)),
+                    'recording spool low on space; streaming/game retained, archive must catch up')
+            receipt['recording_hold']=False
+
+        def space_repair():
+            receipt['recording_hold']=True
+            if obs.call('GetRecordStatus')['outputActive']:
+                obs.call('StopRecord')
+
         while not stop.wait(10):
-            if os.environ.get('MT_EXPECT_VERSION') == '2.1.24':
-                pinned()
+            pinned()
             wire_ok = recovery.run('wire', wire_check, wire_repair, grace=0)
+            if wire_ok:
+                # Do not let an archive outage fill D: and take down the stream.
+                # OBS transport errors belong to obs recovery, not a disk hold.
+                try:
+                    free=obs.call('GetStats')['availableDiskSpace']
+                except Exception:
+                    pass
+                else:
+                    recovery.run('recording-space',lambda:space_check(free),space_repair,grace=0,cooldown=60)
             obs_ok = wire_ok and recovery.run('obs', obs_check, obs_repair)
             cam_ok = wire_ok and recovery.run('camera', camera_check, camera_repair, grace=30, cooldown=180)
             now = time.time()
@@ -322,12 +357,6 @@ def supervise(op, run):
                     require(frame.observe(data, game['tick'], camera, game['paused'], now), 'camera pixels frozen despite advancing game and camera cuts')
                 if recovery.run('frame', frame_check, frame_repair, grace=0, cooldown=60):
                     rehooked = False
-            if obs_ok and now-last_split>=900:
-                try:
-                    obs.call('SplitRecordFile')
-                    last_split=now
-                except Exception as e:
-                    recovery.event('recording','split-error',reason=str(e))
             if archivist.poll() is not None and now-last_archive_spawn>=60:
                 last_archive_spawn=now
                 with (op/'recording-archive.log').open('a') as log:
@@ -352,11 +381,13 @@ def supervise(op, run):
     finally:
         if overlay:
             overlay.close()
-        if obs and receipt.get('previous_scene'):
+        if obs and (receipt.get('previous_scene') or receipt.get('previous_record_directory')):
             try:
-                restore_obs(obs, receipt)
+                if receipt.get('previous_scene'):
+                    restore_obs(obs, receipt)
                 if receipt.get('previous_record_directory') and not obs.call('GetRecordStatus')['outputActive']:
                     obs.call('SetRecordDirectory',{'recordDirectory':receipt['previous_record_directory']})
+                    split_settings(obs,receipt.get('previous_split_settings',{}))
             except Exception as e:
                 receipt['cleanup_error'] = f'OBS cleanup: {e}'
         if archivist is not None and archivist.poll() is None:
@@ -446,7 +477,7 @@ def main():
             else:
                 raise SystemExit('public stream cleanup still running; inspect public-stream.log')
         final = json.loads(path.read_text()) if path.exists() else {}
-        if final.get('cleanup_error') or final.get('cleanup_camera_error'):
+        if any(key.startswith('cleanup_') and value for key,value in final.items()):
             raise SystemExit(f'public supervisor exited with cleanup errors; inspect {path}')
         print('public stream stopped (only its owned processes)')
     else:

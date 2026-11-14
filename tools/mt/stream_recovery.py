@@ -81,6 +81,11 @@ def require(value, message):
         raise RuntimeError(message)
 
 
+def recording_space_ok(free_mb, held=False):
+    """Stop only recording below 4 GiB; resume above 8 GiB after archival catches up."""
+    return isinstance(free_mb,(int,float)) and free_mb >= (8192 if held else 4096)
+
+
 def terminate(child):
     if child is not None and child.poll() is None:
         child.terminate()
