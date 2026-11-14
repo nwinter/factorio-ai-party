@@ -46,7 +46,9 @@ ground landing on that surface, by any force (SIGSEGV in `CargoUnit::getGroundPo
 descending, and whether it was sent to the ground or turned ground-bound when its pad went. The landed pod stays in
 the surface's incoming list. A save made in between carries the fault: loaded, it crashes on the first ground
 landing. The crash fires either on a pod's update or inside a later `pad.force = ...` write
-(`unregisterCargoStation` re-targets the inbound pods). mt301's split did both writes at once.
+(`unregisterCargoStation` re-targets the inbound pods). mt301's split did both writes at once. The same steps crash a
+freshly created Space Age-only map (no harness), so this is an engine bug; the draft report for Wube is in
+artifacts/mt302/wube.
 
 Measured safe with pods in flight at every stage: the pad destroyed by `die`, by damage with a turret cause or by
 40 atomic rockets; `mine`; `destroy`; its force changed (alone, or to another force and back); the last pad gone
