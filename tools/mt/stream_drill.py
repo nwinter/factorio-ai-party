@@ -55,7 +55,7 @@ def healthy(s,op):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('run');p.add_argument('fault',choices=['obs','camera','tunnel','relay','publisher','youtube','modal','feed'])
+    p.add_argument('run');p.add_argument('fault',choices=['obs','output','camera','freeze','tunnel','relay','publisher','site-stale','youtube','modal','feed'])
     p.add_argument('--execute',action='store_true');p.add_argument('--timeout',type=int,default=600)
     a=p.parse_args();op=op_dir(a.run)
     if not a.execute:
@@ -71,6 +71,14 @@ def main():
     if a.fault=='obs':
         # This stream's selected program and unlisted publication were checked.
         checked(powershell("$p=Get-CimInstance Win32_Process -Filter \"Name='obs64.exe'\"; if (@($p).Count -ne 1 -or $p.ExecutablePath -ne 'C:\\Program Files\\obs-studio\\bin\\64bit\\obs64.exe') {throw 'unexpected OBS process'}; Stop-Process -Id $p.ProcessId -Force"),capture_output=True)
+    elif a.fault=='output':
+        obs=OBS(port=4458,timeout=10)
+        try:obs.call('StopStream')
+        finally:obs.close()
+    elif a.fault=='freeze':
+        obs=OBS(port=4458,timeout=10)
+        try:obs.call('SetInputSettings',{'inputName':'mt camera','inputSettings':{'window':''},'overlay':True})
+        finally:obs.close()
     elif a.fault=='camera':
         remote_camera('stop')
     elif a.fault=='modal':
@@ -85,12 +93,13 @@ def main():
         assert len(found)==1,'expected exactly one owned team feed'
         result['feed_pid']=found[0];write(path,result)
         os.kill(found[0],signal.SIGTERM)
-    elif a.fault in ('tunnel','relay','publisher'):
-        owner=before['session'] if a.fault=='publisher' else before['staging']
-        pid=owner[a.fault+'_pid'];command=ps(pid)
-        assert ('site/push_live.py' in command and '--team-tests' in command) if a.fault=='publisher' else ('ssh ' in command and 'pogwin' in command)
+    elif a.fault in ('tunnel','relay','publisher','site-stale'):
+        publisher=a.fault in ('publisher','site-stale')
+        owner=before['session'] if publisher else before['staging']
+        pid=owner[('publisher' if publisher else a.fault)+'_pid'];command=ps(pid)
+        assert ('site/push_live.py' in command and '--team-tests' in command) if publisher else ('ssh ' in command and 'pogwin' in command)
         if a.fault=='tunnel':assert '8790:127.0.0.1:8790' in command
-        os.kill(pid,signal.SIGTERM)
+        os.kill(pid,signal.SIGSTOP if a.fault=='site-stale' else signal.SIGTERM)
     else:
         transition(LiveAPI(),read(op/'broadcast.json'),'complete',threading.Event())
     result['injected']=time.time();write(path,result)
@@ -101,16 +110,19 @@ def main():
         time.sleep(5)
         try:
             after=snapshot(op)
-            if a.fault=='obs' and after['output']['outputDuration']<before['output']['outputDuration']:
+            if a.fault in ('obs','output') and after['output']['outputDuration']<before['output']['outputDuration']:
                 # The new stream may outlive the short pre-fault stream during
                 # the required healthy minute; retain the observed reset.
                 obs_restarted=True
             if a.fault=='feed':
                 after['feed_pids']=owned_pids(config,team,urlsplit(url).port)
-            changed = (len(after['feed_pids'])==1 and result['feed_pid'] not in after['feed_pids'] if a.fault=='feed' else after['video']!=before['video'] if a.fault=='youtube' else
+            if a.fault=='freeze':
+                events=[json.loads(line) for line in (op/'stream-recovery.jsonl').read_text().splitlines()]
+                after['frame_recovery']=next((e for e in reversed(events) if e['t']>=result['injected'] and e['component']=='frame' and e['event']=='recovered'),None)
+            changed = (bool(after['frame_recovery']) if a.fault=='freeze' else len(after['feed_pids'])==1 and result['feed_pid'] not in after['feed_pids'] if a.fault=='feed' else after['video']!=before['video'] if a.fault=='youtube' else
                        after['camera'].get('ProcessId')!=before['camera'].get('ProcessId') if a.fault in ('camera','modal') else
                        after['staging'][a.fault+'_pid']!=before['staging'][a.fault+'_pid'] if a.fault in ('tunnel','relay') else
-                       after['session']['publisher_pid']!=before['session']['publisher_pid'] if a.fault=='publisher' else
+                       after['session']['publisher_pid']!=before['session']['publisher_pid'] if a.fault in ('publisher','site-stale') else
                        obs_restarted)
             key=(after['camera'].get('ProcessId'),after['staging'].get('tunnel_pid'),after['video'],tuple(after.get('feed_pids',[])))
             if changed and healthy(after,op) and after['game']['tick']>before['game']['tick']:

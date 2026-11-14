@@ -122,7 +122,13 @@ running until the operator's explicit final stop.
 
 Public staging is still separate. After reviewing the actual staged picture:
 
-    agent-python tools/mt/public_session.py start RUN --run-mode full --execute
+    /opt/homebrew/bin/python3 tools/mt/public_session.py start RUN --run-mode full --execute
+
+Use the verified application Python with Pillow for both stream supervisors and
+team feeds: feed recovery inherits the publication supervisor's interpreter.
+The stdlib-only agent-python runtime remains suitable for the shift/watch tools.
+Streaming recovery and staffed pogwin maintenance are documented in
+`docs/mt-stream-recovery.md`.
 
 This defaults to an unlisted broadcast created by public_broadcast.py. Public
 visibility requires both explicit creation with --privacy public and explicit
