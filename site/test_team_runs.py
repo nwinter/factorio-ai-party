@@ -172,6 +172,11 @@ const [exe,base,file,art]=process.argv.slice(3);
  await page.getByRole('button',{name:'Older events'}).click();
  await page.waitForFunction(()=>document.querySelectorAll('.team-run-history li').length===21);
  assert((await page.locator('#team-run-events').innerText()).includes('Pact #0'));
+ await page.goto(base+'/teams/t298/');
+ await page.getByRole('heading',{name:'Green',exact:true}).waitFor();
+ assert((await page.locator('#team-run-events').innerText()).includes('Verified: you sent 50 automation science packs'));
+ assert((await page.locator('#team-run-status').innerText()).includes('Archived snapshot'));
+ if(art) await page.screenshot({path:art+'/team-run-archive.png',fullPage:true});
  assert.deepEqual(errors,[]);await browser.close();console.log('Playwright: desktop, phone, stale feed, game over, escaping and archive pagination passed');
 })().catch(e=>{console.error(e);process.exit(1)});
 '''
