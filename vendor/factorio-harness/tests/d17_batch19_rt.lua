@@ -143,7 +143,7 @@ print('d17_batch19_rt A1 fluid_count, circuit_signal and all through dispatch: o
 -- A1's cause, kept from coming back: every field conditions.lua reads from a condition is an argument wait_until takes
 -- (batch17 named fluid and signal only in the `until` text, and all's conditions never was a key).
 do
-  local src=io.open('mod/agent-harness_0.1.0/conditions.lua'):read('a')
+  local src=io.open('mod/agent-harness_0.1.0/conditions.lua'):read('*a')
   local seen,missing={},{}
   for k in src:gmatch('[^%w_%.]c%.([%a_]+)') do seen[k]=true end
   for k in src:gmatch("c%['([%a_]+)'%]") do seen[k]=true end

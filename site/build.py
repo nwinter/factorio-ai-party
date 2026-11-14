@@ -577,8 +577,8 @@ def nav_items():
     the run's page (when there is one) and About."""
     if archive():
         return [("/", "Live"), ("/experiments/", "Experiments"), ("/runs/", "Runs"), ("/studies/", "Studies")] + updates_nav() + \
-            [("/about/", "About")]
-    return [("/", "Live"), ("/polls/", "Polls"), ("/ideas/", "Ideas")] + ([("/runs/long/", "The run")] + ([("/videos/", "Videos")] if VIDEOS or R2 else []) + [("/agents/", "Agents"), ("/timeline/", "Timeline"), ("/chronicle/", "Chronicle"),
+            [("/teams/", "Team runs"), ("/about/", "About")]
+    return [("/", "Live"), ("/polls/", "Polls"), ("/ideas/", "Ideas"), ("/teams/", "Team runs")] + ([("/runs/long/", "The run")] + ([("/videos/", "Videos")] if VIDEOS or R2 else []) + [("/agents/", "Agents"), ("/timeline/", "Timeline"), ("/chronicle/", "Chronicle"),
                                ("/chat/", "Chat")] + ([("/blueprints/", "Blueprints")] if BLUEPRINTS else []) + [("/search/", "Search")]
                               if LONG else []) + updates_nav() + [("/how/", "How it was made"), ("/about/", "About"),
                                                   (GITHUB_URL, "GitHub")]
@@ -2070,17 +2070,18 @@ def live_app(heading, sample_href, below_player=""):
     </div>
     <div class="fx-tab-body">
       <div data-pane="site" class="vchat-pane">
-        <div class="vchat-filter fx-muted small"><label><input type="checkbox" id="vchat-replies" checked> Show agents' replies to viewers</label>
+        <div class="vchat-filter fx-muted small"><label id="vchat-replies-label"><input type="checkbox" id="vchat-replies" checked> Show agents' replies to viewers</label>
           <span id="vchat-host" class="vchat-host" hidden>Signed in as host <button class="fx-btn fx-btn--small" type="button" id="vchat-host-forget">Forget</button></span></div>
         <ol id="vchat" class="vchat" aria-live="polite"></ol>
         <form id="vchat-form" class="vchat-form" autocomplete="off">
           <input class="fx-textfield" name="name" maxlength="20" placeholder="Name" aria-label="Your name (blank: a guest name)" title="Blank: you post as Guest and four letters or digits, the same each time">
           <input class="fx-textfield" name="text" maxlength="500" placeholder="Say something" aria-label="Message" required>
           <button class="fx-btn" type="submit">Send</button>
-          <label class="vchat-viewers fx-muted small"><input type="checkbox" name="viewers"> Viewers only: not sent to the agents</label>
+          <label class="vchat-viewers fx-muted small"><input type="checkbox" name="viewers"> <span id="vchat-viewers-label">Viewers only: not sent to the agents</span></label>
         </form>
         <p id="vchat-note" class="fx-muted small" aria-live="polite"></p>
-        <details class="vchat-help fx-muted small">
+        <p id="team-test-chat-help" class="fx-muted small" hidden>Site and YouTube chat go to the operator. Playing agents do not receive viewer messages. Moderated messages can appear on the stream; “Viewers only” keeps a line here on the site. No account or links; be kind.</p>
+        <details id="vchat-game-help" class="vchat-help fx-muted small">
           <summary>How chat works</summary>
           <dl class="vchat-tips fx-muted small">
             <div><dt>@astra</dt><dd>that agent answers (any agent's name)</dd></div>
@@ -2109,6 +2110,7 @@ def live_app(heading, sample_href, below_player=""):
 <div id="offline" class="live-offline"></div>
 <div id="strip" class="live-strip fx-root fx-panel live-panel"></div>
 <ul id="alerts" class="live-alerts"></ul>
+<div id="team-tests" class="team-tests" hidden></div>
 <div id="dash" class="live-dash"></div>
 <p class="muted small">The dashboard refreshes every {poll} seconds from the stream service on the game host.
 <a href="{sample_href}">Sample view</a>.</p>
@@ -2227,6 +2229,8 @@ def main():
     ap.add_argument("--out", default=str(SITE / "dist"))
     ap.add_argument("--runs-dir", default=str(REPO / "runs"),
                     help="where the long run's shift folders are (default: the repo's runs/; read-only)")
+    ap.add_argument("--team-runs-dir", default=os.environ.get("POG_TEAM_RUNS_DIR"),
+                    help="team runs containing op/public-site archives (default: --runs-dir)")
     ap.add_argument("--content", default=os.environ.get("POG_SITE_CONTENT"),
                     help="another site.json (tests: the archive switch and run_start; default $POG_SITE_CONTENT)")
     # (batch265) the video data only when named (tools/site-refresh.sh names site/content/videos.json, r2.json and
@@ -2351,6 +2355,8 @@ def main():
         body, head = site_search.build_search(entries, esc)
         write("search/index.html", page("Search", body, "/search/", "Search the agents, shifts, events and chat.",
                                         extra_head=head, path="/search/"))
+    import team_runs
+    team_runs.build(args.team_runs_dir or args.runs_dir, write, page, esc, CONFIG.get("live_api_url", ""))
     write("about/index.html", build_about(runs, all_worlds))
     _title = CONFIG.get("site_title", "Factorio AI Party")  # the privacy policy and terms (site/legal.py, d23)
     write("privacy/index.html", page("Privacy policy", legal.privacy_body(esc(_title)), "/privacy/",

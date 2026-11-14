@@ -13,10 +13,10 @@ do
     for n in ('math ipairs string table type assert pairs game pcall tostring defines prototypes error require next tonumber rawget rawset select '
       ..'rendering helpers storage setmetatable script log remote table_size collectgarbage load data BUNDLE_ID serpent print bit32'):gmatch('%S+') do KNOWN[n]=true end
     local dir='mod/agent-harness_0.1.0/'
-    local list=io.popen('ls '..dir..'*.lua'):read('a')
+    local list=io.popen('ls '..dir..'*.lua'):read('*a')
     local bad={}
     for file in list:gmatch('%S+') do
-      local out=io.popen('luac -p -l '..file..' 2>&1'):read('a')
+      local out=io.popen('luac -p -l '..file..' 2>&1'):read('*a')
       for name in out:gmatch('[GS]ETTABUP[^\n]-_ENV "([%w_]+)"') do
         -- `mods` is an engine global only during the data stage, not in runtime modules.
         if not KNOWN[name] and not (name=='mods' and file:match('/data%.lua$')) then bad[#bad+1]=file:match('[^/]+$')..': '..name end

@@ -77,7 +77,7 @@ do
   local list={ent('container','steel-chest',300,755),ent('beacon','beacon',5,4,4),ent('beacon','beacon',9,4,4),ent('assembling-machine','assembling-machine-2',2,2,2),
     ent('mining-drill','electric-mining-drill',40,6,6)}
   local surf={name='nauvis',find_entities_filtered=function(f) if f.type=='item-entity' then return {} end
-    local want={} for _,t in ipairs(f.type or {}) do want[t]=true end
+    local want={} for _,t in ipairs(type(f.type)=='string' and {f.type} or f.type or {}) do want[t]=true end
     local out={} for _,e in ipairs(list) do if want[e.type] then out[#out+1]=e end end return out end}
   local S=dofile('mod/agent-harness_0.1.0/stores.lua'){agents=function() return {} end}
   local p={surface=surf,position={x=0,y=0},force={logistic_networks={}}}

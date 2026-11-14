@@ -146,7 +146,7 @@ do
   prototypes.item.rocket={name='rocket'}; prototypes.item['iron-ore']=prototypes.item['iron-ore'] or {name='iron-ore'}
   local belts={}
   for i=1,30 do
-    local held=i%10==0 and {{name='rocket',count=i//10}} or {{name='iron-ore',count=2}}
+    local held=i%10==0 and {{name='rocket',count=math.floor(i/10)}} or {{name='iron-ore',count=2}}
     belts[i]={valid=true,name='transport-belt',type='transport-belt',force=force,surface=surface,position={x=i+0.5,y=3.5},
       get_max_transport_line_index=function() return 2 end,
       get_transport_line=function(li) return {get_contents=function() return li==1 and held or {} end} end}

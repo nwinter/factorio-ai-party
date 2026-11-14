@@ -165,7 +165,7 @@ def grok_muse_agy():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     src = open(os.path.join(ROOT, "tools", "launch-agent.sh")).read()
-    assert "exec env $muse_env '$sleepcap_run' muse" in src
+    assert "exec env $muse_env '$sleepcap_run' $muse_client" in src
     print("grok, muse, agy: ok (launch under run; agy's own quota wait untouched)")
 
 

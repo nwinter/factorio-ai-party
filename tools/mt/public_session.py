@@ -109,6 +109,24 @@ def owned_pid(pid, run):
         return False
 
 
+def publisher_command(run, op, off=False, source="http://127.0.0.1:8790/state.json"):
+    cmd = [sys.executable, str(ROOT/'site/push_live.py')]
+    if off:
+        return cmd + ['--team-tests-off']
+    return cmd + ['--team-tests', '--team-run-id', run, '--team-archive-dir', str(op/'public-site'),
+                  '--source', source, '--report', '30']
+
+
+def publisher_env(video):
+    env = dict(os.environ, POG_YOUTUBE=video)
+    # The source checkout can differ from the operator's credential checkout.
+    if not env.get('POG_LIVE_TOKEN'):
+        path = MAIN/'site/worker/.secrets.json'
+        if path.is_file():
+            env['POG_LIVE_TOKEN'] = read(path)['PUBLISH_TOKEN']
+    return env
+
+
 def supervise(run, minutes, run_mode='test', public=False, closed_drill=False):
     pinned()
     op = ROOT/'runs'/run/'op'
@@ -145,9 +163,9 @@ def supervise(run, minutes, run_mode='test', public=False, closed_drill=False):
         obs.call('StartStream')
         transition(api,receipt,'testing',stop)
         transition(api,receipt,'live',stop)
-        env = dict(os.environ, POG_YOUTUBE=receipt['id'])
+        env = publisher_env(receipt['id'])
         with (op/'site-push.log').open('a') as log:
-            publisher = subprocess.Popen([sys.executable,str(MAIN/'site/push_live.py'),'--team-tests','--source',source,'--report','30'],env=env,stdout=log,stderr=subprocess.STDOUT)
+            publisher = subprocess.Popen(publisher_command(run, op, source=source),env=env,stdout=log,stderr=subprocess.STDOUT)
         state['publisher_pid'] = publisher.pid
         confirmed = False
         for _ in range(12):
@@ -172,10 +190,9 @@ def supervise(run, minutes, run_mode='test', public=False, closed_drill=False):
         def start_publisher():
             nonlocal publisher
             terminate(publisher)
-            env = dict(os.environ, POG_YOUTUBE=receipt['id'])
+            env = publisher_env(receipt['id'])
             with (op/'site-push.log').open('a') as log:
-                publisher = subprocess.Popen([sys.executable,str(MAIN/'site/push_live.py'),'--team-tests',
-                    '--source',source,'--report','30'],env=env,stdout=log,stderr=subprocess.STDOUT)
+                publisher = subprocess.Popen(publisher_command(run, op, source=source),env=env,stdout=log,stderr=subprocess.STDOUT)
             state['publisher_pid'] = publisher.pid
 
         def stream_check():
@@ -268,9 +285,17 @@ def supervise(run, minutes, run_mode='test', public=False, closed_drill=False):
                 publisher.wait(timeout=20)
             except subprocess.TimeoutExpired:
                 publisher.kill(); publisher.wait(timeout=5)
+        # Capture the last public snapshot before taking the live publication down.
+        # --print records locally and makes no publish request.
+        if publisher is not None:
+            try:
+                subprocess.run(publisher_command(run, op, source=source)+['--once','--print'],
+                               stdout=subprocess.DEVNULL, check=True, timeout=15)
+            except Exception as e:
+                errors.append('final public archive: '+str(e))
         try:
             if owns_site(site_state(),receipt['id']):
-                subprocess.run([sys.executable,str(MAIN/'site/push_live.py'),'--team-tests-off'],check=True,timeout=40)
+                subprocess.run(publisher_command(run, op, off=True),env=publisher_env(receipt['id']),check=True,timeout=40)
         except Exception as e:
             errors.append('site off: '+str(e))
         hold = read(op/'stream-hold.json') if (op/'stream-hold.json').exists() else {}

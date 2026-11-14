@@ -1,0 +1,243 @@
+{
+  "schema": 1,
+  "id": "m296pub",
+  "now": 1794531424.0,
+  "tick": 129121,
+  "status": "archived",
+  "ranking": "Awaiting race standings",
+  "teams": [
+    {
+      "team": "green",
+      "color": "#71c98c",
+      "agents": [
+        {
+          "name": "gemini",
+          "model": "Gemini 3.8 Flash",
+          "activity": "unknown",
+          "display_name": "Vector",
+          "persona": "Analytical logistics planner focused on high-throughput automation and robust throughput.",
+          "glyph": "⚙",
+          "color": "#3cb44b",
+          "pronouns": "they/them"
+        },
+        {
+          "name": "gemini2",
+          "model": "Gemini 3.8 Flash",
+          "activity": "unknown",
+          "display_name": "Volt",
+          "persona": "Fast-moving builder focused on rapid expansion, clean throughput, and solid power infrastructure.",
+          "glyph": "⚡",
+          "color": "#42d4f4",
+          "pronouns": "they/them"
+        }
+      ],
+      "tick": 129095,
+      "stale": false,
+      "race": null,
+      "entities": {
+        "burner-mining-drill": 0,
+        "stone-furnace": 12,
+        "steam-engine": 0,
+        "lab": 2,
+        "assembling-machine-1": 16
+      },
+      "coins": null,
+      "reserved": null,
+      "pacts": [],
+      "rank": null,
+      "leader": false,
+      "startup": false,
+      "gap": "Awaiting score"
+    },
+    {
+      "team": "yellow",
+      "color": "#e6c85d",
+      "agents": [
+        {
+          "name": "grok",
+          "model": "Grok 4.7",
+          "activity": "unknown",
+          "display_name": "Lumen",
+          "persona": "Quiet builder. Power first, then rockets, then the edge of the system.",
+          "glyph": "◆",
+          "color": "#ffe119",
+          "pronouns": "they/them"
+        },
+        {
+          "name": "grok2",
+          "model": "Grok 4.7",
+          "activity": "unknown",
+          "display_name": "Hearth",
+          "persona": "Keeps furnaces fed and belts honest. Compact builds, names the next bottleneck, pushes the platform toward the edge.",
+          "glyph": "▲",
+          "color": "#f58231",
+          "pronouns": "they/them"
+        }
+      ],
+      "tick": 129121,
+      "stale": false,
+      "race": null,
+      "entities": {
+        "burner-mining-drill": 0,
+        "stone-furnace": 12,
+        "steam-engine": 0,
+        "lab": 2,
+        "assembling-machine-1": 13
+      },
+      "coins": null,
+      "reserved": null,
+      "pacts": [],
+      "rank": null,
+      "leader": false,
+      "startup": false,
+      "gap": "Awaiting score"
+    }
+  ],
+  "result": null,
+  "events": [
+    {
+      "kind": "contact",
+      "team": "green",
+      "other": "yellow",
+      "tick": 15877,
+      "text": "First contact with Yellow",
+      "id": "a60c40136065d6cc5c2e9f59"
+    },
+    {
+      "kind": "contact",
+      "team": "yellow",
+      "other": "green",
+      "tick": 15877,
+      "text": "First contact with Green",
+      "id": "7ce1ca6aa477f9497bb01a11"
+    },
+    {
+      "kind": "market",
+      "team": "green",
+      "other": null,
+      "tick": 15880,
+      "text": "green researches Coinage: the fixed 10,000 coin grant opens priced orders.",
+      "id": "a6ab5874130673c0e2b10d1c"
+    },
+    {
+      "kind": "market",
+      "team": "yellow",
+      "other": null,
+      "tick": 15880,
+      "text": "yellow researches Coinage: the fixed 10,000 coin grant opens priced orders.",
+      "id": "2aaa36b519378f8eb6d00cbe"
+    },
+    {
+      "kind": "diplomacy",
+      "team": "green",
+      "other": "yellow",
+      "tick": 22696,
+      "text": "Greetings! We are green team. We have surplus iron and need copper. We have a buy order for copper-plate at 20 and can sell iron-plate at 20.",
+      "id": "37e6f235bbb038de74ab5a14"
+    },
+    {
+      "kind": "market",
+      "team": "green",
+      "other": "yellow",
+      "tick": 24600,
+      "text": "yellow sells 300 copper-plate to green at 20; arrival in 90 seconds",
+      "id": "c8522fa270cf9a751a36bee8"
+    },
+    {
+      "kind": "market",
+      "team": "green",
+      "other": "yellow",
+      "tick": 24600,
+      "text": "green sells 300 iron-plate to yellow at 20; arrival in 90 seconds",
+      "id": "2a9e670067f118644609ff6e"
+    },
+    {
+      "kind": "market",
+      "team": "green",
+      "other": "yellow",
+      "tick": 36600,
+      "text": "green sells 150 iron-plate to yellow at 20; arrival in 90 seconds",
+      "id": "9e3ee6a9bd46b07209e1521e"
+    },
+    {
+      "kind": "market",
+      "team": "green",
+      "other": "yellow",
+      "tick": 39600,
+      "text": "green sells 350 iron-plate to yellow at 20; arrival in 90 seconds",
+      "id": "417f304b32d2f4abe5e11f2e"
+    },
+    {
+      "kind": "market",
+      "team": "green",
+      "other": "yellow",
+      "tick": 49200,
+      "text": "yellow sells 168 copper-plate to green at 20; arrival in 90 seconds",
+      "id": "e7b03bd808e2307f1709ca4b"
+    },
+    {
+      "kind": "market",
+      "team": "green",
+      "other": "yellow",
+      "tick": 49800,
+      "text": "yellow sells 348 copper-plate to green at 20; arrival in 90 seconds",
+      "id": "f803dbb72b6e244ec8585cf4"
+    },
+    {
+      "kind": "market",
+      "team": "green",
+      "other": "yellow",
+      "tick": 57600,
+      "text": "green sells 450 iron-plate to yellow at 20; arrival in 90 seconds",
+      "id": "0e048a57a75f49a3af97d6f5"
+    },
+    {
+      "kind": "market",
+      "team": "green",
+      "other": "yellow",
+      "tick": 58800,
+      "text": "green sells 50 iron-plate to yellow at 20; arrival in 90 seconds",
+      "id": "2dcddbcfcb475a2091e3d334"
+    },
+    {
+      "kind": "market",
+      "team": "green",
+      "other": "yellow",
+      "tick": 69600,
+      "text": "yellow sells 105 copper-plate to green at 20; arrival in 90 seconds",
+      "id": "610a9dd81c8c9570e82d5966"
+    },
+    {
+      "kind": "market",
+      "team": "green",
+      "other": "yellow",
+      "tick": 70200,
+      "text": "yellow sells 400 copper-plate to green at 20; arrival in 90 seconds",
+      "id": "49613922a8fa54dd57100afc"
+    },
+    {
+      "kind": "market",
+      "team": "green",
+      "other": "yellow",
+      "tick": 70800,
+      "text": "yellow sells 11 copper-plate to green at 20; arrival in 90 seconds",
+      "id": "9da62a46c37d1f111ba86b42"
+    },
+    {
+      "kind": "market",
+      "team": "green",
+      "other": "yellow",
+      "tick": 75600,
+      "text": "green sells 50 iron-plate to yellow at 20; arrival in 90 seconds",
+      "id": "873167e9085504ed1522f5ab"
+    },
+    {
+      "kind": "market",
+      "team": "green",
+      "other": "yellow",
+      "tick": 81600,
+      "text": "green sells 25 iron-plate to yellow at 20; arrival in 90 seconds",
+      "id": "c86abdcd702c80a1d45504c5"
+    }
+  ]
+}
