@@ -126,6 +126,8 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   if [ "$tree" = "$root" ]; then echo "   agents launch from this checkout (POG_MT_TREE=here)"
   else echo "   agents launch from $tree (tools/mt/launch-tree.sh from $(git rev-parse --short HEAD), then its scan)"; fi
   echo "   web blocked: $POG_WEB_BLOCK; reads denied: $POG_DENY_READ"
+  if [ "$run_mode" = full ]; then echo "   market: mt_market {profile=\"full\"} (Posts destructible, 25% raid spill into a coin wreck, tier grants, research income)"
+  else echo "   market: the save's own settings (test run)"; fi
   for t in $teams; do
     mkdir -p "$tmp/$t"; team_files "$t" "$tmp/$t"
     echo "2. team $t (force $t): $(members "$tmp/$t/team.tsv" | tr '\n' ' ')-> $tree/runs/$run/$t/<name>, broker sockets there in .sock"
@@ -255,6 +257,15 @@ for t in "" $teams; do
   scrub_lua="/silent-command rcon.print(remote.call('agent_harness','dispatch',[[$req]]))"
   log "chat${t:+ $t}: $(python3 tools/pog.py --world "$world" rcon "$scrub_lua" 2>&1 | cut -c1-200)"
 done
+# (mt302) a full game's market (pacts.lua PROFILES.full): home Posts destructible, 25% of the wallet into a coin wreck,
+# tier grants, research income. Test runs and prepared-base fixtures keep the settings their save holds.
+if [ "$run_mode" = full ]; then
+  preq='{"id":"start-mt-profile-'$run'","operator":true,"action":"mt_market","args":{"profile":"full"}}'
+  profile_lua="/silent-command local r=remote.call('agent_harness','dispatch',[[$preq]]) local j=helpers.json_to_table(r) rcon.print(j and j.ok and ('market profile full: '..helpers.table_to_json(j.result.settings)) or ('REFUSED '..r))"
+  out=$(python3 tools/pog.py --world "$world" rcon "$profile_lua" 2>&1 | cut -c1-600)
+  log "$out"
+  case $out in "market profile full:"*) ;; *) log "refusing a full run without the full market profile"; exit 1 ;; esac
+fi
 mkdir -p "$rundir"
 [ -n "$resume" ] && echo "$resume" > "$rundir/resumed-from"
 
