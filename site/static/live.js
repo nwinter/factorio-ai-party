@@ -111,7 +111,9 @@
     var by = {}, rest = [];
     Object.keys(storedReplies).forEach(function (k) { by[k] = storedReplies[k]; });
     stateReplies.forEach(function (m) { if (typeof m.seq === 'number') by[m.seq] = m; else rest.push(m); });  // the state's is the newer
-    replyLines = Object.keys(by).map(function (k) { return by[k]; }).concat(rest).sort(function (a, b) { return (a.t || 0) - (b.t || 0); });
+    replyLines = Object.keys(by).map(function (k) { return by[k]; }).concat(rest).filter(function (m) {
+      return !testMode || m.by === 'operator';
+    }).sort(function (a, b) { return (a.t || 0) - (b.t || 0); });
   }
   var THREAD_S = 20 * 60, NEW_S = 10 * 60;  // (AK6) a reply threads under a line at most THREAD_S older; "new" for NEW_S
   // The viewer line a reply answers, in this list: the same viewer, the same words (the relay's "@astra " stripped,
@@ -868,6 +870,45 @@
     if (window.PogMap) mapView = window.PogMap.create($('#mm'), { storeKey: 'pog-live-map', label: 'The base and agent positions' });
   }
   function fill(sel, html) { var el = $(sel); if (el) el.innerHTML = html; }
+  var testMode = false, testState = false;
+  function renderTeamTests(s) {
+    var box = $('#team-tests');
+    if (!box) return;
+    box.innerHTML = (s.teams || []).map(function (t) {
+      var r = t.research || {}, pct = Math.round((r.progress || 0) * 100), shown = {};
+      (t.agents || []).forEach(function (a) { shown[a.name] = (a.display_name || label(a.name)) + (a.model ? ' · ' + a.model : ''); });
+      return '<section class="fx-panel live-card" style="border-top:3px solid ' + (safeColor(t.color) || '#999999') + '">' +
+        '<header class="fx-panel-title">' + esc(label(t.team)) + (t.stale ? ' · data delayed' : '') + '</header><div class="card-body">' +
+        '<p>' + esc(r.done_count == null ? '–' : r.done_count) + ' technologies · ' + esc(t.rockets == null ? '–' : t.rockets) + ' rockets · ' +
+        esc(t.spm == null ? '–' : Math.round(t.spm)) + ' SPM</p>' +
+        (r.label ? '<p>Research: ' + esc(r.label) + ' · ' + pct + '%</p>' : '') +
+        '<ul class="team-test-agents">' + (t.agents || []).map(function (a) {
+          // the character the agent chose (name, glyph, colour, persona); its model stays beside it
+          var mark = a.glyph ? '<span class="tt-glyph" style="color:' + acColor(a.color) + '" aria-hidden="true">' + esc(a.glyph) + '</span> ' : '';
+          return '<li>' + mark + '<strong>' + esc(shown[a.name]) + '</strong>' + (a.pronouns ? ' <span class="fx-muted small">' + esc(a.pronouns) + '</span>' : '') +
+            ' · ' + esc(a.activity) + (a.persona ? '<div class="tt-persona small fx-muted">“' + esc(a.persona) + '”</div>' : '') + '</li>';
+        }).join('') + '</ul>' +
+        '<h3>Team board</h3><ul>' + (t.board || []).map(function (m) { return '<li>' + esc(m.title) + (m.owner ? ' · ' + esc(shown[m.owner] || m.owner) : '') + '</li>'; }).join('') + '</ul>' +
+        '<h3>Team chat</h3><ol class="team-test-chat">' + (t.chat || []).map(function (m) {
+          var to = Array.isArray(m.to) && m.to.length ? ' → ' + m.to.map(function (n) { return esc(n === 'team' ? 'team' : shown[n] || n); }).join(', ') : '';
+          return '<li><strong>' + esc(shown[m.name] || m.name) + '</strong>' + to + ': ' + esc(m.text) + '</li>';
+        }).join('') +
+        '</ol></div></section>';
+    }).join('');
+    $('#run-title').textContent = 'AI team tests';
+    $('#run-sub').textContent = 'Viewer chat goes to the operator. Playing agents do not receive it. Team chat stays within its team.';
+    $('#next-shift').hidden = true;
+  }
+  function showTestMode(on) {
+    var changed = testMode !== on;
+    testMode = on;
+    if ($('#team-tests')) $('#team-tests').hidden = !on;
+    ['#dash', '#strip', '#alerts'].forEach(function (id) { if ($(id)) $(id).hidden = on; });
+    ['#vchat-replies-label', '#vchat-game-help'].forEach(function (id) { if ($(id)) $(id).hidden = on; });
+    if ($('#team-test-chat-help')) $('#team-test-chat-help').hidden = !on;
+    if ($('#vchat-viewers-label')) $('#vchat-viewers-label').textContent = on ? 'Viewers only: stays on this site' : 'Viewers only: not sent to the agents';
+    if (changed) { mergeReplies(); renderChat(); }
+  }
   function renderState(s, age) {
     var agents = s.agents || [], chat = s.chat || [], r = s.research || {}, sci = s.science || {}, board = s.board || {};
     if (s.stream) embedPlayer(s.stream.youtube_video_id, s.stream.youtube_channel_id);
@@ -883,6 +924,7 @@
     var byName = {}; agents.forEach(function (a) { byName[a.name] = a; });
     team = byName; lastState = s;
     var live = age != null && age <= LIVE_MAX_AGE;
+    if (s.mode === 'team-tests') { renderTeamTests(s); return; }
 
     // status strip
     var pct = Math.round((r.progress || 0) * 100);
@@ -1633,7 +1675,8 @@
   }
   function renderShift(sh, live) {
     var p = $('#next-shift');
-    if (!p) return;
+    if (!p || testMode) return;
+    if (testState) { p.hidden = true; setBadge('offline', 'Run is over'); return; }
     sh = currentShift(sh);
     var t = shiftText(sh, live);
     p.textContent = t;
@@ -1684,7 +1727,7 @@
   function loadStatus() {
     getJSON(cfg.status).then(function (st) {
       offlineStatus = st;
-      if (st.stream) embedPlayer(st.stream.youtube_video_id, st.stream.youtube_channel_id);
+      if (st.stream && !testMode) embedPlayer(st.stream.youtube_video_id, st.stream.youtube_channel_id);
       renderOffline(st);
       renderShift(lastState && lastState.shift, serviceLive);
     }).catch(function () { renderOffline(null); });
@@ -1704,20 +1747,36 @@
     if (!demo && !API) { setBadge('offline', 'Offline'); placeSummary(false); loadStatus(); return; }
     getJSON(url).then(function (d) {
       var s = demo ? d : d.state, age = demo ? 0 : d.age_s;
-      var live = s && age != null && age <= LIVE_MAX_AGE;
+      var isTest = s && s.mode === 'team-tests';
+      testState = !!isTest;
+      var live = s && age != null && age <= LIVE_MAX_AGE && (!isTest || (s.active === true && Date.now() / 1000 - s.now <= LIVE_MAX_AGE));
+      var wasTest = testMode;
+      showTestMode(!!(isTest && live));
+      if (wasTest && !testMode) {
+        embedded = null;
+        player.innerHTML = '<div class="player-placeholder"><p>Not live right now.</p></div>';
+        if (ytChat) ytChat.innerHTML = '<p class="fx-muted">YouTube chat appears here once the stream is set up.</p>';
+        $('#run-title').textContent = 'Run is over'; $('#run-sub').textContent = '';
+        loadStatus();
+      }
       if (targetCountdown) targetCountdown.update(live ? s.run_target : null, age);
       serviceLive = !!live;
-      if (demo) setBadge('sample', 'Sample'); else if (live) setBadge('live', 'Live'); else setBadge('offline', 'Offline');
+      if (demo) setBadge('sample', 'Sample'); else if (live) setBadge('live', isTest ? 'Team tests live' : 'Live'); else setBadge('offline', 'Offline');
       setWatching(watchingText(s, demo ? null : d.site_watching, live || demo));
-      app.classList.toggle('has-state', !!s);
+      app.classList.toggle('has-state', !!s && (!isTest || live));
       app.classList.toggle('is-live', !!live);
       $('#updated').textContent = demo ? 'Sample data from the stream service\'s mock session.' : (d.received ? 'Updated ' + ago(age) : '');
       if (!live && !offlineStatus) loadStatus();
-      if (s && (s.now !== lastNow || !live)) { lastNow = s.now; renderState(s, age); }
-      renderShift(s && s.shift, live);
+      if (s && (!isTest || live) && (s.now !== lastNow || !live)) { lastNow = s.now; renderState(s, age); }
+      renderShift(isTest ? null : s && s.shift, live);
       placeSummary(live || demo);
     }).catch(function () {
       serviceLive = false;
+      if (testMode) {
+        showTestMode(false); embedded = null;
+        player.innerHTML = '<div class="player-placeholder"><p>Live data is unavailable right now.</p></div>';
+        app.classList.remove('is-live'); app.classList.remove('has-state');
+      }
       if (targetCountdown) targetCountdown.update(null);
       placeSummary(false);
       setBadge('offline', 'Offline');

@@ -2070,17 +2070,18 @@ def live_app(heading, sample_href, below_player=""):
     </div>
     <div class="fx-tab-body">
       <div data-pane="site" class="vchat-pane">
-        <div class="vchat-filter fx-muted small"><label><input type="checkbox" id="vchat-replies" checked> Show agents' replies to viewers</label>
+        <div class="vchat-filter fx-muted small"><label id="vchat-replies-label"><input type="checkbox" id="vchat-replies" checked> Show agents' replies to viewers</label>
           <span id="vchat-host" class="vchat-host" hidden>Signed in as host <button class="fx-btn fx-btn--small" type="button" id="vchat-host-forget">Forget</button></span></div>
         <ol id="vchat" class="vchat" aria-live="polite"></ol>
         <form id="vchat-form" class="vchat-form" autocomplete="off">
           <input class="fx-textfield" name="name" maxlength="20" placeholder="Name" aria-label="Your name (blank: a guest name)" title="Blank: you post as Guest and four letters or digits, the same each time">
           <input class="fx-textfield" name="text" maxlength="500" placeholder="Say something" aria-label="Message" required>
           <button class="fx-btn" type="submit">Send</button>
-          <label class="vchat-viewers fx-muted small"><input type="checkbox" name="viewers"> Viewers only: not sent to the agents</label>
+          <label class="vchat-viewers fx-muted small"><input type="checkbox" name="viewers"> <span id="vchat-viewers-label">Viewers only: not sent to the agents</span></label>
         </form>
         <p id="vchat-note" class="fx-muted small" aria-live="polite"></p>
-        <details class="vchat-help fx-muted small">
+        <p id="team-test-chat-help" class="fx-muted small" hidden>Site and YouTube chat go to the operator. Playing agents do not receive viewer messages. Moderated messages can appear on the stream; “Viewers only” keeps a line here on the site. No account or links; be kind.</p>
+        <details id="vchat-game-help" class="vchat-help fx-muted small">
           <summary>How chat works</summary>
           <dl class="vchat-tips fx-muted small">
             <div><dt>@astra</dt><dd>that agent answers (any agent's name)</dd></div>
@@ -2109,6 +2110,7 @@ def live_app(heading, sample_href, below_player=""):
 <div id="offline" class="live-offline"></div>
 <div id="strip" class="live-strip fx-root fx-panel live-panel"></div>
 <ul id="alerts" class="live-alerts"></ul>
+<div id="team-tests" class="team-tests" hidden></div>
 <div id="dash" class="live-dash"></div>
 <p class="muted small">The dashboard refreshes every {poll} seconds from the stream service on the game host.
 <a href="{sample_href}">Sample view</a>.</p>
