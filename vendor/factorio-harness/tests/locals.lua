@@ -8,7 +8,7 @@ local MIN_FREE = 3
 local DIR = 'mod/agent-harness_0.1.0/'
 local function read(path)
   local f = assert(io.open(path, 'r'))
-  local text = f:read('a')
+  local text = f:read('*a')
   f:close()
   return text
 end

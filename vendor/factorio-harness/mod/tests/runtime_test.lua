@@ -1045,6 +1045,7 @@ local function inv(...)
   local t={...}; t.valid=true
   -- (no argument: every item, as the engine counts)
   t.get_item_count=function(f) local n=0; for _,s in ipairs(t) do if s.valid_for_read and (f==nil or s.name==f.name) then n=n+s.count end end; return n end
+  t.get_contents=function() local out={} for _,s in ipairs(t) do if s.valid_for_read then out[#out+1]={name=s.name,count=s.count,quality='normal'} end end return out end
   return t
 end
 defines.inventory.fuel,defines.inventory.furnace_source,defines.inventory.furnace_result=2,3,4
@@ -5393,7 +5394,7 @@ end)()
   for _,path in ipairs(paths) do
     -- (the compacted-module run works in a copy without the docs: describe's examples only there)
     local f=io.open(path)
-    local text=f and f:read('a') or ''
+    local text=f and f:read('*a') or ''
     if f then f:close(); found=found+1 end
     for action,json in text:gmatch("fh call ([%w_]+) %-%-args '(%b{})'") do
       assert(d.actions[action],path..': fh call '..action..' is no action')

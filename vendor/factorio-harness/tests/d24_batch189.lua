@@ -4,7 +4,7 @@
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function fails(fn,text) local ok,err=pcall(fn); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
 local function has(list,text)
-  for _,line in ipairs(list or {}) do if line:find(text,1,true) then return line end end
+  for _,line in ipairs(type(list)=='string' and {list} or list or {}) do if line:find(text,1,true) then return line end end
   return nil
 end
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path

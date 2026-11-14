@@ -7,7 +7,7 @@
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local function eq(a,b,m) if a~=b then error((m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b),2) end end
 local function has(s,x) assert(type(s)=='string' and s:find(x,1,true),tostring(s)..'\n  lacks: '..x) end
-local function read(p) local f=assert(io.open(p)); local s=f:read('a'); f:close(); return s end
+local function read(p) local f=assert(io.open(p)); local s=f:read('*a'); f:close(); return s end
 defines={inventory={turret_ammo=1,hub_main=1},space_platform_state={on_the_path=1,waiting_at_station=2},events={on_space_platform_built_tile=77}}
 prototypes={item={['repair-pack']={type='repair-tool'}},
   quality={normal={level=0},uncommon={level=1},rare={level=2},epic={level=3},legendary={level=5}}}

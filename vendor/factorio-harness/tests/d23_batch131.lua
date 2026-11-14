@@ -53,9 +53,9 @@ print('d23_batch131 CN1 turned back mid-connection: freight leg, where, ETA: ok'
 do
   local A=dofile('mod/agent-harness_0.1.0/platalerts.lua')
   assert(type(A)=='function')
-  local src=io.open('mod/agent-harness_0.1.0/platalerts.lua'):read('a')
+  local src=io.open('mod/agent-harness_0.1.0/platalerts.lua'):read('*a')
   has(src,'M.fuel_sample(r, sc.fuel, leg_name(pl)'); has(src,'leg=leg_name(pl)}')
-  local rt=io.open('mod/agent-harness_0.1.0/runtime.lua'):read('a')
+  local rt=io.open('mod/agent-harness_0.1.0/runtime.lua'):read('*a')
   has(rt,"M.platalerts=require('platalerts'){state=state,leg=function(pl) return M.freight.leg(pl) end,")
 end
 print('d23_batch131 CN1 platalerts names the leg as flown: ok')
