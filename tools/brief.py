@@ -171,6 +171,7 @@ def continuous_text(text):
     text = text.replace("Read deadline.txt, preserve new facts", "Preserve new facts")
     text = text.replace("at the deadline minus 2 hours", "when available")
     text = text.replace("and the time left in the shift", "and your current work")
+    text = text.replace(", and never runs past your deadline", "")
     return text
 
 
