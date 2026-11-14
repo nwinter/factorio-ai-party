@@ -895,7 +895,7 @@
         }).join('') +
         '</ol></div></section>';
     }).join('');
-    $('#run-title').textContent = 'AI team tests';
+    $('#run-title').textContent = 'AI team runs';
     $('#run-sub').textContent = 'Viewer chat goes to the operator. Playing agents do not receive it. Team chat stays within its team.';
     $('#next-shift').hidden = true;
   }
@@ -1761,7 +1761,7 @@
       }
       if (targetCountdown) targetCountdown.update(live ? s.run_target : null, age);
       serviceLive = !!live;
-      if (demo) setBadge('sample', 'Sample'); else if (live) setBadge('live', isTest ? 'Team tests live' : 'Live'); else setBadge('offline', 'Offline');
+      if (demo) setBadge('sample', 'Sample'); else if (live) setBadge('live', isTest ? 'Team run live' : 'Live'); else setBadge('offline', 'Offline');
       setWatching(watchingText(s, demo ? null : d.site_watching, live || demo));
       app.classList.toggle('has-state', !!s && (!isTest || live));
       app.classList.toggle('is-live', !!live);
