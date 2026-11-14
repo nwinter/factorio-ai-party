@@ -375,7 +375,7 @@ do
     assert(not (x >= 7 and x <= 9 and y >= -1 and y <= 1), 'a refused tile is not called unbuilt: '..row)
   end
   -- the verdict (runtime.lua M.dry_verdict, read from the source): the refused tiles and the unbuilt ones fail it
-  local src = io.open('mod/agent-harness_0.1.0/runtime.lua'):read('a')
+  local src = io.open('mod/agent-harness_0.1.0/runtime.lua'):read('*a')
   -- the function's text: from its line to the first line-start end at which it loads (the compacted modules' run
   -- strips indentation, so earlier line-start ends are nested ones)
   local R = {}
@@ -1276,7 +1276,7 @@ do
   eq(adr.remedy2(force, 'brash-ice', MELT.layers), 'ice-platform, then concrete on it')
   eq(adr.remedy2(force, 'ice-rough', MELT.layers), nil, 'one item does there')
   -- the verdict fails on the decider alone
-  local src = io.open('mod/agent-harness_0.1.0/runtime.lua'):read('a')
+  local src = io.open('mod/agent-harness_0.1.0/runtime.lua'):read('*a')
   local R = {}
   local env = setmetatable({M=R}, {__index=_G})
   local from = src:find('\nfunction M%.dry_verdict%(out,a%)')
@@ -1409,7 +1409,7 @@ do
   eq(apart.tiles.not_connected_count, 4); has(apart.tiles.not_connected, '4 new foundation tiles touch no existing foundation by a side or a corner')
   eq(apart.tiles.unbuilt_count, 4)
   -- the verdict (runtime.lua M.dry_verdict, read from the source as above)
-  local src = io.open('mod/agent-harness_0.1.0/runtime.lua'):read('a')
+  local src = io.open('mod/agent-harness_0.1.0/runtime.lua'):read('*a')
   local R = {}
   local env = setmetatable({M=R}, {__index=_G})
   local from = src:find('\nfunction M%.dry_verdict%(out,a%)')

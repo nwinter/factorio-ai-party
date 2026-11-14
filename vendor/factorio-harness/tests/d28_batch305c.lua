@@ -5,7 +5,7 @@
 -- module, events, shift_start and the drive's last; control.lua forwards the robot, script, nest and tile events.
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function has(s,x) assert(tostring(s):find(x,1,true),tostring(s)..' lacks '..x) end
-local function read(p) local f=assert(io.open(p)); local s=f:read('a'); f:close(); return s end
+local function read(p) local f=assert(io.open(p)); local s=f:read('*a'); f:close(); return s end
 storage={}
 local function state() return storage end
 defines={events={on_built_entity=6,on_robot_built_entity=14,script_raised_set_tiles=98}}

@@ -1,4 +1,56 @@
-# Stage 1 markets (private mt296)
+# Markets (private mt296 / mt303)
+
+Stage 2 adds Freight at logistic science and Orbital at the team's first valid platform hub. The original stage-1
+timer still applies before both trading forces have Freight; existing timer transactions keep their semantics.
+Freight uses a buyer-force `mt-shipment` unit with a durable stateless cargo manifest (one copy, never an exposed
+second inventory). The 2.1.24 probe passed an 800-tile route and a disconnected-water no-path case with zero buyer
+charting. The prototype has radar range zero, no driver, mining result, combat loot or attack action.
+
+Dispatch first requests a native path. Busy pathfinding retries; failed paths use a fixed 30-second fallback.
+Units follow a native go-to command; a stalled route requests a fresh path rather than immediately bypassing it.
+No physical-route ETA or origin position enters agent replies. Safety is updated each tick with a one-tile margin
+outside the required 64-tile radius of both dispatch Posts. Exact insertion at the selected destination pays the
+seller; full receivers wait with the unpaid balance. Freight raises the rolling pair limit from 10 to 20 stacks.
+
+Loss accounting follows money-supply.md section 2, superseding v3's original all-losses-burn rule: direct buyer or
+its sticky side pays the seller; direct seller or its sticky side refunds the buyer; third-party/unattributed
+loss destroys escrow. The same handler covers native death, pre/final mining, deconstruction, driver events,
+raised script destroy, registered object destruction and missing-entity reconciliation. Buyer pre-mining,
+deconstruction and entry attempts are refused; actual forced removals still settle. Terminal receipts make
+duplicate events harmless. Cargo becomes a neutral character-corpse wreck. Coin audit includes destroyed coin:
+wallets + payment escrow + circulating physical coin + destroyed coin = cumulative issuance.
+
+Sides are unions from dispatch onward, sampled every tick and immediately at native cease-fire events and pact acceptance/end, including pacts
+without cease-fire and one-way cease-fires. Direct buyer/seller identity takes precedence. A shared partner of both
+sides burns coin and leaves cargo as loot (operator-approved tie-break). A cease-fire created and ended within one
+script callback is captured by the engine's immediate event, before its removal.
+
+`post {position}` designates an existing own chest within ten tiles, without creating free storage. The shared
+wallet stays at home (Post 1); forward Posts get own-team monotonically increasing IDs (maximum 32 forward sites).
+`offer`/`sell`/`buy`/`cancel` take an optional own Post ID after Freight, and keys include that ID. Orbital permits
+designation off Nauvis, including platform surfaces. Only Posts on the identical surface can match. Designating
+a replacement chest within two tiles of a destroyed forward site restores its ID. Pods remain native inter-surface
+logistics, outside market settlement; no pod force is ever written. Missing-pad pods follow mt302's ground-landing
+rules and own-team pod log. No cross-surface goods creation, payment wire or synthetic pod teleporter is added.
+
+All Post stock transfers as actual stacks into the same unreachable wreck as raided coin, preserving quality,
+ammo, tags, embedded contents and spoil deadlines. Only the home Post spills wallet coin; a forward Post spills
+its stock. This extends mt302's coin-only wreck behavior. Raid rewards are custody transfers, never issuance.
+
+Status names inbound own Post IDs, loss side/coin outcome and cargo location only where already charted. An unmet
+killer appears unattributed to that reader. Seeing a unit in an already visible chunk records contact with its
+owner. The operator feed admits shipment_loss lines and actual moving markers; platform names are projected to
+`platform`, and physical markers have no ETA. Agent references and cache identity follow the live unlock schema.
+
+Every game minute, operator-only `pog/mt-market-measures.jsonl` logs each team's wallet, reserves and escrow, observed iron
+plus copper plate output at 20 coin/plate and steel at 100, wallet/output and (wallet+escrow)/output minutes, unique buy attempts, refusals and short-wallet shares,
+reference-or-lower resting sells with zero fills, fill/reference last/min/max/mean ratios, grant receipts/ticks, coin and race rank,
+roster size, the hypothesized 0.4 two-agent factor, loss counts and destroyed coin. Pool in/out remain explicitly
+zero. `team_views` copies samples to the run's private `op/market-measures.jsonl`; these fields never enter public
+ranking or agent status. Refusal counts cover unique buy order receipts, including validation failures after schema validation; replays do not count twice. These ratios exclude physical coin; its global total is logged separately because per-team
+ownership cannot be inferred from neutral wrecks. The 0.4 factor is a hypothesis to compare with the five-agent baseline, not a measured result.
+
+The following records the stage-1 foundation; stage-2 semantics above supersede its timer-only descriptions.
 
 Spec: /Users/owner/code/pog-operator/markets/design-v3.md. The implementation is the market factory in pacts.lua,
 instantiated through its existing require. No new requires or persistent on_load mutations. World n is untouched.

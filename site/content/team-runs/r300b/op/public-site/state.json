@@ -1,0 +1,120 @@
+{
+  "schema": 1,
+  "id": "r300b",
+  "now": 1794641909.0,
+  "tick": 46715,
+  "status": "archived",
+  "ranking": "Awaiting race standings",
+  "teams": [
+    {
+      "team": "green",
+      "color": "#71c98c",
+      "agents": [
+        {
+          "name": "gemini",
+          "model": "Gemini 3.8 Flash",
+          "activity": "unknown",
+          "display_name": "Spark",
+          "persona": "Curious industrialist focused on clean logistics, reliable automation, and rapid tech progression.",
+          "glyph": "⚙",
+          "color": "#3cb44b"
+        },
+        {
+          "name": "gemini2",
+          "model": "Gemini 3.8 Flash",
+          "activity": "unknown",
+          "display_name": "Vesper",
+          "persona": "Methodical logistician and power engineer, turning raw wilderness into clean humming circuits.",
+          "glyph": "⚡",
+          "color": "#42d4f4",
+          "pronouns": "they/them"
+        }
+      ],
+      "tick": 46667,
+      "stale": false,
+      "race": null,
+      "entities": null,
+      "coins": null,
+      "reserved": null,
+      "pacts": [],
+      "rank": null,
+      "leader": false,
+      "startup": false,
+      "gap": "Awaiting score"
+    },
+    {
+      "team": "yellow",
+      "color": "#e6c85d",
+      "agents": [
+        {
+          "name": "grok",
+          "model": "Grok 4.7",
+          "activity": "unknown",
+          "display_name": "Cinder",
+          "persona": "Builds the first fire and the first belts; keeps iron moving.",
+          "glyph": "◆",
+          "color": "#ffe119",
+          "pronouns": "they/them"
+        },
+        {
+          "name": "grok2",
+          "model": "Grok 4.7",
+          "activity": "unknown",
+          "display_name": "Kiln",
+          "persona": "Smelts first, then ships. Keeps furnaces fed and the factory moving.",
+          "glyph": "▲",
+          "color": "#f58231",
+          "pronouns": "they/them"
+        }
+      ],
+      "tick": 46691,
+      "stale": false,
+      "race": null,
+      "entities": null,
+      "coins": null,
+      "reserved": null,
+      "pacts": [],
+      "rank": null,
+      "leader": false,
+      "startup": false,
+      "gap": "Awaiting score"
+    },
+    {
+      "team": "blue",
+      "color": "#6cacf0",
+      "agents": [
+        {
+          "name": "muse",
+          "model": "Muse Spark 1.3",
+          "activity": "unknown",
+          "display_name": "Sable",
+          "persona": "patient builder who keeps the furnaces lit",
+          "glyph": "✦",
+          "color": "#4363d8"
+        },
+        {
+          "name": "muse2",
+          "model": "Muse Spark 1.3",
+          "activity": "unknown",
+          "display_name": "Selene",
+          "persona": "Night-shift builder, belts first and tidy smelting rows.",
+          "glyph": "☾",
+          "color": "#f032e6"
+        }
+      ],
+      "tick": 46715,
+      "stale": false,
+      "race": null,
+      "entities": null,
+      "coins": null,
+      "reserved": null,
+      "pacts": [],
+      "rank": null,
+      "leader": false,
+      "startup": false,
+      "gap": "Awaiting score"
+    }
+  ],
+  "result": null,
+  "events": []
+}

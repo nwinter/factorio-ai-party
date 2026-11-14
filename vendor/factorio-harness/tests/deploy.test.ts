@@ -75,7 +75,7 @@ test('the chunked commands deploy has control.lua install the exact runtime', as
     `local printed={}`,
     `rcon={print=function(s) printed[#printed+1]=s end}`,
     ...commands.map(c => `assert(load(${luaString(c.replace(/^\/silent-command /, ''))}))()`),
-    `local f=assert(io.open(${JSON.stringify(join(dir, 'expected.lua'))},'rb')); local want=f:read('a')`,
+    `local f=assert(io.open(${JSON.stringify(join(dir, 'expected.lua'))},'rb')); local want=f:read('*a')`,
     `assert(storage.agent_harness.source==want,'source differs: '..#(storage.agent_harness.source or '')..' vs '..#want)`,
     `assert(printed[#printed]:find('"protocol":"2"',1,true),printed[#printed])`,
     `io.write('installed '..#want)`].join('\n');

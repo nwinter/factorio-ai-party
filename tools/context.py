@@ -203,8 +203,23 @@ def claude_tokens(transcript, since=0):
 LATE_ROOM = 5000
 
 
+def continuous(d):
+    return os.path.isfile(os.path.join(d, ".continuous"))
+
+
+def session_text(d, text):
+    if not continuous(d):
+        return text
+    text = text.replace("notes.md, deadline.txt,", "notes.md,")
+    text = text.replace("read deadline.txt, then ", "")
+    text = text.replace("read deadline.txt, add", "add")
+    return text
+
+
 def seconds_left(d):
     """Seconds to the deadline in DIR/deadline.txt ("2026-10-11 04:15 PDT", local time), None if unreadable."""
+    if continuous(d):
+        return None
     try:
         text = open(os.path.join(d, "deadline.txt")).read().strip()
         return int(time.mktime(time.strptime(text[:16], "%Y-%m-%d %H:%M")) - time.time())
@@ -332,7 +347,7 @@ def recovery_text(d, head, fields, extras=()):
     with its full text in a snapshot and a required recovery read, never silently dropped.
     """
     def render(parts):
-        return "\n".join(head + ["\n" + title + "\n" + body for title, body in parts])
+        return session_text(d, "\n".join(head + ["\n" + title + "\n" + body for title, body in parts]))
 
     size = lambda text: len(text.encode("utf-8"))
     complete = render(fields)
@@ -349,12 +364,13 @@ def recovery_text(d, head, fields, extras=()):
             f.write("# Full recovery fields (local files and recorded replies)\n\n"
                     + "\n\n".join(title + "\n" + body for title, body in fields) + "\n")
     except OSError:
-        return ("Recovery brief unavailable: overflow detail could not be saved. "
+        return session_text(d, ("Recovery brief unavailable: overflow detail could not be saved. "
                 "Before acting: read notes.md, deadline.txt, .ground_rules.json and your journal.jsonl; "
-                "then ./fh call status and ./fh call chat. AGENTS.md holds the rules and interface.")
+                "then ./fh call status and ./fh call chat. AGENTS.md holds the rules and interface."))
     notice = ("Recovery fields below are excerpts. Before acting, read the marked fields in "
               ".recovery-detail.md; it holds their full text. Other notes remain in notes.md.\n"
               "Before acting: read deadline.txt, then ./fh call status and ./fh call chat.")
+    notice = session_text(d, notice)
     headers = sum(size(title) + 3 for title, _ in fields)
     available = max(0, BRIEF_MAX - size("\n".join(head)) - size(notice) - headers - 20)
     budgets = [min(size(body), available // len(fields), 300) for _, body in fields]
@@ -413,9 +429,10 @@ def brief(d, why):
     tells = recent_tells(lines, keep=4)
     live = matching("next check", "live check", "safety")
     live += "\n" + "\n".join("- " + t for t in tells if t.startswith("reminder #"))
-    live += "\nBefore acting: read deadline.txt, then ./fh call status and ./fh call chat."
+    live += session_text(d, "\nBefore acting: read deadline.txt, then ./fh call status and ./fh call chat.")
     fields = [
-        ("## Identity and deadline", f"Player/owner: {me}; deadline.txt: {deadline}. AGENTS.md holds the rules and interface."),
+        (("## Identity", f"Player/owner: {me}. AGENTS.md holds the rules and interface.") if continuous(d) else
+         ("## Identity and deadline", f"Player/owner: {me}; deadline.txt: {deadline}. AGENTS.md holds the rules and interface.")),
         ("## Ground rules (the team's, from your fh replies)", "\n".join("- " + r for r in rules) or "No ground rules filed here; AGENTS.md holds the rules."),
         ("## Your open commitments", commit.strip() or "No ownership or open items recorded in the available notes/replies."),
         ("## Now (notes.md)", section(notes, "now", cap=len(notes)) or
@@ -443,8 +460,8 @@ def notes_block(d, why):
         notes = "(notes.md is missing)"
     if len(notes) > NOTES_CAP:
         notes = notes[:NOTES_CAP] + "\n[... truncated: read notes.md for the rest]"
-    return (f"{why} Below is your notes.md, your durable memory. Before acting: read deadline.txt, add anything from "
-            "the summary that notes.md is missing, then check ./fh call status and ./fh call chat.\n\n" + notes)
+    return session_text(d, (f"{why} Below is your notes.md, your durable memory. Before acting: read deadline.txt, add anything from "
+            "the summary that notes.md is missing, then check ./fh call status and ./fh call chat.\n\n" + notes))
 
 
 OPERATOR_FILE = ".operator-tells.jsonl"   # fh files each operator tell it sees here (cli.ts, next to journal.jsonl)

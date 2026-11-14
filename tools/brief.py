@@ -159,6 +159,22 @@ def expedition_text(line):
     return line.strip() + "\n" if line and line.strip() else ""
 
 
+def continuous_text(text):
+    """Remove session stopping instructions, while retaining in-game task timers."""
+    text = text.replace("In this session, get as\nfar toward the goal as you can before the deadline in `deadline.txt`.",
+                        "Keep building toward the goal and coordinate useful work with your teammate.")
+    text = text.replace(" Always read `deadline.txt`.", "")
+    text = re.sub(r"## Stopping\n.*?(?=\n## |\Z)",
+                  "## Continuing\n\nKeep playing and keep notes.md current. When your own job is finished or blocked, "
+                  "`./fh call status`, `./fh call chat` and `./fh board` show what is still open.\n", text, flags=re.S)
+    text = text.replace(", the deadline in deadline.txt", "")
+    text = text.replace("Read deadline.txt, preserve new facts", "Preserve new facts")
+    text = text.replace("at the deadline minus 2 hours", "when available")
+    text = text.replace("and the time left in the shift", "and your current work")
+    text = text.replace(", and never runs past your deadline", "")
+    return text
+
+
 def core(player, time_text, coop, mate="", mate_notes="", role="", open_=None, expedition=""):
     """AGENTS.md as tools/new-run.sh writes it: it ends with the compaction instructions (Claude Code reads a "Compact
     instructions" section, and every harness's summarizer sees the instructions file). open_ (disclosure_open()): only
@@ -183,6 +199,8 @@ def core(player, time_text, coop, mate="", mate_notes="", role="", open_=None, e
     if os.environ.get("POG_MAP_TEXT"):
         assert MAP_TEXT in text, "agent/PLAYBOOK.md: the map line changed (tools/brief.py MAP_TEXT)"
         text = text.replace(MAP_TEXT, os.environ["POG_MAP_TEXT"])
+    if os.environ.get("POG_CONTINUOUS") == "1":
+        text = continuous_text(text)
     return fill(text, values(player, mate, mate_notes, role))
 
 
@@ -230,6 +248,8 @@ def topic_units(player, open_=None):
         text = head + body + "\n"
 
         def done(x):
+            if os.environ.get("POG_CONTINUOUS") == "1":
+                x = continuous_text(x)
             return fill(x.replace("{{VOICES}}", voices() if "{{VOICES}}" in x else ""), values(player))
         units = None if items is None else {"head": done(head), "items": [{"id": i, "text": done(t)} for i, t in items]}
         out[topic] = (done(text), units)

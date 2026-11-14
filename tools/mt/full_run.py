@@ -23,6 +23,7 @@ import quota_rest
 import pacing
 import pane_resume
 import announce
+import search_watch
 
 ENV_KEYS=('PATH','HOME','USER','LOGNAME','SHELL','TMPDIR','LANG','TZ','HERDR_WORKSPACE_ID',
           'IMAC_HOST','IMAC_PYTHON',
@@ -31,7 +32,7 @@ ENV_KEYS=('PATH','HOME','USER','LOGNAME','SHELL','TMPDIR','LANG','TZ','HERDR_WOR
           'POG_TEAM_LINE','POG_GOAL','POG_MAP_TEXT','POG_IDENTITY_BRIEF','POG_OPENING_BRIEF',
           'POG_WEB_BLOCK','POG_DENY_READ','POG_READ_SCOPE','POG_SHELL_NET','POG_FULL_TOOLS',
           'POG_ISOLATED','POG_IDLE_NUDGE','POG_PANE_WATCH','POG_WORLD_RUNNING','POG_CLAIM_OWNER',
-          'POG_OPERATOR_WAKE')
+          'POG_OPERATOR_WAKE','POG_CONTINUOUS')
 NUDGE=('Operator (automatic): check your own status, tells, board and notes.md. '
        'Keep building toward the goal with your teammate. If blocked, explain the blocker once '
        'and choose another useful task. Keep your current identity and update your notes.')
@@ -68,7 +69,8 @@ def capture_env(op):
 
 def set_deadline(a,at):
     a['deadline']=at
-    Path(a['folder'],a['name'],'deadline.txt').write_text(time.strftime('%Y-%m-%d %H:%M %Z',time.localtime(at))+'\n')
+    # Shift maintenance is operator state; no end time enters an agent's workspace.
+    Path(a['folder'],a['name'],'deadline.txt').unlink(missing_ok=True)
 
 def init(run,minutes,max_shifts=0):
     pinned();op=op_dir(run)
@@ -130,11 +132,11 @@ def start_client(op,a,carry):
         return
     env.update(POG_PROXY=proxies[a['name']],POG_TEAM=str(folder/'team.txt'),POG_NO_WAIT='1',POG_TAB='',
                POG_WS=a['name'],POG_BOT=a['name'],POG_MODEL=f"{a['label']} ({a['harness']})",POG_ROUTE=a['route'],
-               POG_RESUME=carry.name,POG_RESUME_DIR=str(carry),POG_WORLD_RUNNING='1',POG_PANE_WATCH='1')
+               POG_RESUME=carry.name,POG_RESUME_DIR=str(carry),POG_WORLD_RUNNING='1',POG_PANE_WATCH='1',POG_CONTINUOUS='1')
     # Prompt is shared only within this pair; both fresh and resumed readers get the same accurate facts.
-    (folder/'prompt.md').write_text('Read AGENTS.md and deadline.txt. Continue from your own notes.md in the same running world. '
+    (folder/'prompt.md').write_text('Read AGENTS.md. Continue from your own notes.md in the same running world. '
                                    'Keep your chosen identity. Check current status and coordinate with your teammate. '
-                                   'Keep notes current and play until the deadline.\n')
+                                   'Keep notes current and keep progressing toward the goal.\n')
     out=command([tree/'tools/launch-agent.sh',op.parent.name,'imac2',a['name'],left,a['kind'],a['model'],a['effort']],
                 env=env,cwd=tree,timeout=180)
     a['pane']=out.strip().splitlines()[-1].split()[0];a['started']=time.time()
@@ -260,6 +262,19 @@ def nudge(op,state,now):
             reader.op('tell',{'to':a['name'],'text':NUDGE},team=team)
             a['last_nudge']=now;event(op,'idle-nudge',agent=a['name'],team=team)
 
+_search_at=0.0
+
+def searches(op,state,force=False):
+    """The playing agents' web searches and fetched URLs (tools/mt/search_watch.py), once a minute and at the end;
+    a failure alerts and never stops the watch. POG_SEARCH_WATCH=0 turns it off."""
+    global _search_at
+    if os.environ.get('POG_SEARCH_WATCH','1')!='1' or not state or not state.get('agents'):return
+    now=time.time()
+    if not force and now-_search_at<60:return
+    _search_at=now
+    try:search_watch.scan_run(op,state)
+    except Exception as e:alert(op,'search-watch-error',e)
+
 def watch(run):
     op=op_dir(run);stop=threading.Event();panes=pane_resume.HerdrPanes()
     for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,lambda *_:stop.set())
@@ -289,7 +304,9 @@ def watch(run):
                             if now<a['deadline']:watch_agent(op,state,a,now,panes,hits,rooms)
                         if os.environ.get('POG_IDLE_NUDGE','1')=='1':nudge(op,state,now)
                     state['heartbeat']=time.time();indexes(op,state);write(op/'full-run.json',state)
-                    if state['phase']=='shifts-complete':return
+                # Outside the mutation lock: reading transcripts never holds up an operator shift.
+                searches(op,state,force=state['phase']=='shifts-complete')
+                if state['phase']=='shifts-complete':return
             except BlockingIOError:pass # a deliberate operator shift holds the mutation lock
             except Exception as e:alert(op,'watchdog-error',e)
             stop.wait(20)

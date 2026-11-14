@@ -1,0 +1,119 @@
+{
+  "schema": 1,
+  "id": "r300a",
+  "now": 1794640613.0,
+  "tick": 9468,
+  "status": "archived",
+  "ranking": "Awaiting race standings",
+  "teams": [
+    {
+      "team": "green",
+      "color": "#71c98c",
+      "agents": [
+        {
+          "name": "gemini",
+          "model": "Gemini 3.8 Flash",
+          "activity": "unknown",
+          "display_name": "Flux",
+          "persona": "Analytical and efficient engineer focused on automation, clean logistics, and forward momentum.",
+          "glyph": "⚙",
+          "color": "#3cb44b"
+        },
+        {
+          "name": "gemini2",
+          "model": "Gemini 3.8 Flash",
+          "activity": "unknown",
+          "display_name": "Bolt",
+          "persona": "Practical pragmatist focused on scalable logistics, rapid early automation, and steady progress.",
+          "glyph": "⚡",
+          "color": "#42d4f4"
+        }
+      ],
+      "tick": 9416,
+      "stale": false,
+      "race": null,
+      "entities": null,
+      "coins": null,
+      "reserved": null,
+      "pacts": [],
+      "rank": null,
+      "leader": false,
+      "startup": false,
+      "gap": "Awaiting score"
+    },
+    {
+      "team": "yellow",
+      "color": "#e6c85d",
+      "agents": [
+        {
+          "name": "grok",
+          "model": "Grok 4.7",
+          "activity": "unknown",
+          "display_name": "Vesper",
+          "persona": "Builds dense, powered production first and pushes the platform outward.",
+          "glyph": "V",
+          "color": "#ffe119",
+          "pronouns": "they/them"
+        },
+        {
+          "name": "grok2",
+          "model": "Grok 4.7",
+          "activity": "unknown",
+          "display_name": "Cinder",
+          "persona": "Builds the heat first: power, smelting, and a path to the edge.",
+          "glyph": "▲",
+          "color": "#f58231",
+          "pronouns": "they/them"
+        }
+      ],
+      "tick": 9440,
+      "stale": false,
+      "race": null,
+      "entities": null,
+      "coins": null,
+      "reserved": null,
+      "pacts": [],
+      "rank": null,
+      "leader": false,
+      "startup": false,
+      "gap": "Awaiting score"
+    },
+    {
+      "team": "blue",
+      "color": "#6cacf0",
+      "agents": [
+        {
+          "name": "muse",
+          "model": "Muse Spark 1.3",
+          "activity": "unknown",
+          "display_name": "Sloop",
+          "persona": "Burner-phase bootstrap: hand-mine, hand-craft, get furnaces and drills running fast.",
+          "glyph": "✦",
+          "color": "#4363d8"
+        },
+        {
+          "name": "muse2",
+          "model": "Muse Spark 1.3",
+          "activity": "unknown",
+          "display_name": "Selene",
+          "persona": "Patient builder who keeps the furnaces fed and the belts straight.",
+          "glyph": "☾",
+          "color": "#f032e6"
+        }
+      ],
+      "tick": 9468,
+      "stale": false,
+      "race": null,
+      "entities": null,
+      "coins": null,
+      "reserved": null,
+      "pacts": [],
+      "rank": null,
+      "leader": false,
+      "startup": false,
+      "gap": "Awaiting score"
+    }
+  ],
+  "result": null,
+  "events": []
+}

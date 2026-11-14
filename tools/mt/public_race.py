@@ -50,7 +50,7 @@ SURFACES = ('nauvis', 'vulcanus', 'gleba', 'fulgora', 'aquilo')
 # Free-form public chat remains public speech, never notes, jobs, confessions or errors.
 # A path is a slash that starts a word ("/Users/x", "~/x", "C:\x"); "0.52 / 0.48" is ordinary speech.
 PRIVATE = re.compile(r'(?:https?://|(?:^|[\s("\'=])(?:~/|/(?=[\w.~])|[A-Za-z]:[\\/])|[\w.+-]+@[\w.-]+\.[a-z]{2,}|'
-                     r'\b(?:token|password|secret|api[_ -]?key|operator|traceback|exception|multi-?teams?)\b|\bsk-[\w-]+)', re.I)
+                     r'\b(?:token|password|secret|api[_ -]?key|operator|traceback|exception)\b|\bsk-[\w-]+)', re.I)
 # Moderated audience text is addressed to the operator. That ordinary role word
 # is public; keep the stricter operator/private-note exclusion for agent speech.
 VIEWER_PRIVATE = re.compile(PRIVATE.pattern.replace('|operator|', '|'), PRIVATE.flags)
@@ -297,10 +297,10 @@ def broadcast(lines, teams, now):
         if kind == 'market':
             event = m.get('event', 'fill')
             if (m.get('system') is not True or m['agent'] != 'Trading Post' or m.get('scope') != 'market'
-                    or event not in ('fill', 'coinage', 'raid', 'embargo')
+                    or event not in ('fill', 'coinage', 'raid', 'embargo', 'shipment_loss')
                     or type(m.get('source_seq')) is not int or m['source_seq'] < 1):
                 continue
-            if event in ('fill', 'embargo'):
+            if event in ('fill', 'embargo', 'shipment_loss'):
                 if len(to) != 1 or to[0] not in known or to[0] == team: continue
                 row['to_team'] = to[0]
             elif to: continue
@@ -357,15 +357,18 @@ def project_market(raw, teams):
     for m in map(obj, rows(raw.get('markers'))[-120:]):
         a, b, name = m.get('from'), m.get('to'), item(m.get('item'))
         if (not pair(a, b) or not name or not finite(m.get('id'), 1, integer=True)
-            or not finite(m.get('count'), 1, integer=True) or not finite(m.get('arrival_tick'), integer=True)
+            or not finite(m.get('count'), 1, integer=True)
+            or m.get('arrival_tick') is not None and not finite(m.get('arrival_tick'), integer=True)
             or not all(finite(m.get(k), -1e7, 1e7) for k in ('x', 'y'))
-            or m.get('surface') not in ('nauvis', 'vulcanus', 'gleba', 'fulgora', 'aquilo')
+            or m.get('surface') not in ('nauvis', 'vulcanus', 'gleba', 'fulgora', 'aquilo', 'platform')
             or m.get('state') not in ('in_transit', 'waiting', 'quarantined')):
             continue
         key = (a, b, m['id'], name)  # Fill ids are pair-local; swaps have two legs.
         if key in seen: continue
         seen.add(key)
-        out['markers'].append({**{k: m[k] for k in ('id', 'from', 'to', 'count', 'x', 'y', 'surface', 'state', 'arrival_tick')}, 'item': name})
+        marker={**{k: m[k] for k in ('id', 'from', 'to', 'count', 'x', 'y', 'surface', 'state')}, 'item': name}
+        if m.get('arrival_tick') is not None:marker['arrival_tick']=m['arrival_tick']
+        out['markers'].append(marker)
     seen = set()
     for p in sorted(rows(raw.get('last_prices')), key=lambda v: obj(v).get('tick') if finite(obj(v).get('tick')) else -1, reverse=True):
         p = obj(p); a, b, name = p.get('a'), p.get('b'), item(p.get('item'))
@@ -467,7 +470,7 @@ def project_result(raw, teams):
     elif reason == 'wipe':
         text = f'{w} wiped every other team'
     else:
-        text = 'Time is up: ' + ' and '.join(t.capitalize() for t in winners) + (' share the lead' if len(winners) > 1 else ' leads') + ' on milestones'
+        text = ('The run has ended: ' if kind == 'operator' else 'Time is up: ') + ' and '.join(t.capitalize() for t in winners) + (' share the lead' if len(winners) > 1 else ' leads') + ' on milestones'
     return {'reason': reason, 'kind': kind, 'winners': winners, 'scores': scores, 'tick': number(raw.get('tick')),
             'time': clock(number(raw.get('tick'))), 'text': text}
 
@@ -711,7 +714,7 @@ class Race:
         for m in lines or ():
             event = m.get('event', 'fill')
             system = (m.get('kind') == 'market' and m.get('system') is True and m.get('name') == 'Trading Post'
-                      and ((event in ('fill', 'embargo') and m.get('to_team') in known and m['to_team'] != m['team'])
+                      and ((event in ('fill', 'embargo', 'shipment_loss') and m.get('to_team') in known and m['to_team'] != m['team'])
                            or (event in ('coinage', 'raid') and not m.get('to_team'))))
             if m['team'] in known and (system or any(a['name'] == m['name'] for r in teams if r['team'] == m['team'] for a in r['agents'])):
                 self.say(dict(m, reply=False))

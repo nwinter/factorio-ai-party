@@ -307,7 +307,7 @@ main.insert{name='wood',count=10}
 body.prototype.crafting_categories={crafting=true}
 local queued={}
 body.begin_crafting=function(r) queued[#queued+1]={index=#queued+1,recipe=r.recipe,count=r.count}; main.remove{name='wood',count=2*r.count}; return r.count end
-body.get_craftable_count=function() return main.get_item_count('wood')//2 end
+body.get_craftable_count=function() return math.floor(main.get_item_count('wood')/2) end
 body.crafting_queue_size=0
 body.cancel_crafting=function(c) main.insert{name='wood',count=2*c.count}; queued[c.index].count=queued[c.index].count-c.count end
 local c=luna('craft',{recipe='wooden-chest',count=3,force=true})

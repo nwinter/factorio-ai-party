@@ -7,7 +7,7 @@ watch the broadcast: ordinary team speech stays team-private.
 import re
 
 PRIVATE=re.compile(r'(?:https?://|(?:^|[\s(=:])(?:~/|/(?=[\w.~])|[A-Za-z]:[\\/])|[\w.+-]+@[\w.-]+\.[a-z]{2,}|'
-                   r'\b(?:Nick(?:Winter)?|Winter|token|password|secret|api[_ -]?key|operator|traceback|exception|multi-?teams?)\b|'
+                   r'\b(?:Nick(?:Winter)?|Winter|token|password|secret|api[_ -]?key|operator|traceback|exception)\b|'
                    r'\b(?:tools|runs|vendor|agent|site|docs|mt|port21|eng)/|\bsk-[\w-]+)',re.I)
 AVATAR={'base':{'engineer','robot','biter','drone'},'helmet':{'none','hardhat','armor','power','crest','hood'},
         'visor':{'none','goggles','slit','wide','mono','grid'},'emblem':{'none','gear','bolt','flask','plate','circuit','rocket','leaf','star'},
@@ -52,9 +52,9 @@ def project_feed(messages,teams):
         if kind=='market':
             event=m.get('event','fill')
             if (scope!='market' or m.get('system') is not True or agent!='Trading Post'
-                or event not in ('fill','coinage','raid','embargo')
+                or event not in ('fill','coinage','raid','embargo','shipment_loss')
                 or type(m.get('source_seq')) is not int or m['source_seq']<1):continue
-            if event in ('fill','embargo'):
+            if event in ('fill','embargo','shipment_loss'):
                 if len(to)!=1 or to[0] not in rosters or to[0]==team:continue
             elif to:continue
             body=text(m.get('text'),4000)

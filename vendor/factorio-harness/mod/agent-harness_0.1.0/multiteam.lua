@@ -538,6 +538,17 @@ return function(api)
     cost.acc.add(p)
     cost.n = cost.n + 1
   end
+  -- A shipment entering an already-visible chunk is contact too. It charts nothing itself.
+  function M.shipment_seen(e)
+    local s=st();if game.tick%60~=0 then return end
+    for _,t in ipairs(s.order or {}) do
+      local f=game.forces[t];local key='chart '..t..'>'..e.force.name
+      if t~=e.force.name and not s.first[key] and f.is_chunk_visible(e.surface,{x=math.floor(e.position.x/32),y=math.floor(e.position.y/32)}) then
+        s.first[key]=game.tick
+        record{kind='chart',team=t,other=e.force.name,surface=e.surface.name,x=e.position.x,y=e.position.y,entity=e.name}
+      end
+    end
+  end
   function M.operator.mt_cost(a)
     local n, searched = cost.n, cost.searched
     if cost.acc then log({'', 'mt chart cost: ', n, ' events, ', searched, ' searched, total ', cost.acc}) end
@@ -883,15 +894,8 @@ return function(api)
         if contacted(t, w) then return string.format('The run is over: %s wiped every other team.%s', w, score) end
         return 'The run is over.' .. score
       end
-      local parts, own = {}, nil
-      for _, row in ipairs(res.standings or {}) do
-        if row.team == t then own = row end
-        if contacted(t, row.team) then parts[#parts+1] = (row.team == t and 'our team' or row.team) .. ' ' .. row.milestones end
-      end
-      if #parts > 1 then
-        return 'The run is over at its time limit, ranked by milestones toward the edge: ' .. table.concat(parts, ', ') .. '.'
-      end
-      return string.format('The run is over at its time limit; our team reached %d milestones toward the edge.', own and own.milestones or 0)
+      -- An operator stop discloses neither a time limit nor the spectator ranking.
+      return 'The run is over.' .. score
     end
     local function public_text(res)
       if res.reason == 'edge' then
@@ -903,7 +907,7 @@ return function(api)
       elseif res.reason == 'wipe' then return res.winner .. ' wiped every other team and wins' end
       local top = {}
       for _, row in ipairs(res.standings) do if row.rank == 1 then top[#top+1] = row.team end end
-      return 'Time is up; ranked by milestones toward the edge: ' .. table.concat(top, ' and ') .. (#top > 1 and ' share the lead' or ' leads')
+      return 'The run has ended; final milestones toward the edge: ' .. table.concat(top, ' and ') .. (#top > 1 and ' share the lead' or ' leads')
     end
     function G.finish(reason, r)
       local g = gs()

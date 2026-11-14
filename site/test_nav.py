@@ -37,7 +37,7 @@ def main():
         home = (out / "index.html").read_text()
         nav = re.search(r'<nav class="site-nav" id="site-nav" aria-label="Main">(.*?)</nav>', home, re.S).group(1)
         main_part, more = nav.split('<details class="nav-more">')
-        assert re.findall(r">([^<]+)</a>", main_part) == ["Live", "The run", "Agents", "Timeline", "Chronicle", "Chat",
+        assert re.findall(r">([^<]+)</a>", main_part) == ["Live", "Team runs", "The run", "Agents", "Timeline", "Chronicle", "Chat",
                                                           "Search", "About"], main_part
         assert re.findall(r">([^<]+)</a>", more) == ["Polls", "Ideas", "Updates", "How it was made", "GitHub"], more
         assert '<summary>More<span class="nav-dot" hidden></span></summary>' in more

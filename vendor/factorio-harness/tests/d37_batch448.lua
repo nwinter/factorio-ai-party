@@ -16,7 +16,7 @@ local surface={get_tile=function() return {name='empty-space',prototype=prototyp
 local D=require('dryrun'){placewhy=require('placewhy'){}}
 local G=require('ghostlist'){}
 local R=require('rotatedbox')
-local function key(x,y) return x..','..y end
+local function key(x,y) return string.format('%d,%d',x,y) end
 local diag={[-2]={-1,0},[-1]={-2,-1,0,1},[0]={-2,-1,0,1,2},[1]={-1,0,1,2},[2]={0,1}}
 for d=0,15 do
   local expected={}

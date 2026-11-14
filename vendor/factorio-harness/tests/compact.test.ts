@@ -52,12 +52,13 @@ test('every Lua suite passes against the compacted modules, and the compacted bu
     const path = join(modDir, file);
     await writeFile(path, compactLua(await readFile(path, 'utf8')));
   }
-  const suites = [...(await readdir(join(dir, 'tests'))).filter(f => f.endsWith('.lua')).map(f => `tests/${f}`), 'mod/tests/runtime_test.lua', 'mod/tests/control_test.lua'];
+  const suites = [...(await readdir(join(dir, 'tests'))).filter(f => f.endsWith('.lua')).map(f => `tests/${f}`),
+    ...(await readdir(join(dir, 'mod/tests'))).filter(f => f.endsWith('.lua')).map(f => `mod/tests/${f}`)];
   for (const suite of suites) execFileSync(lua, [suite], {cwd: dir, stdio: 'pipe'});
   const bundle = await bundleRuntime('mod/agent-harness_0.1.0/runtime.lua');
   const file = join(dir, 'bundle.lua');
   await writeFile(file, bundle);
-  execFileSync(lua, ['-e', `local f=assert(io.open(${JSON.stringify(file)})); assert(load(f:read('a'),'@bundle','t'))`], {stdio: 'pipe'});
+  execFileSync(lua, ['-e', `local f=assert(io.open(${JSON.stringify(file)})); assert(load(f:read('*a'),'@bundle','t'))`], {stdio: 'pipe'});
   // (d26 batch244) against the modules' own bytes: the uncompacted bundle was 8,382,920 of the 8,388,608-byte deployment
   // limit on main at 16:24 and batch244 took it over, which bundleRuntime refuses; only the compacted one is deployed
   let raw = 0;

@@ -81,7 +81,7 @@ do
     game.tick=t
     for i=1,20 do
       local f=by[i]
-      f.status=(i>15 and (t//600)%2==1) and 'item_ingredient_shortage' or 'working'
+      f.status=(i>15 and (math.floor(t/600))%2==1) and 'item_ingredient_shortage' or 'working'
       if f.status=='working' and t%96==0 then f.products_finished=f.products_finished+1 end
     end
     U.tick(t)

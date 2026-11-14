@@ -11,10 +11,56 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 # A later shift (tools/start-team.sh, POG_RESUME): one neutral sentence on the prompt, no advice.
 resume_sentence='This is a later shift of the same world: your bot and the factory are as the last shift left them. The world stays paused at the start until every agent has launched (a few minutes), then resumes by itself. Read the new deadline.txt; notes.md is where you left off, with a full read needed only if no recovery brief arrived.'
 [ "${POG_WORLD_RUNNING:-0}" != 1 ] || resume_sentence='This is a later shift of the same world, which kept running during the handoff. Keep your chosen identity. Read the new deadline.txt and your own notes.md, check current status and coordinate with your teammate before continuing.'
+if [ "${POG_CONTINUOUS:-0}" = 1 ]; then
+  resume_sentence='Continue in the same world from your own notes.md. Keep your chosen identity, check current status and coordinate with your teammate.'
+fi
 if [ "${1:-}" = --resume-sentence ]; then echo "$resume_sentence"; exit 0; fi
 . "$root/tools/profile-flags.sh"
 # agy's loop (.agy-loop.sh) for workspace $dir, model $model, fresh-start limit $limit and prompt file $prompt.
+# Continuous play has no game deadline; the operator owns process handoffs.
+agy_continuous_script() {
+  local agy_web="" agy_client=agy
+  [ "${POG_ISOLATED:-0}" != 1 ] || agy_client="python3 '$root/tools/agy-local.py'"
+  [ -z "${POG_WEB_BLOCK:-}" ] || agy_web="--settings '$(python3 "$root/tools/full_tools.py" agy-web-off)' $(python3 "$root/tools/full_tools.py" agy-agent "$dir")"
+  cat > "$dir/.agy-loop.sh" <<EOL
+#!/usr/bin/env bash
+cd '$dir'
+${proxy_env:+export $proxy_env}
+exec > >(tee .agy-last.txt) 2>&1
+started=0
+woke=""
+while :; do
+  tokens=\$(\${POG_AGY_TOKENS_CMD:-python3 '$root/tools/context.py' agy-tokens} '$dir')
+  memory=\$(python3 '$root/tools/agy_rules.py' digest-rules '$dir' 2>/dev/null)
+  if [ "\$started" = 0 ] || { [ "$limit" -gt 0 ] && [ "\$tokens" -ge "$limit" ]; }; then
+    args=(-p "\$(cat '$prompt') \$woke
+
+\$memory")
+  else
+    args=(-c -p "Continue your current work toward the goal. Keep your identity and notes.md current. \$woke
+
+\$memory")
+  fi
+  touch .agy-stamp
+  t0=\$(date +%s)
+  '$sleepcap_run' $agy_client "\${args[@]}" --model $model --dangerously-skip-permissions $agy_web --print-timeout ${POG_AGY_TURN_S:-300}s
+  ${POG_ONE_TURN:+exit 0}
+  # A rolling quota retry horizon is process housekeeping, not a run end.
+  q=\$(python3 '$root/tools/agy-quota.py' '$dir' .agy-stamp "\$((\$(date +%s) + 86400))")
+  case "\$q" in
+    stop) exit 0 ;;
+    "") started=1; [ "\$((\$(date +%s) - t0))" -ge 15 ] || sleep "\${POG_AGY_RETRY_WAIT:-30}" ;;
+    *) sleep "\$q" ;;
+  esac
+  woke=""
+  case "\$q" in ""|stop) ;; *) woke=\$(python3 '$root/tools/agy-quota.py' --woke '$dir') ;; esac
+done
+EOL
+  chmod +x "$dir/.agy-loop.sh"
+}
+
 agy_loop_script() {
+  if [ "${POG_CONTINUOUS:-0}" = 1 ]; then agy_continuous_script; return; fi
   # POG_WEB_BLOCK: no web tools for agy (a workspace agent's tool list, and session settings: tools/full_tools.py)
   local agy_web=""
   local agy_client=agy
@@ -121,7 +167,10 @@ full=${POG_FULL_TOOLS:-0}
 # the core (tools/brief.py) stays under 20 KB, and tools/agy_rules.py rules warns on stderr if it ever grows past 24000.
 [ "$kind" = agy ] && python3 "$root/tools/agy_rules.py" rules "$dir" >/dev/null
 prompt="$root/runs/$run/prompt.md"
-if [ ! -f "$prompt" ]; then
+if [ "${POG_CONTINUOUS:-0}" = 1 ]; then
+  printf '%s\n' 'Read AGENTS.md for your instructions, interface and rules. Play Factorio toward the goal and keep notes.md current.' > "$prompt"
+  if [ -n "${POG_RESUME:-}" ]; then printf '%s\n' "$resume_sentence" >> "$prompt"; fi
+elif [ ! -f "$prompt" ]; then
   cat > "$prompt" <<'EOP'
 Read AGENTS.md in this directory; it has your instructions, interface, rules, and deadline. Then play Factorio until the deadline in deadline.txt, keeping notes.md current, and finish with the final summary it asks for.
 EOP
@@ -142,6 +191,7 @@ allow='"Read", "Grep", "Glob", "Edit(/**)", "Write(/**)", "Bash(./fh:*)", "Bash(
               "Bash(python3:*)", "Bash(jq:*)", "Bash(ls:*)", "Bash(wc:*)", "Bash(rg:*)", "Bash(sort:*)"'
 # Compaction settings per model: agent/context.tsv, applied by tools/context.py (docs/CONTEXT-NOTES.md).
 compact_rule='After compaction, use a supplied recovery brief; if none arrived, read notes.md. Read deadline.txt before acting.'
+[ "${POG_CONTINUOUS:-0}" != 1 ] || compact_rule='After compaction, use a supplied recovery brief; if none arrived, read notes.md. Check status and chat before acting.'
 
 # Claude-style settings: Claude Code uses the sandbox; Grok Build reads the same file for its allowlist.
 claude_settings() {

@@ -84,7 +84,8 @@ def main():
                          "how/lessons/index.html", "how/operations/index.html", "how/setup/index.html", "ideas/index.html",
                          "index.html", "live/index.html", "polls/index.html", "privacy/index.html",
                          "runs/long/index.html", "runs/long/shift-1/index.html", "runs/long/shift-2/index.html",
-                         "search/index.html", "terms/index.html", "timeline/index.html", "updates/index.html"], pages
+                         "search/index.html", "teams/index.html", "teams/m296pub/index.html", "teams/r300a/index.html", "teams/r300b/index.html",
+                         "teams/r300c/index.html", "teams/t298/index.html", "terms/index.html", "timeline/index.html", "updates/index.html"], pages
         before = set(content["runs"]) | set(content["studies"]) | {"shake3", "shake4", "smoke-x1"}
         ids = re.compile(r"(?<![\w-])(?:" + "|".join(map(re.escape, sorted(before))) + r"|shake\d+|smoke-[\w-]+|Fable)(?![\w-])")
         for p, t in text_files(out):
@@ -98,7 +99,7 @@ def main():
         home = (out / "index.html").read_text()
         nav = re.search(r'<nav class="site-nav".*?</nav>', home, re.S).group(0)
         # Polls, Updates, How it was made and GitHub under More (batch270)
-        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "The run", "Agents", "Timeline", "Chronicle", "Chat", "Search", "About", "Polls", "Ideas", "Updates", "How it was made", "GitHub"], nav
+        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "Team runs", "The run", "Agents", "Timeline", "Chronicle", "Chat", "Search", "About", "Polls", "Ideas", "Updates", "How it was made", "GitHub"], nav
         more = nav.split('<details class="nav-more">')[1]
         assert re.findall(r">([^<]+)</a>", more) == ["Polls", "Ideas", "Updates", "How it was made", "GitHub"], more
         page = (out / "runs" / "long" / "index.html").read_text()

@@ -1,4 +1,31 @@
-# Stage 1 adversarial coverage
+# Market adversarial coverage
+
+Stage-2 coverage (`mod/tests/mt303_test.lua`, auto-discovered by the full harness): every buyer/seller/third-party/
+no-force loss branch across death, final mining, deconstruction, entry and raised script removal; registered
+object destruction and missing-entity fallback; buyer pre-removal denial; duplicate terminal receipts; partial
+arrivals; fixed no-path fallback; dispatch and newly acquired allies sticky after ending, including non-cease-fire
+pacts; same-tick native cease-fire events; shared partners; own-source protection; no route ETA; uncharted loss coordinates and unknown-killer identity
+hidden; identical unknown/invented addresses; conserved coin including destruction; reload of live units and
+terminal losses; busy/stalled path retries and independent swap legs; same-surface offworld and platform Post selection; no cross-surface settlement; exact stock-stack
+transfer with quality/ammo/tags into one raid wreck; destroyed stock conservation after reload; private metrics.
+The CLI suite tests reference/action gating at Freight; the market display suite admits loss events and no-ETA
+platform markers without admitting private measurements. Full harness: 796/796; focused fixture: 531 assertions.
+Native results are recorded separately in report-mt303.md. The private m303 trial used two Gemini Flash and two
+Grok agents for 25.26 game minutes: 105 matches, 102 delivered, three pending, zero losses, all 150 audits clean.
+Its routes all used no-path fallback. Real-agent moving-shipment coverage requires a future map with a confirmed
+land path between Posts; native stand-ins separately verified actual unit travel, losses and reload.
+
+| Stage-2 exploit or failure | Rule and evidence |
+| --- | --- |
+| Buyer kills its purchase or uses a former ally | Seller gets the escrow; custody locks deny native mining, deconstruction and entry. Direct/ally loss cases, sticky dispatch/mid-flight membership, immediate cease-fire events, native former-ally death. |
+| Seller's ally returns cargo and keeps payment | Seller-side loss refunds the buyer. Tests cover dispatch and later alliances, ended pacts and cease-fires, independent swap legs and partial arrivals. |
+| Unallied friend raids then returns loot | Third-party escrow is destroyed, never pooled or paid as a combat reward. All removal branches conserve issuance including destroyed coin. |
+| Killer belongs to both sides | Operator-approved escrow destruction, cargo remains loot. The shared-partner fixture asserts no payment gain. |
+| Removal or duplicate events bypass death accounting | One loss handler, native custody locks, registered destruction and missing-entity fallback. Every force branch across removal events, repeated death/object receipts, terminal reloads. |
+| Transport reveals a third team or seller spawn | Pair-local status/refusals, unknown killer redaction, chart-gated loss location, no ETA, zero-radar unit. Native A-B/C-unknown, no seller chart and visible-shipment contact checks. |
+| Post combat deletes stocked items | Actual stack transfer into the coin wreck, conserving goods and supply. Mock quality/ammo/tags and native rare-magazine save/reload. |
+| Cross-surface orders teleport goods | Matching requires equal surface IDs; accepting calls select an own Post there or refuse. Planet/platform fixtures and native Vulcanus/platform trades. |
+| Pathfinder load or a full receiver loses goods | Busy/stalled requests retry; only confirmed no-path uses fixed fallback. Exact inserted quantities pay; remaining cargo/escrow stay pending. Mock and native water-barrier/partial-arrival tests. |
 
 Spec/reviews: /Users/owner/code/pog-operator/markets/design-v3.md,
 /Users/owner/code/pog-operator/markets/review-codex.md,
