@@ -9,6 +9,18 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 import autosave
 
 class Saves(unittest.TestCase):
+    def test_restore_copy_lock_is_quiet_but_real_copy_failure_alerts(self):
+        with tempfile.TemporaryDirectory() as temp:
+            stop=unittest.mock.Mock();stop.is_set.side_effect=[False,False,True]
+            with patch.object(sys,'argv',['autosave','watch','trial']),patch.object(autosave,'op_dir',return_value=Path(temp)), \
+                 patch('threading.Event',return_value=stop),patch.object(autosave.signal,'signal'), \
+                 patch.object(autosave,'copy_new',side_effect=[BlockingIOError(35,'busy'),RuntimeError('copy failed')]), \
+                 patch.object(autosave,'alert') as alert,patch('builtins.print'):
+                autosave.main()
+            self.assertEqual(alert.call_count,1)
+            self.assertEqual(str(alert.call_args.args[2]),'copy failed')
+            self.assertEqual(stop.wait.call_count,2)
+
     def test_queued_save_that_never_replaces_old_slot_alerts(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);dest=root/'trial'/'saves';dest.mkdir(parents=True);op=root/'op';op.mkdir()

@@ -125,6 +125,8 @@ def main():
         last_alert=0
         while not stop.is_set():
             try: copy_new(a.run,a.keep)
+            except BlockingIOError:
+                pass # A restore checkpoint or explicit copier already owns this pass.
             except Exception as e:
                 print(str(e),flush=True)
                 if time.time()-last_alert>=300:alert(op,'save-copy-failed',e);last_alert=time.time()

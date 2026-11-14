@@ -38,7 +38,9 @@ of each game hour. --keep N changes the recent-copy count. The hour uses the sav
 request tick (the engine serializes at the end of that tick), not wall time.
 A rollback retains its later archive alongside earlier branches. Never use a
 remote rotating slot as the only backup. A failed copier alerts and retries;
-its receipt is not proof of a later unobserved engine write.
+an already-held copy lock skips the periodic pass quietly, since a restore
+checkpoint or explicit copy owns that work.
+A copy receipt is not proof of a later unobserved engine write.
 
 ## Restore
 
