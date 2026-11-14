@@ -20,10 +20,10 @@ deconstruction and entry attempts are refused; actual forced removals still sett
 duplicate events harmless. Cargo becomes a neutral character-corpse wreck. Coin audit includes destroyed coin:
 wallets + payment escrow + circulating physical coin + destroyed coin = cumulative issuance.
 
-Sides are unions from dispatch onward, sampled every tick and immediately at pact acceptance/end, including pacts
+Sides are unions from dispatch onward, sampled every tick and immediately at native cease-fire events and pact acceptance/end, including pacts
 without cease-fire and one-way cease-fires. Direct buyer/seller identity takes precedence. A shared partner of both
-sides currently burns coin (optional tie-break clarification pending in report-mt303.md). An external script that
-sets and clears a force cease-fire between harness callbacks cannot be observed; ordinary pact actions are hooked.
+sides burns coin and leaves cargo as loot (operator-approved tie-break). A cease-fire created and ended within one
+script callback is captured by the engine's immediate event, before its removal.
 
 `post {position}` designates an existing own chest within ten tiles, without creating free storage. The shared
 wallet stays at home (Post 1); forward Posts get own-team monotonically increasing IDs (maximum 32 forward sites).
@@ -43,11 +43,11 @@ owner. The operator feed admits shipment_loss lines and actual moving markers; p
 `platform`, and physical markers have no ETA. Agent references and cache identity follow the live unlock schema.
 
 Every game minute, operator-only `pog/mt-market-measures.jsonl` logs each team's wallet, reserves and escrow, observed iron
-plus copper plate output at 20 coin/plate and steel at 100, wallet/output and (wallet+escrow)/output minutes, buy attempts and short-wallet refusal share,
-reference-or-lower resting sells with zero fills, fill/reference ratios, grant receipts/ticks, coin and race rank,
+plus copper plate output at 20 coin/plate and steel at 100, wallet/output and (wallet+escrow)/output minutes, unique buy attempts, refusals and short-wallet shares,
+reference-or-lower resting sells with zero fills, fill/reference last/min/max/mean ratios, grant receipts/ticks, coin and race rank,
 roster size, the hypothesized 0.4 two-agent factor, loss counts and destroyed coin. Pool in/out remain explicitly
 zero. `team_views` copies samples to the run's private `op/market-measures.jsonl`; these fields never enter public
-ranking or agent status. These ratios exclude physical coin; its global total is logged separately because per-team
+ranking or agent status. Refusal counts cover unique buy order receipts, including validation failures after schema validation; replays do not count twice. These ratios exclude physical coin; its global total is logged separately because per-team
 ownership cannot be inferred from neutral wrecks. The 0.4 factor is a hypothesis to compare with the five-agent baseline, not a measured result.
 
 The following records the stage-1 foundation; stage-2 semantics above supersede its timer-only descriptions.
