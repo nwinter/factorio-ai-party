@@ -77,6 +77,7 @@ def wrapper():
         for f in ("PLAYBOOK.md", "time-realtime.md", "compact.md"):
             shutil.copy(os.path.join(ROOT, "agent", f), os.path.join(tmp, "agent"))
         shutil.copytree(os.path.join(ROOT, "agent", "ref"), os.path.join(tmp, "agent", "ref"))
+        shutil.copytree(os.path.join(ROOT, "tools", "disclosure"), os.path.join(tmp, "tools", "disclosure"))
         fh = os.path.join(tmp, "bin", "fh")
         open(fh, "w").write(FAKE_FH)
         os.chmod(fh, 0o755)

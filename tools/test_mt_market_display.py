@@ -12,7 +12,7 @@ import public_race as race
 from public_feed import project_feed
 import public_stream as stream
 import team_views
-from tools.test_mt_public import FakeOBS
+from test_mt_public import FakeOBS
 
 
 class MarketDisplayTests(unittest.TestCase):

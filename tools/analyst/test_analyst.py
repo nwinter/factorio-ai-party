@@ -3,7 +3,7 @@
 
   python3 tools/analyst/test_analyst.py
 """
-import json, os, subprocess, sys, unittest
+import json, os, subprocess, sys, tempfile, unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
@@ -62,7 +62,23 @@ class SpaceAgeKBTest(unittest.TestCase):
         self.assertEqual(k.entities["rocket-silo"]["rocket_parts_required"], 50)
 
 
-class HistoryTest(unittest.TestCase):
+class OfflineHistory(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.replay = os.path.join(self.tmp.name, "shake1")
+        os.makedirs(self.replay)
+        with open(os.path.join(self.replay, "scores.jsonl"), "w") as out:
+            for minute in (0, 38):
+                out.write(json.dumps({"world": "n", "score": {"tick": minute * 3600,
+                    "research_done": ["automation-science-pack", "automation"] if minute else [],
+                    "produced": {"iron-plate": minute * 10}, "entities": {"lab": 1}}}) + "\n")
+        roots = H.ROOTS
+        H.ROOTS = [self.tmp.name]
+        self.addCleanup(setattr, H, "ROOTS", roots)
+
+
+class HistoryTest(OfflineHistory):
     def test_runs_load(self):
         s = H.load_runs()
         self.assertIn("shake1", s)
@@ -109,7 +125,7 @@ class HistoryTest(unittest.TestCase):
         self.assertFalse([k for k in s if k.startswith("2026-10-10-")])
 
 
-class McpTest(unittest.TestCase):
+class McpTest(OfflineHistory):
     def test_protocol(self):
         msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}},
                 {"jsonrpc": "2.0", "method": "notifications/initialized"},
@@ -117,7 +133,7 @@ class McpTest(unittest.TestCase):
                 {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "kb_ratio", "arguments": {"item": "red science", "per_minute": 30}}},
                 {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "game_snapshot", "arguments": {}}},
                 {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "kb_path", "arguments": {"goal": "chemical science pack"}}}]
-        env = dict(os.environ, ANALYST_REPLAY=os.path.join(REPO, "runs", "shake1"), ANALYST_AT="40",
+        env = dict(os.environ, ANALYST_REPLAY=self.replay, ANALYST_AT="40",
                    POG_ANALYST_PAST_RUNS="1")
         p = subprocess.run([sys.executable, os.path.join(HERE, "mcp_server.py")], input="\n".join(json.dumps(m) for m in msgs) + "\n",
                            capture_output=True, text=True, env=env, timeout=60)

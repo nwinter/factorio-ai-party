@@ -409,6 +409,7 @@ def new_run():
             if f.endswith(".md"):
                 shutil.copy(os.path.join(ROOT, "agent", f), os.path.join(tmp, "agent"))
         shutil.copytree(os.path.join(ROOT, "agent", "ref"), os.path.join(tmp, "agent", "ref"))
+        shutil.copytree(os.path.join(ROOT, "tools", "disclosure"), os.path.join(tmp, "tools", "disclosure"))
         base = testsafe.env(POG_WS="haiku", POG_BOT="haiku")
         out = subprocess.run(["bash", os.path.join(tmp, "tools", "new-run.sh"), "brk", "n", "haiku", "10"],
                              env=dict(base, POG_BROKER="1"), capture_output=True, text=True, check=True).stdout.strip()

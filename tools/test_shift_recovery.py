@@ -87,6 +87,7 @@ def root_copy(tmp):
         if f.endswith(".md"):
             shutil.copy(os.path.join(ROOT, "agent", f), os.path.join(tmp, "agent"))
     shutil.copytree(os.path.join(ROOT, "agent", "ref"), os.path.join(tmp, "agent", "ref"))
+    shutil.copytree(os.path.join(ROOT, "tools", "disclosure"), os.path.join(tmp, "tools", "disclosure"))
     return os.path.join(tmp, "runs")
 
 
