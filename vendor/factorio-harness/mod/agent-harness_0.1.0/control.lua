@@ -86,6 +86,20 @@ script.on_init(function() state(); boot(); pcall(guest_group) end)
 script.on_load(boot)
 script.on_configuration_changed(function() state(); boot(); runtime.stop_all(); pcall(guest_group) end)
 script.on_event(defines.events.on_tick, function(event)
+  -- Operator-armed, saved clock. Independent of runtime deployment/quarantine.
+  -- No on_load writes, host clock, client callback or new module dependency.
+  local a=storage.pog_autosave
+  if a and a.enabled and event.tick>=a.next_tick then
+    local slot=(a.sequence%a.slots)+1
+    local name=a.prefix..'-auto-'..string.format('%02d',slot)
+    a.sequence=a.sequence+1
+    a.next_tick=event.tick+a.interval_ticks
+    a.records[tostring(slot)]={name=name,tick=event.tick,sequence=a.sequence}
+    local saved,save_error=pcall(game.server_save,name)
+    a.error=nil
+    if not saved then a.error=tostring(save_error) end
+    if not saved then log('Server save failed: '..tostring(save_error)) end
+  end
   if state().runtime_fault then return end
   if not runtime then boot() end
   local ok, err = pcall(runtime.tick, event)
