@@ -56,8 +56,26 @@ import restore
 import run_state
 import stop_helpers
 import team_views
+import quota_refresh
 
 class Shifts(unittest.TestCase):
+    def test_custom_quota_reader_preserves_unknown_profiles(self):
+        with tempfile.TemporaryDirectory() as temp:
+            op=Path(temp);cache=op/'cache.json';run_state.write(cache,dict(generated_at=0))
+            run_state.write(op/'full-run.json',dict(phase='running',agents={'a':dict(kind='grok',route='grok')}))
+            brief=dict(generated_at=1000,profiles=[dict(command='grok',available=False,stale=True,windows=[])])
+            stop=unittest.mock.Mock();stop.is_set.side_effect=[False,True]
+            result=unittest.mock.Mock(returncode=0,stdout=json.dumps(brief))
+            with patch.object(sys,'argv',['quota_refresh','trial','--reader','ruby','reader.rb']), \
+                 patch.object(quota_refresh,'op_dir',return_value=op),patch.object(quota_refresh,'CACHE',cache), \
+                 patch.object(quota_refresh,'pinned'),patch.object(quota_refresh.threading,'Event',return_value=stop), \
+                 patch.object(quota_refresh.signal,'signal'),patch.object(quota_refresh.time,'time',return_value=1000), \
+                 patch.object(quota_refresh.subprocess,'run',return_value=result) as run,patch.object(quota_refresh,'alert') as alert:
+                quota_refresh.main()
+            self.assertEqual(run.call_args.args[0],['ruby','reader.rb'])
+            self.assertIn("['grok']",run_state.read(op/'quota-health.json')['error'])
+            alert.assert_called_once()
+
     def test_unknown_grok_completion_recovers_without_restarting(self):
         with tempfile.TemporaryDirectory() as temp:
             op=Path(temp);a=dict(name='a',folder=temp,kind='grok',pane='p',started=100,restarts=0)

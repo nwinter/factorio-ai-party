@@ -109,6 +109,12 @@ Preserve the server profile log before restoring. Register helper PIDs in
 op/helpers.pid for owned-process cleanup. Quota readings are account-wide and
 must be separated at resets; divide observed deltas by the route's measured
 agent-hours and report any concurrent usage or stale readings.
+If the installed quota command stalls on historical transcript scans, the
+independent helper accepts `quota_refresh.py RUN --max-age 240 --reader COMMAND ARG...`.
+The reader must use live provider adapters, emit the normal ai-usage brief JSON,
+and preserve saved observation ages and unknown values. Record the selected
+reader and its deployment; do not fabricate a zero when a reset response omits
+the percentage. This changes collection, not agent quota-hold policy.
 
 `mt_map.py create --teams 3 --team-names green yellow blue ...` aligns forces
 with the six-agent roster. A failed setup join now returns failure. Native
@@ -181,6 +187,11 @@ POG_IDLE_NUDGE defaults to 1 in full mode. Scoped idle_report and scoped tells
 use only that pair; running queue lanes and quota rests suppress reminders. The
 message asks for own status/notes and productive teammate work without rival
 hints. Interactive idle prompts are nudged only after local requests go quiet.
+Grok can finish normally while Herdr reports `unknown`. In that case, the watch
+requires a successful `end_turn` receipt from the current native session and an
+empty prompt, with no busy or purchase indicator, before using the same quiet
+intervals and continuation message. An old receipt or silence alone is not
+enough. Accepted and failed prompt attempts are recorded in shifts.jsonl.
 The existing unscoped single-team idle helper is not used by full mode.
 
 Live shift announcements use the existing /v1/announce path as Operator and
