@@ -31,7 +31,7 @@ def arm(run, minutes=15, slots=12):
 def remote(code, *args):
     return command(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
                     os.environ.get('IMAC_HOST', 'imac.local'),
-                    shlex.join(['python3', '-c', code, *map(str,args)])], timeout=120)
+                    shlex.join([os.environ.get('IMAC_PYTHON','/usr/local/bin/python3'), '-c', code, *map(str,args)])], timeout=120)
 
 def stat(path):
     return json.loads(remote('import os,json,sys; s=os.stat(sys.argv[1]); print(json.dumps([s.st_size,s.st_mtime_ns]))',path))
@@ -72,6 +72,12 @@ def copy_new(run, keep=12):
             if stat(path)!=stamp or sha(partial)!=digest:
                 partial.unlink(missing_ok=True)
                 raise RuntimeError('save changed during copy; retry next poll')
+            latest=json.loads(rcon('rcon.print(remote.call("agent_harness","autosave_status"))'))
+            latest_records=latest.get('records') or {}
+            if not isinstance(latest_records,dict):latest_records={str(i):r for i,r in enumerate(latest_records)}
+            if latest.get('prefix')!=run or row not in latest_records.values():
+                partial.unlink(missing_ok=True)
+                raise RuntimeError('save slot rotated during copy; retry next poll')
             with zipfile.ZipFile(partial) as z:
                 if z.testzip(): raise RuntimeError('save ZIP CRC failed')
             filename=f"{row['tick']:012d}-{digest[:16]}.zip"

@@ -20,6 +20,8 @@ With the normal 2.1 environment exported:
     agent-python tools/mt/autosave.py watch RUN
 
 The host copies changed slots to /Volumes/POG Media/pog-runs/team-runs/RUN/saves.
+Remote hashing/stat use IMAC_PYTHON (default /usr/local/bin/python3, the installed
+iMac interpreter); bare python3 there resolves to the unusable Xcode stub.
 It checks remote size/mtime around the transfer, compares SHA-256 at both ends,
 checks ZIP CRC, atomically commits the archive and records proof in index.json.
 Only after that does it prune to the last 12 copies plus the first verified copy
@@ -40,7 +42,7 @@ its receipt is not proof of a later unobserved engine write.
 3. Stop only imac2 with the pinned tools/mt/imac_mt.sh stop. Start its copy using
    tools/mt/imac_mt.sh start '/Volumes/POG Media/pog-runs/team-runs/RUN/saves/FILENAME.zip'.
    The input archive is immutable; the launcher copies it to the server's mt.zip.
-4. Read game.tick, storage.pog_autosave and own-force profiles/production after
+4. Read game.tick, remote.call("agent_harness","autosave_status") and own-force profiles/production after
    load, verify the selected save, then restart agents from their private notes
    with POG_RESUME. Notes may describe work after the restored tick: explicitly
    tell each affected team to reconcile its own current status before acting.
@@ -50,6 +52,17 @@ its receipt is not proof of a later unobserved engine write.
 The source archive, actual loaded tick, identities, and post-restore health must
 be recorded in the run's operator receipt. Never claim a hash alone proves the
 engine loaded or that the agent resumed.
+
+For a closed run, `agent-python tools/mt/restore.py RUN --execute` holds clients,
+pauses, requests and verifies an exact checkpoint, reloads that archive, and
+compares tick, pause state, team research and profiles. It leaves the world paused
+and clients held. A recorded mismatch requires operator inspection.
+
+The closed rehearsal controller is `agent-python tools/mt/rehearse.py RUN --execute`.
+Launch with POG_FULL_SHIFTS=1, POG_MT_PAUSED_START=1 and POG_MT_PUBLIC=0 first.
+The controller gives the first shift 90 minutes after all clients launch, verifies
+the restore, starts shift two for 90 minutes, then stops the run and releases its
+server claim. Receipts are op/rehearsal.json and op/restore-drill.json.
 
 ## World and shift lifetime
 

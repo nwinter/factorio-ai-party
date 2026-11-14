@@ -24,8 +24,6 @@ class Saves(unittest.TestCase):
             with self.assertRaises(RuntimeError):autosave.verified('trial','one.zip')
             with self.assertRaises(ValueError):autosave.verified('trial','../one.zip')
 
-if __name__=='__main__':unittest.main()
-
 import full_run
 import public_session
 import launch
