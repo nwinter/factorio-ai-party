@@ -16,13 +16,23 @@ freshness; bot-only forces also warm after a request. No actions, visibility rul
 
 Counted Lua 5.2 fixtures cover engine crossings, empty-belt accounting, cell-key spelling, snapshot text reuse,
 cold requests, job reload, playerless forces and unchanged multi-force scan cadence. The cp31 native rerun averaged
-264.27 ms/game-s with twelve stand-ins and 286.38 ms/game-s all-at-once, peaking at 533.52 and 620.35 ms. A four-setting
+266.74 ms/game-s with twelve stand-ins and 288.31 ms/game-s all-at-once, peaking at 533.52 and 620.35 ms. A four-setting
 GC sweep still exceeded 500 ms/s; default settings were restored. The matched optimized after-bench remains pending
 after mt307; this checkpoint does not establish the 300 ms/s target. The stand-in collector
 now records initial status/queue calls, and the load collector keeps raw UPS intervals and per-window UPS.
 The native baseline exposed the profiler's 20,000-line limit: a 300-second window retained only 154 seconds.
 The load collector now defaults to 60-second windows and marks missing, interrupted or truncated profiles
 incomplete, with the requested tick range and dropped-line count. Bench summaries must check that coverage.
+The reported native averages include both partial boundary buckets, normalized by profiled tick count; the older
+collector's bucket averages remain in the evidence for comparison.
+
+The native allocation probe also found netmap idle checks allocating 3,442 KB/game-s while enumerating all surfaces.
+They now walk live planet associations directly and use explicit surface-index ties, keeping the same discovery and
+refresh cadence without platform enumeration, a temporary list or sorting. A 600-tick fixture with six planets and
+30 ships removes 200 surface enumerations, 7,200 surface.planet reads, 200 force reads and 200 sorts, replacing them
+with 1,200 planet.surface reads. Retry boundaries, association/deletion, and persisted-job reload pass against both
+cp31 and the optimized code. Full harness suite with actual Lua 5.2.4: 799 passed; raw/compacted fixtures and bundled
+luac checks pass. Optimized native timing remains pending.
 
 Players: no changed action arguments. A first network/alert read can report its scan pending; later reads return
 the completed snapshot. Evidence and native follow-up status:
