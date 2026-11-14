@@ -25,10 +25,7 @@ def arm(run, minutes=15, slots=12):
     op_dir(run); pinned()
     assert 1 <= minutes <= 60 and 2 <= slots <= 96
     # Re-arming the same world is idempotent. Another run cannot inherit its names.
-    lua = (f'local a=storage.pog_autosave; if not a or a.prefix~={json.dumps(run)} then '
-           f'a={{prefix={json.dumps(run)},enabled=true,interval_ticks={minutes*3600},slots={slots},'
-           'sequence=0,records={},next_tick=game.tick+60}; storage.pog_autosave=a end; '
-           'rcon.print(helpers.table_to_json(a))')
+    lua = f'rcon.print(remote.call("agent_harness","autosave_arm",{json.dumps(run)},{minutes*3600},{slots}))'
     return json.loads(rcon(lua))
 
 def remote(code, *args):
@@ -53,7 +50,7 @@ def copy_new(run, keep=12):
     dest = ARCHIVE/run/'saves'; dest.mkdir(parents=True,exist_ok=True)
     with lock(dest/'.copy.lock'):
         index = read(dest/'index.json', {'copies':[], 'seen':{}})
-        clock = json.loads(rcon('rcon.print(helpers.table_to_json(storage.pog_autosave or {}))'))
+        clock = json.loads(rcon('rcon.print(remote.call("agent_harness","autosave_status"))'))
         assert clock.get('prefix') == run and clock.get('enabled'), 'wrong/unarmed save clock'
         if clock.get('error'): raise RuntimeError(clock['error'])
         records=clock.get('records') or {}

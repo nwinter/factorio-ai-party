@@ -85,21 +85,23 @@ script.on_init(function() state(); boot(); pcall(guest_group) end)
 -- on_load must not write storage or touch game.
 script.on_load(boot)
 script.on_configuration_changed(function() state(); boot(); runtime.stop_all(); pcall(guest_group) end)
-script.on_event(defines.events.on_tick, function(event)
-  -- Operator-armed, saved clock. Independent of runtime deployment/quarantine.
-  -- No on_load writes, host clock, client callback or new module dependency.
-  local a=storage.pog_autosave
-  if a and a.enabled and event.tick>=a.next_tick then
+local function autosave_now(a,tick)
     local slot=(a.sequence%a.slots)+1
     local name=a.prefix..'-auto-'..string.format('%02d',slot)
     a.sequence=a.sequence+1
-    a.next_tick=event.tick+a.interval_ticks
-    a.records[tostring(slot)]={name=name,tick=event.tick,sequence=a.sequence}
+    a.next_tick=tick+a.interval_ticks
+    a.records[tostring(slot)]={name=name,tick=tick,sequence=a.sequence}
     local saved,save_error=pcall(game.server_save,name)
     a.error=nil
     if not saved then a.error=tostring(save_error) end
     if not saved then log('Server save failed: '..tostring(save_error)) end
-  end
+    return a.records[tostring(slot)]
+end
+script.on_event(defines.events.on_tick, function(event)
+  -- Operator-armed, saved clock. Independent of runtime deployment/quarantine.
+  -- No on_load writes, host clock, client callback or new module dependency.
+  local a=storage.pog_autosave
+  if a and a.enabled and event.tick>=a.next_tick then autosave_now(a,event.tick) end
   if state().runtime_fault then return end
   if not runtime then boot() end
   local ok, err = pcall(runtime.tick, event)
@@ -238,6 +240,25 @@ local function installing(fn)
   return helpers.table_to_json(ok and result or {ok=false,tick=game.tick,error={code='invalid_runtime',message=tostring(result)}})
 end
 remote.add_interface('agent_harness', {
+  -- Console storage belongs to the scenario, not this mod. Configure through
+  -- this RCON-only interface so the tick handler and restore see the same state.
+  autosave_status = function() return helpers.table_to_json(storage.pog_autosave or {}) end,
+  autosave_arm = function(prefix,interval,slots)
+    assert(type(prefix)=='string' and #prefix<=16 and prefix:match('^[%w_-]+$'),'invalid save prefix')
+    assert(type(interval)=='number' and interval>=3600 and interval<=216000 and interval%1==0,'invalid save interval')
+    assert(type(slots)=='number' and slots>=2 and slots<=96 and slots%1==0,'invalid save slots')
+    local a=storage.pog_autosave
+    if not a or a.prefix~=prefix then
+      a={prefix=prefix,enabled=true,interval_ticks=interval,slots=slots,sequence=0,records={},next_tick=game.tick+60}
+      storage.pog_autosave=a
+    end
+    return helpers.table_to_json(a)
+  end,
+  autosave_save = function(prefix)
+    local a=storage.pog_autosave
+    assert(a and a.enabled and a.prefix==prefix,'save clock is not armed for this run')
+    return helpers.table_to_json(autosave_now(a,game.tick))
+  end,
   bot_create = function(name) return operator('bot_create', name) end,
   bot_remove = function(name) return operator('bot_remove', name) end,
   bots = function() return operator('bots') end,
