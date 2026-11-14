@@ -31,6 +31,15 @@ import restore
 import run_state
 
 class Shifts(unittest.TestCase):
+    def test_quota_reset_after_deadline_starts_next_shift(self):
+        a=dict(name='a',deadline=100,shift=1,held=True,hold_reason='quota')
+        s=dict(max_shifts=0,agents={'a':a})
+        self.assertEqual(full_run.due_agents(s,200,{}),[])
+        self.assertEqual(full_run.due_agents(s,200,{'a':'fresh room'}),['a'])
+        self.assertFalse(a['held']);self.assertNotIn('hold_reason',a)
+        a.update(held=True,hold_reason='quota');s['max_shifts']=1
+        self.assertEqual(full_run.due_agents(s,200,{}),['a'])
+
     def test_foreign_claim_refuses_before_rcon(self):
         with tempfile.TemporaryDirectory() as temp:
             claim=Path(temp,'claim');claim.write_text('another-owner imac2')
@@ -58,7 +67,7 @@ class Shifts(unittest.TestCase):
             self.assertTrue(all(result['exact'].values()));self.assertEqual(result['after']['tick'],123)
             self.assertEqual(result['camera']['tick'],200)
             commands=[c[1] for c in calls if c[0]=='command']
-            self.assertEqual([c[-1] if 'imac_cam.py' in c[-2] else c[-1] for c in commands],['stop','stop',str(op/'save.zip'),'start'])
+            self.assertEqual([c[-1] for c in commands],['stop','stop',str(op/'save.zip'),'start'])
             self.assertEqual(calls[-2],('rcon','game.tick_paused=true'))
 
     def test_resume_environment_keeps_engine_version(self):

@@ -197,6 +197,16 @@ def quota(brief,team_file,now):
 
 def retry_delay(restarts):return min(1800,60*2**min(restarts,5))
 
+def due_agents(state,now,rooms):
+    # A provider hold can span a shift boundary. Process newly available quota
+    # before deadlines, or the expired held agent would never be visited again.
+    for name in rooms:
+        a=state['agents'].get(name)
+        if a and a.get('hold_reason')=='quota':
+            a['held']=False;a.pop('hold_reason',None)
+    return [n for n,a in state['agents'].items() if now>=a['deadline'] and not a.get('completed')
+            and (not a.get('held') or (state['max_shifts'] and a['shift']>=state['max_shifts']))]
+
 def watch_agent(op,state,a,now,panes,hits,rooms):
     folder=Path(a['folder'])/a['name'];rest=read(folder/'resting.json',{})
     hit=hits.get(a['name'])
@@ -261,8 +271,10 @@ def watch(run):
                     state=read(op/'full-run.json');now=time.time()
                     if state['phase']!='running':return
                     brief=read(Path.home()/'.cache/ai-usage/agent-brief.json',{})
-                    due=[n for n,a in state['agents'].items() if now>=a['deadline'] and not a.get('completed')
-                         and (not a.get('held') or (state['max_shifts'] and a['shift']>=state['max_shifts']))]
+                    hits,rooms={},{}
+                    for folder in {a['folder'] for a in state['agents'].values()}:
+                        h,r=quota(brief,Path(folder)/'team.tsv',now);hits.update(h);rooms.update(r)
+                    due=due_agents(state,now,rooms)
                     if due:
                         finished=[n for n in due if state['max_shifts'] and state['agents'][n]['shift']>=state['max_shifts']]
                         for n in finished:
@@ -272,9 +284,6 @@ def watch(run):
                         if next_names:change(op,state,next_names,state['minutes'])
                         if all(a.get('completed') for a in state['agents'].values()):
                             state['phase']='shifts-complete';event(op,'shifts-complete')
-                    hits,rooms={},{}
-                    for folder in {a['folder'] for a in state['agents'].values()}:
-                        h,r=quota(brief,Path(folder)/'team.tsv',now);hits.update(h);rooms.update(r)
                     if state['phase']=='running':
                         for a in state['agents'].values():
                             if now<a['deadline']:watch_agent(op,state,a,now,panes,hits,rooms)

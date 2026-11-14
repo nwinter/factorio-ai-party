@@ -233,6 +233,7 @@ echo '{"ok":true}'
         stub = r'''
 set -euo pipefail
 world=imac2
+run_mode=test
 paused_start=$PAUSED_START
 log() { echo "$*"; }
 git() { echo test; }
