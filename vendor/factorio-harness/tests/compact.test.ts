@@ -52,7 +52,8 @@ test('every Lua suite passes against the compacted modules, and the compacted bu
     const path = join(modDir, file);
     await writeFile(path, compactLua(await readFile(path, 'utf8')));
   }
-  const suites = [...(await readdir(join(dir, 'tests'))).filter(f => f.endsWith('.lua')).map(f => `tests/${f}`), 'mod/tests/runtime_test.lua', 'mod/tests/control_test.lua'];
+  const suites = [...(await readdir(join(dir, 'tests'))).filter(f => f.endsWith('.lua')).map(f => `tests/${f}`),
+    ...(await readdir(join(dir, 'mod/tests'))).filter(f => f.endsWith('.lua')).map(f => `mod/tests/${f}`)];
   for (const suite of suites) execFileSync(lua, [suite], {cwd: dir, stdio: 'pipe'});
   const bundle = await bundleRuntime('mod/agent-harness_0.1.0/runtime.lua');
   const file = join(dir, 'bundle.lua');
