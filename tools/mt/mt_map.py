@@ -643,6 +643,9 @@ def main():
         p.add_argument("--humans", action="store_true", help="layout, create: with the human team (HUMAN_TEAM)")
         p.add_argument("--human-factor", type=float, default=HUMAN_FACTOR)
     a = ap.parse_args()
+    if os.environ.get('POG_CLAIM_OWNER') and a.cmd in ('setup','assign','join','chart-test','seed-search','add-humans'):
+        from run_state import claim
+        claim()
     {"layout": cmd_layout, "create": cmd_create, "setup": cmd_setup, "assign": cmd_assign, "join": cmd_join,
      "chart-test": cmd_chart_test, "report": cmd_report, "contacts": cmd_contacts, "seed-search": cmd_seed_search,
      "add-humans": cmd_add_humans}[a.cmd](a)

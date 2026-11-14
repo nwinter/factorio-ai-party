@@ -224,6 +224,19 @@ deploy_runtime() (
   fi
 )
 deploy_runtime
+if [ "$run_mode" = full ]; then
+  python3 - $teams <<'PY'
+import json,sys
+sys.path.insert(0,'tools/mt')
+from run_state import rcon
+names='{'+','.join(json.dumps(t) for t in sys.argv[1:])+'}'
+result=json.loads(rcon('local out={}; for _,n in ipairs('+names+') do local f=game.forces[n]; '
+    'out[n]=f and #f.players or 0 end; rcon.print(helpers.table_to_json(out))'))
+missing=[n for n,count in result.items() if count<1]
+assert not missing, 'map is not ready: join/assign one setup LuaPlayer per force before bot play: '+','.join(missing)
+print('full-run map preflight: every selected force has a LuaPlayer for charting')
+PY
+fi
 if [ "${MT_EXPECT_VERSION:-}" = 2.1.24 ] && [ "${POG_AUTOSAVE:-1}" = 1 ]; then
   python3 tools/mt/autosave.py arm "$run" | while read -r line; do log "autosave: $line"; done
   nohup python3 tools/mt/autosave.py watch "$run" >"$op/autosave.log" 2>&1 &

@@ -49,8 +49,10 @@ def drill(run):
         indexes(op,state);write(op/'full-run.json',state)
         rcon('game.tick_paused=true; rcon.print(game.tick)')
         before=fingerprint();write(receipt,dict(phase='paused',before=before,at=time.time()))
+        camera=rcon('local p=game.get_player("pog-cam1"); rcon.print(p and p.connected and "yes" or "no")').strip()=='yes'
         path,row=checkpoint(run)
         write(receipt,dict(phase='archived',before=before,archive=str(path),proof=row,at=time.time()))
+        if camera:command([sys.executable,ROOT/'tools/mt/imac_cam.py','stop'],timeout=90)
         command([ROOT/'tools/mt/imac_mt.sh','stop'],timeout=90)
         command([ROOT/'tools/mt/imac_mt.sh','start',path],timeout=240)
         after=fingerprint()
@@ -61,6 +63,19 @@ def drill(run):
                            exact=exact,archive=str(path),proof=row,at=time.time()))
         if not all(exact.values()):
             alert(op,'restore-mismatch',exact);raise RuntimeError('restore mismatch; world left paused, agents held')
+        if camera:
+            # A disconnected native renderer stays in its modal, so relaunch it.
+            # Exact loaded-state proof is captured above, before any join ticks.
+            try:
+                rcon('game.tick_paused=false')
+                joined=command([sys.executable,ROOT/'tools/mt/imac_cam.py','start'],timeout=300)
+            except Exception as e:
+                result=read(receipt);result.update(phase='camera-failed',error=str(e));write(receipt,result)
+                raise
+            finally:rcon('game.tick_paused=true')
+            health=json.loads(rcon('local p=game.get_player("pog-cam1"); rcon.print(helpers.table_to_json{tick=game.tick,connected=p and p.connected or false})'))
+            result=read(receipt);result['camera']=dict(health,detail=joined);write(receipt,result)
+            assert health['connected'],'restored camera did not rejoin'
         # Caller owns when the next shift begins. No stream operation or fresh setup.
         return read(receipt)
 

@@ -3,6 +3,15 @@
 World lifetime and agent-shift lifetime are separate. Only the isolated 2.1.24
 server is supported. Hold the operator server claim before mutation; never use
 these tools against world n. Archive volume must be mounted.
+Use `set -e` for operator shell sequences and export POG_CLAIM_OWNER. Server/map
+mutators refuse a mismatched claim. For ad-hoc Lua use run_state.rcon, which checks
+the claim and 2.1 pins before every command; do not bypass it with raw tools/pog.py.
+
+A fresh map must complete mt_map.py's one-time `join`/`mt_assign` for each selected
+force before saving its baseline. Factorio does not chart bot surroundings for a
+force with no LuaPlayers, so such a map refuses mining/building even underfoot.
+Full launch checks this before starting agents. Keep setup players as spectators,
+disconnect their clients, and remove stray player-force bodies before baseline QA.
 
 ## Saves
 
@@ -56,13 +65,18 @@ engine loaded or that the agent resumed.
 For a closed run, `agent-python tools/mt/restore.py RUN --execute` holds clients,
 pauses, requests and verifies an exact checkpoint, reloads that archive, and
 compares tick, pause state, team research and profiles. It leaves the world paused
-and clients held. A recorded mismatch requires operator inspection.
+and clients held. A recorded mismatch requires operator inspection. When the
+screenshot camera was connected, the drill relaunches it after the exact-state
+comparison (briefly advancing the world for its join), records that later tick,
+and pauses again. An ordinary agent handoff never touches the camera.
 
 The closed rehearsal controller is `agent-python tools/mt/rehearse.py RUN --execute`.
 Launch with POG_FULL_SHIFTS=1, POG_MT_PAUSED_START=1 and POG_MT_PUBLIC=0 first.
 The controller gives the first shift 90 minutes after all clients launch, verifies
 the restore, starts shift two for 90 minutes, then stops the run and releases its
 server claim. Receipts are op/rehearsal.json and op/restore-drill.json.
+On failure it stops the server but retains the claim for the active operator's
+inspection/retry. Explicitly release it after cleanup if no retry is planned.
 
 ## World and shift lifetime
 

@@ -78,8 +78,10 @@ def main():
                                   stdout=log,stderr=subprocess.STDOUT,timeout=240)
         status=command([ROOT/'tools/mt/imac_mt.sh','status'])
         record(ended=time.time(),stop_exit=result.returncode,server=status.strip())
-        if result.returncode==0 and status.startswith('not running') and CLAIM.exists() and 'eng-mt300' in CLAIM.read_text().split():
+        if result.returncode==0 and status.startswith('not running') and not state['errors'] and CLAIM.exists() and 'eng-mt300' in CLAIM.read_text().split():
             (op/'server-claim-released.txt').write_text(CLAIM.read_text());CLAIM.unlink()
+        elif state['errors'] and result.returncode==0 and status.startswith('not running'):
+            alert(op,'rehearsal-failed-claim-retained','server stopped; owner must inspect and explicitly release or retry')
         else:alert(op,'rehearsal-teardown-needs-review',status)
     print(json.dumps(state),flush=True)
     return bool(state['errors'])

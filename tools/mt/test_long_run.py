@@ -27,8 +27,40 @@ class Saves(unittest.TestCase):
 import full_run
 import public_session
 import launch
+import restore
+import run_state
 
 class Shifts(unittest.TestCase):
+    def test_foreign_claim_refuses_before_rcon(self):
+        with tempfile.TemporaryDirectory() as temp:
+            claim=Path(temp,'claim');claim.write_text('another-owner imac2')
+            with patch.object(run_state,'CLAIM',claim),patch.object(run_state,'command') as command, \
+                 patch.dict('os.environ',{'POG_CLAIM_OWNER':'eng-mt300','MT_DIR':'/Users/owner/pog-mt21','MT_EXPECT_VERSION':'2.1.24'}):
+                with self.assertRaises(RuntimeError):run_state.rcon('game.tick_paused=false')
+                command.assert_not_called()
+
+    def test_restore_proves_exact_state_before_camera_join_ticks(self):
+        with tempfile.TemporaryDirectory() as temp:
+            op=Path(temp);run_state.write(op/'full-env.json',{});run_state.write(op/'full-run.json',{'agents':{}})
+            before=dict(tick=123,paused=True,forces={'a':1},profiles={'a':'identity'})
+            calls=[]
+            def rcon(lua):
+                calls.append(('rcon',lua))
+                if '"yes"' in lua:return 'yes'
+                if 'connected=' in lua:return json.dumps(dict(tick=200,connected=True))
+                return ''
+            def command(args,**kw):calls.append(('command',[str(x) for x in args]));return 'camera joined'
+            with patch.object(restore,'op_dir',return_value=op),patch.object(restore,'pinned'), \
+                 patch.object(restore,'change'),patch.object(restore,'indexes'),patch.object(restore,'rcon',side_effect=rcon), \
+                 patch.object(restore,'fingerprint',return_value=before),patch.object(restore,'checkpoint',return_value=(op/'save.zip',{})), \
+                 patch.object(restore,'command',side_effect=command):
+                result=restore.drill('test')
+            self.assertTrue(all(result['exact'].values()));self.assertEqual(result['after']['tick'],123)
+            self.assertEqual(result['camera']['tick'],200)
+            commands=[c[1] for c in calls if c[0]=='command']
+            self.assertEqual([c[-1] if 'imac_cam.py' in c[-2] else c[-1] for c in commands],['stop','stop',str(op/'save.zip'),'start'])
+            self.assertEqual(calls[-2],('rcon','game.tick_paused=true'))
+
     def test_resume_environment_keeps_engine_version(self):
         with tempfile.TemporaryDirectory() as temp,patch.dict('os.environ',{'POG_FACTORIO_VERSION':'2.1.24'}):
             full_run.capture_env(Path(temp))
