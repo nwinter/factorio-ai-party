@@ -58,6 +58,39 @@ import stop_helpers
 import team_views
 
 class Shifts(unittest.TestCase):
+    def test_unknown_grok_completion_recovers_without_restarting(self):
+        with tempfile.TemporaryDirectory() as temp:
+            op=Path(temp);a=dict(name='a',folder=temp,kind='grok',pane='p',started=100,restarts=0)
+            path=op/'a/.grok-home/sessions/own/updates.jsonl';path.parent.mkdir(parents=True)
+            completion=dict(timestamp=200,method='_x.ai/session/update',params=dict(update=dict(sessionUpdate='turn_completed',stop_reason='end_turn')))
+            path.write_text(json.dumps(completion)+'\n')
+            panes=unittest.mock.Mock();panes.read.return_value='│ ❯                     │\nShift+Tab:mode'
+            panes.status.return_value='unknown';panes.prompt.return_value=('pane send-text',True,'')
+            with patch.object(full_run,'live_client',return_value=True),patch.object(full_run,'change') as change,patch.object(full_run,'alert') as alert:
+                full_run.watch_agent(op,dict(agents={'a':a}),a,1000,panes,{}, {})
+                panes.prompt.assert_called_once_with('p',full_run.NUDGE)
+                full_run.watch_agent(op,dict(agents={'a':a}),a,1020,panes,{}, {})
+                self.assertEqual(panes.prompt.call_count,1);change.assert_not_called();alert.assert_not_called()
+            self.assertTrue(run_state.read(op/'shifts.jsonl')['native_completion'])
+
+    def test_native_idle_requires_completed_current_turn_and_empty_safe_prompt(self):
+        with tempfile.TemporaryDirectory() as temp:
+            a=dict(name='a',folder=temp,kind='grok',started=100)
+            path=Path(temp)/'a/.grok-home/sessions/own/updates.jsonl';path.parent.mkdir(parents=True)
+            complete=dict(timestamp=200,method='_x.ai/session/update',params=dict(update=dict(sessionUpdate='turn_completed',stop_reason='end_turn')))
+            path.write_text(json.dumps(complete)+'\n')
+            ready='│ ❯                │'
+            self.assertTrue(full_run.native_idle(a,ready,1000))
+            for screen in ('',ready+'\n[stop]',ready+'\nBuy more credits','│ ❯ queued input │'):
+                self.assertFalse(full_run.native_idle(a,screen,1000))
+            self.assertFalse(full_run.native_idle(a,ready,250))
+            self.assertFalse(full_run.native_idle(dict(a,started=300),ready,1000))
+            self.assertFalse(full_run.native_idle(dict(a,kind='muse'),ready,1000))
+            with path.open('a') as f:f.write(json.dumps(dict(timestamp=300,method='session/update',params=dict(update=dict(sessionUpdate='agent_thought_chunk'))))+'\n')
+            self.assertFalse(full_run.native_idle(a,ready,1000))
+            complete['params']['update']['stop_reason']='rate_limit';path.write_text(json.dumps(complete)+'\n')
+            self.assertFalse(full_run.native_idle(a,ready,1000))
+
     def test_partial_view_failure_reconnects_next_poll(self):
         with tempfile.TemporaryDirectory() as temp:
             op=Path(temp)/'runs/trial/op';op.mkdir(parents=True)

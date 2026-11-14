@@ -199,6 +199,28 @@ def quota(brief,team_file,now):
 
 def retry_delay(restarts):return min(1800,60*2**min(restarts,5))
 
+def native_idle(a,screen,now):
+    """Grok can finish at an empty prompt while Herdr reports unknown.
+
+    Require both the native successful completion receipt and the empty prompt;
+    journal silence alone cannot distinguish thinking from a finished turn.
+    """
+    if a['kind']!='grok':return False
+    tail='\n'.join(screen.splitlines()[-25:])
+    if pane_resume.BUSY.search(tail) or pane_resume.PURCHASE.search(screen):return False
+    if not re.search(r'(?m)^\s*[│┃]\s*❯\s*[│┃]\s*$',tail):return False
+    folder=Path(a['folder'])/a['name']/'.grok-home/sessions'
+    try:
+        path=max(folder.rglob('updates.jsonl'),key=lambda p:p.stat().st_mtime)
+        if path.stat().st_mtime<a['started']:return False
+        with path.open('rb') as f:
+            f.seek(max(0,path.stat().st_size-65536))
+            row=json.loads(f.read().splitlines()[-1])
+        update=row.get('params',{}).get('update',{})
+        return (row.get('method')=='_x.ai/session/update' and update.get('sessionUpdate')=='turn_completed'
+                and update.get('stop_reason')=='end_turn' and a['started']<=row['timestamp']<=now-120)
+    except (OSError,ValueError,KeyError,IndexError,TypeError):return False
+
 def due_agents(state,now,rooms):
     # A provider hold can span a shift boundary. Process newly available quota
     # before deadlines, or the expired held agent would never be visited again.
@@ -243,10 +265,13 @@ def watch_agent(op,state,a,now,panes,hits,rooms):
         alert(op,'client-restart',f"{a['name']}: {stopped or 'native process exited'}; attempt {a['restarts']}")
         change(op,state,[a['name']],reason='restart');return
     # A live interactive client at an idle prompt may need a local prompt, not a game tell.
-    if status in ('idle','done') and now-a.get('last_prompt',a['started'])>=180:
+    native_ready=status=='unknown' and native_idle(a,screen,now)
+    if (status in ('idle','done') or native_ready) and now-a.get('last_prompt',a['started'])>=180:
         recent=folder/'journal.jsonl'
         if not recent.exists() or now-recent.stat().st_mtime>=120:
-            panes.prompt(a['pane'],NUDGE);a['last_prompt']=now
+            how,ok,detail=panes.prompt(a['pane'],NUDGE);a['last_prompt']=now
+            event(op,'idle-prompt',agent=a['name'],method=how,accepted=ok,native_completion=native_ready)
+            if not ok:alert(op,'idle-prompt-failed',f"{a['name']}: {detail}")
 
 
 def nudge(op,state,now):
