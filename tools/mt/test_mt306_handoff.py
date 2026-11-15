@@ -12,9 +12,16 @@ CODE = Path(__file__).resolve().parent / 'mt306'
 sys.path.insert(0, str(CODE))
 import config
 import server_guard as guard
+from gc_sweep import setting
+import argparse
 
 
 class HandoffTests(unittest.TestCase):
+    def test_gc_sweep_settings_are_explicit_bounded_pairs(self):
+        self.assertEqual(setting('100/400'),(100,400))
+        for bad in ('100', '100/400/2', 'x/200', '10/200', '100/10000'):
+            with self.assertRaises(argparse.ArgumentTypeError): setting(bad)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

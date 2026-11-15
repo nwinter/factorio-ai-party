@@ -1501,7 +1501,7 @@ return function(api)
         stages[#stages+1] = {step='merge'}
         stages[#stages+1] = {step='drill_sites'}
         s.push_steps = s.push_steps or {}
-        job = {start=tick, stages=stages, i=1, groups={}, mining={}, budget=MAX_SCAN, steps=0,
+        job = {start=tick, stages=stages, i=1, groups={}, mining={}, budget=MAX_SCAN, steps=0, cold=api.background and not c,
           every=walk.every(s.push_steps[force.name], SCAN_TICKS)}
         s.push_jobs[force.name] = job
         local mem, tmem = inserter_memory(force), turret_memory(force)
@@ -1556,10 +1556,18 @@ return function(api)
     if stage.surface then
       -- A planet: a band found in one step (walk.lua), then read SLICE a step.
       local surface = planet_named(stage.surface)
-      if not surface or job.budget <= 0 then job.i = job.i + 1; job.walk, job.list, job.pos = nil, nil, nil
+      if not surface or job.direct_done or (job.budget <= 0 and not job.list) then
+        job.i = job.i + 1; job.walk, job.list, job.pos, job.direct_done = nil, nil, nil, nil
       elseif not job.list then
-        job.walk = job.walk or walk.start(surface)
         BAND_F.force, BAND_F.limit = force, job.budget
+        -- The first snapshot uses the same global entity budget as scan(),
+        -- but queries one planet per step and reads only a slice per step.
+        if job.cold then
+          local list = try(function() return surface.find_entities_filtered(BAND_F) end) or {}
+          job.list, job.at = list, 1; job.budget = job.budget - #list
+          return
+        end
+        job.walk = job.walk or walk.start(surface)
         -- (walk.lua fills the positions it read, a table each band kept with the list; a walk without out_pos: nil)
         local list, pos = walk.band(job.walk, surface, BAND_F, {})
         if list then job.list, job.at, job.pos = list, 1, pos; job.budget = job.budget - #list
@@ -1575,7 +1583,11 @@ return function(api)
         job.cost = cost
         read_list(job.groups, surface, job.list, job.at, last, inserter_memory(force), turret_memory(force), job.mining, drill_memory(force), force, job.pos)
         job.at = last + 1
-        if job.at > #job.list then job.list, job.at, job.pos = nil, nil, nil end
+        if job.at > #job.list then
+          job.list, job.at, job.pos = nil, nil, nil
+          -- Retain the walk's closing step and its pacing before alerts/merge.
+          if job.cold then job.direct_done = true end
+        end
       end
     elseif stage.step == 'alerts' then
       job.i = job.i + 1; game_alerts(job.groups, force); forget_unseen(inserter_memory(force))

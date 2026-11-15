@@ -17,11 +17,22 @@ import pog
 from load_bench import window_stats, profile_completion
 
 
+def setting(value):
+    try:
+        pause, step = (int(x) for x in value.split('/'))
+        assert 50 <= pause <= 400 and 100 <= step <= 2000
+    except (ValueError, AssertionError):
+        raise argparse.ArgumentTypeError('setting is pause/stepmul (50..400 / 100..2000)') from None
+    return pause, step
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--out', required=True)
     ap.add_argument('--seconds', type=int, default=120)
     ap.add_argument('--allocation-seconds', type=int, default=5)
+    ap.add_argument('--settings', nargs='+', type=setting,
+                    help='explicit pause/stepmul pairs; default repeats the baseline four-setting sweep')
     a = ap.parse_args()
     assert 30 <= a.seconds <= 180
     assert 1 <= a.allocation_seconds <= 10
@@ -54,7 +65,7 @@ def main():
     rows.append({'original': old})
     save()
     try:
-        settings = [(old['pause'], old['stepmul']), (150, 200), (150, 400), (120, 400)]
+        settings = a.settings or [(old['pause'], old['stepmul']), (150, 200), (150, 400), (120, 400)]
         for pause, step in settings:
             changed = lua(f"local p=collectgarbage('setpause',{pause}); local s=collectgarbage('setstepmul',{step}); "
                           "rcon.print(helpers.table_to_json{tick=game.tick,previous_pause=p,previous_stepmul=s})")

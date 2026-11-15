@@ -14,6 +14,13 @@ Runtime network and alert reads leave cold scans to the existing paced, persiste
 and digest markers are not consumed while pending. Existing completed snapshots keep their ordinary fields and
 freshness; bot-only forces also warm after a request. No actions, visibility rules or production boundaries change.
 
+The native cold run exposed a sparse-terrain delay: the first network walk could take several minutes before
+publishing any snapshot. Cold background jobs now probe one force/surface at a time with capped native finds,
+then process the returned entities in bounded slices. Network queries that hit their cap fall back to band walks;
+the push scan retains its total entity budget and closing-step pacing. Warm refreshes retain their band walks.
+Large-empty-box, capped-query, full-budget-list and reload fixtures cover this path. The existing alert cost-budget
+test now exercises the cold background path too. All 799 tests pass under real Lua 5.2.4.
+
 Counted Lua 5.2 fixtures cover engine crossings, empty-belt accounting, cell-key spelling, snapshot text reuse,
 cold requests, job reload, playerless forces and unchanged multi-force scan cadence. The cp31 native rerun averaged
 266.74 ms/game-s with twelve stand-ins and 288.31 ms/game-s all-at-once, peaking at 533.52 and 620.35 ms. A four-setting

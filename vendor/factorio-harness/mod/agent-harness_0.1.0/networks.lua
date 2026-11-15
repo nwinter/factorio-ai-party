@@ -162,7 +162,7 @@ return function(api)
       if n.map_tick and last < n.map_tick and tick - snapfail.since(n.map_tick, n.map_failed) < VIEW_TICKS then return end
       local todo = {}
       for _, f in ipairs(forces()) do for _, s in ipairs(surfaces()) do todo[#todo+1] = {force=f.name, surface=s.index} end end
-      n.map_job = {start=tick, todo=todo, i=1, map={}, steps=0, every=walk.every(n.map_steps, VIEW_TICKS)}
+      n.map_job = {start=tick, todo=todo, i=1, map={}, steps=0, cold=api.background and not n.map_tick, every=walk.every(n.map_steps, VIEW_TICKS)}
       return
     end
     if not walk.due(job, tick, VIEW_TICKS) then return end
@@ -177,16 +177,27 @@ return function(api)
       return
     end
     local f, s = game.forces[pr.force], game.get_surface(pr.surface)
-    if not (f and s) then job.i, job.walk, job.list = job.i + 1, nil, nil
+    if not (f and s) then job.i, job.walk, job.list, job.direct = job.i + 1, nil, nil, nil
     elseif job.list then
       local last = math.min(#job.list, job.at + SLICE - 1)
       for k = job.at, last do pole_into(job.map, job.list[k], s, f) end
       job.at = last + 1
-      if job.at > #job.list then job.list = nil end
+      if job.at > #job.list then
+        job.list = nil
+        if job.direct then job.i, job.direct = job.i + 1, nil end
+      end
     else
+      -- A cold map must not spend minutes crossing empty terrain. One capped
+      -- native probe per force/surface, then bounded entity slices. A full
+      -- result falls back to the band walk so the cap never hides entities.
+      if job.cold and job.direct == nil then
+        local list = tcall(s, 'find_entities_filtered', pole_find(f)) or {}
+        job.direct = #list < MAX_SCAN
+        if job.direct then job.list, job.at = list, 1; return end
+      end
       job.walk = job.walk or walk.start(s)
       local list = walk.band(job.walk, s, pole_find(f))
-      if list then job.list, job.at = list, 1 else job.i, job.walk = job.i + 1, nil end
+      if list then job.list, job.at = list, 1 else job.i, job.walk, job.direct = job.i + 1, nil, nil end
     end
   end
   -- The statistics a network is read through: a pole of it, or a platform's own network its surface's (AG4).
@@ -1682,7 +1693,7 @@ return function(api)
       end
       steps[#steps+1] = {step='done'}
       n.view_steps = n.view_steps or {}
-      n.view_jobs[f.name] = {start=tick, steps=steps, i=1, out={}, ctx={}, n=0, every=walk.every(n.view_steps[f.name], VIEW_TICKS)}
+      n.view_jobs[f.name] = {start=tick, steps=steps, i=1, out={}, ctx={}, n=0, cold=api.background and not v, every=walk.every(n.view_steps[f.name], VIEW_TICKS)}
       return
     end
     if not job or not walk.due(job, tick, VIEW_TICKS) then return end
@@ -1715,7 +1726,7 @@ return function(api)
     local surface
     if game.get_surface then surface = game.get_surface(step.surface)
     else for _, s in pairs(game.surfaces or EMPTY) do if s.name == step.surface then surface = s; break end end end
-    if not surface then job.i, job.walk, job.list = job.i + 1, nil, nil; job.ctx[step.surface] = nil; return end  -- the surface is gone
+    if not surface then job.i, job.walk, job.list, job.direct = job.i + 1, nil, nil, nil; job.ctx[step.surface] = nil; return end  -- the surface is gone
     local row = job.out[step.surface] or {name=surface.name, platform=try(function() return surface.platform.name end), logistic={}}
     job.out[step.surface] = row
     local ctx = job.ctx[step.surface]
@@ -1725,12 +1736,20 @@ return function(api)
         local last = math.min(#job.list, job.at + SLICE - 1)
         for k = job.at, last do view_entity(ctx, job.list[k], surface) end
         job.at = last + 1
-        if job.at > #job.list then job.list = nil end
+        if job.at > #job.list then
+          job.list = nil
+          if job.direct then job.i, job.direct = job.i + 1, nil end
+        end
       else
-        job.walk = job.walk or walk.start(surface)
         VIEW_FIND.force = f
+        if job.cold and job.direct == nil then
+          local list = tcall(surface, 'find_entities_filtered', VIEW_FIND) or {}
+          job.direct = #list < MAX_SCAN
+          if job.direct then job.list, job.at = list, 1; return end
+        end
+        job.walk = job.walk or walk.start(surface)
         local list = walk.band(job.walk, surface, VIEW_FIND)
-        if list then job.list, job.at = list, 1 else job.i, job.walk = job.i + 1, nil end
+        if list then job.list, job.at = list, 1 else job.i, job.walk, job.direct = job.i + 1, nil, nil end
       end
       return
     end

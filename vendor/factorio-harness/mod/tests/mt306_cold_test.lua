@@ -4,6 +4,9 @@ local function eq(a,b,m) assert(a==b,(m or '')..': '..tostring(a)..' ~= '..tostr
 defines={entity_status={working=0,no_power=1},flow_precision_index={five_seconds=0,one_hour=3},inventory={}}
 prototypes={item={},entity={},quality={normal={level=0}}}
 local s,finds={},0
+-- A late-game generated box dwarfs its occupied base. Cold publication must
+-- not wait for a band walk over millions of empty chunks.
+s.walk_box={[1]={left=-2000,right=2000,top=-2000,bottom=2000}}
 local f={name='red',players={},logistic_networks={},platforms={},is_chunk_visible=function() return true end}
 local sf={name='nauvis',index=1,valid=true}
 local stats={input_counts={},output_counts={},get_flow_count=function() return 0 end}
@@ -55,7 +58,7 @@ local finish
 for t=9,6000 do
   game.tick=t
   N.tick(t); P.tick(t)
-  if t==10 then reload() end -- persisted cursor/job state, no module-local work to lose
+  if t==10 or t==14 or t==30 then reload() end -- include a held native-query result
   if s.networks.views.red and s.push_alerts.red then finish=t; break end
 end
 assert(finish,'background jobs completed: '..tostring(s.push_errors and s.push_errors.last)..' / '..tostring(s.networks.view_errors and s.networks.view_errors.last))
@@ -103,3 +106,36 @@ for _,name in ipairs(teams) do
   eq(calls.census[name],300,'empty bands per force in 600 ticks')
 end
 print('mt306 cadence: 4 forces each walk 300 empty bands in 600 ticks; every force retains its view/alert pacing')
+
+-- A capped cold network query cannot be accepted as a complete snapshot.
+-- The fallback keeps the ordinary band cursor and never repeats the probe.
+s={}; game.forces={red=f}; f.players={{}}
+local capped={}; for i=1,20000 do capped[i]={valid=false} end
+local probes,bands=0,0
+sf.find_entities_filtered=function(q) probes=probes+1; eq(q.limit,20000); return capped end
+local W={every=function() return 1 end,due=function() return true end,
+  start=function() return {} end,band=function(w)
+    bands=bands+1
+    if not w.seen then w.seen=true; return es end
+  end}
+N=dofile('mod/agent-harness_0.1.0/networks.lua'){background=true,state=function() return s end,walk=W}
+for t=1,100 do
+  game.tick=t; N.tick(t)
+  if s.networks.views.red then break end
+end
+assert(s.networks.views.red,'capped query fell back and completed')
+eq(probes,2,'one capped map probe and one capped view probe')
+eq(bands,4,'each fallback walks through its final band')
+eq(s.networks.views.red.surfaces[1].electric[1].none,1,'fallback retains facts beyond the native cap')
+
+-- The last cold push query may spend the entire budget: its held list must
+-- still be read in slices. Count entity reads rather than elapsed time.
+s={}; local reads=0
+local dead=setmetatable({}, {__index=function(_,k) if k=='valid' then reads=reads+1; return false end end})
+for i=1,20000 do capped[i]=dead end
+P=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){background=true,state=function() return s end,
+  who=function() return 'r1' end,agents=function() return {} end}
+for t=1,3000 do game.tick=t; P.tick(t); if s.push_alerts.red then break end end
+assert(s.push_alerts.red,'full-budget held list completed')
+assert(reads>=20000,'budget exhaustion skipped the held entities: '..reads)
+print('mt306 cold caps: network overflow falls back once; all 20000 held push entities are read in slices')
