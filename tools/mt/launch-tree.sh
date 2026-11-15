@@ -29,7 +29,7 @@ if git -C "$root" rev-parse -q --verify MERGE_HEAD >/dev/null; then
   archive_ref=$(git -C "$root" stash create)
 fi
 git -C "$root" archive "${archive_ref:-HEAD}" | tar -x -C "$tmp"
-rm -rf "$tmp/tools/mt" "$tmp/agent/mt" "$tmp/site" "$tmp/agent/briefs" "$tmp/agent/ENGINEER.md" "$tmp"/tools/test_*.py "$tmp"/tools/stream/test_*.py "$tmp"/site/test_*.py \
+rm -rf "$tmp/tools/mt" "$tmp/agent/mt" "$tmp/site" "$tmp/docs/reports" "$tmp/agent/briefs" "$tmp/agent/ENGINEER.md" "$tmp"/tools/test_*.py "$tmp"/tools/stream/test_*.py "$tmp"/site/test_*.py \
   "$tmp/vendor/factorio-harness/mod" "$tmp"/vendor/factorio-harness/tests/mt[0-9]*.lua \
   "$tmp"/tools/public_export.py "$tmp"/tools/public_sync.py "$tmp"/tools/public-push.sh "$tmp"/tools/public-start.sh \
   "$tmp"/tools/imac-copy.sh "$tmp"/docs/DISCLOSURE.md "$tmp"/docs/mt-*.md "$tmp"/docs/PORT21*.md "$tmp"/tools/port21-copy.sh
