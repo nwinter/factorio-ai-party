@@ -38,9 +38,14 @@ def checkpoint(run):
                 return verified(run,row['file'])
     raise RuntimeError('paused restore point never reached verified archive')
 
-def drill(run):
+def drill(run, allow_unlisted_stream=False):
     op=op_dir(run);os.environ.update(read(op/'full-env.json'));pinned()
-    assert not (op/'public-session.json').exists(),'closed drill only'
+    stream_before=None
+    if allow_unlisted_stream:
+        from rehearsal_stream import before_restore
+        stream_before=before_restore(run)
+    else:
+        assert not (op/'public-session.json').exists(),'closed drill only; unlisted stream requires explicit opt-in'
     receipt=op/'restore-drill.json'
     assert not receipt.exists(),'drill receipt already exists'
     with lock(op/'agents.lock'):
@@ -60,7 +65,7 @@ def drill(run):
         # tick, research and profiles are compared separately from the full evidence.
         exact={k:before[k]==after[k] for k in ('tick','paused','forces','profiles')}
         write(receipt,dict(phase='verified' if all(exact.values()) else 'mismatch',before=before,after=after,
-                           exact=exact,archive=str(path),proof=row,at=time.time()))
+                           exact=exact,archive=str(path),proof=row,at=time.time(),stream_before=stream_before))
         if not all(exact.values()):
             alert(op,'restore-mismatch',exact);raise RuntimeError('restore mismatch; world left paused, agents held')
         if camera:

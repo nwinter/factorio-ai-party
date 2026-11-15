@@ -429,7 +429,7 @@ def launch_tree():
         assert r.returncode == 1 and "not a launch tree" in r.stderr, r.stderr
         out = subprocess.run(["bash", sh, tree], capture_output=True, text=True, check=True).stdout.strip()
         assert out == tree
-        for gone in ("tools/mt", "agent/mt", "vendor/factorio-harness/mod", ".git", "tools/test_mt_launch.py", "tools/public_export.py"):
+        for gone in ("tools/mt", "agent/mt", "docs/reports", "vendor/factorio-harness/mod", ".git", "tools/test_mt_launch.py", "tools/public_export.py"):
             assert not os.path.exists(os.path.join(tree, gone)), gone
         for kept in ("bin/fh", "tools/launch-agent.sh", "tools/new-run.sh", "agent/PLAYBOOK.md", "vendor/factorio-harness/dist/host/cli.js",
                      "vendor/factorio-harness/docs/usage.md", "tools/sleepcap/run"):
@@ -474,6 +474,8 @@ def launch_tree_mid_merge():
         put("tools/brief.py", "# Old main has no continuous_text helper.\n")
         put("agent/PLAYBOOK.md", "Continue. Always read `deadline.txt`.\n")
         put("agent/ref/example.md", "Player reference.\n")
+        put("docs/reports/rehearsal/map.json", '{"other_team_spawn": [100, 200]}\n')
+        put("docs/reports/rehearsal/quota.json", '{"private_account_usage": 34}\n')
         put("vendor/factorio-harness/docs/usage.md", "Old usage.\n")
         put(".gitignore", "ignored-secret.txt\nvendor/factorio-harness/dist/\n")
         put("removed-by-merge.txt", "old\n")
@@ -510,7 +512,7 @@ def launch_tree_mid_merge():
         assert "deadline.txt" not in (tree / "agent/PLAYBOOK.md").read_text()
         assert (tree / "tool-link").is_symlink() and os.readlink(tree / "tool-link") == "run tool"
         assert os.access(tree / "run tool", os.X_OK)
-        for absent in (".git", "tools/mt", "untracked-secret.txt", "ignored-secret.txt",
+        for absent in (".git", "tools/mt", "docs/reports", "untracked-secret.txt", "ignored-secret.txt",
                        "removed-by-merge.txt", "removed-in-worktree.txt"):
             assert not (tree / absent).exists(), absent
         assert state() == before, "building must leave HEAD, the merge, index, working changes and stash list alone"
@@ -520,6 +522,7 @@ def launch_tree_mid_merge():
         put("tracked file.txt", "uncommitted after merge\n")
         subprocess.run(["bash", sh, str(tree)], env=env, capture_output=True, text=True, check=True)
         assert (tree / "tracked file.txt").read_text() == "working resolution\n"
+        assert not (tree / "docs/reports").exists()
     print("launch tree mid-merge: ok")
 
 

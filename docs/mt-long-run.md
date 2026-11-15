@@ -76,11 +76,64 @@ read errors during a restore cannot strand its later snapshots on a dead socket.
 
 The closed rehearsal controller is `agent-python tools/mt/rehearse.py RUN --execute`.
 Launch with POG_FULL_SHIFTS=1, POG_MT_PAUSED_START=1 and POG_MT_PUBLIC=0 first.
-The controller gives the first shift 90 minutes after all clients launch, verifies
-the restore, starts shift two for 90 minutes, then stops the run and releases its
-server claim. Receipts are op/rehearsal.json and op/restore-drill.json.
-On failure it stops the server but retains the claim for the active operator's
-inspection/retry. Explicitly release it after cleanup if no retry is planned.
+The controller defaults to two 180-minute shifts (`--shift-minutes` changes both),
+with an exact-save restore between them. Launch with the same shift length. Its
+engineering quota guard defaults to `--quota-profile codex-b --quota-stop 70`;
+stale or unavailable engineering telemetry stops the drill too. Agent quota
+holds remain the native watchdog's responsibility. Receipts are
+op/rehearsal.json and op/restore-drill.json. It stops the run but retains the
+claim on both success and failure. `--measure` starts the minute metrics helper
+and a separate `load_bench.py` invocation per shift, archiving each native server
+profile log before restore/teardown. Restore the prior owner's saves, mods and
+configuration, verify the saved hashes and stopped processes, then release.
+
+When unlisted streaming is authorized, use the application Python
+(`/opt/homebrew/bin/python3`) and add `--unlisted`. Start and inspect the normal
+stream staging/publication after the controller resumes the world. Before the
+restore, this option requires an owned full-mode unlisted session, live YouTube
+privacy verification, and healthy recording, camera, site and output. The stream
+supervisors stay running while the server reloads; exact paused-state comparison
+still precedes any camera join ticks. After resuming the second shift, the
+controller requires sixty continuous healthy seconds with increasing ticks and
+stream bytes. Evidence is op/restore-stream.json. Final teardown completes the
+unlisted publication with --keep-world before stopping staging and the game.
+Without this option, restore still refuses a publication receipt.
+
+`rehearsal_metrics.py RUN --execute` writes private minute samples directly to
+POG Media. They include milestones, contacts, market records, moving shipment
+positions, account quota observations, UPS and the harness heap. Gaps and restore
+outages stay explicit. Use `load_bench.py --window 60 --every 10` separately for
+performance, with default GC settings. Stop its collector before restore and
+start a new invocation afterward: its persistent RCON sockets do not reconnect.
+Preserve the server profile log before restoring. Register helper PIDs in
+op/helpers.pid for owned-process cleanup. Quota readings are account-wide and
+must be separated at resets; divide observed deltas by the route's measured
+agent-hours and report any concurrent usage or stale readings.
+The dashboard refreshes every300s and writes ~/.cache/ai-usage/agent-brief.json.
+Read this file for routine checks; generated_at or a profile observation older
+than15 minutes is unavailable, even when its saved availability flag says true.
+The independent helper attempts a fallback only after two missed dashboard
+refreshes (10 minutes), at most once per30 minutes; attempts are persisted in
+op/quota-fallback.json. It never runs ai-usage on each sample. A bounded provider
+adapter can be selected with `quota_refresh.py RUN --reader COMMAND ARG...` if
+the installed ai-usage command stalls on transcript-history scans. It must emit
+the normal brief JSON and preserve saved observation ages and unknown values.
+Record the selected reader and deployment; never fabricate zero usage when a
+reset response omits the percentage. Agent quota-hold policy stays separate.
+During a diagnosed dashboard outage, `--fallback-every 600 --reader-timeout 300`
+allows a bounded live adapter to wait for the dashboard's existing quota lock.
+This still reads the cache each minute and only refreshes after two missed
+dashboard updates. Record this override as an outage workaround; do not remove
+the shared lock or mistake it for a repair of the dashboard's refresh.
+
+`mt_map.py create --teams 3 --team-names green yellow blue ...` aligns forces
+with the six-agent roster. A failed setup join now returns failure. Native
+`map_probe.py --dir EVIDENCE --execute` is destructive acceptance on a disposable
+copy only: it adds stand-in bots, research, contacts and stock, obtains native
+shipment-prototype paths and proves three physical market deliveries. Reject
+timer fallback or loss. Reload the untouched, hash-verified baseline afterward;
+the path probe is not real-agent play and its synthetic contacts never enter the
+rehearsal.
 
 ## World and shift lifetime
 
@@ -136,14 +189,19 @@ Quota at-limit windows use the existing route/model selection and quota_rest.py
 format/push. Rest is firm until the actual reset, survives shifts, and suppresses
 nudges. A limit screen with unknown reset is held until fresh quota shows room
 or an explicit release. Stale telemetry never invents a reset or available quota.
-An independent quota helper checks each minute, refreshes ai-usage when its cache
-is older than eight minutes, and alerts on missing/stale playing routes. It does
-not depend on the desktop widget. Refresh failures retain the last known cache.
+The quota helper reads the dashboard cache each minute and alerts on missing or
+stale playing routes. It uses the rare fallback described above if dashboard
+refreshes stop; failures retain the last known observation and its actual age.
 
 POG_IDLE_NUDGE defaults to 1 in full mode. Scoped idle_report and scoped tells
 use only that pair; running queue lanes and quota rests suppress reminders. The
 message asks for own status/notes and productive teammate work without rival
 hints. Interactive idle prompts are nudged only after local requests go quiet.
+Grok can finish normally while Herdr reports `unknown`. In that case, the watch
+requires a successful `end_turn` receipt from the current native session and an
+empty prompt, with no busy or purchase indicator, before using the same quiet
+intervals and continuation message. An old receipt or silence alone is not
+enough. Accepted and failed prompt attempts are recorded in shifts.jsonl.
 The existing unscoped single-team idle helper is not used by full mode.
 
 Live shift announcements use the existing /v1/announce path as Operator and

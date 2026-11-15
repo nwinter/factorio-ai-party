@@ -11,6 +11,7 @@ import time
 from run_state import ROOT,op_dir,read,write
 
 SCRIPTS={'full_run.py','quota_refresh.py','autosave.py','team_views.py','viewer_inbox.py',
+         'rehearsal_metrics.py',
          'imac_cam.py','score-loop.sh','chat-log.py','netgate.py','serve.py','full_tools.py',
          'fh_broker.py','game_test.py','supervise.sh'}
 

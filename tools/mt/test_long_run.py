@@ -56,8 +56,115 @@ import restore
 import run_state
 import stop_helpers
 import team_views
+import quota_refresh
+import rehearsal_metrics
 
 class Shifts(unittest.TestCase):
+    def test_handoff_announcement_has_stable_broker_compatible_id(self):
+        with tempfile.TemporaryDirectory() as temp:
+            op=Path(temp)/'trial/op';op.mkdir(parents=True)
+            run_state.write(op/'public-session.json',dict(phase='live'))
+            with patch.object(full_run.announce,'token',return_value='test'), \
+                 patch.object(full_run.announce,'post',return_value=(True,'seq 1')) as post:
+                for key in ('2-ready','2-ready','3-ready'):full_run.say(op,key,'Shift handoff finished.')
+            ids=[c.args[3] for c in post.call_args_list]
+            self.assertRegex(ids[0],r'^[0-9a-f]{24}$')
+            self.assertEqual(ids[0],ids[1]);self.assertNotEqual(ids[0],ids[2])
+            run_state.write(op/'public-session.json',dict(phase='stopped'))
+            with patch.object(full_run.announce,'post') as post:full_run.say(op,'4-ready','Shift handoff finished.')
+            post.assert_not_called()
+
+    def test_unknown_quota_does_not_rest_or_stop_a_playing_agent(self):
+        with tempfile.TemporaryDirectory() as temp:
+            op=Path(temp);team=op/'team.tsv';team.write_text('a\tgrok\tgrok\tgrok-4.7\n')
+            brief=dict(generated_at=1000,profiles=[dict(command='grok',available=False,stale=True,
+                windows=[dict(label='Grok · Weekly',percent=100,resets_at=2000)])])
+            hits,rooms=full_run.quota(brief,team,1000);self.assertEqual((hits,rooms),({},{}))
+            a=dict(name='a',folder=temp,kind='grok',pane='p',started=100,restarts=0)
+            panes=unittest.mock.Mock();panes.status.return_value='working';panes.read.return_value='Working [stop]'
+            with patch.object(full_run,'live_client',return_value=True),patch.object(full_run,'stop_client') as stop, \
+                 patch.object(full_run,'change') as change,patch.object(full_run.quota_rest,'mark') as rest:
+                full_run.watch_agent(op,dict(agents={'a':a}),a,1000,panes,hits,rooms)
+            stop.assert_not_called();change.assert_not_called();rest.assert_not_called()
+            self.assertFalse(a.get('held'));self.assertNotIn('rest_until',a)
+
+    def test_quota_cache_age_overrides_saved_availability_without_zeroing_windows(self):
+        brief=dict(generated_at=1000,profiles=[dict(command='grok',observed_at=1000,available=True,stale=False,windows=[dict(percent=29)])])
+        self.assertEqual(quota_refresh.unavailable(brief,{'grok'},1900),[])
+        self.assertEqual(quota_refresh.unavailable(brief,{'grok'},1901),['grok'])
+        with patch.object(rehearsal_metrics,'read',return_value=brief),patch.object(rehearsal_metrics.time,'time',return_value=1901):
+            sample=rehearsal_metrics.quota_snapshot()
+        self.assertTrue(sample['stale']);self.assertFalse(sample['profiles'][0]['available'])
+        self.assertEqual(sample['profiles'][0]['windows'],[dict(percent=29)])
+
+    def test_quota_cache_is_primary_and_fallback_cooldown_survives_restart(self):
+        with tempfile.TemporaryDirectory() as temp:
+            op=Path(temp);cache=op/'cache.json'
+            run_state.write(op/'full-run.json',dict(phase='running',agents={'a':dict(kind='grok',route='grok')}))
+            fresh=dict(generated_at=1000,profiles=[dict(command='grok',observed_at=1000,available=True,stale=False)])
+            for brief,cooldown in [(fresh,False),(dict(fresh,generated_at=0),True)]:
+                run_state.write(cache,brief)
+                if cooldown:run_state.write(op/'quota-fallback.json',dict(at=950,phase='failed'))
+                stop=unittest.mock.Mock();stop.is_set.side_effect=[False,True]
+                with patch.object(sys,'argv',['quota_refresh','trial']),patch.object(quota_refresh,'op_dir',return_value=op), \
+                     patch.object(quota_refresh,'CACHE',cache),patch.object(quota_refresh,'pinned'), \
+                     patch.object(quota_refresh.threading,'Event',return_value=stop),patch.object(quota_refresh.signal,'signal'), \
+                     patch.object(quota_refresh.time,'time',return_value=1100),patch.object(quota_refresh.subprocess,'run') as run,patch.object(quota_refresh,'alert'):
+                    quota_refresh.main()
+                run.assert_not_called()
+                self.assertEqual(run_state.read(op/'quota-health.json')['stale'],cooldown)
+
+    def test_custom_quota_reader_preserves_unknown_profiles(self):
+        with tempfile.TemporaryDirectory() as temp:
+            op=Path(temp);cache=op/'cache.json';run_state.write(cache,dict(generated_at=0))
+            run_state.write(op/'full-run.json',dict(phase='running',agents={'a':dict(kind='grok',route='grok')}))
+            brief=dict(generated_at=1000,profiles=[dict(command='grok',available=False,stale=True,windows=[])])
+            stop=unittest.mock.Mock();stop.is_set.side_effect=[False,True]
+            result=unittest.mock.Mock(returncode=0,stdout=json.dumps(brief))
+            with patch.object(sys,'argv',['quota_refresh','trial','--fallback-every','600','--reader-timeout','300','--reader','ruby','reader.rb']), \
+                 patch.object(quota_refresh,'op_dir',return_value=op),patch.object(quota_refresh,'CACHE',cache), \
+                 patch.object(quota_refresh,'pinned'),patch.object(quota_refresh.threading,'Event',return_value=stop), \
+                 patch.object(quota_refresh.signal,'signal'),patch.object(quota_refresh.time,'time',return_value=1000), \
+                 patch.object(quota_refresh.subprocess,'run',return_value=result) as run,patch.object(quota_refresh,'alert') as alert:
+                quota_refresh.main()
+            self.assertEqual(run.call_args.args[0],['ruby','reader.rb'])
+            self.assertEqual(run.call_args.kwargs['timeout'],300)
+            self.assertIn("['grok']",run_state.read(op/'quota-health.json')['error'])
+            alert.assert_called_once()
+
+    def test_unknown_grok_completion_recovers_without_restarting(self):
+        with tempfile.TemporaryDirectory() as temp:
+            op=Path(temp);a=dict(name='a',folder=temp,kind='grok',pane='p',started=100,restarts=0)
+            path=op/'a/.grok-home/sessions/own/updates.jsonl';path.parent.mkdir(parents=True)
+            completion=dict(timestamp=200,method='_x.ai/session/update',params=dict(update=dict(sessionUpdate='turn_completed',stop_reason='end_turn')))
+            path.write_text(json.dumps(completion)+'\n')
+            panes=unittest.mock.Mock();panes.read.return_value='│ ❯                     │\nShift+Tab:mode'
+            panes.status.return_value='unknown';panes.prompt.return_value=('pane send-text',True,'')
+            with patch.object(full_run,'live_client',return_value=True),patch.object(full_run,'change') as change,patch.object(full_run,'alert') as alert:
+                full_run.watch_agent(op,dict(agents={'a':a}),a,1000,panes,{}, {})
+                panes.prompt.assert_called_once_with('p',full_run.NUDGE)
+                full_run.watch_agent(op,dict(agents={'a':a}),a,1020,panes,{}, {})
+                self.assertEqual(panes.prompt.call_count,1);change.assert_not_called();alert.assert_not_called()
+            self.assertTrue(run_state.read(op/'shifts.jsonl')['native_completion'])
+
+    def test_native_idle_requires_completed_current_turn_and_empty_safe_prompt(self):
+        with tempfile.TemporaryDirectory() as temp:
+            a=dict(name='a',folder=temp,kind='grok',started=100)
+            path=Path(temp)/'a/.grok-home/sessions/own/updates.jsonl';path.parent.mkdir(parents=True)
+            complete=dict(timestamp=200,method='_x.ai/session/update',params=dict(update=dict(sessionUpdate='turn_completed',stop_reason='end_turn')))
+            path.write_text(json.dumps(complete)+'\n')
+            ready='│ ❯                │'
+            self.assertTrue(full_run.native_idle(a,ready,1000))
+            for screen in ('',ready+'\n[stop]',ready+'\nBuy more credits','│ ❯ queued input │'):
+                self.assertFalse(full_run.native_idle(a,screen,1000))
+            self.assertFalse(full_run.native_idle(a,ready,250))
+            self.assertFalse(full_run.native_idle(dict(a,started=300),ready,1000))
+            self.assertFalse(full_run.native_idle(dict(a,kind='muse'),ready,1000))
+            with path.open('a') as f:f.write(json.dumps(dict(timestamp=300,method='session/update',params=dict(update=dict(sessionUpdate='agent_thought_chunk'))))+'\n')
+            self.assertFalse(full_run.native_idle(a,ready,1000))
+            complete['params']['update']['stop_reason']='rate_limit';path.write_text(json.dumps(complete)+'\n')
+            self.assertFalse(full_run.native_idle(a,ready,1000))
+
     def test_partial_view_failure_reconnects_next_poll(self):
         with tempfile.TemporaryDirectory() as temp:
             op=Path(temp)/'runs/trial/op';op.mkdir(parents=True)
@@ -197,6 +304,11 @@ class Shifts(unittest.TestCase):
             self.assertEqual((hits,rooms),({},{}))
             hits,rooms=full_run.quota(dict(generated_at=now,profiles=[profile]),team,now)
             self.assertEqual(hits['a']['reset'],20000)
+            profile['observed_at']=now-901
+            self.assertEqual(full_run.quota(dict(generated_at=now,profiles=[profile]),team,now),({},{}))
+            profile['windows'][0]['percent']=1
+            self.assertEqual(full_run.quota(dict(generated_at=now,profiles=[profile]),team,now),({},{}))
+            profile['observed_at']=now
             profile['stale']=True
             self.assertEqual(full_run.quota(dict(generated_at=now,profiles=[profile]),team,now),({},{}))
 
