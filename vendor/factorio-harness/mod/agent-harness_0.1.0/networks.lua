@@ -2502,11 +2502,14 @@ return function(api)
           if cap <= 0 or x.kw < HIGH * cap then held = false; break end
         end
         if held and first and first <= game.tick - HIGH_TICKS + SAMPLE then
-          local pct = r.capacity_kw > 0 and math.floor(100 * r.draw.now / r.capacity_kw) or 100
+          -- A cold view can finish before its first sample. The sustained
+          -- condition above proves a sample exists even if that view lacks draw.
+          local now = r.draw and r.draw.now or list[#list].kw
+          local pct = r.capacity_kw > 0 and math.floor(100 * now / r.capacity_kw) or 100
           out[#out+1] = {key='power_high|' .. s.name .. '|' .. r.id, kind='power_high', surface=s.name, n=math.floor(math.min(pct, 100) / 5) * 5,
             unit='%', names={}, by={}, at={}, center={x=math.floor(r.center.x + 0.5), y=math.floor(r.center.y + 0.5)},
             line=string.format('electric #%d draw at or above %d%% of capacity for 2 min: %s of %s now; %d machines on low power',
-              r.id, math.floor(HIGH * 100), mw(r.draw.now), mw(r.capacity_kw), r.low)}
+              r.id, math.floor(HIGH * 100), mw(now), mw(r.capacity_kw), r.low)}
         end
         local g = r.fuel_low and #r.fuel_low > 0 and M.fuel_group(s, r, f)
         if g then out[#out+1] = g end

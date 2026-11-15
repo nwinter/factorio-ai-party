@@ -219,6 +219,17 @@ local by={}
 for _,x in ipairs(N.alert_groups(force)) do by[x.kind]=x end
 eq(by.power_high.n,90); eq(by.power_high.unit,'%')
 eq(by.power_high.line,'electric #7 draw at or above 85% of capacity for 2 min: 20.0 MW of 22.1 MW now; 3 machines on low power')
+-- A first background view may precede sampling. Once the sustained condition
+-- is met, its alert uses the latest real sample without rebuilding the view.
+do
+  local row=storage.networks.views.player.surfaces[1].electric[1]
+  local saved=row.draw; row.draw=nil
+  local found
+  for _,x in ipairs(N.alert_groups(force)) do if x.kind=='power_high' then found=x end end
+  assert(found,'cold view still emits the measured sustained-power alert')
+  eq(found.line,by.power_high.line); eq(row.draw,nil,'reading does not mutate the snapshot')
+  row.draw=saved
+end
 eq(by.robots_busy.line,'logistic #3: no idle logistic robot for 12 min (147 robots; 1 requests unfilled 60+ s)')
 eq(by.requester_full,nil,'a requester with room is no requester_full')
 -- Every slot of the short requester taken (Sol, 22:08: 494 spoilage among a requester's 48 slots, robots could not
