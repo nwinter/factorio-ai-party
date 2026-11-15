@@ -1,0 +1,51 @@
+[
+ {
+  "at": "2026-11-14 19:48:33",
+  "tick": 82877261,
+  "map_tick": 82871732,
+  "views": {
+   "blue": {
+    "tick": 82873037,
+    "surfaces": 1
+   },
+   "red": {
+    "tick": 82873037,
+    "surfaces": 1
+   },
+   "green": {
+    "tick": 82873037,
+    "surfaces": 1
+   },
+   "yellow": {
+    "tick": 82873037,
+    "surfaces": 1
+   },
+   "player": {
+    "tick": 82873037,
+    "surfaces": 27
+   }
+  },
+  "alerts": {
+   "blue": {
+    "tick": 82874054,
+    "groups": 6
+   },
+   "red": {
+    "tick": 82874091,
+    "groups": 7
+   },
+   "green": {
+    "tick": 82874097,
+    "groups": 7
+   },
+   "yellow": {
+    "tick": 82874149,
+    "groups": 6
+   },
+   "player": {
+    "tick": 82874587,
+    "groups": 76
+   }
+  }
+ }
+]

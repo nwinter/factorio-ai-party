@@ -1,195 +1,145 @@
-# mt306 — harness headroom, operator d44
+# mt306 — measured harness headroom for the 2.1 team run
 
-Updated 2026-11-14 12:49 PST. **Native cp31 baseline and GC sweep complete; imac2 restored and released at 12:40:45. Matched after-bench pending after mt307. Task not complete.**
+Updated 2026-11-14 20:13 PST. **Final handoff checkpoint: mt/batch306-cp8**, ready for operator review/gating; runtime measured at **mt/batch306-cp7 = 207aebf440b37c66d36af3388f4cc8e839525867**. Both matched workload phases, the shorter after GC sweep, restoration and migration handoff are complete. Average tick work improves 12.3% with stand-ins and 14.8% all-at-once. **The approximately 300 ms/s peak target and full cold-status latency objective remain unmet.** The stand-in worst tick bucket rises from 533.52 to 681.81 ms in a GC-finish second; no new GC default is installed. This is a final measured checkpoint, not clearance that the days-long performance target is achieved.
 
-## Migration checkpoint, 2026-11-14 evening
+## Implementation and preserved behavior
 
-**Current continuation checkpoint: mt/batch306-cp5 (non-final).** Runtime unchanged from cp4; current main fbe96e6c4 merged with no harness Lua changes. Portable native drivers, ownership/restore helper, six migration tests, baseline summaries and this report/handoff are now tracked on the branch. Three collector tests also pass. The full runtime validation remains 799/799 under actual Lua 5.2.4.
+- Production legs cache the immutable engine version and share their ledger lookup within each tick; direction watching and production boundary counters retain their cadence.
+- Research's first-shift summary uses the engine-maintained force entity count, preserving technology/prototype filtering and order. It reads the technologies table once per summary.
+- Empty census belts skip transport-line objects and contents tables. Nonempty belts, qualities and underground-line accounting retain the original path. All forces keep the original census cadence.
+- Network view steps resolve a surface directly and read a force's player list once. Cold runtime reads request persisted jobs and explicitly remain pending until a complete snapshot exists; playerless forces register on request, including upgrades with an existing snapshot.
+- Cold map/view jobs make capped native queries per force/surface, then process bounded 150-entity slices. A query at the cap falls back to the ordinary band walk. This avoids minutes walking empty terrain before the first result. An overflow step may include the capped probe and the first band query; agent calls themselves make zero entity queries.
+- Cold push jobs use the original total entity budget, one planet query per step, bounded slices and the original closing-step pacing. A list that exhausts the query budget is still processed. Alert cursors and digest markers are not consumed while pending. Warm jobs retain their band walks.
+- Push-alert cell keys use integer formatting. Board/status sight text is rendered once per completed alert snapshot and copied into a small caller-owned list; live coverage stays live.
+- Netmap's idle path walks live planet associations, preserving index ties and discovery/retry cadence while avoiding all-platform enumeration and sorting. Force lookup waits until a real job step.
 
-The old worktree and family artifacts do not move. The canonical save and 90 evidence files were copied to /Users/owner/code/pog-operator/mt306-artifacts/baseline (106 MB total with Lua source), with per-file SHA-256 manifest and secret-redacted logs. Canonical hash reverified. Lua 5.2.4 source archive also preserved for a native chonk rebuild. No ignored node_modules/dist or old Codex session is required; compile/build from the carried branch.
+No new require, action argument, gameplay rule or visibility change. The explicit pending result is the intentional cold-read interface change. A proposed one-force-per-tick census shortcut was rejected because it slowed sparse walks by the number of forces.
 
-Fresh-engineer entry point: docs/mt306-handoff.md on mt/batch306, mirrored at /Users/owner/code/pog-operator/handoff-mt306.md. Historical paths below identify original measurements; use the preserved baseline directory and tracked tools/mt/mt306 scripts for continuation. Do not run the old hardcoded-PID restore script from historical artifacts.
+## Controlled native comparison
 
-At handoff preparation mt307 still holds imac2; the matched after-bench follows its explicit release. Current live codex-b observation: 33%, below the >70% stop threshold. No server access was made during migration preparation. Baseline release at 12:40:45 remains the most recent mt306 release. The final checkpoint still needs the matched after measurements and an ENGWAKE release after restoring imac2.
+Baseline ref: mt/batch290-cp31 = bd280b33f51eba5d48704a852ff4af1692ac87ad. Final tested runtime: cp7 above. Compact bundle ID **e8aae28b32362a0b**, 7,146,734 bytes, deployed source SHA-256 **e8aae28b32362a0b7641726105624f2f6444265487a5e905c5f7660055c0353e**.
 
-## Ref and server coordination
+Both runs start at paused tick 82871732 from mt306-joined-cold-cp31.zip, SHA-256 **1fc4ea6fde7fc541f8532f177c49c8ba5f49a6c116e538ebe71943e37acb38c9**. Factorio base 2.1.24; four joined-but-disconnected setup players, one per force; twelve scripted stand-ins at 0.9 calls/s each. Nauvis entity counts: red 14,173; blue 15,832; green 14,447; yellow 13,173. Initially 28 surfaces and 22 platforms. No model gameplay agents and no world n access.
 
-- Branch `mt/batch306`, current non-final checkpoint **`mt/batch306-cp4` = `0d364d6728f4867739b4f045f10acf0baf10e3e7`**. cp3 (`3ca0ee39a8c8b92460770c645672b80ce5545c7d`) records the collector cap fix; cp2 (`9af7eec8f04a88a510a820be697f74ca46d6f8ea`) contains the earlier runtime changes. Previous offline checkpoint `mt/batch306-cp1` = `8ba886dd51703199cbf466bcc35d8c06b13adea7`.
-- Base `mt/batch290-cp31` = `bd280b33f51eba5d48704a852ff4af1692ac87ad`.
-- Worktree: /Users/owner/code/personal/player-of-games/worktrees/pog-mt306
-- Artifacts: /Users/owner/code/personal/player-of-games/artifacts/mt306
-- No push, main change, gate.sh, model agents, or world n access. imac2 claimed atomically at 11:49:26 PST and released at **12:40:45 PST**, within the 60-minute slot. Server stopped; both private ports free; prior save, mods, config, settings and whitelist restored and compared. Prior mt.zip SHA-256: c2ff265cda5e86f2dac15f2b490189f98e2395f0ebd017c8b4bc2ceb49d021d0. ENGWAKE release notice appended to /Users/owner/code/pog-operator/mt306-wake.jsonl.
-- Restoration evidence: /Users/owner/code/personal/player-of-games/artifacts/mt306/restore-driver.log and server-release.json. The canonical cold save was also copied locally and hash-verified before release. mt307 has the next slot; no further server access until the operator frees the after-bench slot.
-- Sampling request written: /Users/owner/code/pog-operator/note-mt306-sampling.md
-- Slot acknowledgement: /Users/owner/code/pog-operator/note-mt306-slot.md
-- codex-b weekly usage: 13% at start, **25% live after release**; stop threshold >70%. Snapshot: /Users/owner/code/personal/player-of-games/artifacts/mt306/quota-post-baseline.json
+The 11.5-minute stand-in phase precedes eight minutes of all-at-once exercise. All-at-once adds eight platforms, scripted hops, cargo pods, turret fire and a 300-iron market trade. Deployment occurs paused, followed by a paused save/reload to remove transient upload garbage before profiling. The after initial heap was 287.56 MB. A collector-ready handshake includes the first calls. Only one profiler runs at a time.
 
-## Main integration and cp2
-
-Operator lifted the secrecy/private-branch rules after main `f72c30929e9d1b6e7329075ea6c20b2ce67b4f83` went live. Merged that main into mt/batch306 as `25ff0e31`; ancestry is verified. The only conflict was equivalent math.floor forms in the networks fixture, resolved to main's version while retaining the surface-name lookup mock.
-
-cp2 adds an upgrade regression fix: even an existing completed snapshot registers its playerless force for future background refreshes. Otherwise an old synchronous snapshot could remain indefinitely stale after installing the background-only reads. The added raw and compacted Lua 5.2 fixture confirms registration, preservation of the existing snapshot, and no synchronous entity queries.
-
-Full merged harness suite with LUA_BIN pointing at actual Lua 5.2.4: **798 passed, 0 failed**, including main's expanded compacted-module suite. The later cache-registration edge case was checked with both raw and compacted new fixtures and the existing networks fixture. tools/test_mt304.py and tools/test_mt_launch.py also pass; the Python log contains inherited ResourceWarnings, not failures.
-
-- /Users/owner/code/personal/player-of-games/artifacts/mt306/harness-tests-main-merge-lua52.log
-- /Users/owner/code/personal/player-of-games/artifacts/mt306/main-merge-python.log
-- /Users/owner/code/personal/player-of-games/artifacts/mt306/offline-main-merge-checks.log
-
-cp2 is **not final**: matched optimized native timings and any GC default selection remain pending. Continue on mt/batch306; the operator gates the final cp ref into main when the task is done. No operator gate or public push was run here.
-
-## Changes in cp1 (preserved through cp4)
-
-1. **Production legs:** read immutable `script.active_mods.base` once per runtime; share the ledger across all ships in each tick. Keep per-tick direction watching and production boundary counters. The 2.1 migration remains once per state/version.
-2. **Research first-shift block:** use the engine-maintained force-wide entity count for unlocked-building presence, with one technologies table per read. Preserve prototype-existence checks, researched-tech filtering, grouping and order. No surface traversal on the first reply.
-3. **Census:** empty belts use the entity's total item count and skip transport-line objects and contents tables. Nonempty belts retain the previous accounting, including qualities and shared underground lines. Keep the previous force scheduling and work budget.
-4. **Networks:** resolve each view step's surface by name; avoid repeated surface enumeration and duplicate force-player table reads. Runtime cold reads request persisted background jobs instead of synchronously scanning the whole force. A playerless force joins the scan on request, including after an empty player map has completed.
-5. **Push alerts:** use integer formatting for frequently built chunk/area keys, preserving negative-coordinate spelling. Cold runtime reads wait for paced background jobs. Pending reads do not advance alert cursors or consume digest markers.
-6. **Board/status:** reuse sight text from a completed alert snapshot; copy the small rendered line list for callers that append coverage. A new snapshot invalidates the text. Live coverage remains live.
-7. **Bench instrumentation:** stand-ins now log startup status/queue calls separately from steady calls. The load collector keeps raw UPS intervals and per-window UPS, excluding intervals crossing a window boundary.
-
-Completed snapshot fields and gameplay rules remain unchanged. A first network/alert reply may now explicitly say `pending: true` until its first complete snapshot exists. This is documented; an incomplete scan is never published as a completed empty result. No new Lua require.
-
-Review caught and removed a proposed one-force-per-tick shortcut: it would multiply sparse census band-walk duration by the force count. All forces retain the previous pacing; the cold-read improvement comes from using the existing stepped jobs.
-
-The API documents `LuaForce.get_entity_count` as an engine-maintained O(1) count by prototype, without a quality restriction:
-https://lua-api.factorio.com/latest/classes/LuaForce.html#get_entity_count
-
-## cp4: native-driven netmap allocation reduction
-
-The native attribution probe measured netmap.tick at 3,442 KB/game-s. Its idle step enumerated all surfaces, including 30 platforms, allocated a list and closures, and sorted it every three ticks even while no planet map was due. It now walks the live `game.planets` associations and picks the oldest eligible surface with explicit index ties. No membership cache or refresh delay; creation, association and deletion remain visible on the next idle step. The force lookup is deferred until an actual job step.
-
-The new counted fixture passes against both cp31 and optimized code: 600 ticks / six planets / 30 ships reduce whole-surface enumerations **200→0**, surface.planet reads **7,200→0**, idle force reads **200→0**, sorts **200→0**; the new loop reads planet.surface 1,200 times. It also checks equal-age ordering, exact retry boundaries, failed census retries, differently named associations, deleted surfaces, and persisted jobs across module reload. The existing netmap snapshot fixture remains intact with a game.planets mock added.
-
-The engine API documents the one-to-one live association used here:
-https://lua-api.factorio.com/latest/classes/LuaPlanet.html#surface
-https://lua-api.factorio.com/latest/classes/LuaPlanet.html#associate_surface
-
-Full harness suite with real Lua 5.2.4: **799 passed, 0 failed**, including compacted-module suites. All three mt306 fixtures pass raw and compacted; both whole bundles pass luac -p; Lua 5.2 syntax, brief and three collector tests pass. No new require. Main f72c3092 remains an ancestor; worktree clean at cp4. Evidence: harness-tests-netmap-lua52.log, netmap-before.log, netmap-after.log, mt306_netmap_test-compact.log and offline-netmap-checks.log in the artifact directory. Native benefit of cp4 remains unmeasured until the after slot.
-
-## Counted before/after (Lua 5.2.4, not native timings)
-
-The same new fixture runs against cp31 module exports and cp1 modules. These counts demonstrate removed work; they do not predict Factorio wall time or prove the 300 ms/s target.
-
-| Fixture / operation | cp31 before | cp1 after |
+| Scenario / metric | cp31 before | cp7 after |
 |---|---:|---:|
-| 32 parked ships × 600 ticks: active_mods reads | 78,000 | 0 after construction |
+| Stand-ins: tick ms/game-s | 266.74 | 233.81 |
+| Stand-ins: total harness ms/game-s | 331.61 | 294.06 |
+| Stand-ins: worst tick bucket ms | 533.52 | 681.81 |
+| Stand-ins: worst total bucket ms | 2191.69 | 1037.72 |
+| Stand-ins: UPS median / min | 60.0 / 24.7 | 60.0 / 53.4 |
+| Stand-ins: heap MB | 289–766 | 279–770 |
+| Stand-ins: profiled game seconds | 600.17 | 600.17 |
+| Stand-ins: completed windows | 10 | 10 |
+| Stand-ins: scripted calls | 7416 | 7391 |
+| All-at-once: tick ms/game-s | 288.31 | 245.71 |
+| All-at-once: total harness ms/game-s | 348.62 | 305.60 |
+| All-at-once: worst tick bucket ms | 620.35 | 543.38 |
+| All-at-once: worst total bucket ms | 697.84 | 646.98 |
+| All-at-once: UPS median / min | 60.0 / 56.7 | 60.0 / 57.2 |
+| All-at-once: heap MB | 317–780 | 336–790 |
+| All-at-once: profiled game seconds | 420.12 | 420.12 |
+| All-at-once: completed windows | 7 | 7 |
+| All-at-once: scripted calls | 5146 | 5167 |
+
+Tick averages change by -12.3% (standins), -14.8% (all). Total-harness averages change by -11.3% (standins), -12.3% (all).
+
+The final workload has 7,391 stand-in calls and 5,167 combined calls; each phase has only the two expected initial mining misses, matching the baseline failure pattern. No new harness errors appeared through either workload. The inherited census error count stays at three, from tick 82852994 before the canonical start.
+
+The combined exercise ended with 43 pods in flight, two turrets, all four Vulcanus pads holding 950 iron, and a delivered 300-iron trade. The market audit conserves 240,000 credits with no faults. Red/blue/yellow Nauvis pads each held 4,600 iron and 1,800 copper; green held 303 iron and 1,800 copper, versus 4,600 iron in the baseline. Thus the same traffic exercise ran, but the live pad inventories did not follow an identical trajectory; do not treat this as a bit-for-bit replay. Full counts and receipts are preserved in exercise-final-summary.json and exercise-run.json.
+
+Averages include both partial boundary buckets and divide by actual profiled ticks. Historical mt302 and the saved legacy collector summaries use a different boundary convention; they are preserved but are not silently mixed with this table. All 17 reported workload windows have verified completion markers and zero dropped lines. Peaks are game-second buckets; UPS uses five-second wall intervals.
+
+| Named part, ms/game-s (nested) | Stand-ins before | Stand-ins after | All before | All after |
+|---|---:|---:|---:|---:|
+| productionlegs.tick | 37.67 | 5.07 | 49.24 | 6.39 |
+| netmap.tick | 5.72 | 5.03 | 5.78 | 5.23 |
+| pushalerts.tick | 33.84 | 32.97 | 33.72 | 32.77 |
+| networks.tick | 23.10 | 20.30 | 28.30 | 26.60 |
+| networks.view_tick | 18.90 | 15.91 | 21.40 | 19.56 |
+| census.step | 27.23 | 26.86 | 25.21 | 25.19 |
+| census.walk | 22.39 | 21.94 | 20.58 | 20.65 |
+| pushalerts.band | 14.21 | 13.62 | 13.91 | 13.40 |
+| pushalerts.slice | 10.83 | 10.54 | 11.13 | 10.75 |
+| board.team | 13.19 | 11.68 | 13.42 | 13.11 |
+
+Named parts are nested; do not sum them. The native API equivalence probe found zero mismatches in 96 building-presence checks across four forces. Of 1,000 sampled belts, 578 were empty with zero false empties or count errors. Eight paired reads returned the same 7,646-item total; median line-enumeration time fell from 3.343 to 2.576 ms in that subroutine.
+
+## First calls and remaining latency
+
+| Cold first ten seconds | cp31 | cp7 |
+|---|---:|---:|
+| Worst total harness second | 2,191.69 ms | 1,037.72 ms |
+| research.shift_block worst bucket | 1,056.03 ms / 6 calls | 43.31 ms / 10 calls |
+| board.team worst bucket | 486.80 ms / 6 calls | 29.76 ms / 10 calls |
+| dispatch status worst bucket | 401.26 ms / 6 calls | 653.86 ms / 10 calls |
+| Synchronous networks.alert_groups | 307.59 ms / 2 calls | No synchronous scan; background job |
+| Slowest of 24 client startup calls | 511.88 ms | 283.71 ms |
+
+The after status bucket includes ground.alerts 286.74 ms, survey.summary 155.46 ms and threat.summary 148.46 ms. Research and board improve substantially; status cost per call remains roughly similar (the bucket contains more calls).
+
+Named-part values aggregate all calls in the worst bucket of the first ten game seconds. They are not individual-call latency, and faster startup changes how many calls share a bucket. The status path still has cold ground-alert, survey and threat-summary work; it is not fully bounded by this patch. The remaining hitch is included in the results.
+
+The initial cp5 pilot exposed a delay masked by the tiny offline fixture: global terrain band walks took minutes before publishing the first network view. It was rejected as the final comparison. A development pilot exposed a missing alert closing step in the cost-budget regression test. The cp6 native pilot then recorded two new push-alert failures: its first network snapshot preceded power sampling, so a later sustained-power alert dereferenced an absent draw field. cp7 uses the latest real sample in that case, with an exact-line regression test. Both pilots were stopped and the final candidate restarted from the canonical save. Only after-cp7-* files constitute the final after comparison. The final native check found populated network/alert snapshots for all four teams and player by 93 game seconds; the preceding pilot observed them by 51 seconds. The first view can precede power sampling, so optional draw fields can be absent until a subsequent view refresh; the fresh network read remains available. The large-empty-box offline fixture completes at tick 94 with three queries and zero queries in twelve simultaneous first reads.
+
+## GC and allocation
+
+The default 200/200 pause/step multiplier is unchanged. Baseline candidates ran for 120 game seconds each; final after candidates run for 60 game seconds each to preserve the server deadline, with the same twelve stand-ins after the combined workload. Shorter after windows have less tail coverage and their peaks are not equivalent-duration estimates; settings restore in finally. These GC tables retain the original collector convention, separately from the boundary-audited workload table.
+
+| Pause / step | Before 120 s: avg / p99 / max tick ms/s | After 60 s: avg / p99 / max tick ms/s | Before heap MB | After heap MB |
+|---|---:|---:|---:|---:|
+| 200 / 200 | 277.47 / 473.80 / 605.80 | 242.46 / 485.53 / 485.53 | 323–775 | 337–778 |
+| 150 / 200 | 283.05 / 527.58 / 555.81 | 238.72 / 526.79 / 526.79 | 310–756 | 334–767 |
+| 150 / 400 | 287.76 / 496.52 / 541.91 | 247.26 / 544.46 / 544.46 | 287–573 | 302–596 |
+| 120 / 400 | 285.03 / 443.39 / 502.32 | 245.42 / 696.38 / 696.38 | 283–555 | 296–543 |
+
+| Allocation source, KB/game-s (nested) | Before | After |
+|---|---:|---:|
+| * | 32088 | 21831 |
+| tick | 26448 | 17096 |
+| part productionlegs.tick | 7316 | 125 |
+| part netmap.tick | 3442 | 3927 |
+| dispatch observe | 2892 | 1965 |
+| part census.step | 1342 | 1805 |
+| part board.team | 1162 | 1114 |
+| part pushalerts.tick | 1134 | 1816 |
+
+Detailed-profile tick allocation per actual tick call: 439.3 KB before, 284.0 KB after.
+
+Total attributed allocation fell from 32,088 to 21,831 KB/game-s (32.0%); tick allocation fell from 26,448 to 17,096 KB/game-s (35.4%). Netmap allocation did not improve in this short native sample (3,442 to 3,927 KB/s); its counted idle-loop improvement does not imply lower allocation during every active job. Census and push-alert sample allocations also rose, and remain follow-up targets.
+
+A separate five-second GC-stopped attribution sample measures nested allocation sources; do not sum them. The baseline also has a separate outer-only timer and approximately three-second allocation probe excluding the detailed per-part profiler; this after run omits that extra probe to preserve the release deadline. Neither these short probes nor the sequential GC sweep prove a days-long bound. The 300 ms/s peak objective is not established, and no unproven GC preset is installed.
+
+## Counted checks and validation
+
+| Counted workload | Before | After |
+|---|---:|---:|
+| 32 parked ships × 600 ticks: active_mods reads | 78,000 | 0 after factory construction |
 | Same: state lookups | 39,000 | 600 |
-| Same: production-counter reads | 0 | 0 |
-| 3 research summaries × 32 surfaces: surface counts | 2,240 | 0 |
+| Three research summaries × 32 surfaces: surface counts | 2,240 | 0 |
 | Same: force counts / technologies table reads | 0 / 138 | 70 / 3 |
 | 10,000 empty belts: line objects / contents tables | 20,000 / 20,000 | 0 / 0 |
-| 600 network slices × 32 surfaces: name reads | 19,201 | 1 (plus 600 direct lookups) |
-| 10,000 alerting labs: fast integer key formats | 0 | 20,000; identical group key/count |
-| 12 board/status sight readers × 1,000 cells: sorts | 24 | 2 |
+| 600 network slices × 32 surfaces: name reads | 19,201 | 1 plus 600 direct lookups |
+| 10,000 alerting labs: integer formats | 0 | 20,000, same group key/count |
+| 12 sight readers × 1,000 cells: sorts | 24 | 2 |
+| 600 ticks, six planets, 30 ships: surface enumerations / sorts | 200 / 200 | 0 / 0 |
+| Same: surface.planet / idle force reads | 7,200 / 200 | 0 / 0; 1,200 planet.surface reads |
 
-Cold fixture: twelve readers perform **zero entity queries** in their calls; no completed empty snapshot or alert cursor is stored. After a runtime reload mid-job, the playerless force's network and alert snapshots complete at tick **134**, with 11 total background queries and the expected no-power network warning. The fixture first builds an empty joined-player map, exercising late first-request invalidation. Every one of four forces walks 300 empty census bands in 600 ticks, preserving the old cadence.
+Actual Lua 5.2.4: **799/799 full harness tests pass**, including compacted modules. Raw and compacted mt306 fixtures, full-bundle luac parsing, tools/test_lua52_syntax.py, tools/test_brief.py, three collector tests and seven ownership/handoff tests pass. New cold tests cover a 4,001-by-4,001-chunk empty box, reload with a held result, capped network fallback, all 20,000 held push entities, playerless forces, cursor preservation and unchanged four-force census cadence. The existing alert cost-budget test now exercises the runtime cold path. No gate.sh or public push.
 
-Evidence:
-- /Users/owner/code/personal/player-of-games/artifacts/mt306/counted-before.log
-- /Users/owner/code/personal/player-of-games/artifacts/mt306/counted-after.log
-- /Users/owner/code/personal/player-of-games/artifacts/mt306/cold-after.log
+## Server restoration, migration and next work
 
-## Native comparison — completed cp31 baseline
+imac2 was claimed atomically at 2026-11-14T19:14:24.997844-08:00 and restored/released at **2026-11-14T20:13:26.250554-08:00**, within 60 minutes. The exact owned PID was stopped; prior mt.zip, mods, config, settings and whitelist were restored and compared; both private ports were free. Prior/restored save SHA-256: c2ff265cda5e86f2dac15f2b490189f98e2395f0ebd017c8b4bc2ceb49d021d0. ENGWAKE was appended to /Users/owner/code/pog-operator/mt306-wake.jsonl. The durable receipt is /Users/owner/code/pog-operator/mt306-artifacts/after-cp5/server-lease.json. The final named save was copied and hash-verified into that directory. GC was checked running at 200/200 before shutdown.
 
-Started the clean mt301 split with cp31 mod files, then deployed the exact cp31 bundle (7,144,403 bytes; source SHA-256 83259c9cc7533e4ae6e8804016f74a3ec78ebba515e3917001dea8f47bcf2ce1). All four setup players joined in 41 seconds each and disconnected. The canonical fixture has 12 bots, 28 surfaces, 22 platforms, and Nauvis entity counts red 14,173 / blue 15,832 / green 14,447 / yellow 13,173. No model agents.
+Main fbe96e6c4adfd41594fbec70e9794053c87a8c9b was merged and remains an ancestor at the final checkpoint. The operator gates the final cp ref. This engineer does not mutate main or run gate.sh.
 
-Paused, set shift 306, cleared network and push-alert snapshots/jobs, and saved the same cold start to be used for the after run. Native canonical save:
-/Users/owner/pog-mt21/data/saves/mt306-joined-cold-cp31.zip
-SHA-256: 1fc4ea6fde7fc541f8532f177c49c8ba5f49a6c116e538ebe71943e37acb38c9
+All non-reconstructible evidence is under the migrating operator directory. Baseline: /Users/owner/code/pog-operator/mt306-artifacts/baseline. After lease directory: /Users/owner/code/pog-operator/mt306-artifacts/after-cp5 (historical directory name; **after-cp7** is the final measurement label). Canonical save, raw profiles/calls, compact summaries, deployment SHA, lease/restoration receipts and compiler source survive the move. Useful code, tests and compact evidence are committed on mt/batch306; the report and fresh-engineer procedure are also tracked at docs/mt306-report.md and docs/mt306-handoff.md. Neither the old worktree nor ignored dist/node_modules is a continuation prerequisite.
 
-A collector-ready handshake starts profiling while paused, then unpauses and launches stand-ins. The saved baseline-source bundle and the host collectors remain fixed for the comparison. The ready wrapper adds only a host-side ready file and explicit end ticks to the normal load collector; it does not change the mod. The 8-minute all-at-once phase and GC/allocation probes followed the 11.5-minute stand-in phase.
+Follow-up priorities: bound the remaining cold status subreads; reduce residual allocations identified in the final table; test a longer GC policy under the same loaded fixture before changing defaults. The mt307 rehearsal used a different runtime and early Nauvis factories (about 73–76 tick ms/game-s), so it supports supervision/soak evidence but cannot substitute for this late-game comparison. Scripted travel here is not native-thruster or days-long coverage.
 
-Initial diagnostic run (not the final baseline; 300-second windows hit the 20,000-line cap, so the run was restarted from the canonical save with 60-second windows): startup worst total harness second 2,069.6 ms; research.shift_block 1,047.4 ms in a second; tick-only max 504.6 ms. These are provisional, not the completed baseline table. A source-save census error count of 3 predates the run (tick 82852994); track increases rather than attributing it to this run.
+Operator report: /Users/owner/code/pog-operator/report-mt306.md
+Fresh-engineer handoff: /Users/owner/code/pog-operator/handoff-mt306.md
 
-
-
-Historical columns are from mt302 section 3, **not reruns by mt306**. Both mt306 comparison columns use the same canonical split fixture with four disconnected joined players and twelve stand-ins at 0.9 calls/s each.
-
-| Scenario / metric | Historical mt302 | mt306 cp31 rerun | mt306 after |
-|---|---:|---:|---:|
-| Stand-ins: harness tick ms/game-s | 266–275 | **266.74 average** | pending |
-| Stand-ins: total harness ms/game-s | 327–339 | **331.61 average** | pending |
-| Stand-ins: worst tick second | 515 ms | **533.52 ms** | pending |
-| Stand-ins: UPS median / min | 59.9 / 46.4 | **60.0 / 24.7 (5-s samples)** | pending |
-| Stand-ins: heap | 319–770 MB | **289–766 MB** | pending |
-| First calls: worst total harness second | 2,156 ms | **2,191.69 ms** | pending |
-| All-at-once: harness tick ms/game-s | 291.8–296.7 | **288.31 average** | pending |
-| All-at-once: total harness ms/game-s | 350–366 | **348.62 average** | pending |
-| All-at-once: worst tick second | 633–705 ms | **620.35 ms** | pending |
-| All-at-once: UPS median / min | 59.9 / 59.2 | **60.0 / 56.7 (5-s samples)** | pending |
-| All-at-once: heap | 315–777 MB | **317–780 MB** | pending |
-| All-at-once: GC-finish tick seconds | about 450–470 ms | **360–435 ms window medians; 620 ms max** | pending |
-
-Boundary audit: the older mt302 collector selects buckets by their starting tick, omitting the first partial bucket and retaining the last partial bucket. Its saved means are 264.27/327.76 ms/s (tick/total) for stand-ins and 286.38/346.21 for all-at-once. The table above instead includes **both boundary fragments and divides by actual profiled tick count**, giving 266.74/331.61 and 288.31/348.62. Peak values are unchanged. The first partial cold-start bucket was also checked: 846.44 ms total, below the reported 2,191.69 ms maximum. Reproduce this audit with audit_boundaries.py; results are baseline-matched-standins-boundaries-audit.json and baseline-matched-all-boundaries-audit.json. Use the same audit after optimization. Historical mt302 values retain their original collector convention.
-
-The completed stand-in phase has 36,010 profiled ticks (600.17 seconds, including the profiler's endpoint ticks) in ten complete 60-second windows during 11.5 minutes of workload. Inter-window waits and the final tail are unprofiled; no profile lines were dropped. 7,416 calls (24 startup + 7,392 steady), two expected initial mine failures. The new UPS intervals are 5 seconds; historical intervals differ, so compare the raw/aggregated intervals when judging the startup minimum. Full evidence is baseline-matched-standins.json, .jsonl, .profile.log and -summary.json under the artifact directory.
-
-The combined phase has 25,207 profiled ticks (420.12 seconds) in seven complete 60-second windows during eight minutes of workload, with no dropped lines. 5,146 calls, two expected initial mine failures. Eight additional platforms bring the total to 30. Four Nauvis pads each finished with 4,600 iron and 1,800 copper; four Vulcanus pads each had 950 iron. Scripted hops succeeded; 43 pods remained in flight. The 300-iron market trade delivered, with wallet/escrow audit conserving 240,000 credits and no faults. The final error snapshot contains only inherited survey/belt errors from ticks before the canonical start. Evidence: baseline-matched-all-summary.json, exercise-run.json and baseline-errors-end.json in the artifact directory.
-
-| Named part, average ms/game-s (nested; do not sum) | Stand-ins | All-at-once |
-|---|---:|---:|
-| productionlegs.tick | 37.67 | 49.24 |
-| pushalerts.tick | 33.84 | 33.72 |
-| networks.tick | 23.10 | 28.30 |
-| networks.view_tick | 18.90 | 21.40 |
-| census.step | 27.23 | 25.21 |
-| census.walk | 22.39 | 20.58 |
-| pushalerts.band | 14.21 | 13.91 |
-| board.team | 13.19 | 13.42 |
-
-Native API equivalence probe: **96 building-presence checks across four forces, zero mismatches** between force.get_entity_count presence and the original surface searches. Of 1,000 sampled belts, 578 were empty; zero counter errors or false empties. Eight paired reads returned identical 7,646-item totals; median old line enumeration 3.343 ms versus empty-belt guard 2.576 ms, a **22.9% subroutine reduction in this sample**, not a whole-census gain. Evidence: api-equivalence.json and api-equivalence.log.
-
-| Cold first ten seconds: worst named-part bucket | cp31 ms | Calls in bucket | Optimized |
-|---|---:|---:|---:|
-| part research.shift_block | 1056.03 | 6 | pending |
-| part board.team | 486.80 | 6 | pending |
-| dispatch status | 401.26 | 6 | pending |
-| part networks.alert_groups | 307.59 | 2 | pending |
-
-These are aggregate durations per game-second bucket, not a single-call latency. The slowest client startup call was 511.88 ms. Evidence: baseline-cold-parts.json and baseline-matched-standins.jsonl.
-
-The historical first-call total includes dispatch work; it is a different metric from worst harness **tick** second. Report both. The all-at-once exercise uses scripted travel, pods, turret fire and one market fill, as mt302 did; it does not establish performance for real thrusters or a days-long run.
-
-## Native GC and allocation measurements
-
-Original pause/step multiplier **200/200**, restored and rechecked before shutdown. Each candidate ran for 120 game seconds with twelve stand-ins on the post-combined fixture. All windows completed with zero dropped lines. No setting was selected for production. This GC table retains the original collector bucket convention (unlike the boundary-audited workload table above); all raw profiles are preserved.
-
-| pause / stepmul | Average tick ms/s | p99 tick ms/s | Worst tick ms/s | Heap MB |
-|---|---:|---:|---:|---:|
-| 200 / 200 | 277.47 | 473.80 | 605.80 | 323–775 |
-| 150 / 200 | 283.05 | 527.58 | 555.81 | 310–756 |
-| 150 / 400 | 287.76 | 496.52 | 541.91 | 287–573 |
-| 120 / 400 | 285.03 | 443.39 | 502.32 | 283–555 |
-
-Discarding the first 30 seconds per setting gives average/worst 277.63/605.80, 282.44/555.81, 289.08/541.91 and 285.74/502.32 ms/s respectively. Thus smaller pauses reduce heap and some tails here, while increasing average cost; **none meets the approximately 300 ms/s target**. This short sequential sweep does not establish a final default for a days-long run.
-
-A separate five-second GC-stopped attribution sample measured about 32,088 KB/game-s overall and 26,448 KB/game-s inside tick. Largest nested sources were productionlegs.tick 7,316 KB/s, netmap.tick 3,442 KB/s, observe 2,892 KB/s, census.step 1,342 KB/s, board.team 1,162 KB/s and pushalerts.tick 1,134 KB/s. Nested values overlap and must not be summed; detailed profiler timers contribute allocations too. cp4 removes the newly measured netmap idle platform enumeration; its native allocation reduction will be measured in the after slot.
-
-An outer-timer-only 3,600-tick probe measured **4.391349 ms/tick = 263.48 ms/game-s**. With detailed profiling disabled, a separate approximately three-second GC-stopped gross allocation sample still measured **27,722 KB/game-s**. Allocation pressure is real; these separate samples do not isolate a precise profiler overhead. GC was restarted and 200/200 settings restored after both allocation probes.
-
-Evidence in /Users/owner/code/personal/player-of-games/artifacts/mt306:
-- baseline-gc.json, baseline-gc-summary.json, baseline-gc.profile.log
-- baseline-light-result.json, baseline-light.json
-- baseline-server-complete.log.gz
-
-The after slot reloads the same canonical fixture, deploys the tested optimized successor, repeats both workload phases, and measures GC again. The target remains no harness tick second over about 300 ms; **unestablished**. Further changes are driven by these measured allocation sources. No runtime changes were deployed during the baseline slot.
-
-Prepared assets (cp31 deployed for baseline; optimized bundle remains offline):
-- cp31 mod: /Users/owner/code/personal/player-of-games/artifacts/mt306/baseline-src/vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua
-- cp31 compact bundle: /Users/owner/code/personal/player-of-games/artifacts/mt306/baseline-bundle.lua — ID `a0e094d157c52007`, 7,144,403 bytes.
-- Current cp4 compact bundle: /Users/owner/code/personal/player-of-games/artifacts/mt306/offline-bundle.lua — ID `a661876e7ce841df`, 7,145,724 bytes. The offline check script rebuilds this path from the current branch.
-- mt302 exercise adapted for this claim/tree: /Users/owner/code/personal/player-of-games/artifacts/mt306/exercise.py and /Users/owner/code/personal/player-of-games/artifacts/mt306/padlib.py
-
-## Validation
-
-- Full harness `npm test`: **798 passed, 0 failed**. /Users/owner/code/personal/player-of-games/artifacts/mt306/harness-tests-offline.log
-- Actual Lua 5.2.4: both new fixtures pass against raw and compacted changed modules; both full compact bundles pass luac -p. Existing targeted production-leg, research, alert, network and census fixtures also passed 5.2 checks during implementation.
-- tools/test_lua52_syntax.py, tools/test_brief.py, git diff --check: pass.
-- Three offline Python collector tests: pass (UPS boundaries, startup-call recording, and missing/interrupted/truncated profile detection). The native baseline exposed the 20,000-line profile cap; the collector now defaults to 60-second windows and marks incomplete coverage explicitly.
-- Reproduction script: /Users/owner/code/personal/player-of-games/artifacts/mt306/check-offline.sh
-- Check output: /Users/owner/code/personal/player-of-games/artifacts/mt306/offline-checks.log
-- Lua executable: /Users/owner/code/personal/player-of-games/artifacts/mt304/lua-5.2.4/src/lua
-- Standard npm harness tests use the installed Lua; explicit 5.2/compact checks above cover the new fixtures and changed bundle. No new dependency install.
-
-Next action: run the matched after-bench from the canonical save with tested cp4 (or a tested successor) when the operator releases imac2 after mt307. Collect both boundary fragments, cold-call latency, native netmap/productionlegs allocations and the same GC candidates before deciding a default. Do not mark mt306 complete or advertise whole-harness native gains before that comparison.
+Live codex-b weekly usage at closeout: **36%**, below the >70% stop threshold. The shared quota refresher was stale; a direct read reused the installed ai-usage Codex adapter. Receipt: quota-closeout.json.

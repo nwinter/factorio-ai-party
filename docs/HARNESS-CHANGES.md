@@ -1,48 +1,38 @@
 # Harness changes, 2026-10-10 (branch `pog-eng`, uncommitted)
 
-## mt306 (checkpoint; matched after-bench pending): late-game harness headroom
+## mt306: measured late-game harness headroom
 
-The mt302 joined-player bench spent 266–297 ms per game second in the harness, with GC spikes and a 2.1-second
-first-call hitch. Production-leg watches now read the immutable engine version once per runtime and share their
-ledger lookup per tick. The first-shift research summary uses the force's maintained entity counts instead of
-surface presence searches. Empty census belts avoid transport-line objects; network view slices resolve one
-surface by name; alert cell keys use fast integer formatting. Board/status sight text is rendered once per completed
-alert snapshot, with a fresh small list for each caller.
+The matched Factorio 2.1.24 split-fixture run with four joined players and twelve scripted stand-ins reduced average
+harness tick work from 266.74 to 233.81 ms/game-s (12.3%). With extra platforms, scripted travel, cargo pods, turret
+fire and market delivery, it fell from 288.31 to 245.71 ms/game-s (14.8%). All 17 profile windows completed without
+dropped lines. Both boundary fragments are included in these averages. This does not establish the requested
+300 ms/s peak: the stand-in worst tick bucket increased from 533.52 to 681.81 ms during GC; the combined peak fell
+from 620.35 to 543.38 ms. GC defaults remain 200/200 pending longer measurements.
 
-Runtime network and alert reads leave cold scans to the existing paced, persisted background jobs; a direct read says
-`pending: true` until a complete snapshot exists, rather than scanning the whole base in the reply. Alert cursors
-and digest markers are not consumed while pending. Existing completed snapshots keep their ordinary fields and
-freshness; bot-only forces also warm after a request. No actions, visibility rules or production boundaries change.
+Production-leg watches cache the engine version and share their ledger per tick; their native cost fell from
+37.67–49.24 to 5.07–6.39 ms/game-s. Research uses maintained force counts, empty census belts skip transport-line
+objects, network view steps resolve surfaces directly, alert keys use integer formatting, and board/status sight
+text is reused per completed snapshot. Netmap walks live planet associations instead of enumerating platforms.
+Production boundaries, per-force census cadence, visibility and action rules remain intact. No new require.
 
-The native cold run exposed a sparse-terrain delay: the first network walk could take several minutes before
-publishing any snapshot. Cold background jobs now probe one force/surface at a time with capped native finds,
-then process the returned entities in bounded slices. Network queries that hit their cap fall back to band walks;
-the push scan retains its total entity budget and closing-step pacing. Warm refreshes retain their band walks.
-Large-empty-box, capped-query, full-budget-list and reload fixtures cover this path. The existing alert cost-budget
-test now exercises the cold background path too. All 799 tests pass under real Lua 5.2.4.
+Cold network/alert requests return pending while persisted jobs warm their snapshots. Cold jobs use capped native
+queries followed by bounded slices; capped network results fall back to band walks without hiding entities. Push
+jobs retain the total entity budget and closing-step pacing. Held full-budget lists are processed. Pending reads
+do not consume alert cursors or digest markers, and playerless forces register for refresh. A first snapshot may
+precede power sampling; sustained-power alerts use the latest real sample when its cached draw is absent.
 
-Counted Lua 5.2 fixtures cover engine crossings, empty-belt accounting, cell-key spelling, snapshot text reuse,
-cold requests, job reload, playerless forces and unchanged multi-force scan cadence. The cp31 native rerun averaged
-266.74 ms/game-s with twelve stand-ins and 288.31 ms/game-s all-at-once, peaking at 533.52 and 620.35 ms. A four-setting
-GC sweep still exceeded 500 ms/s; default settings were restored. The matched optimized after-bench remains pending
-after mt307; this checkpoint does not establish the 300 ms/s target. The stand-in collector
-now records initial status/queue calls, and the load collector keeps raw UPS intervals and per-window UPS.
-The native baseline exposed the profiler's 20,000-line limit: a 300-second window retained only 154 seconds.
-The load collector now defaults to 60-second windows and marks missing, interrupted or truncated profiles
-incomplete, with the requested tick range and dropped-line count. Bench summaries must check that coverage.
-The reported native averages include both partial boundary buckets, normalized by profiled tick count; the older
-collector's bucket averages remain in the evidence for comparison.
+The worst startup total second fell from 2,191.69 to 1,037.72 ms. Research's worst cold bucket fell from 1,056.03
+to 43.31 ms and board.team from 486.80 to 29.76 ms, with different call counts. Status still performs cold ground,
+survey and threat reads; that hitch is reduced, not eliminated. Optional draw fields may await a later view refresh.
 
-The native allocation probe also found netmap idle checks allocating 3,442 KB/game-s while enumerating all surfaces.
-They now walk live planet associations directly and use explicit surface-index ties, keeping the same discovery and
-refresh cadence without platform enumeration, a temporary list or sorting. A 600-tick fixture with six planets and
-30 ships removes 200 surface enumerations, 7,200 surface.planet reads, 200 force reads and 200 sorts, replacing them
-with 1,200 planet.surface reads. Retry boundaries, association/deletion, and persisted-job reload pass against both
-cp31 and the optimized code. Full harness suite with actual Lua 5.2.4: 799 passed; raw/compacted fixtures and bundled
-luac checks pass. Optimized native timing remains pending.
+All 799 harness tests pass with actual Lua 5.2.4, including compacted modules. Counted fixtures cover engine
+crossings, empty-belt accounting, cell-key spelling, text reuse, planet associations, sparse cold terrain, cap
+fallback, reloads and unchanged scan cadence. The native run recorded no new harness errors; two expected initial
+mining misses occurred in each phase. Existing inherited errors predate the canonical save. The final market audit
+conserved 240,000 credits; green's pad stock differed from baseline, so the exercise is not a bit-for-bit replay.
 
-Players: no changed action arguments. A first network/alert read can report its scan pending; later reads return
-the completed snapshot. Evidence and native follow-up status:
+Players: no changed action arguments. A first network/alert read can report pending; retry after its background
+scan completes. The full comparison, shorter after GC-window caveat and remaining work are recorded at:
 /Users/owner/code/pog-operator/report-mt306.md
 
 ## mt303 (private): Freight, Orbital Posts, and stocked raid wrecks

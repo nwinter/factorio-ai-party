@@ -1,0 +1,43 @@
+{
+  "claim": "eng-mt306 owns imac2; operator 19:14 released mt307; matched after-bench; release before 20:14; claimed 2026-11-14T19:14:24.997844-08:00\n",
+  "claimed_at": "2026-11-14T19:14:24.997844-08:00",
+  "backup": "/Users/owner/pog-mt21/mt306-before-20261114-191425",
+  "backup_result": "c2ff265cda5e86f2dac15f2b490189f98e2395f0ebd017c8b4bc2ceb49d021d0  /Users/owner/pog-mt21/mt306-before-20261114-191425/mt.zip\n",
+  "backup_complete": true,
+  "cold_reload_previous": {
+    "pid": 42362,
+    "process_start": "Sat Nov 14 19:14:45 2026"
+  },
+  "reload_history": [
+    {
+      "pid": 42604,
+      "process_start": "Sat Nov 14 19:16:03 2026"
+    },
+    {
+      "pid": 43806,
+      "process_start": "Sat Nov 14 19:32:01 2026"
+    },
+    {
+      "pid": 43969,
+      "process_start": "Sat Nov 14 19:32:25 2026"
+    },
+    {
+      "pid": 44355,
+      "process_start": "Sat Nov 14 19:35:48 2026"
+    },
+    {
+      "pid": 44517,
+      "process_start": "Sat Nov 14 19:36:12 2026"
+    },
+    {
+      "pid": 45324,
+      "process_start": "Sat Nov 14 19:46:23 2026"
+    }
+  ],
+  "pid": 45489,
+  "process_start": "Sat Nov 14 19:46:48 2026",
+  "stopped_at": "2026-11-14T20:13:24.904593-08:00",
+  "restore_result": "c2ff265cda5e86f2dac15f2b490189f98e2395f0ebd017c8b4bc2ceb49d021d0  /Users/owner/pog-mt21/mt306-before-20261114-191425/mt.zip\nc2ff265cda5e86f2dac15f2b490189f98e2395f0ebd017c8b4bc2ceb49d021d0  /Users/owner/pog-mt21/saves/mt.zip\n",
+  "restored_at": "2026-11-14T20:13:25.826816-08:00",
+  "released_at": "2026-11-14T20:13:26.250554-08:00"
+}

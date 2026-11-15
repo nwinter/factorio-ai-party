@@ -1,0 +1,12 @@
+{
+ "lua": "5.2.4",
+ "harness_passed": 799,
+ "harness_failed": 0,
+ "full_log": "/Users/owner/code/pog-operator/mt306-artifacts/after-cp5/cp7-npm-test.log",
+ "full_log_sha256": "bb8aef8e5e90b498d61275b9511d08e77a75584795f0bb36d99d8fdda5aadb2f",
+ "offline_log": "/Users/owner/code/pog-operator/mt306-artifacts/after-cp5/offline-cp7.log",
+ "collector_tests": 3,
+ "handoff_tests": 7,
+ "runtime_ref": "mt/batch306-cp7",
+ "runtime_unchanged_during_final_comparison": true
+}
