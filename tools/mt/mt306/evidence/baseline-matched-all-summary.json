@@ -1,0 +1,507 @@
+{
+ "seconds": 420,
+ "ups": {
+  "samples": 92,
+  "min": 56.7,
+  "median": 60.0,
+  "max": 61.4
+ },
+ "windows": [
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 293.13,
+    "p99": 532.356977,
+    "max": 532.356977
+   },
+   "tick_ms_per_tick_avg": 4.886,
+   "harness_ms_per_s": {
+    "avg": 358.1,
+    "p99": 656.330108,
+    "max": 656.330108
+   },
+   "gc_finishes": 7,
+   "gc_second_tick_ms": {
+    "median": 427.872934,
+    "max": 532.356977
+   },
+   "other_seconds_tick_ms_median": 267.142208,
+   "heap_mb": {
+    "min": 327,
+    "max": 768
+   },
+   "dropped_lines": 0,
+   "from_tick": 82914887,
+   "until_tick": 82918487,
+   "ups": {
+    "samples": 11,
+    "min": 58.622172730425895,
+    "median": 59.95243184101905
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 287.66,
+    "p99": 539.562036,
+    "max": 539.562036
+   },
+   "tick_ms_per_tick_avg": 4.794,
+   "harness_ms_per_s": {
+    "avg": 350.37,
+    "p99": 610.8268820000001,
+    "max": 610.8268820000001
+   },
+   "gc_finishes": 6,
+   "gc_second_tick_ms": {
+    "median": 407.19122749999997,
+    "max": 463.600969
+   },
+   "other_seconds_tick_ms_median": 260.242521,
+   "heap_mb": {
+    "min": 317,
+    "max": 773
+   },
+   "dropped_lines": 0,
+   "from_tick": 82918859,
+   "until_tick": 82922459,
+   "ups": {
+    "samples": 11,
+    "min": 58.35792598144852,
+    "median": 59.98992746861267
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 282.62,
+    "p99": 538.527663,
+    "max": 538.527663
+   },
+   "tick_ms_per_tick_avg": 4.71,
+   "harness_ms_per_s": {
+    "avg": 340.29,
+    "p99": 606.8688559999999,
+    "max": 606.8688559999999
+   },
+   "gc_finishes": 8,
+   "gc_second_tick_ms": {
+    "median": 405.9592345,
+    "max": 437.02898
+   },
+   "other_seconds_tick_ms_median": 251.64405449999998,
+   "heap_mb": {
+    "min": 331,
+    "max": 768
+   },
+   "dropped_lines": 0,
+   "from_tick": 82922837,
+   "until_tick": 82926437,
+   "ups": {
+    "samples": 11,
+    "min": 59.69401079551843,
+    "median": 59.99289219811634
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 282.2,
+    "p99": 588.623192,
+    "max": 588.623192
+   },
+   "tick_ms_per_tick_avg": 4.703,
+   "harness_ms_per_s": {
+    "avg": 340.16,
+    "p99": 642.366983,
+    "max": 642.366983
+   },
+   "gc_finishes": 6,
+   "gc_second_tick_ms": {
+    "median": 435.3232905,
+    "max": 588.623192
+   },
+   "other_seconds_tick_ms_median": 250.97583500000002,
+   "heap_mb": {
+    "min": 321,
+    "max": 764
+   },
+   "dropped_lines": 0,
+   "from_tick": 82926845,
+   "until_tick": 82930445,
+   "ups": {
+    "samples": 11,
+    "min": 59.111405794932054,
+    "median": 59.9792055763961
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 284.14,
+    "p99": 539.44309,
+    "max": 539.44309
+   },
+   "tick_ms_per_tick_avg": 4.736,
+   "harness_ms_per_s": {
+    "avg": 342.88,
+    "p99": 607.80973,
+    "max": 607.80973
+   },
+   "gc_finishes": 6,
+   "gc_second_tick_ms": {
+    "median": 390.7205035,
+    "max": 481.847891
+   },
+   "other_seconds_tick_ms_median": 252.136533,
+   "heap_mb": {
+    "min": 328,
+    "max": 780
+   },
+   "dropped_lines": 0,
+   "from_tick": 82930817,
+   "until_tick": 82934417,
+   "ups": {
+    "samples": 11,
+    "min": 58.8346789304115,
+    "median": 59.99101640251626
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 288.0,
+    "p99": 522.539696,
+    "max": 522.539696
+   },
+   "tick_ms_per_tick_avg": 4.8,
+   "harness_ms_per_s": {
+    "avg": 348.17,
+    "p99": 557.801822,
+    "max": 557.801822
+   },
+   "gc_finishes": 8,
+   "gc_second_tick_ms": {
+    "median": 360.27613399999996,
+    "max": 410.458677
+   },
+   "other_seconds_tick_ms_median": 260.7741365,
+   "heap_mb": {
+    "min": 336,
+    "max": 775
+   },
+   "dropped_lines": 0,
+   "from_tick": 82934797,
+   "until_tick": 82938397,
+   "ups": {
+    "samples": 11,
+    "min": 59.075816403867506,
+    "median": 59.92469498692013
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 286.92,
+    "p99": 620.345968,
+    "max": 620.345968
+   },
+   "tick_ms_per_tick_avg": 4.782,
+   "harness_ms_per_s": {
+    "avg": 343.49,
+    "p99": 697.842548,
+    "max": 697.842548
+   },
+   "gc_finishes": 7,
+   "gc_second_tick_ms": {
+    "median": 421.830139,
+    "max": 620.345968
+   },
+   "other_seconds_tick_ms_median": 249.10729,
+   "heap_mb": {
+    "min": 324,
+    "max": 779
+   },
+   "dropped_lines": 0,
+   "from_tick": 82938777,
+   "until_tick": 82942377,
+   "ups": {
+    "samples": 11,
+    "min": 56.73637424478704,
+    "median": 59.99669261167295
+   }
+  }
+ ],
+ "parts": {
+  "*": {
+   "avg_ms_per_s": 346.207,
+   "max_ms_per_s": 697.842548
+  },
+  "tick": {
+   "avg_ms_per_s": 286.382,
+   "max_ms_per_s": 620.345968
+  },
+  "part productionlegs.tick": {
+   "avg_ms_per_s": 48.812,
+   "max_ms_per_s": 171.28923
+  },
+  "part pushalerts.tick": {
+   "avg_ms_per_s": 33.502,
+   "max_ms_per_s": 140.019264
+  },
+  "part networks.tick": {
+   "avg_ms_per_s": 28.156,
+   "max_ms_per_s": 199.935097
+  },
+  "part census.step": {
+   "avg_ms_per_s": 25.01,
+   "max_ms_per_s": 50.716748
+  },
+  "part networks.view_tick": {
+   "avg_ms_per_s": 21.3,
+   "max_ms_per_s": 197.676482
+  },
+  "part census.walk": {
+   "avg_ms_per_s": 20.399,
+   "max_ms_per_s": 47.210991
+  },
+  "dispatch observe": {
+   "avg_ms_per_s": 15.133,
+   "max_ms_per_s": 98.66448
+  },
+  "part threat.tick": {
+   "avg_ms_per_s": 15.063,
+   "max_ms_per_s": 84.783705
+  },
+  "part pushalerts.band": {
+   "avg_ms_per_s": 13.798,
+   "max_ms_per_s": 102.58399
+  },
+  "part scheduler.tick": {
+   "avg_ms_per_s": 13.607,
+   "max_ms_per_s": 154.029682
+  },
+  "part board.team": {
+   "avg_ms_per_s": 13.308,
+   "max_ms_per_s": 27.999667
+  },
+  "dispatch status": {
+   "avg_ms_per_s": 11.373,
+   "max_ms_per_s": 92.178136
+  },
+  "part pushalerts.slice": {
+   "avg_ms_per_s": 11.052,
+   "max_ms_per_s": 67.206371
+  },
+  "part survey.tick": {
+   "avg_ms_per_s": 10.546,
+   "max_ms_per_s": 84.672868
+  },
+  "part networks.view.walk_band": {
+   "avg_ms_per_s": 9.87,
+   "max_ms_per_s": 102.452621
+  },
+  "part scheduler.step craft": {
+   "avg_ms_per_s": 7.377,
+   "max_ms_per_s": 146.923819
+  },
+  "dispatch build": {
+   "avg_ms_per_s": 6.374,
+   "max_ms_per_s": 85.607186
+  },
+  "part threat.sweep_step": {
+   "avg_ms_per_s": 6.246,
+   "max_ms_per_s": 74.7983
+  },
+  "part survey.band": {
+   "avg_ms_per_s": 6.174,
+   "max_ms_per_s": 74.223584
+  },
+  "part netmap.tick": {
+   "avg_ms_per_s": 5.697,
+   "max_ms_per_s": 84.218175
+  },
+  "part bots.tick": {
+   "avg_ms_per_s": 5.493,
+   "max_ms_per_s": 34.728849
+  },
+  "part pipes.overlong": {
+   "avg_ms_per_s": 5.446,
+   "max_ms_per_s": 62.502928
+  },
+  "dispatch game_alerts": {
+   "avg_ms_per_s": 4.841,
+   "max_ms_per_s": 12.82283
+  },
+  "dispatch mine": {
+   "avg_ms_per_s": 4.77,
+   "max_ms_per_s": 85.203389
+  },
+  "part networks.view.orders": {
+   "avg_ms_per_s": 4.396,
+   "max_ms_per_s": 137.053771
+  },
+  "part freight.tick": {
+   "avg_ms_per_s": 3.403,
+   "max_ms_per_s": 64.868536
+  },
+  "part survey.slice": {
+   "avg_ms_per_s": 3.299,
+   "max_ms_per_s": 22.972703
+  },
+  "dispatch wait_ticks": {
+   "avg_ms_per_s": 3.163,
+   "max_ms_per_s": 15.932669
+  },
+  "part pushalerts.lines": {
+   "avg_ms_per_s": 3.111,
+   "max_ms_per_s": 10.901948
+  },
+  "dispatch tells": {
+   "avg_ms_per_s": 2.966,
+   "max_ms_per_s": 14.491567
+  },
+  "dispatch board": {
+   "avg_ms_per_s": 2.75,
+   "max_ms_per_s": 11.827808
+  },
+  "part pushalerts.strike": {
+   "avg_ms_per_s": 2.663,
+   "max_ms_per_s": 31.600606
+  },
+  "part threat.nest_step": {
+   "avg_ms_per_s": 2.37,
+   "max_ms_per_s": 8.93503
+  }
+ },
+ "worst_total_seconds": [
+  [
+   82941300,
+   697.842548
+  ],
+  [
+   82918080,
+   656.330108
+  ],
+  [
+   82915380,
+   649.296705
+  ],
+  [
+   82928820,
+   642.366983
+  ],
+  [
+   82926900,
+   630.472658
+  ],
+  [
+   82939380,
+   617.0396440000001
+  ],
+  [
+   82919700,
+   610.8268820000001
+  ],
+  [
+   82934100,
+   607.80973
+  ]
+ ],
+ "calls": {
+  "total": 5146,
+  "failures": [
+   {
+    "t": 1794687305.419,
+    "bot": "bb3",
+    "action": "mine",
+    "phase": "steady",
+    "ms": 12.91,
+    "bytes": 495,
+    "ok": false,
+    "tick": 82914982,
+    "error": "entity not found at (414.5,-286.5): nearest wooden-chest (414.5,-287.5) 1.0 tiles, gun-turret (413,-286) 1.6 tiles, bb2's character (416.188,-287.238) 1.8 tiles"
+   },
+   {
+    "t": 1794687306.437,
+    "bot": "bb2",
+    "action": "mine",
+    "phase": "steady",
+    "ms": 5.85,
+    "bytes": 515,
+    "ok": false,
+    "tick": 82915043,
+    "error": "entity not found at (419.5,-288.5): nearest express-transport-belt (420.5,-288.5) 1.0 tiles, wooden-chest (419.5,-287.5) 1.0 tiles, express-transport-belt (420."
+   }
+  ],
+  "startup_max_ms": 100.91,
+  "startup_slowest": [
+   {
+    "t": 1794687304.568,
+    "bot": "bb2",
+    "action": "queue_repeat",
+    "phase": "startup",
+    "ms": 100.91,
+    "bytes": 1282,
+    "ok": true,
+    "tick": 82914926,
+    "error": null
+   },
+   {
+    "t": 1794687304.246,
+    "bot": "rb1",
+    "action": "status",
+    "phase": "startup",
+    "ms": 92.68,
+    "bytes": 6442,
+    "ok": true,
+    "tick": 82914907,
+    "error": null
+   },
+   {
+    "t": 1794687304.411,
+    "bot": "bb1",
+    "action": "status",
+    "phase": "startup",
+    "ms": 36.82,
+    "bytes": 7052,
+    "ok": true,
+    "tick": 82914920,
+    "error": null
+   },
+   {
+    "t": 1794687304.655,
+    "bot": "gb1",
+    "action": "status",
+    "phase": "startup",
+    "ms": 35.66,
+    "bytes": 7734,
+    "ok": true,
+    "tick": 82914935,
+    "error": null
+   },
+   {
+    "t": 1794687304.808,
+    "bot": "yb1",
+    "action": "status",
+    "phase": "startup",
+    "ms": 34.55,
+    "bytes": 6158,
+    "ok": true,
+    "tick": 82914944,
+    "error": null
+   },
+   {
+    "t": 1794687304.277,
+    "bot": "rb1",
+    "action": "queue_repeat",
+    "phase": "startup",
+    "ms": 25.78,
+    "bytes": 939,
+    "ok": true,
+    "tick": 82914913,
+    "error": null
+   }
+  ]
+ }
+}

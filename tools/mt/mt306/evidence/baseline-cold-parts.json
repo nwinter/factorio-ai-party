@@ -1,0 +1,22 @@
+{
+  "dispatch status": {
+    "ms": 401.263824,
+    "calls": 6,
+    "bucket_tick": 82871760
+  },
+  "part board.team": {
+    "ms": 486.803617,
+    "calls": 6,
+    "bucket_tick": 82871760
+  },
+  "part networks.alert_groups": {
+    "ms": 307.589152,
+    "calls": 2,
+    "bucket_tick": 82871760
+  },
+  "part research.shift_block": {
+    "ms": 1056.031169,
+    "calls": 6,
+    "bucket_tick": 82871760
+  }
+}

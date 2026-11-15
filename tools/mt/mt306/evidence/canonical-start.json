@@ -1,0 +1,142 @@
+[
+ {
+  "at": "2026-11-14 11:55:04",
+  "pause": {
+   "tick": 82871732,
+   "paused": true
+  },
+  "shift": {
+   "ok": true,
+   "tick": 82871732,
+   "incidents_closed": 11,
+   "shift": 306,
+   "progress_lines": 0,
+   "routes_kept": 0,
+   "expedition": {
+    "tick": 82871732,
+    "edge_to_shattered_km": 4000000,
+    "platforms": [
+     {
+      "platform": "Resolute",
+      "at": "solar-system-edge",
+      "km_left": 4000000
+     }
+    ]
+   }
+  },
+  "fixture": {
+   "tick": 82871732,
+   "paused": true,
+   "teams": {
+    "red": {
+     "players": [
+      {
+       "name": "mt-red",
+       "connected": false
+      }
+     ],
+     "entities": 14173
+    },
+    "blue": {
+     "players": [
+      {
+       "name": "mt-blue",
+       "connected": false
+      }
+     ],
+     "entities": 15832
+    },
+    "green": {
+     "players": [
+      {
+       "name": "mt-green",
+       "connected": false
+      }
+     ],
+     "entities": 14447
+    },
+    "yellow": {
+     "players": [
+      {
+       "name": "mt-yellow",
+       "connected": false
+      }
+     ],
+     "entities": 13173
+    }
+   },
+   "bots": [
+    {
+     "name": "rb1",
+     "force": "red",
+     "alive": true
+    },
+    {
+     "name": "rb2",
+     "force": "red",
+     "alive": true
+    },
+    {
+     "name": "rb3",
+     "force": "red",
+     "alive": true
+    },
+    {
+     "name": "bb1",
+     "force": "blue",
+     "alive": true
+    },
+    {
+     "name": "bb2",
+     "force": "blue",
+     "alive": true
+    },
+    {
+     "name": "bb3",
+     "force": "blue",
+     "alive": true
+    },
+    {
+     "name": "gb1",
+     "force": "green",
+     "alive": true
+    },
+    {
+     "name": "gb2",
+     "force": "green",
+     "alive": true
+    },
+    {
+     "name": "gb3",
+     "force": "green",
+     "alive": true
+    },
+    {
+     "name": "yb1",
+     "force": "yellow",
+     "alive": true
+    },
+    {
+     "name": "yb2",
+     "force": "yellow",
+     "alive": true
+    },
+    {
+     "name": "yb3",
+     "force": "yellow",
+     "alive": true
+    }
+   ],
+   "surfaces": 28,
+   "platforms": 22,
+   "base": "2.1.24",
+   "shift": {
+    "seq": 101,
+    "number": 306,
+    "tick": 82871732,
+    "prev_tick": 82738655
+   }
+  },
+  "save": "mt306-joined-cold-cp31"
+ }
+]
