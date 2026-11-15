@@ -2,6 +2,7 @@
 """Persistent world: agent-only shifts, one watchdog decision per pane, scoped nudges."""
 import argparse
 import datetime
+import hashlib
 import json
 import math
 import os
@@ -155,7 +156,8 @@ def say(op,key,text):
         token=read(token_file,{}).get('PUBLISH_TOKEN')
     if not token:raise RuntimeError('site announcement token unavailable')
     assert not announce.PRIVATE.search(text)
-    ok,detail=announce.post(announce.SITE_API,token,text,'team-shift:'+op.parent.name+':'+key)
+    cid=hashlib.sha256(('team-shift:'+op.parent.name+':'+key).encode()).hexdigest()[:24]
+    ok,detail=announce.post(announce.SITE_API,token,text,cid)
     event(op,'announcement',key=key,text=text,sent=ok,detail=detail)
     if not ok:alert(op,'announcement-failed',detail)
 

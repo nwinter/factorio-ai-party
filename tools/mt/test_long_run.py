@@ -60,6 +60,20 @@ import quota_refresh
 import rehearsal_metrics
 
 class Shifts(unittest.TestCase):
+    def test_handoff_announcement_has_stable_broker_compatible_id(self):
+        with tempfile.TemporaryDirectory() as temp:
+            op=Path(temp)/'trial/op';op.mkdir(parents=True)
+            run_state.write(op/'public-session.json',dict(phase='live'))
+            with patch.object(full_run.announce,'token',return_value='test'), \
+                 patch.object(full_run.announce,'post',return_value=(True,'seq 1')) as post:
+                for key in ('2-ready','2-ready','3-ready'):full_run.say(op,key,'Shift handoff finished.')
+            ids=[c.args[3] for c in post.call_args_list]
+            self.assertRegex(ids[0],r'^[0-9a-f]{24}$')
+            self.assertEqual(ids[0],ids[1]);self.assertNotEqual(ids[0],ids[2])
+            run_state.write(op/'public-session.json',dict(phase='stopped'))
+            with patch.object(full_run.announce,'post') as post:full_run.say(op,'4-ready','Shift handoff finished.')
+            post.assert_not_called()
+
     def test_unknown_quota_does_not_rest_or_stop_a_playing_agent(self):
         with tempfile.TemporaryDirectory() as temp:
             op=Path(temp);team=op/'team.tsv';team.write_text('a\tgrok\tgrok\tgrok-4.7\n')
