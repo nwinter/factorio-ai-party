@@ -351,6 +351,7 @@ eq(polled('automobilism'),0)
 -- Shifts: shift_start (start-team, a resumed world); each agent's first reply of the shift carries a shift block once.
 prototypes={entity={roboport={},['solar-panel']={},accumulator={},['requester-chest']={},['buffer-chest']={},pumpjack={},['oil-refinery']={}}}
 local built={['solar-panel']=12,pumpjack=3}
+force.get_entity_count=function(name) return built[name] or 0 end
 surface.count_entities_filtered=function(a) assert(a.force==force and a.limit==1); return math.min(built[a.name] or 0,1) end
 techs['construction-robotics']=tech('construction-robotics',100,1800,{red,green})
 techs['construction-robotics'].researched=true
@@ -418,9 +419,9 @@ eq(astra('status').team.shift.shift,'shift 11, started 0s ago')
 -- A fault in the shift block never fails the reply: it is counted.
 local errors=(storage.agent_harness.research_errors or {}).count or 0
 runtime.operator.shift_start()
-local saved=surface.count_entities_filtered
-surface.count_entities_filtered=function() error('engine hiccup') end
+local saved=force.get_entity_count
+force.get_entity_count=function() error('engine hiccup') end
 local reply=astra('status')
 eq((reply.team or {}).shift,nil); eq(storage.agent_harness.research_errors.count,errors+1)
-surface.count_entities_filtered=saved
+force.get_entity_count=saved
 print('research: ok')

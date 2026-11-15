@@ -1,0 +1,1255 @@
+{
+ "original": {
+  "pause": 200,
+  "stepmul": 200,
+  "tick": 82945950
+ },
+ "settings": [
+  {
+   "pause": 200,
+   "stepmul": 200,
+   "full": {
+    "seconds": 60,
+    "tick_ms_per_s": {
+     "avg": 242.46,
+     "p99": 485.530544,
+     "max": 485.530544
+    },
+    "tick_ms_per_tick_avg": 4.041,
+    "harness_ms_per_s": {
+     "avg": 300.09,
+     "p99": 531.5171320000001,
+     "max": 531.5171320000001
+    },
+    "gc_finishes": 6,
+    "gc_second_tick_ms": {
+     "median": 350.39007349999997,
+     "max": 432.331484
+    },
+    "other_seconds_tick_ms_median": 214.37847449999998,
+    "heap_mb": {
+     "min": 337,
+     "max": 778
+    },
+    "complete": true,
+    "dropped_lines": 0,
+    "profile_to_tick": 82949552
+   },
+   "after_30s": {
+    "seconds": 30,
+    "tick_ms_per_s": {
+     "avg": 235.46,
+     "p99": 465.525723,
+     "max": 465.525723
+    },
+    "tick_ms_per_tick_avg": 3.924,
+    "harness_ms_per_s": {
+     "avg": 293.73,
+     "p99": 511.52894000000003,
+     "max": 511.52894000000003
+    },
+    "gc_finishes": 4,
+    "gc_second_tick_ms": {
+     "median": 343.01080349999995,
+     "max": 385.991651
+    },
+    "other_seconds_tick_ms_median": 203.1494685,
+    "heap_mb": {
+     "min": 337,
+     "max": 778
+    }
+   },
+   "ups_min": 58.898876262118826,
+   "ups_median": 59.97043472574086
+  },
+  {
+   "pause": 150,
+   "stepmul": 200,
+   "full": {
+    "seconds": 60,
+    "tick_ms_per_s": {
+     "avg": 238.72,
+     "p99": 526.788318,
+     "max": 526.788318
+    },
+    "tick_ms_per_tick_avg": 3.979,
+    "harness_ms_per_s": {
+     "avg": 297.99,
+     "p99": 607.8673980000001,
+     "max": 607.8673980000001
+    },
+    "gc_finishes": 6,
+    "gc_second_tick_ms": {
+     "median": 285.4988785,
+     "max": 526.788318
+    },
+    "other_seconds_tick_ms_median": 214.4036425,
+    "heap_mb": {
+     "min": 334,
+     "max": 767
+    },
+    "complete": true,
+    "dropped_lines": 0,
+    "profile_to_tick": 82953690
+   },
+   "after_30s": {
+    "seconds": 30,
+    "tick_ms_per_s": {
+     "avg": 234.12,
+     "p99": 502.497099,
+     "max": 502.497099
+    },
+    "tick_ms_per_tick_avg": 3.902,
+    "harness_ms_per_s": {
+     "avg": 289.49,
+     "p99": 563.1266049999999,
+     "max": 563.1266049999999
+    },
+    "gc_finishes": 2,
+    "gc_second_tick_ms": {
+     "median": 279.67373799999996,
+     "max": 280.715899
+    },
+    "other_seconds_tick_ms_median": 226.9632975,
+    "heap_mb": {
+     "min": 336,
+     "max": 686
+    }
+   },
+   "ups_min": 58.78878219736933,
+   "ups_median": 59.956297503442265
+  },
+  {
+   "pause": 150,
+   "stepmul": 400,
+   "full": {
+    "seconds": 60,
+    "tick_ms_per_s": {
+     "avg": 247.26,
+     "p99": 544.457755,
+     "max": 544.457755
+    },
+    "tick_ms_per_tick_avg": 4.121,
+    "harness_ms_per_s": {
+     "avg": 306.3,
+     "p99": 591.034211,
+     "max": 591.034211
+    },
+    "gc_finishes": 9,
+    "gc_second_tick_ms": {
+     "median": 319.813587,
+     "max": 447.131589
+    },
+    "other_seconds_tick_ms_median": 210.368366,
+    "heap_mb": {
+     "min": 302,
+     "max": 596
+    },
+    "complete": true,
+    "dropped_lines": 0,
+    "profile_to_tick": 82958112
+   },
+   "after_30s": {
+    "seconds": 30,
+    "tick_ms_per_s": {
+     "avg": 248.98,
+     "p99": 544.457755,
+     "max": 544.457755
+    },
+    "tick_ms_per_tick_avg": 4.15,
+    "harness_ms_per_s": {
+     "avg": 307.79,
+     "p99": 591.034211,
+     "max": 591.034211
+    },
+    "gc_finishes": 4,
+    "gc_second_tick_ms": {
+     "median": 292.6334085,
+     "max": 447.131589
+    },
+    "other_seconds_tick_ms_median": 222.08330899999999,
+    "heap_mb": {
+     "min": 314,
+     "max": 559
+    }
+   },
+   "ups_min": 57.54649819646435,
+   "ups_median": 59.98394124813737
+  },
+  {
+   "pause": 120,
+   "stepmul": 400,
+   "full": {
+    "seconds": 60,
+    "tick_ms_per_s": {
+     "avg": 245.42,
+     "p99": 696.384085,
+     "max": 696.384085
+    },
+    "tick_ms_per_tick_avg": 4.09,
+    "harness_ms_per_s": {
+     "avg": 304.15,
+     "p99": 799.8717280000001,
+     "max": 799.8717280000001
+    },
+    "gc_finishes": 6,
+    "gc_second_tick_ms": {
+     "median": 345.4108135,
+     "max": 696.384085
+    },
+    "other_seconds_tick_ms_median": 215.14187099999998,
+    "heap_mb": {
+     "min": 296,
+     "max": 543
+    },
+    "complete": true,
+    "dropped_lines": 0,
+    "profile_to_tick": 82962390
+   },
+   "after_30s": {
+    "seconds": 30,
+    "tick_ms_per_s": {
+     "avg": 249.48,
+     "p99": 555.487292,
+     "max": 555.487292
+    },
+    "tick_ms_per_tick_avg": 4.158,
+    "harness_ms_per_s": {
+     "avg": 307.58,
+     "p99": 590.935642,
+     "max": 590.935642
+    },
+    "gc_finishes": 4,
+    "gc_second_tick_ms": {
+     "median": 340.0125045,
+     "max": 367.822606
+    },
+    "other_seconds_tick_ms_median": 220.67297050000002,
+    "heap_mb": {
+     "min": 298,
+     "max": 530
+    }
+   },
+   "ups_min": 58.39097434915,
+   "ups_median": 59.980830169779836
+  }
+ ],
+ "alloc": [
+  {
+   "key": "*",
+   "kb": 109153,
+   "kb_per_game_s": 21830.6,
+   "bytes_per_call": 177981.96,
+   "calls": 628,
+   "gc_inside": 0
+  },
+  {
+   "key": "tick",
+   "kb": 85479,
+   "kb_per_game_s": 17095.8,
+   "bytes_per_call": 290798.99,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part netmap.tick",
+   "kb": 19633,
+   "kb_per_game_s": 3926.6,
+   "bytes_per_call": 66791.34,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "dispatch observe",
+   "kb": 9827,
+   "kb_per_game_s": 1965.4,
+   "bytes_per_call": 2012569.6,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "part pushalerts.tick",
+   "kb": 9078,
+   "kb_per_game_s": 1815.6,
+   "bytes_per_call": 30883.3,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part census.step",
+   "kb": 9027,
+   "kb_per_game_s": 1805.4,
+   "bytes_per_call": 7677.45,
+   "calls": 1204,
+   "gc_inside": 0
+  },
+  {
+   "key": "part census.walk",
+   "kb": 8175,
+   "kb_per_game_s": 1635.0,
+   "bytes_per_call": 7460.96,
+   "calls": 1122,
+   "gc_inside": 0
+  },
+  {
+   "key": "part board.team",
+   "kb": 5572,
+   "kb_per_game_s": 1114.4,
+   "bytes_per_call": 105661.63,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part threat.tick",
+   "kb": 4590,
+   "kb_per_game_s": 918.0,
+   "bytes_per_call": 15615.15,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part pushalerts.slice",
+   "kb": 3908,
+   "kb_per_game_s": 781.6,
+   "bytes_per_call": 7666.27,
+   "calls": 522,
+   "gc_inside": 0
+  },
+  {
+   "key": "dispatch build",
+   "kb": 3623,
+   "kb_per_game_s": 724.6,
+   "bytes_per_call": 529993.14,
+   "calls": 7,
+   "gc_inside": 0
+  },
+  {
+   "key": "part bots.tick",
+   "kb": 2914,
+   "kb_per_game_s": 582.8,
+   "bytes_per_call": 9913.41,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "dispatch status",
+   "kb": 2752,
+   "kb_per_game_s": 550.4,
+   "bytes_per_call": 563609.6,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "part pushalerts.drill_sites",
+   "kb": 2269,
+   "kb_per_game_s": 453.8,
+   "bytes_per_call": 92938.24,
+   "calls": 25,
+   "gc_inside": 0
+  },
+  {
+   "key": "dispatch mine",
+   "kb": 2136,
+   "kb_per_game_s": 427.2,
+   "bytes_per_call": 243029.33,
+   "calls": 9,
+   "gc_inside": 0
+  },
+  {
+   "key": "part scheduler.tick",
+   "kb": 1949,
+   "kb_per_game_s": 389.8,
+   "bytes_per_call": 6630.49,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part pushalerts.band",
+   "kb": 1807,
+   "kb_per_game_s": 361.4,
+   "bytes_per_call": 3635.3,
+   "calls": 509,
+   "gc_inside": 0
+  },
+  {
+   "key": "dispatch game_alerts",
+   "kb": 1745,
+   "kb_per_game_s": 349.0,
+   "bytes_per_call": 297813.33,
+   "calls": 6,
+   "gc_inside": 0
+  },
+  {
+   "key": "part pushalerts.lines",
+   "kb": 1678,
+   "kb_per_game_s": 335.6,
+   "bytes_per_call": 31819.85,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part networks.tick",
+   "kb": 1662,
+   "kb_per_game_s": 332.4,
+   "bytes_per_call": 5654.11,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part crafting.tick",
+   "kb": 1382,
+   "kb_per_game_s": 276.4,
+   "bytes_per_call": 391.8,
+   "calls": 3612,
+   "gc_inside": 0
+  },
+  {
+   "key": "dispatch wait_ticks",
+   "kb": 1334,
+   "kb_per_game_s": 266.8,
+   "bytes_per_call": 170752.0,
+   "calls": 8,
+   "gc_inside": 0
+  },
+  {
+   "key": "part beltsample.tick",
+   "kb": 1236,
+   "kb_per_game_s": 247.2,
+   "bytes_per_call": 4204.86,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part drill_sites.read",
+   "kb": 1225,
+   "kb_per_game_s": 245.0,
+   "bytes_per_call": 627200.0,
+   "calls": 2,
+   "gc_inside": 0
+  },
+  {
+   "key": "part threat.nest_step",
+   "kb": 1189,
+   "kb_per_game_s": 237.8,
+   "bytes_per_call": 404.5,
+   "calls": 3010,
+   "gc_inside": 0
+  },
+  {
+   "key": "part threat.sweep_step",
+   "kb": 1172,
+   "kb_per_game_s": 234.4,
+   "bytes_per_call": 398.71,
+   "calls": 3010,
+   "gc_inside": 0
+  },
+  {
+   "key": "dispatch board",
+   "kb": 1128,
+   "kb_per_game_s": 225.6,
+   "bytes_per_call": 144384.0,
+   "calls": 8,
+   "gc_inside": 0
+  },
+  {
+   "key": "part pipes.overlong",
+   "kb": 1021,
+   "kb_per_game_s": 204.2,
+   "bytes_per_call": 1045504.0,
+   "calls": 1,
+   "gc_inside": 0
+  },
+  {
+   "key": "dispatch tells",
+   "kb": 834,
+   "kb_per_game_s": 166.8,
+   "bytes_per_call": 142336.0,
+   "calls": 6,
+   "gc_inside": 0
+  },
+  {
+   "key": "part freight.tick",
+   "kb": 753,
+   "kb_per_game_s": 150.6,
+   "bytes_per_call": 154214.4,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "part networks.view_tick",
+   "kb": 703,
+   "kb_per_game_s": 140.6,
+   "bytes_per_call": 2391.6,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part productionlegs.tick",
+   "kb": 625,
+   "kb_per_game_s": 125.0,
+   "bytes_per_call": 2126.25,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part freight.pod_tick",
+   "kb": 509,
+   "kb_per_game_s": 101.8,
+   "bytes_per_call": 104243.2,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "part platalerts.lines",
+   "kb": 400,
+   "kb_per_game_s": 80.0,
+   "bytes_per_call": 7585.19,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part beltgaps.tick",
+   "kb": 376,
+   "kb_per_game_s": 75.2,
+   "bytes_per_call": 19251.2,
+   "calls": 20,
+   "gc_inside": 0
+  },
+  {
+   "key": "part pushalerts.output_chest_full",
+   "kb": 362,
+   "kb_per_game_s": 72.4,
+   "bytes_per_call": 3744.32,
+   "calls": 99,
+   "gc_inside": 0
+  },
+  {
+   "key": "part tick_action",
+   "kb": 294,
+   "kb_per_game_s": 58.8,
+   "bytes_per_call": 4778.67,
+   "calls": 63,
+   "gc_inside": 0
+  },
+  {
+   "key": "part cameras.tick",
+   "kb": 284,
+   "kb_per_game_s": 56.8,
+   "bytes_per_call": 966.17,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part scienceline.tick",
+   "kb": 154,
+   "kb_per_game_s": 30.8,
+   "bytes_per_call": 523.91,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part carry.carry",
+   "kb": 135,
+   "kb_per_game_s": 27.0,
+   "bytes_per_call": 389.41,
+   "calls": 355,
+   "gc_inside": 0
+  },
+  {
+   "key": "part burnerfuel.tick",
+   "kb": 132,
+   "kb_per_game_s": 26.4,
+   "bytes_per_call": 449.06,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part survey.tick",
+   "kb": 126,
+   "kb_per_game_s": 25.2,
+   "bytes_per_call": 428.65,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part nametags.tick",
+   "kb": 125,
+   "kb_per_game_s": 25.0,
+   "bytes_per_call": 425.25,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "event on_entity_damaged",
+   "kb": 122,
+   "kb_per_game_s": 24.4,
+   "bytes_per_call": 1452.65,
+   "calls": 86,
+   "gc_inside": 0
+  },
+  {
+   "key": "part ammofeed.step",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part asteroid_watch.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part clock.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part collector_tally.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part drop_jobs_tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part floorcheck.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part floorphases.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part ghosttally.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part orders.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part ores.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part pacts.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part platdefense.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part platplan.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part powercut.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part rail_aim.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part research.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part research_target.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part seeds.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part signal_watch.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part spoil.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part turret_tally.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "part uptime.tick",
+   "kb": 115,
+   "kb_per_game_s": 23.0,
+   "bytes_per_call": 391.23,
+   "calls": 301,
+   "gc_inside": 0
+  },
+  {
+   "key": "event on_entity_died",
+   "kb": 112,
+   "kb_per_game_s": 22.4,
+   "bytes_per_call": 3954.76,
+   "calls": 29,
+   "gc_inside": 0
+  },
+  {
+   "key": "part pushalerts.catalyst_gone",
+   "kb": 112,
+   "kb_per_game_s": 22.4,
+   "bytes_per_call": 573.44,
+   "calls": 200,
+   "gc_inside": 0
+  },
+  {
+   "key": "part where.team",
+   "kb": 93,
+   "kb_per_game_s": 18.6,
+   "bytes_per_call": 19046.4,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "part bots.look",
+   "kb": 67,
+   "kb_per_game_s": 13.4,
+   "bytes_per_call": 1143.47,
+   "calls": 60,
+   "gc_inside": 0
+  },
+  {
+   "key": "part claims.worked",
+   "kb": 47,
+   "kb_per_game_s": 9.4,
+   "bytes_per_call": 891.26,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part shipment.tick",
+   "kb": 42,
+   "kb_per_game_s": 8.4,
+   "bytes_per_call": 21504.0,
+   "calls": 2,
+   "gc_inside": 0
+  },
+  {
+   "key": "part survey.summary",
+   "kb": 39,
+   "kb_per_game_s": 7.8,
+   "bytes_per_call": 7987.2,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "event on_chunk_charted",
+   "kb": 38,
+   "kb_per_game_s": 7.6,
+   "bytes_per_call": 409.6,
+   "calls": 95,
+   "gc_inside": 0
+  },
+  {
+   "key": "part freight.belts",
+   "kb": 38,
+   "kb_per_game_s": 7.6,
+   "bytes_per_call": 389.12,
+   "calls": 100,
+   "gc_inside": 0
+  },
+  {
+   "key": "part mtgame.tick",
+   "kb": 38,
+   "kb_per_game_s": 7.6,
+   "bytes_per_call": 7782.4,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "part ground.unseen",
+   "kb": 37,
+   "kb_per_game_s": 7.4,
+   "bytes_per_call": 701.63,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part threat.summary",
+   "kb": 36,
+   "kb_per_game_s": 7.2,
+   "bytes_per_call": 7372.8,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "part threat.on_damaged",
+   "kb": 34,
+   "kb_per_game_s": 6.8,
+   "bytes_per_call": 419.47,
+   "calls": 83,
+   "gc_inside": 0
+  },
+  {
+   "key": "part mixed.event",
+   "kb": 32,
+   "kb_per_game_s": 6.4,
+   "bytes_per_call": 1129.93,
+   "calls": 29,
+   "gc_inside": 0
+  },
+  {
+   "key": "part research.lines",
+   "kb": 32,
+   "kb_per_game_s": 6.4,
+   "bytes_per_call": 606.81,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part delivwatch.tick",
+   "kb": 29,
+   "kb_per_game_s": 5.8,
+   "bytes_per_call": 5939.2,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "part drops.lines",
+   "kb": 26,
+   "kb_per_game_s": 5.2,
+   "bytes_per_call": 493.04,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part belt.note",
+   "kb": 25,
+   "kb_per_game_s": 5.0,
+   "bytes_per_call": 1828.57,
+   "calls": 14,
+   "gc_inside": 0
+  },
+  {
+   "key": "part idle.request",
+   "kb": 25,
+   "kb_per_game_s": 5.0,
+   "bytes_per_call": 474.07,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part selfview.request",
+   "kb": 25,
+   "kb_per_game_s": 5.0,
+   "bytes_per_call": 474.07,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part scienceline.lines",
+   "kb": 24,
+   "kb_per_game_s": 4.8,
+   "bytes_per_call": 455.11,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part threat.watch",
+   "kb": 23,
+   "kb_per_game_s": 4.6,
+   "bytes_per_call": 436.15,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part itemcount.step",
+   "kb": 22,
+   "kb_per_game_s": 4.4,
+   "bytes_per_call": 375.47,
+   "calls": 60,
+   "gc_inside": 0
+  },
+  {
+   "key": "part chat.left",
+   "kb": 21,
+   "kb_per_game_s": 4.2,
+   "bytes_per_call": 398.22,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part chat.unread",
+   "kb": 21,
+   "kb_per_game_s": 4.2,
+   "bytes_per_call": 398.22,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part orders.line",
+   "kb": 21,
+   "kb_per_game_s": 4.2,
+   "bytes_per_call": 398.22,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part research.shift_block",
+   "kb": 21,
+   "kb_per_game_s": 4.2,
+   "bytes_per_call": 398.22,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part selfview.review_due",
+   "kb": 21,
+   "kb_per_game_s": 4.2,
+   "bytes_per_call": 398.22,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part tells.operator_lines",
+   "kb": 21,
+   "kb_per_game_s": 4.2,
+   "bytes_per_call": 398.22,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part visuals.worked",
+   "kb": 21,
+   "kb_per_game_s": 4.2,
+   "bytes_per_call": 398.22,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part clock.after_dispatch",
+   "kb": 20,
+   "kb_per_game_s": 4.0,
+   "bytes_per_call": 379.26,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part platalerts.note",
+   "kb": 20,
+   "kb_per_game_s": 4.0,
+   "bytes_per_call": 379.26,
+   "calls": 54,
+   "gc_inside": 0
+  },
+  {
+   "key": "part sharedroutes.mark",
+   "kb": 16,
+   "kb_per_game_s": 3.2,
+   "bytes_per_call": 455.11,
+   "calls": 36,
+   "gc_inside": 0
+  },
+  {
+   "key": "event script_raised_built",
+   "kb": 10,
+   "kb_per_game_s": 2.0,
+   "bytes_per_call": 1462.86,
+   "calls": 7,
+   "gc_inside": 0
+  },
+  {
+   "key": "part ground.alerts",
+   "kb": 9,
+   "kb_per_game_s": 1.8,
+   "bytes_per_call": 1843.2,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "part threat.alerts",
+   "kb": 7,
+   "kb_per_game_s": 1.4,
+   "bytes_per_call": 716.8,
+   "calls": 10,
+   "gc_inside": 0
+  },
+  {
+   "key": "event on_cargo_pod_started_ascending",
+   "kb": 5,
+   "kb_per_game_s": 1.0,
+   "bytes_per_call": 5120.0,
+   "calls": 1,
+   "gc_inside": 0
+  },
+  {
+   "key": "part platalerts.scan",
+   "kb": 5,
+   "kb_per_game_s": 1.0,
+   "bytes_per_call": 341.33,
+   "calls": 15,
+   "gc_inside": 0
+  },
+  {
+   "key": "part reminders.tick",
+   "kb": 5,
+   "kb_per_game_s": 1.0,
+   "bytes_per_call": 1024.0,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "part survey.band",
+   "kb": 5,
+   "kb_per_game_s": 1.0,
+   "bytes_per_call": 5120.0,
+   "calls": 1,
+   "gc_inside": 0
+  },
+  {
+   "key": "part launchwatch.tick",
+   "kb": 3,
+   "kb_per_game_s": 0.6,
+   "bytes_per_call": 614.4,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "part progress.tick",
+   "kb": 3,
+   "kb_per_game_s": 0.6,
+   "bytes_per_call": 1536.0,
+   "calls": 2,
+   "gc_inside": 0
+  },
+  {
+   "key": "part spiderroute.guard_tick",
+   "kb": 3,
+   "kb_per_game_s": 0.6,
+   "bytes_per_call": 307.2,
+   "calls": 10,
+   "gc_inside": 0
+  },
+  {
+   "key": "part bots.status",
+   "kb": 2,
+   "kb_per_game_s": 0.4,
+   "bytes_per_call": 409.6,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "part spiderroute.tick",
+   "kb": 2,
+   "kb_per_game_s": 0.4,
+   "bytes_per_call": 409.6,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "part flightwatch.tick",
+   "kb": 1,
+   "kb_per_game_s": 0.2,
+   "bytes_per_call": 204.8,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "part orders.brief",
+   "kb": 1,
+   "kb_per_game_s": 0.2,
+   "bytes_per_call": 204.8,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "part players.on_event",
+   "kb": 1,
+   "kb_per_game_s": 0.2,
+   "bytes_per_call": 35.31,
+   "calls": 29,
+   "gc_inside": 26
+  },
+  {
+   "key": "part podlog.tick",
+   "kb": 1,
+   "kb_per_game_s": 0.2,
+   "bytes_per_call": 204.8,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "encode board",
+   "kb": 0,
+   "kb_per_game_s": 0.0,
+   "bytes_per_call": 0.0,
+   "calls": 8,
+   "gc_inside": 0
+  },
+  {
+   "key": "encode build",
+   "kb": 0,
+   "kb_per_game_s": 0.0,
+   "bytes_per_call": 0.0,
+   "calls": 7,
+   "gc_inside": 0
+  },
+  {
+   "key": "encode game_alerts",
+   "kb": 0,
+   "kb_per_game_s": 0.0,
+   "bytes_per_call": 0.0,
+   "calls": 6,
+   "gc_inside": 0
+  },
+  {
+   "key": "encode mine",
+   "kb": 0,
+   "kb_per_game_s": 0.0,
+   "bytes_per_call": 0.0,
+   "calls": 9,
+   "gc_inside": 0
+  },
+  {
+   "key": "encode observe",
+   "kb": 0,
+   "kb_per_game_s": 0.0,
+   "bytes_per_call": 0.0,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "encode status",
+   "kb": 0,
+   "kb_per_game_s": 0.0,
+   "bytes_per_call": 0.0,
+   "calls": 5,
+   "gc_inside": 0
+  },
+  {
+   "key": "encode tells",
+   "kb": 0,
+   "kb_per_game_s": 0.0,
+   "bytes_per_call": 0.0,
+   "calls": 6,
+   "gc_inside": 0
+  },
+  {
+   "key": "encode wait_ticks",
+   "kb": 0,
+   "kb_per_game_s": 0.0,
+   "bytes_per_call": 0.0,
+   "calls": 8,
+   "gc_inside": 0
+  },
+  {
+   "key": "event on_cargo_pod_finished_ascending",
+   "kb": 0,
+   "kb_per_game_s": 0.0,
+   "bytes_per_call": 0.0,
+   "calls": 1,
+   "gc_inside": 0
+  },
+  {
+   "key": "part survey.slice",
+   "kb": 0,
+   "kb_per_game_s": 0.0,
+   "bytes_per_call": 0.0,
+   "calls": 1,
+   "gc_inside": 0
+  },
+  {
+   "key": "part turretwatch.tick",
+   "kb": 0,
+   "kb_per_game_s": 0.0,
+   "bytes_per_call": 0.0,
+   "calls": 2,
+   "gc_inside": 0
+  }
+ ],
+ "restored": {
+  "restore": {
+   "tick": 82964315,
+   "restored": true
+  },
+  "pause": 200,
+  "stepmul": 200
+ }
+}

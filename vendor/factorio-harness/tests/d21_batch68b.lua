@@ -34,6 +34,7 @@ local items={
 local nauvis={index=1,name='nauvis',planet={},find_logistic_network_by_position=function(p) return covered(p) end}
 local platform={index=2,name='platform-1'}
 game={tick=600,surfaces={nauvis=nauvis,['platform-1']=platform},forces={player={name='player',current_research={name='automation',research_unit_ingredients={{type='item',name='automation-science-pack',amount=1}}}}}}
+game.planets={nauvis={surface=nauvis}}
 game.get_surface=function(k) return (k==1 or k=='nauvis') and nauvis or (k==2 or k=='platform-1') and platform or nil end
 local poles={pole(0.5,0.5,7,3.5),pole(6.5,0.5,7,3.5),pole(12.5,0.5,7,3.5),pole(2.5,2.5,9,2.5),pole(30.5,30.5,11,0)}
 local census_ready=false

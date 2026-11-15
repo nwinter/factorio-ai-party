@@ -1,0 +1,11 @@
+{
+  "runtime_ref": "mt/batch306-cp7",
+  "commit": "207aebf440b37c66d36af3388f4cc8e839525867",
+  "main": "fbe96e6c4adfd41594fbec70e9794053c87a8c9b",
+  "bundle_id": "e8aae28b32362a0b",
+  "source_sha256": "e8aae28b32362a0b7641726105624f2f6444265487a5e905c5f7660055c0353e",
+  "bytes": 7146734,
+  "final_label": "after-cp7",
+  "gc_window_seconds": 60,
+  "note": "Earlier after-cp5, after-final and after-cp6 runs are rejected pilots, not final comparison data."
+}

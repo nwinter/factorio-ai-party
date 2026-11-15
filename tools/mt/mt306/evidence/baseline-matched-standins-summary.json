@@ -1,0 +1,603 @@
+{
+ "seconds": 600,
+ "ups": {
+  "samples": 131,
+  "min": 24.7,
+  "median": 60.0,
+  "max": 61.4
+ },
+ "windows": [
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 251.65,
+    "p99": 457.657706,
+    "max": 457.657706
+   },
+   "tick_ms_per_tick_avg": 4.194,
+   "harness_ms_per_s": {
+    "avg": 360.95,
+    "p99": 2191.690871,
+    "max": 2191.690871
+   },
+   "gc_finishes": 8,
+   "gc_second_tick_ms": {
+    "median": 331.0851085,
+    "max": 457.657706
+   },
+   "other_seconds_tick_ms_median": 233.873481,
+   "heap_mb": {
+    "min": 289,
+    "max": 733
+   },
+   "dropped_lines": 0,
+   "from_tick": 82871732,
+   "until_tick": 82875332,
+   "ups": {
+    "samples": 12,
+    "min": 24.732040120864305,
+    "median": 59.97814743533071
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 267.8,
+    "p99": 456.793034,
+    "max": 456.793034
+   },
+   "tick_ms_per_tick_avg": 4.463,
+   "harness_ms_per_s": {
+    "avg": 319.74,
+    "p99": 547.354873,
+    "max": 547.354873
+   },
+   "gc_finishes": 5,
+   "gc_second_tick_ms": {
+    "median": 369.026307,
+    "max": 456.793034
+   },
+   "other_seconds_tick_ms_median": 250.75698,
+   "heap_mb": {
+    "min": 313,
+    "max": 725
+   },
+   "dropped_lines": 0,
+   "from_tick": 82875496,
+   "until_tick": 82879096,
+   "ups": {
+    "samples": 10,
+    "min": 59.07104735409436,
+    "median": 59.9919416597196
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 261.17,
+    "p99": 454.120232,
+    "max": 454.120232
+   },
+   "tick_ms_per_tick_avg": 4.353,
+   "harness_ms_per_s": {
+    "avg": 318.52,
+    "p99": 557.364906,
+    "max": 557.364906
+   },
+   "gc_finishes": 6,
+   "gc_second_tick_ms": {
+    "median": 325.632569,
+    "max": 454.120232
+   },
+   "other_seconds_tick_ms_median": 240.40034150000002,
+   "heap_mb": {
+    "min": 320,
+    "max": 752
+   },
+   "dropped_lines": 0,
+   "from_tick": 82879442,
+   "until_tick": 82883042,
+   "ups": {
+    "samples": 11,
+    "min": 58.904795692836984,
+    "median": 59.957007316453584
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 266.71,
+    "p99": 474.226415,
+    "max": 474.226415
+   },
+   "tick_ms_per_tick_avg": 4.445,
+   "harness_ms_per_s": {
+    "avg": 326.88,
+    "p99": 531.62857,
+    "max": 531.62857
+   },
+   "gc_finishes": 7,
+   "gc_second_tick_ms": {
+    "median": 376.212961,
+    "max": 474.226415
+   },
+   "other_seconds_tick_ms_median": 239.431036,
+   "heap_mb": {
+    "min": 321,
+    "max": 766
+   },
+   "dropped_lines": 0,
+   "from_tick": 82883385,
+   "until_tick": 82886985,
+   "ups": {
+    "samples": 11,
+    "min": 59.26800382630263,
+    "median": 59.95717246801515
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 263.16,
+    "p99": 469.833207,
+    "max": 469.833207
+   },
+   "tick_ms_per_tick_avg": 4.386,
+   "harness_ms_per_s": {
+    "avg": 322.34,
+    "p99": 596.8500760000001,
+    "max": 596.8500760000001
+   },
+   "gc_finishes": 5,
+   "gc_second_tick_ms": {
+    "median": 351.668892,
+    "max": 469.833207
+   },
+   "other_seconds_tick_ms_median": 243.704204,
+   "heap_mb": {
+    "min": 324,
+    "max": 764
+   },
+   "dropped_lines": 0,
+   "from_tick": 82887331,
+   "until_tick": 82890931,
+   "ups": {
+    "samples": 11,
+    "min": 59.67504334515756,
+    "median": 59.96752366016455
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 262.71,
+    "p99": 399.242934,
+    "max": 399.242934
+   },
+   "tick_ms_per_tick_avg": 4.378,
+   "harness_ms_per_s": {
+    "avg": 327.62,
+    "p99": 531.386813,
+    "max": 531.386813
+   },
+   "gc_finishes": 6,
+   "gc_second_tick_ms": {
+    "median": 310.61006399999997,
+    "max": 399.242934
+   },
+   "other_seconds_tick_ms_median": 244.7361035,
+   "heap_mb": {
+    "min": 326,
+    "max": 762
+   },
+   "dropped_lines": 0,
+   "from_tick": 82891287,
+   "until_tick": 82894887,
+   "ups": {
+    "samples": 11,
+    "min": 59.22642014211679,
+    "median": 59.94473335540332
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 266.07,
+    "p99": 492.007507,
+    "max": 492.007507
+   },
+   "tick_ms_per_tick_avg": 4.434,
+   "harness_ms_per_s": {
+    "avg": 326.13,
+    "p99": 582.164411,
+    "max": 582.164411
+   },
+   "gc_finishes": 8,
+   "gc_second_tick_ms": {
+    "median": 412.728263,
+    "max": 492.007507
+   },
+   "other_seconds_tick_ms_median": 239.8050835,
+   "heap_mb": {
+    "min": 324,
+    "max": 761
+   },
+   "dropped_lines": 0,
+   "from_tick": 82895240,
+   "until_tick": 82898840,
+   "ups": {
+    "samples": 11,
+    "min": 59.08571627008113,
+    "median": 59.96874673285329
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 267.3,
+    "p99": 525.269403,
+    "max": 525.269403
+   },
+   "tick_ms_per_tick_avg": 4.455,
+   "harness_ms_per_s": {
+    "avg": 324.06,
+    "p99": 654.689933,
+    "max": 654.689933
+   },
+   "gc_finishes": 7,
+   "gc_second_tick_ms": {
+    "median": 355.658301,
+    "max": 525.269403
+   },
+   "other_seconds_tick_ms_median": 243.681889,
+   "heap_mb": {
+    "min": 324,
+    "max": 756
+   },
+   "dropped_lines": 0,
+   "from_tick": 82899192,
+   "until_tick": 82902792,
+   "ups": {
+    "samples": 11,
+    "min": 59.077816930506934,
+    "median": 59.98188141543282
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 268.67,
+    "p99": 412.941848,
+    "max": 412.941848
+   },
+   "tick_ms_per_tick_avg": 4.478,
+   "harness_ms_per_s": {
+    "avg": 325.57,
+    "p99": 532.501068,
+    "max": 532.501068
+   },
+   "gc_finishes": 6,
+   "gc_second_tick_ms": {
+    "median": 326.0015605,
+    "max": 412.941848
+   },
+   "other_seconds_tick_ms_median": 248.9326415,
+   "heap_mb": {
+    "min": 330,
+    "max": 761
+   },
+   "dropped_lines": 0,
+   "from_tick": 82903151,
+   "until_tick": 82906751,
+   "ups": {
+    "samples": 11,
+    "min": 59.12312094612691,
+    "median": 59.99913619261688
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 267.43,
+    "p99": 533.517034,
+    "max": 533.517034
+   },
+   "tick_ms_per_tick_avg": 4.457,
+   "harness_ms_per_s": {
+    "avg": 325.77,
+    "p99": 615.854077,
+    "max": 615.854077
+   },
+   "gc_finishes": 7,
+   "gc_second_tick_ms": {
+    "median": 432.548985,
+    "max": 533.517034
+   },
+   "other_seconds_tick_ms_median": 240.687535,
+   "heap_mb": {
+    "min": 322,
+    "max": 759
+   },
+   "dropped_lines": 0,
+   "from_tick": 82907118,
+   "until_tick": 82910718,
+   "ups": {
+    "samples": 11,
+    "min": 58.78833807683803,
+    "median": 59.864386947735206
+   }
+  }
+ ],
+ "parts": {
+  "*": {
+   "avg_ms_per_s": 327.758,
+   "max_ms_per_s": 2191.690871
+  },
+  "tick": {
+   "avg_ms_per_s": 264.266,
+   "max_ms_per_s": 533.517034
+  },
+  "part productionlegs.tick": {
+   "avg_ms_per_s": 37.329,
+   "max_ms_per_s": 135.892859
+  },
+  "part pushalerts.tick": {
+   "avg_ms_per_s": 33.484,
+   "max_ms_per_s": 182.930979
+  },
+  "part census.step": {
+   "avg_ms_per_s": 26.95,
+   "max_ms_per_s": 101.14477
+  },
+  "part networks.tick": {
+   "avg_ms_per_s": 22.641,
+   "max_ms_per_s": 131.252488
+  },
+  "part census.walk": {
+   "avg_ms_per_s": 22.147,
+   "max_ms_per_s": 91.310658
+  },
+  "part networks.view_tick": {
+   "avg_ms_per_s": 18.464,
+   "max_ms_per_s": 126.565949
+  },
+  "part threat.tick": {
+   "avg_ms_per_s": 15.626,
+   "max_ms_per_s": 64.679045
+  },
+  "dispatch observe": {
+   "avg_ms_per_s": 15.5,
+   "max_ms_per_s": 102.886159
+  },
+  "part pushalerts.band": {
+   "avg_ms_per_s": 14.047,
+   "max_ms_per_s": 90.452273
+  },
+  "part scheduler.tick": {
+   "avg_ms_per_s": 13.995,
+   "max_ms_per_s": 127.892097
+  },
+  "part board.team": {
+   "avg_ms_per_s": 12.704,
+   "max_ms_per_s": 486.803617
+  },
+  "dispatch status": {
+   "avg_ms_per_s": 12.125,
+   "max_ms_per_s": 401.263824
+  },
+  "part pushalerts.slice": {
+   "avg_ms_per_s": 10.734,
+   "max_ms_per_s": 79.012164
+  },
+  "part survey.tick": {
+   "avg_ms_per_s": 10.151,
+   "max_ms_per_s": 39.763972
+  },
+  "part networks.view.walk_band": {
+   "avg_ms_per_s": 8.997,
+   "max_ms_per_s": 54.509529
+  },
+  "part scheduler.step craft": {
+   "avg_ms_per_s": 7.309,
+   "max_ms_per_s": 107.982334
+  },
+  "part threat.sweep_step": {
+   "avg_ms_per_s": 5.912,
+   "max_ms_per_s": 52.047782
+  },
+  "dispatch build": {
+   "avg_ms_per_s": 5.909,
+   "max_ms_per_s": 82.07254
+  },
+  "part survey.band": {
+   "avg_ms_per_s": 5.812,
+   "max_ms_per_s": 33.636458
+  },
+  "part netmap.tick": {
+   "avg_ms_per_s": 5.656,
+   "max_ms_per_s": 93.139036
+  },
+  "part pipes.overlong": {
+   "avg_ms_per_s": 5.651,
+   "max_ms_per_s": 55.635674
+  },
+  "part bots.tick": {
+   "avg_ms_per_s": 5.437,
+   "max_ms_per_s": 14.799248
+  },
+  "dispatch queue_repeat": {
+   "avg_ms_per_s": 4.596,
+   "max_ms_per_s": 1572.12198
+  },
+  "dispatch mine": {
+   "avg_ms_per_s": 4.45,
+   "max_ms_per_s": 74.536132
+  },
+  "dispatch game_alerts": {
+   "avg_ms_per_s": 4.24,
+   "max_ms_per_s": 29.324435
+  },
+  "event on_entity_damaged": {
+   "avg_ms_per_s": 3.349,
+   "max_ms_per_s": 7.099314
+  },
+  "part research.shift_block": {
+   "avg_ms_per_s": 3.321,
+   "max_ms_per_s": 1056.031169
+  },
+  "part survey.slice": {
+   "avg_ms_per_s": 3.248,
+   "max_ms_per_s": 20.092983
+  },
+  "dispatch wait_ticks": {
+   "avg_ms_per_s": 2.975,
+   "max_ms_per_s": 39.090603
+  },
+  "part networks.view.orders": {
+   "avg_ms_per_s": 2.804,
+   "max_ms_per_s": 85.219401
+  },
+  "part pushalerts.lines": {
+   "avg_ms_per_s": 2.769,
+   "max_ms_per_s": 79.100205
+  },
+  "part threat.nest_step": {
+   "avg_ms_per_s": 2.698,
+   "max_ms_per_s": 31.343966
+  },
+  "part freight.tick": {
+   "avg_ms_per_s": 2.614,
+   "max_ms_per_s": 27.612046
+  }
+ },
+ "worst_total_seconds": [
+  [
+   82871760,
+   2191.690871
+  ],
+  [
+   82871820,
+   1691.0346220000006
+  ],
+  [
+   82901760,
+   654.689933
+  ],
+  [
+   82907220,
+   615.854077
+  ],
+  [
+   82889940,
+   596.8500760000001
+  ],
+  [
+   82909260,
+   589.803721
+  ],
+  [
+   82900680,
+   588.673665
+  ],
+  [
+   82908240,
+   585.862031
+  ]
+ ],
+ "calls": {
+  "total": 7416,
+  "failures": [
+   {
+    "t": 1794686585.759,
+    "bot": "bb3",
+    "action": "mine",
+    "phase": "steady",
+    "ms": 65.19,
+    "bytes": 486,
+    "ok": false,
+    "tick": 82871900,
+    "error": "entity not found at (414.5,-287.5): nearest bb2's character (416.188,-287.238) 1.7 tiles, cliff (414,-289.5) 2.1 tiles, gun-turret (413,-286) 2.1 tiles (chunk ("
+   },
+   {
+    "t": 1794686586.803,
+    "bot": "bb2",
+    "action": "mine",
+    "phase": "steady",
+    "ms": 89.96,
+    "bytes": 524,
+    "ok": false,
+    "tick": 82871958,
+    "error": "entity not found at (419.5,-287.5): nearest express-transport-belt (420.5,-287.5) 1.0 tiles, express-transport-belt (420.5,-288.5) 1.4 tiles, express-transport-"
+   }
+  ],
+  "startup_max_ms": 511.88,
+  "startup_slowest": [
+   {
+    "t": 1794686584.71,
+    "bot": "yb1",
+    "action": "queue_repeat",
+    "phase": "startup",
+    "ms": 511.88,
+    "bytes": 10594,
+    "ok": true,
+    "tick": 82871841,
+    "error": null
+   },
+   {
+    "t": 1794686583.419,
+    "bot": "gb1",
+    "action": "queue_repeat",
+    "phase": "startup",
+    "ms": 477.22,
+    "bytes": 10487,
+    "ok": true,
+    "tick": 82871813,
+    "error": null
+   },
+   {
+    "t": 1794686582.217,
+    "bot": "bb1",
+    "action": "queue_repeat",
+    "phase": "startup",
+    "ms": 458.16,
+    "bytes": 9357,
+    "ok": true,
+    "tick": 82871786,
+    "error": null
+   },
+   {
+    "t": 1794686581.048,
+    "bot": "rb1",
+    "action": "queue_repeat",
+    "phase": "startup",
+    "ms": 419.25,
+    "bytes": 10865,
+    "ok": true,
+    "tick": 82871756,
+    "error": null
+   },
+   {
+    "t": 1794686585.228,
+    "bot": "yb3",
+    "action": "queue_repeat",
+    "phase": "startup",
+    "ms": 245.83,
+    "bytes": 10081,
+    "ok": true,
+    "tick": 82871860,
+    "error": null
+   },
+   {
+    "t": 1794686583.716,
+    "bot": "gb2",
+    "action": "queue_repeat",
+    "phase": "startup",
+    "ms": 244.49,
+    "bytes": 9971,
+    "ok": true,
+    "tick": 82871821,
+    "error": null
+   }
+  ]
+ }
+}

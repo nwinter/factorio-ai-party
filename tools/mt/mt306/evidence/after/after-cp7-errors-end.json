@@ -1,0 +1,28 @@
+[
+ {
+  "at": "2026-11-14 20:13:09",
+  "tick": 82965530,
+  "errors": {
+   "survey_errors": {
+    "tick": 82854776,
+    "count": 12,
+    "last": "LuaEntity doesn't contain key neighbours."
+   },
+   "belt_memory_error": {
+    "tick": 82855635,
+    "error": "LuaEntity doesn't contain key neighbours."
+   }
+  },
+  "census_errors": {
+   "count": 3,
+   "last": "LuaEntity doesn't contain key neighbours.",
+   "tick": 82852994
+  },
+  "gc": {
+   "pause": 200,
+   "stepmul": 200,
+   "running": true
+  },
+  "heap_mb": 399.63910579681396
+ }
+]

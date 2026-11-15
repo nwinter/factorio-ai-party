@@ -1,0 +1,603 @@
+{
+ "seconds": 600,
+ "ups": {
+  "samples": 133,
+  "min": 53.4,
+  "median": 60.0,
+  "max": 61.7
+ },
+ "windows": [
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 217.05,
+    "p99": 429.702445,
+    "max": 429.702445
+   },
+   "tick_ms_per_tick_avg": 3.618,
+   "harness_ms_per_s": {
+    "avg": 283.47,
+    "p99": 1037.716335,
+    "max": 1037.716335
+   },
+   "gc_finishes": 6,
+   "gc_second_tick_ms": {
+    "median": 268.0509915,
+    "max": 429.702445
+   },
+   "other_seconds_tick_ms_median": 200.72226,
+   "heap_mb": {
+    "min": 279,
+    "max": 718
+   },
+   "dropped_lines": 0,
+   "from_tick": 82871732,
+   "until_tick": 82875332,
+   "ups": {
+    "samples": 12,
+    "min": 53.39579181258504,
+    "median": 59.915032422641744
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 231.33,
+    "p99": 397.920173,
+    "max": 397.920173
+   },
+   "tick_ms_per_tick_avg": 3.856,
+   "harness_ms_per_s": {
+    "avg": 286.37,
+    "p99": 447.231008,
+    "max": 447.231008
+   },
+   "gc_finishes": 8,
+   "gc_second_tick_ms": {
+    "median": 285.64962,
+    "max": 336.927394
+   },
+   "other_seconds_tick_ms_median": 208.51139799999999,
+   "heap_mb": {
+    "min": 326,
+    "max": 733
+   },
+   "dropped_lines": 0,
+   "from_tick": 82875644,
+   "until_tick": 82879244,
+   "ups": {
+    "samples": 11,
+    "min": 58.810147010671166,
+    "median": 59.99436611981115
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 233.7,
+    "p99": 567.284017,
+    "max": 567.284017
+   },
+   "tick_ms_per_tick_avg": 3.895,
+   "harness_ms_per_s": {
+    "avg": 294.65,
+    "p99": 678.514431,
+    "max": 678.514431
+   },
+   "gc_finishes": 6,
+   "gc_second_tick_ms": {
+    "median": 330.617671,
+    "max": 567.284017
+   },
+   "other_seconds_tick_ms_median": 206.366739,
+   "heap_mb": {
+    "min": 331,
+    "max": 735
+   },
+   "dropped_lines": 0,
+   "from_tick": 82879593,
+   "until_tick": 82883193,
+   "ups": {
+    "samples": 11,
+    "min": 59.068242124837965,
+    "median": 60.01341958252047
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 236.91,
+    "p99": 389.0908,
+    "max": 389.0908
+   },
+   "tick_ms_per_tick_avg": 3.949,
+   "harness_ms_per_s": {
+    "avg": 294.92,
+    "p99": 447.421868,
+    "max": 447.421868
+   },
+   "gc_finishes": 7,
+   "gc_second_tick_ms": {
+    "median": 323.537297,
+    "max": 357.486271
+   },
+   "other_seconds_tick_ms_median": 213.515471,
+   "heap_mb": {
+    "min": 329,
+    "max": 752
+   },
+   "dropped_lines": 0,
+   "from_tick": 82883595,
+   "until_tick": 82887195,
+   "ups": {
+    "samples": 11,
+    "min": 59.08139998833801,
+    "median": 59.931493789578084
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 235.43,
+    "p99": 419.927065,
+    "max": 419.927065
+   },
+   "tick_ms_per_tick_avg": 3.924,
+   "harness_ms_per_s": {
+    "avg": 297.13,
+    "p99": 503.45156299999996,
+    "max": 503.45156299999996
+   },
+   "gc_finishes": 7,
+   "gc_second_tick_ms": {
+    "median": 332.215618,
+    "max": 368.688792
+   },
+   "other_seconds_tick_ms_median": 214.377403,
+   "heap_mb": {
+    "min": 330,
+    "max": 744
+   },
+   "dropped_lines": 0,
+   "from_tick": 82887615,
+   "until_tick": 82891215,
+   "ups": {
+    "samples": 11,
+    "min": 58.98217831867102,
+    "median": 59.90611567085584
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 232.72,
+    "p99": 441.340008,
+    "max": 441.340008
+   },
+   "tick_ms_per_tick_avg": 3.879,
+   "harness_ms_per_s": {
+    "avg": 293.91,
+    "p99": 540.274763,
+    "max": 540.274763
+   },
+   "gc_finishes": 7,
+   "gc_second_tick_ms": {
+    "median": 298.604829,
+    "max": 441.340008
+   },
+   "other_seconds_tick_ms_median": 202.264956,
+   "heap_mb": {
+    "min": 332,
+    "max": 756
+   },
+   "dropped_lines": 0,
+   "from_tick": 82891650,
+   "until_tick": 82895250,
+   "ups": {
+    "samples": 11,
+    "min": 59.05383601284128,
+    "median": 59.96567306970588
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 227.68,
+    "p99": 429.239765,
+    "max": 429.239765
+   },
+   "tick_ms_per_tick_avg": 3.795,
+   "harness_ms_per_s": {
+    "avg": 285.49,
+    "p99": 517.719368,
+    "max": 517.719368
+   },
+   "gc_finishes": 7,
+   "gc_second_tick_ms": {
+    "median": 306.518838,
+    "max": 429.239765
+   },
+   "other_seconds_tick_ms_median": 212.617604,
+   "heap_mb": {
+    "min": 338,
+    "max": 761
+   },
+   "dropped_lines": 0,
+   "from_tick": 82895719,
+   "until_tick": 82899319,
+   "ups": {
+    "samples": 11,
+    "min": 59.599184913427706,
+    "median": 59.99333408193202
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 234.77,
+    "p99": 440.426014,
+    "max": 440.426014
+   },
+   "tick_ms_per_tick_avg": 3.913,
+   "harness_ms_per_s": {
+    "avg": 294.68,
+    "p99": 503.25298,
+    "max": 503.25298
+   },
+   "gc_finishes": 7,
+   "gc_second_tick_ms": {
+    "median": 265.88066,
+    "max": 358.31246
+   },
+   "other_seconds_tick_ms_median": 218.220483,
+   "heap_mb": {
+    "min": 334,
+    "max": 758
+   },
+   "dropped_lines": 0,
+   "from_tick": 82899765,
+   "until_tick": 82903365,
+   "ups": {
+    "samples": 11,
+    "min": 59.040223806404576,
+    "median": 59.99089667486481
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 234.87,
+    "p99": 522.469754,
+    "max": 522.469754
+   },
+   "tick_ms_per_tick_avg": 3.914,
+   "harness_ms_per_s": {
+    "avg": 292.73,
+    "p99": 555.825571,
+    "max": 555.825571
+   },
+   "gc_finishes": 7,
+   "gc_second_tick_ms": {
+    "median": 340.257635,
+    "max": 522.469754
+   },
+   "other_seconds_tick_ms_median": 209.453501,
+   "heap_mb": {
+    "min": 340,
+    "max": 752
+   },
+   "dropped_lines": 0,
+   "from_tick": 82903797,
+   "until_tick": 82907397,
+   "ups": {
+    "samples": 11,
+    "min": 59.47478020452734,
+    "median": 59.93438445920833
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 235.57,
+    "p99": 681.813759,
+    "max": 681.813759
+   },
+   "tick_ms_per_tick_avg": 3.926,
+   "harness_ms_per_s": {
+    "avg": 292.21,
+    "p99": 756.089314,
+    "max": 756.089314
+   },
+   "gc_finishes": 7,
+   "gc_second_tick_ms": {
+    "median": 313.934644,
+    "max": 681.813759
+   },
+   "other_seconds_tick_ms_median": 212.070513,
+   "heap_mb": {
+    "min": 341,
+    "max": 770
+   },
+   "dropped_lines": 0,
+   "from_tick": 82907948,
+   "until_tick": 82911548,
+   "ups": {
+    "samples": 11,
+    "min": 57.64234104224296,
+    "median": 60.000152588278674
+   }
+  }
+ ],
+ "parts": {
+  "*": {
+   "avg_ms_per_s": 291.556,
+   "max_ms_per_s": 1037.716335
+  },
+  "tick": {
+   "avg_ms_per_s": 232.005,
+   "max_ms_per_s": 681.813759
+  },
+  "part pushalerts.tick": {
+   "avg_ms_per_s": 32.521,
+   "max_ms_per_s": 158.780065
+  },
+  "part census.step": {
+   "avg_ms_per_s": 26.643,
+   "max_ms_per_s": 109.586377
+  },
+  "part census.walk": {
+   "avg_ms_per_s": 21.754,
+   "max_ms_per_s": 106.670183
+  },
+  "part networks.tick": {
+   "avg_ms_per_s": 20.115,
+   "max_ms_per_s": 168.047124
+  },
+  "part threat.tick": {
+   "avg_ms_per_s": 16.258,
+   "max_ms_per_s": 105.493709
+  },
+  "part networks.view_tick": {
+   "avg_ms_per_s": 15.77,
+   "max_ms_per_s": 166.410528
+  },
+  "dispatch observe": {
+   "avg_ms_per_s": 15.679,
+   "max_ms_per_s": 106.398374
+  },
+  "part scheduler.tick": {
+   "avg_ms_per_s": 13.933,
+   "max_ms_per_s": 140.827407
+  },
+  "part pushalerts.band": {
+   "avg_ms_per_s": 13.347,
+   "max_ms_per_s": 119.402481
+  },
+  "dispatch status": {
+   "avg_ms_per_s": 11.643,
+   "max_ms_per_s": 653.856517
+  },
+  "part board.team": {
+   "avg_ms_per_s": 11.593,
+   "max_ms_per_s": 103.229182
+  },
+  "part survey.tick": {
+   "avg_ms_per_s": 10.583,
+   "max_ms_per_s": 87.609485
+  },
+  "part pushalerts.slice": {
+   "avg_ms_per_s": 10.4,
+   "max_ms_per_s": 115.059093
+  },
+  "part networks.view.walk_band": {
+   "avg_ms_per_s": 7.647,
+   "max_ms_per_s": 101.884323
+  },
+  "part scheduler.step craft": {
+   "avg_ms_per_s": 7.398,
+   "max_ms_per_s": 132.606753
+  },
+  "part threat.sweep_step": {
+   "avg_ms_per_s": 6.383,
+   "max_ms_per_s": 96.659015
+  },
+  "part survey.band": {
+   "avg_ms_per_s": 6.03,
+   "max_ms_per_s": 29.619608
+  },
+  "dispatch build": {
+   "avg_ms_per_s": 5.981,
+   "max_ms_per_s": 27.00819
+  },
+  "part bots.tick": {
+   "avg_ms_per_s": 5.641,
+   "max_ms_per_s": 84.677274
+  },
+  "part pipes.overlong": {
+   "avg_ms_per_s": 5.25,
+   "max_ms_per_s": 53.50309
+  },
+  "part productionlegs.tick": {
+   "avg_ms_per_s": 5.025,
+   "max_ms_per_s": 33.73913
+  },
+  "part netmap.tick": {
+   "avg_ms_per_s": 4.998,
+   "max_ms_per_s": 74.191054
+  },
+  "dispatch game_alerts": {
+   "avg_ms_per_s": 4.707,
+   "max_ms_per_s": 93.901374
+  },
+  "dispatch mine": {
+   "avg_ms_per_s": 4.578,
+   "max_ms_per_s": 75.907765
+  },
+  "event on_entity_damaged": {
+   "avg_ms_per_s": 3.443,
+   "max_ms_per_s": 7.568343
+  },
+  "part survey.slice": {
+   "avg_ms_per_s": 3.241,
+   "max_ms_per_s": 30.079523
+  },
+  "dispatch wait_ticks": {
+   "avg_ms_per_s": 2.984,
+   "max_ms_per_s": 31.586416
+  },
+  "part threat.nest_step": {
+   "avg_ms_per_s": 2.846,
+   "max_ms_per_s": 80.96246
+  },
+  "part pushalerts.lines": {
+   "avg_ms_per_s": 2.795,
+   "max_ms_per_s": 93.092151
+  },
+  "dispatch tells": {
+   "avg_ms_per_s": 2.607,
+   "max_ms_per_s": 35.700873
+  },
+  "part networks.view.orders": {
+   "avg_ms_per_s": 2.555,
+   "max_ms_per_s": 126.327357
+  },
+  "dispatch board": {
+   "avg_ms_per_s": 2.474,
+   "max_ms_per_s": 16.371669
+  },
+  "part pushalerts.strike": {
+   "avg_ms_per_s": 2.457,
+   "max_ms_per_s": 35.26312
+  }
+ },
+ "worst_total_seconds": [
+  [
+   82871760,
+   1037.716335
+  ],
+  [
+   82910820,
+   756.089314
+  ],
+  [
+   82880220,
+   678.514431
+  ],
+  [
+   82905420,
+   555.825571
+  ],
+  [
+   82892160,
+   540.274763
+  ],
+  [
+   82894740,
+   522.587151
+  ],
+  [
+   82893360,
+   518.584077
+  ],
+  [
+   82896060,
+   517.719368
+  ]
+ ],
+ "calls": {
+  "total": 7391,
+  "failures": [
+   {
+    "t": 1794714423.661,
+    "bot": "bb3",
+    "action": "mine",
+    "phase": "steady",
+    "ms": 14.99,
+    "bytes": 486,
+    "ok": false,
+    "tick": 82871853,
+    "error": "entity not found at (414.5,-287.5): nearest bb2's character (416.188,-287.238) 1.7 tiles, cliff (414,-289.5) 2.1 tiles, gun-turret (413,-286) 2.1 tiles (chunk ("
+   },
+   {
+    "t": 1794714424.681,
+    "bot": "bb2",
+    "action": "mine",
+    "phase": "steady",
+    "ms": 19.79,
+    "bytes": 524,
+    "ok": false,
+    "tick": 82871914,
+    "error": "entity not found at (419.5,-287.5): nearest express-transport-belt (420.5,-287.5) 1.0 tiles, express-transport-belt (420.5,-288.5) 1.4 tiles, express-transport-"
+   }
+  ],
+  "startup_max_ms": 283.71,
+  "startup_slowest": [
+   {
+    "t": 1794714422.562,
+    "bot": "gb1",
+    "action": "status",
+    "phase": "startup",
+    "ms": 283.71,
+    "bytes": 5026,
+    "ok": true,
+    "tick": 82871787,
+    "error": null
+   },
+   {
+    "t": 1794714422.126,
+    "bot": "bb1",
+    "action": "status",
+    "phase": "startup",
+    "ms": 212.43,
+    "bytes": 4779,
+    "ok": true,
+    "tick": 82871772,
+    "error": null
+   },
+   {
+    "t": 1794714422.94,
+    "bot": "yb1",
+    "action": "status",
+    "phase": "startup",
+    "ms": 210.53,
+    "bytes": 4684,
+    "ok": true,
+    "tick": 82871805,
+    "error": null
+   },
+   {
+    "t": 1794714421.744,
+    "bot": "rb1",
+    "action": "status",
+    "phase": "startup",
+    "ms": 203.33,
+    "bytes": 4460,
+    "ok": true,
+    "tick": 82871756,
+    "error": null
+   },
+   {
+    "t": 1794714423.08,
+    "bot": "yb2",
+    "action": "status",
+    "phase": "startup",
+    "ms": 90.82,
+    "bytes": 4721,
+    "ok": true,
+    "tick": 82871813,
+    "error": null
+   },
+   {
+    "t": 1794714421.804,
+    "bot": "rb1",
+    "action": "queue_repeat",
+    "phase": "startup",
+    "ms": 56.78,
+    "bytes": 6828,
+    "ok": true,
+    "tick": 82871762,
+    "error": null
+   }
+  ]
+ }
+}

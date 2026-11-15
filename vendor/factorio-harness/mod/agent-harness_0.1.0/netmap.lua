@@ -37,12 +37,6 @@ return function(api)
     s.netmap = s.netmap or {done={}, tried={}}
     return s.netmap
   end
-  local function planets()
-    local out = {}
-    for _, s in pairs(game.surfaces) do if try(function() return s.planet ~= nil end) then out[#out+1] = s end end
-    table.sort(out, function(a, b) return a.index < b.index end)
-    return out
-  end
   -- prototype facts, cached by name (and quality)
   local SAD, MODE, ELEC, MINED, LAB_IN = {}, {}, {}, {}, {}
   local function supply(e)
@@ -243,19 +237,29 @@ return function(api)
 
   function M.step(st, tick)
     local job = st.job
-    local force = game.forces.player
     if not job then
-      local best, bage
-      for _, s in ipairs(planets()) do
-        local d = st.done[s.name]
-        local last = math.max(d and d.tick or -math.huge, st.tried[s.name] or -math.huge)
-        local age = tick - last
-        if age >= M.PERIOD and (not best or age > bage) then best, bage = s, age end
+      local best, bage, bindex
+      -- Idle checks used to allocate a surface list, closure per surface and
+      -- sort every EVERY ticks, including all platforms. Planet.surface is
+      -- live (also after creation/association/deletion); no cached membership
+      -- or delayed discovery. Explicit index ties preserve the sorted order.
+      for _, planet in pairs(game.planets) do
+        local s = planet.surface
+        if s then
+          local name, index = s.name, s.index
+          local d = st.done[name]
+          local last = math.max(d and d.tick or -math.huge, st.tried[name] or -math.huge)
+          local age = tick - last
+          if age >= M.PERIOD and (not best or age > bage or (age == bage and index < bindex)) then
+            best, bage, bindex = s, age, index
+          end
+        end
       end
       for name in pairs(st.done) do if not game.get_surface(name) then st.done[name] = nil end end
       if best then st.job = new_job(best, tick) end
       return
     end
+    local force = game.forces.player
     local surface = game.get_surface(job.surface)
     if not (surface and force) then st.job = nil; return end
     if job.stage == 'poles' then
