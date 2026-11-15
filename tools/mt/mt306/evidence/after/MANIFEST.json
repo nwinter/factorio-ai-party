@@ -1,0 +1,98 @@
+{
+ "runtime_ref": "mt/batch306-cp7",
+ "final_ref": "mt/batch306-cp8",
+ "final_measurement_label": "after-cp7",
+ "released_at": "2026-11-14T20:13:26.250554-08:00",
+ "files": [
+  {
+   "path": "after-cp7-all-summary.json",
+   "bytes": 9863,
+   "sha256": "51c6133b45ae7ea58508ec5ce4047d2ec52228fedf94311081e59192ebf9ffa1"
+  },
+  {
+   "path": "after-cp7-comparison.json",
+   "bytes": 34935,
+   "sha256": "fafd0b5723efeb1a9d841e01d944d439c7676a3caf8667196b746cb578e39f26"
+  },
+  {
+   "path": "after-cp7-errors-end.json",
+   "bytes": 532,
+   "sha256": "1b973b86cb2628dcfaca061eb038827a78b0b430340cf97a20fcc9808ca8542c"
+  },
+  {
+   "path": "after-cp7-gc-summary.json",
+   "bytes": 23185,
+   "sha256": "495f096af6e2a9bbb8c0781eb3a2b0aa69141e1db6fb2b0fbb245a7f16cd1c39"
+  },
+  {
+   "path": "after-cp7-standins-cold-parts.json",
+   "bytes": 14479,
+   "sha256": "7042d4fe1a5da1e7e1b25cefd1dae3cd202dc387624fdf26d3b4ebba3fadcd96"
+  },
+  {
+   "path": "after-cp7-standins-summary.json",
+   "bytes": 11706,
+   "sha256": "9c06fc39add9ef6f752557c374473b9edd067358e6d26d77059d2716dad671c6"
+  },
+  {
+   "path": "after-save-copy.json",
+   "bytes": 202,
+   "sha256": "1661826f074ccd1095dbce216190c4d40612acebc7b28158ce5c558b1458db26"
+  },
+  {
+   "path": "cp7-background-completion.json",
+   "bytes": 709,
+   "sha256": "7ad0026e88b44fbac6121f13e156c34cdeb795772e3e42a5154c8ae5971a9c89"
+  },
+  {
+   "path": "cp7-cold-after.log",
+   "bytes": 319,
+   "sha256": "c2eb90e1aa0ddfff1d1231d70c6ea3bcf3d6bf7fddf110a7d3b064478aa9acaa"
+  },
+  {
+   "path": "cp7-counted-after.log",
+   "bytes": 431,
+   "sha256": "9c9d61cfe9188bf41f92d6e11334ea7de1720fa5bb4cbdb7abe2c72a8c076f5a"
+  },
+  {
+   "path": "cp7-handoff-tests.log",
+   "bytes": 105,
+   "sha256": "32530a01f9c08a4a138d32af43b2a75edeec9c857d7e2a4e3ab966155a4634a0"
+  },
+  {
+   "path": "cp7-netmap-after.log",
+   "bytes": 157,
+   "sha256": "7dc9bf00dc442569e9f40f38b86ff819786577387228d045dc3fa9e3f4cbf4d2"
+  },
+  {
+   "path": "cp7-preflight.json",
+   "bytes": 205,
+   "sha256": "930cb57e4e15d3a2ca3333eb38b616ca5018c910a3ead5b39580855b4f22c7dd"
+  },
+  {
+   "path": "cp7-source.json",
+   "bytes": 459,
+   "sha256": "b95890ba0b4b70945b35d7a4b906b2f3a97b43fe34b822011ad66968a01e5383"
+  },
+  {
+   "path": "exercise-final-summary.json",
+   "bytes": 2291,
+   "sha256": "d9c71b2bda28766a35189c51dcc1c2d8aaecd62dc5ead8d12b9aa9ee61c8fd27"
+  },
+  {
+   "path": "quota-closeout.json",
+   "bytes": 217,
+   "sha256": "30f05839c5d32f0da5d35309cfea3445e90ce5f3619159ea88b82490ad5456bb"
+  },
+  {
+   "path": "server-lease.json",
+   "bytes": 1548,
+   "sha256": "ca5813bef318b20f9431148c642081bf3b742cba7415fb2af24a0562e4ed3341"
+  },
+  {
+   "path": "validation.json",
+   "bytes": 469,
+   "sha256": "c585c361b18d3db67ad8a2431b8aba5e1b13a0ea08bd319dfffaaf7674c8d298"
+  }
+ ]
+}

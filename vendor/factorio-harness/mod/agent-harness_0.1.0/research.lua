@@ -303,15 +303,15 @@ return function(api)
   -- none of on any surface: {label, techs}, in the table's order.
   function M.not_built(force)
     local out, by_label, counts = {}, {}, {}
+    local technologies = force.technologies
     local function count(name)
       if counts[name] == nil then
         local ok, exists = pcall(function() return prototypes.entity[name] ~= nil end)
         local n = 0
         if ok and exists then
-          for _, surface in pairs(game.surfaces or {}) do
-            n = n + surface.count_entities_filtered{force=force, name=name, limit=1}
-            if n > 0 then break end
-          end
+          -- The engine maintains this force-wide count, including platforms
+          -- and every quality. No whole-surface presence scans on first reply.
+          n = force.get_entity_count(name)
         else n = false end
         counts[name] = n
       end
@@ -319,7 +319,7 @@ return function(api)
     end
     for _, row in ipairs(UNLOCKS) do
       local tech, buildings, label = row[1], row[2], row[3]
-      local t = force.technologies and force.technologies[tech]
+      local t = technologies and technologies[tech]
       if t and t.researched then
         local none, known = true, true
         for _, b in ipairs(buildings) do

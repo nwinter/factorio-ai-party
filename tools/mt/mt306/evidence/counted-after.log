@@ -1,0 +1,7 @@
+mt306 production watch: 32 ships x 600 ticks, active_mods=0 state=600 counters=0
+mt306 research: 3 calls x 32 surfaces, surface_counts=0 force_counts=70 technologies=3
+mt306 census: 10000 empty belts, lines=0 contents=0
+mt306 network: 600 view slices x 32 surfaces, surface_names=1 lookups=600
+mt306 pushalerts: 10000 labs, fast integer keys=20000
+mt306 board/status sight: 12 readers x 1000 cells, sorts=2
+mt306 counted loops: ok

@@ -96,7 +96,8 @@ return function(api)
   end
   local function forces()
     local out = {}
-    for _, f in pairs(game.forces or {}) do if f.players and #f.players > 0 then out[#out+1] = f end end
+    local wanted = store().requested or EMPTY
+    for _, f in pairs(game.forces or {}) do local ps=f.players; if wanted[f.name] or ps and #ps > 0 then out[#out+1] = f end end
     return out
   end
   local function surfaces()
@@ -161,7 +162,7 @@ return function(api)
       if n.map_tick and last < n.map_tick and tick - snapfail.since(n.map_tick, n.map_failed) < VIEW_TICKS then return end
       local todo = {}
       for _, f in ipairs(forces()) do for _, s in ipairs(surfaces()) do todo[#todo+1] = {force=f.name, surface=s.index} end end
-      n.map_job = {start=tick, todo=todo, i=1, map={}, steps=0, every=walk.every(n.map_steps, VIEW_TICKS)}
+      n.map_job = {start=tick, todo=todo, i=1, map={}, steps=0, cold=api.background and not n.map_tick, every=walk.every(n.map_steps, VIEW_TICKS)}
       return
     end
     if not walk.due(job, tick, VIEW_TICKS) then return end
@@ -176,16 +177,27 @@ return function(api)
       return
     end
     local f, s = game.forces[pr.force], game.get_surface(pr.surface)
-    if not (f and s) then job.i, job.walk, job.list = job.i + 1, nil, nil
+    if not (f and s) then job.i, job.walk, job.list, job.direct = job.i + 1, nil, nil, nil
     elseif job.list then
       local last = math.min(#job.list, job.at + SLICE - 1)
       for k = job.at, last do pole_into(job.map, job.list[k], s, f) end
       job.at = last + 1
-      if job.at > #job.list then job.list = nil end
+      if job.at > #job.list then
+        job.list = nil
+        if job.direct then job.i, job.direct = job.i + 1, nil end
+      end
     else
+      -- A cold map must not spend minutes crossing empty terrain. One capped
+      -- native probe per force/surface, then bounded entity slices. A full
+      -- result falls back to the band walk so the cap never hides entities.
+      if job.cold and job.direct == nil then
+        local list = tcall(s, 'find_entities_filtered', pole_find(f)) or {}
+        job.direct = #list < MAX_SCAN
+        if job.direct then job.list, job.at = list, 1; return end
+      end
       job.walk = job.walk or walk.start(s)
       local list = walk.band(job.walk, s, pole_find(f))
-      if list then job.list, job.at = list, 1 else job.i, job.walk = job.i + 1, nil end
+      if list then job.list, job.at = list, 1 else job.i, job.walk, job.direct = job.i + 1, nil, nil end
     end
   end
   -- The statistics a network is read through: a pole of it, or a platform's own network its surface's (AG4).
@@ -459,7 +471,10 @@ return function(api)
       n.map_failed = snapfail.failed(err, tick)   -- the last map keeps its tick; the next walk starts VIEW_TICKS after this
     end
     if tick % SAMPLE ~= 0 then return end
-    if not n.map_tick then map_poles(n) end
+    if not n.map_tick then
+      if api.background then return end
+      map_poles(n)
+    end
     if not n.watch_tick or tick - n.watch_tick >= WATCH_TICKS then watch_logistics(n); n.watch_tick = tick end
     if not n.stock_tick or tick - n.stock_tick >= STOCK_EVERY then pcall(sample_stock, n); n.stock_tick = tick end
     sample(n)
@@ -1590,6 +1605,18 @@ return function(api)
   local function view(f)
     local n = store()
     local v = n.views[f.name]
+    -- Runtime reads never build a force's whole base in the asking tick.
+    -- The persisted map/view jobs warm it; do not publish an empty snapshot.
+    if api.background then
+      n.requested = n.requested or {}
+      if not n.requested[f.name] then
+        n.requested[f.name] = true
+        -- A bot-only force was absent from the joined-player map job.
+        local ps=f.players
+        if not ps or #ps==0 then n.map_tick,n.map_job,n.map_steps=nil,nil,nil end
+      end
+      return v or {tick=game.tick,surfaces={},pending=true}
+    end
     if v and (n.view_bg or game.tick - v.tick < VIEW_TICKS) then return v end
     fresh_map(n)
     v = {tick=game.tick, surfaces={}}
@@ -1656,14 +1683,17 @@ return function(api)
     elseif not job and v and tick - snapfail.since(v.tick, v.refresh_failed) < VIEW_TICKS then return end
     if not job then
       -- (with no pole map yet the first is made here at once)
-      if not n.map_tick then fresh_map(n) end
+      if not n.map_tick then
+        if api.background then return end
+        fresh_map(n)
+      end
       local steps = {}
       for _, s in ipairs(surfaces()) do
         for _, step in ipairs({'walk', 'boilers', 'supply', 'rows', 'logistic', 'orders', 'turrets'}) do steps[#steps+1] = {step=step, surface=s.name} end
       end
       steps[#steps+1] = {step='done'}
       n.view_steps = n.view_steps or {}
-      n.view_jobs[f.name] = {start=tick, steps=steps, i=1, out={}, ctx={}, n=0, every=walk.every(n.view_steps[f.name], VIEW_TICKS)}
+      n.view_jobs[f.name] = {start=tick, steps=steps, i=1, out={}, ctx={}, n=0, cold=api.background and not v, every=walk.every(n.view_steps[f.name], VIEW_TICKS)}
       return
     end
     if not job or not walk.due(job, tick, VIEW_TICKS) then return end
@@ -1694,8 +1724,9 @@ return function(api)
     end
     -- (BT1: the surface by name without the sorted list of every surface a step; names are unique)
     local surface
-    for _, s in pairs(game.surfaces or EMPTY) do if s.name == step.surface then surface = s; break end end
-    if not surface then job.i, job.walk, job.list = job.i + 1, nil, nil; job.ctx[step.surface] = nil; return end  -- the surface is gone
+    if game.get_surface then surface = game.get_surface(step.surface)
+    else for _, s in pairs(game.surfaces or EMPTY) do if s.name == step.surface then surface = s; break end end end
+    if not surface then job.i, job.walk, job.list, job.direct = job.i + 1, nil, nil, nil; job.ctx[step.surface] = nil; return end  -- the surface is gone
     local row = job.out[step.surface] or {name=surface.name, platform=try(function() return surface.platform.name end), logistic={}}
     job.out[step.surface] = row
     local ctx = job.ctx[step.surface]
@@ -1705,12 +1736,20 @@ return function(api)
         local last = math.min(#job.list, job.at + SLICE - 1)
         for k = job.at, last do view_entity(ctx, job.list[k], surface) end
         job.at = last + 1
-        if job.at > #job.list then job.list = nil end
+        if job.at > #job.list then
+          job.list = nil
+          if job.direct then job.i, job.direct = job.i + 1, nil end
+        end
       else
-        job.walk = job.walk or walk.start(surface)
         VIEW_FIND.force = f
+        if job.cold and job.direct == nil then
+          local list = tcall(surface, 'find_entities_filtered', VIEW_FIND) or {}
+          job.direct = #list < MAX_SCAN
+          if job.direct then job.list, job.at = list, 1; return end
+        end
+        job.walk = job.walk or walk.start(surface)
         local list = walk.band(job.walk, surface, VIEW_FIND)
-        if list then job.list, job.at = list, 1 else job.i, job.walk = job.i + 1, nil end
+        if list then job.list, job.at = list, 1 else job.i, job.walk, job.direct = job.i + 1, nil, nil end
       end
       return
     end
@@ -1894,6 +1933,7 @@ return function(api)
   end
   function M.lines(f, here, max)
     local v = view(f)
+    if v.pending then return {'network scan in progress; no complete snapshot yet'} end
     local list = {}
     local function add(s)
       for _, r in ipairs(s.electric) do list[#list+1] = plain_line(f, r.line) end
@@ -1951,6 +1991,7 @@ return function(api)
     local v = view(p.force)
     local n = store()
     local named = M.surface_named(p.force, a)
+    if v.pending then return {pending=true,surfaces={},note='Network scan in progress; no complete snapshot yet.'} end
     local out = {}
     for _, s in ipairs(v.surfaces) do
       if named == nil or named.name == s.name then
@@ -2461,11 +2502,14 @@ return function(api)
           if cap <= 0 or x.kw < HIGH * cap then held = false; break end
         end
         if held and first and first <= game.tick - HIGH_TICKS + SAMPLE then
-          local pct = r.capacity_kw > 0 and math.floor(100 * r.draw.now / r.capacity_kw) or 100
+          -- A cold view can finish before its first sample. The sustained
+          -- condition above proves a sample exists even if that view lacks draw.
+          local now = r.draw and r.draw.now or list[#list].kw
+          local pct = r.capacity_kw > 0 and math.floor(100 * now / r.capacity_kw) or 100
           out[#out+1] = {key='power_high|' .. s.name .. '|' .. r.id, kind='power_high', surface=s.name, n=math.floor(math.min(pct, 100) / 5) * 5,
             unit='%', names={}, by={}, at={}, center={x=math.floor(r.center.x + 0.5), y=math.floor(r.center.y + 0.5)},
             line=string.format('electric #%d draw at or above %d%% of capacity for 2 min: %s of %s now; %d machines on low power',
-              r.id, math.floor(HIGH * 100), mw(r.draw.now), mw(r.capacity_kw), r.low)}
+              r.id, math.floor(HIGH * 100), mw(now), mw(r.capacity_kw), r.low)}
         end
         local g = r.fuel_low and #r.fuel_low > 0 and M.fuel_group(s, r, f)
         if g then out[#out+1] = g end
@@ -2542,6 +2586,7 @@ return function(api)
   end
   function M.alert_cursor(f)
     local v = view(f)
+    if v.pending then return {force=f.name,pending=true,out={}} end
     local rows = {}
     for _, s in ipairs(v.surfaces) do
       for _, r in ipairs(s.electric) do r.view_tick = v.tick; rows[#rows+1] = {s=s, r=r, electric=true} end
@@ -2552,6 +2597,12 @@ return function(api)
   function M.alert_step(cur, max)
     local n = store()
     local f = game.forces[cur.force]
+    if cur.pending then
+      if not f then cur.pending=nil; return true end
+      local ready = M.alert_cursor(f)
+      if ready.pending then return false end
+      cur.pending,cur.rows,cur.i = nil,ready.rows,ready.i
+    end
     local last = math.min(#cur.rows, cur.i + (max or #cur.rows) - 1)
     for i = cur.i, last do
       local row = cur.rows[i]

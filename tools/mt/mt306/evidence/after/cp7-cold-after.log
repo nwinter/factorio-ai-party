@@ -1,0 +1,3 @@
+mt306 cold reads: queries=0; background finished at tick 94 (3 total queries); reload and playerless force passed
+mt306 cadence: 4 forces each walk 300 empty bands in 600 ticks; every force retains its view/alert pacing
+mt306 cold caps: network overflow falls back once; all 20000 held push entities are read in slices

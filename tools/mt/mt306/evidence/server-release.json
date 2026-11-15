@@ -1,0 +1,6 @@
+{
+  "released_at": "2026-11-14T12:40:45.187225-08:00",
+  "claim": "eng-mt306 owns imac2; cp31 baseline bench; claimed 2026-11-14T11:49:26.172165-08:00; release by 2026-11-14T12:55:00-08:00; operator slot 11:50, maximum 60 minutes\n",
+  "restoration": "save SHA, mods/config diffs and settings comparisons passed; server stopped; ports free",
+  "canonical_save_sha256": "1fc4ea6fde7fc541f8532f177c49c8ba5f49a6c116e538ebe71943e37acb38c9"
+}

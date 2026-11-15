@@ -1,0 +1,767 @@
+{
+ "start_tick": 82871732,
+ "seconds": 10,
+ "parts": {
+  "*": {
+   "ms": 1037.716335,
+   "calls": 231,
+   "bucket_tick": 82871760
+  },
+  "dispatch status": {
+   "ms": 653.856517,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "encode status": {
+   "ms": 3.002541,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "event on_chunk_charted": {
+   "ms": 0.174676,
+   "calls": 5,
+   "bucket_tick": 82872240
+  },
+  "event on_entity_damaged": {
+   "ms": 3.267726,
+   "calls": 74,
+   "bucket_tick": 82872240
+  },
+  "event on_entity_died": {
+   "ms": 2.116715,
+   "calls": 17,
+   "bucket_tick": 82872240
+  },
+  "part ammofeed.step": {
+   "ms": 0.247176,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part ammoreserve.tick": {
+   "ms": 0.21312,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part asteroid_watch.tick": {
+   "ms": 0.389224,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part belt.note": {
+   "ms": 0.236342,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "part beltgaps.tick": {
+   "ms": 4.306042,
+   "calls": 4,
+   "bucket_tick": 82872300
+  },
+  "part beltsample.tick": {
+   "ms": 2.937873,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part bots.look": {
+   "ms": 0.208972,
+   "calls": 12,
+   "bucket_tick": 82872060
+  },
+  "part bots.status": {
+   "ms": 0.042042,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "part bots.tick": {
+   "ms": 10.501113,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part burnerfuel.tick": {
+   "ms": 1.301107,
+   "calls": 60,
+   "bucket_tick": 82871760
+  },
+  "part cameras.tick": {
+   "ms": 0.964289,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part carry.carry": {
+   "ms": 0.382884,
+   "calls": 71,
+   "bucket_tick": 82872060
+  },
+  "part census.step": {
+   "ms": 57.268334,
+   "calls": 240,
+   "bucket_tick": 82872060
+  },
+  "part census.walk": {
+   "ms": 49.138749,
+   "calls": 167,
+   "bucket_tick": 82872060
+  },
+  "part chat.unread": {
+   "ms": 0.070279,
+   "calls": 20,
+   "bucket_tick": 82871760
+  },
+  "part clock.after_dispatch": {
+   "ms": 0.101816,
+   "calls": 11,
+   "bucket_tick": 82872060
+  },
+  "part clock.tick": {
+   "ms": 0.159959,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part collector_tally.tick": {
+   "ms": 0.291213,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part crafting.tick": {
+   "ms": 3.786367,
+   "calls": 720,
+   "bucket_tick": 82871820
+  },
+  "part drop_jobs_tick": {
+   "ms": 0.297456,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part flightwatch.tick": {
+   "ms": 0.019076,
+   "calls": 1,
+   "bucket_tick": 82872060
+  },
+  "part floorcheck.tick": {
+   "ms": 0.439226,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part floorphases.tick": {
+   "ms": 0.33456,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part freight.belts": {
+   "ms": 4.421829,
+   "calls": 20,
+   "bucket_tick": 82872240
+  },
+  "part ghosttally.tick": {
+   "ms": 0.323868,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part ground.alerts": {
+   "ms": 286.73908,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "part itemcount.step": {
+   "ms": 0.079191,
+   "calls": 12,
+   "bucket_tick": 82872060
+  },
+  "part mixed.event": {
+   "ms": 0.056841,
+   "calls": 8,
+   "bucket_tick": 82872060
+  },
+  "part mtgame.tick": {
+   "ms": 0.024955,
+   "calls": 1,
+   "bucket_tick": 82871880
+  },
+  "part nametags.tick": {
+   "ms": 0.288625,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part netmap.tick": {
+   "ms": 0.680644,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part networks.tick": {
+   "ms": 23.647924,
+   "calls": 60,
+   "bucket_tick": 82872000
+  },
+  "part networks.view_tick": {
+   "ms": 3.476129,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part orders.brief": {
+   "ms": 0.057852,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "part orders.line": {
+   "ms": 0.131762,
+   "calls": 11,
+   "bucket_tick": 82872060
+  },
+  "part orders.tick": {
+   "ms": 0.853483,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part ores.tick": {
+   "ms": 0.282864,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part pacts.tick": {
+   "ms": 0.242369,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part pipes.overlong": {
+   "ms": 45.537415,
+   "calls": 3,
+   "bucket_tick": 82871760
+  },
+  "part platalerts.scan": {
+   "ms": 0.104076,
+   "calls": 3,
+   "bucket_tick": 82872000
+  },
+  "part platdefense.tick": {
+   "ms": 0.272281,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part platplan.tick": {
+   "ms": 0.28825,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part players.on_event": {
+   "ms": 0.782345,
+   "calls": 17,
+   "bucket_tick": 82872240
+  },
+  "part powercut.tick": {
+   "ms": 0.415017,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part productionlegs.tick": {
+   "ms": 5.72425,
+   "calls": 60,
+   "bucket_tick": 82872180
+  },
+  "part pushalerts.band": {
+   "ms": 119.402481,
+   "calls": 37,
+   "bucket_tick": 82871940
+  },
+  "part pushalerts.catalyst_gone": {
+   "ms": 1.207323,
+   "calls": 135,
+   "bucket_tick": 82871820
+  },
+  "part pushalerts.output_chest_full": {
+   "ms": 4.141271,
+   "calls": 110,
+   "bucket_tick": 82871880
+  },
+  "part pushalerts.slice": {
+   "ms": 63.701689,
+   "calls": 23,
+   "bucket_tick": 82871880
+  },
+  "part pushalerts.tick": {
+   "ms": 157.787016,
+   "calls": 60,
+   "bucket_tick": 82871940
+  },
+  "part rail_aim.tick": {
+   "ms": 0.248415,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part research.tick": {
+   "ms": 1.229124,
+   "calls": 60,
+   "bucket_tick": 82872000
+  },
+  "part research_target.tick": {
+   "ms": 0.291593,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part scheduler.tick": {
+   "ms": 125.722309,
+   "calls": 60,
+   "bucket_tick": 82871760
+  },
+  "part scienceline.tick": {
+   "ms": 2.411271,
+   "calls": 60,
+   "bucket_tick": 82872240
+  },
+  "part seeds.tick": {
+   "ms": 1.067152,
+   "calls": 60,
+   "bucket_tick": 82872000
+  },
+  "part sharedroutes.mark": {
+   "ms": 0.042265,
+   "calls": 18,
+   "bucket_tick": 82872240
+  },
+  "part signal_watch.tick": {
+   "ms": 0.303014,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part spiderroute.guard_tick": {
+   "ms": 0.010858,
+   "calls": 2,
+   "bucket_tick": 82871760
+  },
+  "part spiderroute.tick": {
+   "ms": 0.004493,
+   "calls": 1,
+   "bucket_tick": 82872060
+  },
+  "part spoil.tick": {
+   "ms": 0.961398,
+   "calls": 28,
+   "bucket_tick": 82871700
+  },
+  "part survey.summary": {
+   "ms": 155.455663,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "part survey.tick": {
+   "ms": 1.080821,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part tells.operator_lines": {
+   "ms": 0.064514,
+   "calls": 20,
+   "bucket_tick": 82871760
+  },
+  "part threat.alerts": {
+   "ms": 0.334882,
+   "calls": 20,
+   "bucket_tick": 82871760
+  },
+  "part threat.nest_step": {
+   "ms": 4.983595,
+   "calls": 600,
+   "bucket_tick": 82872060
+  },
+  "part threat.on_damaged": {
+   "ms": 0.230573,
+   "calls": 74,
+   "bucket_tick": 82872240
+  },
+  "part threat.summary": {
+   "ms": 148.462351,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "part threat.sweep_step": {
+   "ms": 3.799958,
+   "calls": 600,
+   "bucket_tick": 82872060
+  },
+  "part threat.tick": {
+   "ms": 21.144488,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part turret_tally.tick": {
+   "ms": 0.175983,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part uptime.tick": {
+   "ms": 1.32312,
+   "calls": 60,
+   "bucket_tick": 82872060
+  },
+  "part where.team": {
+   "ms": 2.132408,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "tick": {
+   "ms": 292.628595,
+   "calls": 60,
+   "bucket_tick": 82871940
+  },
+  "dispatch queue_repeat": {
+   "ms": 87.282363,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "encode queue_repeat": {
+   "ms": 0.752603,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "event on_cargo_pod_delivered_cargo": {
+   "ms": 0.041156,
+   "calls": 1,
+   "bucket_tick": 82871760
+  },
+  "event on_marked_for_deconstruction": {
+   "ms": 0.896331,
+   "calls": 100,
+   "bucket_tick": 82871760
+  },
+  "event on_space_platform_built_tile": {
+   "ms": 0.103216,
+   "calls": 1,
+   "bucket_tick": 82871760
+  },
+  "part asteroid_watch.floor_loss": {
+   "ms": 0.006501,
+   "calls": 1,
+   "bucket_tick": 82871760
+  },
+  "part board.team": {
+   "ms": 29.759667,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "part chat.left": {
+   "ms": 0.042779,
+   "calls": 10,
+   "bucket_tick": 82872180
+  },
+  "part claims.worked": {
+   "ms": 0.332612,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "part delivwatch.tick": {
+   "ms": 0.198939,
+   "calls": 1,
+   "bucket_tick": 82872240
+  },
+  "part drops.lines": {
+   "ms": 0.036706,
+   "calls": 11,
+   "bucket_tick": 82871820
+  },
+  "part flightwatch.built_tile": {
+   "ms": 0.088398,
+   "calls": 1,
+   "bucket_tick": 82871760
+  },
+  "part freight.pod_tick": {
+   "ms": 0.917736,
+   "calls": 1,
+   "bucket_tick": 82871880
+  },
+  "part freight.tick": {
+   "ms": 3.762215,
+   "calls": 1,
+   "bucket_tick": 82871760
+  },
+  "part ground.unseen": {
+   "ms": 0.714852,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "part idle.request": {
+   "ms": 0.169832,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "part launchwatch.tick": {
+   "ms": 0.008485,
+   "calls": 1,
+   "bucket_tick": 82871760
+  },
+  "part networks.lines": {
+   "ms": 0.066478,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "part platalerts.lines": {
+   "ms": 0.442412,
+   "calls": 11,
+   "bucket_tick": 82872060
+  },
+  "part platalerts.note": {
+   "ms": 0.028355,
+   "calls": 10,
+   "bucket_tick": 82872000
+  },
+  "part podlog.tick": {
+   "ms": 0.028569,
+   "calls": 2,
+   "bucket_tick": 82871940
+  },
+  "part progress.tick": {
+   "ms": 0.089212,
+   "calls": 1,
+   "bucket_tick": 82872120
+  },
+  "part pushalerts.lines": {
+   "ms": 0.519812,
+   "calls": 10,
+   "bucket_tick": 82872180
+  },
+  "part reminders.tick": {
+   "ms": 0.041828,
+   "calls": 1,
+   "bucket_tick": 82872300
+  },
+  "part research.lines": {
+   "ms": 0.707482,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "part research.shift_block": {
+   "ms": 43.305083,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "part scheduler.step craft": {
+   "ms": 120.409105,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "part scienceline.lines": {
+   "ms": 0.416628,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "part selfview.request": {
+   "ms": 0.257998,
+   "calls": 11,
+   "bucket_tick": 82872060
+  },
+  "part selfview.retro": {
+   "ms": 0.769432,
+   "calls": 10,
+   "bucket_tick": 82871760
+  },
+  "part selfview.review_due": {
+   "ms": 0.042399,
+   "calls": 10,
+   "bucket_tick": 82872000
+  },
+  "part shipment.tick": {
+   "ms": 1.716162,
+   "calls": 1,
+   "bucket_tick": 82872240
+  },
+  "part threat.watch": {
+   "ms": 0.158833,
+   "calls": 11,
+   "bucket_tick": 82872060
+  },
+  "part visuals.worked": {
+   "ms": 0.073143,
+   "calls": 11,
+   "bucket_tick": 82872060
+  },
+  "dispatch board": {
+   "ms": 5.479158,
+   "calls": 2,
+   "bucket_tick": 82872060
+  },
+  "dispatch build": {
+   "ms": 11.190308,
+   "calls": 2,
+   "bucket_tick": 82871880
+  },
+  "dispatch game_alerts": {
+   "ms": 3.402133,
+   "calls": 2,
+   "bucket_tick": 82871940
+  },
+  "dispatch mine": {
+   "ms": 10.598204,
+   "calls": 2,
+   "bucket_tick": 82872060
+  },
+  "dispatch observe": {
+   "ms": 31.186158,
+   "calls": 2,
+   "bucket_tick": 82872240
+  },
+  "dispatch tells": {
+   "ms": 3.574429,
+   "calls": 2,
+   "bucket_tick": 82872120
+  },
+  "dispatch wait_ticks": {
+   "ms": 6.391218,
+   "calls": 2,
+   "bucket_tick": 82872060
+  },
+  "encode board": {
+   "ms": 0.062316,
+   "calls": 1,
+   "bucket_tick": 82872300
+  },
+  "encode build": {
+   "ms": 0.127143,
+   "calls": 2,
+   "bucket_tick": 82871940
+  },
+  "encode game_alerts": {
+   "ms": 0.030043,
+   "calls": 2,
+   "bucket_tick": 82872300
+  },
+  "encode observe": {
+   "ms": 2.942917,
+   "calls": 2,
+   "bucket_tick": 82872240
+  },
+  "encode tells": {
+   "ms": 0.066386,
+   "calls": 2,
+   "bucket_tick": 82872180
+  },
+  "encode wait_ticks": {
+   "ms": 0.114878,
+   "calls": 2,
+   "bucket_tick": 82872060
+  },
+  "event script_raised_built": {
+   "ms": 0.082033,
+   "calls": 2,
+   "bucket_tick": 82872000
+  },
+  "part census.cells": {
+   "ms": 0.007393,
+   "calls": 1,
+   "bucket_tick": 82871820
+  },
+  "part census.fill": {
+   "ms": 7.50336,
+   "calls": 55,
+   "bucket_tick": 82871820
+  },
+  "part turretwatch.tick": {
+   "ms": 0.003035,
+   "calls": 1,
+   "bucket_tick": 82872060
+  },
+  "event on_cargo_pod_finished_descending": {
+   "ms": 0.06078,
+   "calls": 1,
+   "bucket_tick": 82871880
+  },
+  "event on_cargo_pod_started_ascending": {
+   "ms": 0.1542,
+   "calls": 1,
+   "bucket_tick": 82871880
+  },
+  "part census.fine": {
+   "ms": 5.880192,
+   "calls": 28,
+   "bucket_tick": 82871940
+  },
+  "part census.rows": {
+   "ms": 1.745893,
+   "calls": 1,
+   "bucket_tick": 82871880
+  },
+  "encode mine": {
+   "ms": 0.044381,
+   "calls": 2,
+   "bucket_tick": 82872060
+  },
+  "part pushalerts.frozen": {
+   "ms": 6.687945,
+   "calls": 4,
+   "bucket_tick": 82872300
+  },
+  "part pushalerts.strike": {
+   "ms": 30.189978,
+   "calls": 22,
+   "bucket_tick": 82872000
+  },
+  "part tick_action": {
+   "ms": 0.992149,
+   "calls": 14,
+   "bucket_tick": 82872060
+  },
+  "part disclosure.sweep": {
+   "ms": 0.002496,
+   "calls": 1,
+   "bucket_tick": 82872000
+  },
+  "part hubfull.tick": {
+   "ms": 0.102956,
+   "calls": 1,
+   "bucket_tick": 82872000
+  },
+  "part networks.alert_step": {
+   "ms": 1.213122,
+   "calls": 56,
+   "bucket_tick": 82872060
+  },
+  "part owed.tick": {
+   "ms": 0.040115,
+   "calls": 1,
+   "bucket_tick": 82872000
+  },
+  "part platbom.tick": {
+   "ms": 0.001231,
+   "calls": 1,
+   "bucket_tick": 82872000
+  },
+  "part pushalerts.alerts": {
+   "ms": 0.670067,
+   "calls": 3,
+   "bucket_tick": 82872000
+  },
+  "part pushalerts.networks": {
+   "ms": 2.253191,
+   "calls": 56,
+   "bucket_tick": 82872060
+  },
+  "part survey.sample": {
+   "ms": 0.903558,
+   "calls": 12,
+   "bucket_tick": 82872000
+  },
+  "part lessonbook.tick": {
+   "ms": 0.039419,
+   "calls": 1,
+   "bucket_tick": 82872060
+  },
+  "part census.crows": {
+   "ms": 2.539283,
+   "calls": 1,
+   "bucket_tick": 82872120
+  },
+  "part census.nests": {
+   "ms": 3.251194,
+   "calls": 14,
+   "bucket_tick": 82872120
+  },
+  "part census.done": {
+   "ms": 0.014227,
+   "calls": 1,
+   "bucket_tick": 82872180
+  },
+  "event on_cargo_pod_finished_ascending": {
+   "ms": 0.017063,
+   "calls": 1,
+   "bucket_tick": 82872300
+  }
+ },
+ "note": "Aggregate named-part buckets, not individual-call latency; includes both boundary buckets."
+}

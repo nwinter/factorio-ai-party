@@ -1,0 +1,507 @@
+{
+ "seconds": 420,
+ "ups": {
+  "samples": 95,
+  "min": 57.2,
+  "median": 60.0,
+  "max": 61.0
+ },
+ "windows": [
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 250.53,
+    "p99": 421.420171,
+    "max": 421.420171
+   },
+   "tick_ms_per_tick_avg": 4.176,
+   "harness_ms_per_s": {
+    "avg": 312.98,
+    "p99": 501.237218,
+    "max": 501.237218
+   },
+   "gc_finishes": 7,
+   "gc_second_tick_ms": {
+    "median": 325.047236,
+    "max": 421.420171
+   },
+   "other_seconds_tick_ms_median": 223.597861,
+   "heap_mb": {
+    "min": 338,
+    "max": 775
+   },
+   "dropped_lines": 0,
+   "from_tick": 82915128,
+   "until_tick": 82918728,
+   "ups": {
+    "samples": 11,
+    "min": 59.40465188000172,
+    "median": 59.97287944828031
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 242.2,
+    "p99": 402.49173,
+    "max": 402.49173
+   },
+   "tick_ms_per_tick_avg": 4.037,
+   "harness_ms_per_s": {
+    "avg": 301.26,
+    "p99": 552.5319139999999,
+    "max": 552.5319139999999
+   },
+   "gc_finishes": 8,
+   "gc_second_tick_ms": {
+    "median": 301.585875,
+    "max": 386.239127
+   },
+   "other_seconds_tick_ms_median": 212.7119785,
+   "heap_mb": {
+    "min": 338,
+    "max": 760
+   },
+   "dropped_lines": 0,
+   "from_tick": 82919254,
+   "until_tick": 82922854,
+   "ups": {
+    "samples": 11,
+    "min": 59.16864424215696,
+    "median": 59.98816872430428
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 241.84,
+    "p99": 433.226273,
+    "max": 433.226273
+   },
+   "tick_ms_per_tick_avg": 4.031,
+   "harness_ms_per_s": {
+    "avg": 298.36,
+    "p99": 511.16094599999997,
+    "max": 511.16094599999997
+   },
+   "gc_finishes": 6,
+   "gc_second_tick_ms": {
+    "median": 366.5352325,
+    "max": 398.956108
+   },
+   "other_seconds_tick_ms_median": 215.6028335,
+   "heap_mb": {
+    "min": 337,
+    "max": 781
+   },
+   "dropped_lines": 0,
+   "from_tick": 82923428,
+   "until_tick": 82927028,
+   "ups": {
+    "samples": 11,
+    "min": 59.095422794172585,
+    "median": 59.98625617129059
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 244.13,
+    "p99": 489.309694,
+    "max": 489.309694
+   },
+   "tick_ms_per_tick_avg": 4.069,
+   "harness_ms_per_s": {
+    "avg": 305.17,
+    "p99": 574.869228,
+    "max": 574.869228
+   },
+   "gc_finishes": 6,
+   "gc_second_tick_ms": {
+    "median": 409.4447615,
+    "max": 489.309694
+   },
+   "other_seconds_tick_ms_median": 219.0253975,
+   "heap_mb": {
+    "min": 345,
+    "max": 769
+   },
+   "dropped_lines": 0,
+   "from_tick": 82927631,
+   "until_tick": 82931231,
+   "ups": {
+    "samples": 11,
+    "min": 57.475752173666386,
+    "median": 59.98659249815453
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 246.69,
+    "p99": 543.37554,
+    "max": 543.37554
+   },
+   "tick_ms_per_tick_avg": 4.111,
+   "harness_ms_per_s": {
+    "avg": 307.09,
+    "p99": 646.978161,
+    "max": 646.978161
+   },
+   "gc_finishes": 6,
+   "gc_second_tick_ms": {
+    "median": 414.73947,
+    "max": 543.37554
+   },
+   "other_seconds_tick_ms_median": 219.9150545,
+   "heap_mb": {
+    "min": 336,
+    "max": 765
+   },
+   "dropped_lines": 0,
+   "from_tick": 82931687,
+   "until_tick": 82935287,
+   "ups": {
+    "samples": 11,
+    "min": 58.61627785209715,
+    "median": 59.91802083150299
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 243.55,
+    "p99": 431.104628,
+    "max": 431.104628
+   },
+   "tick_ms_per_tick_avg": 4.059,
+   "harness_ms_per_s": {
+    "avg": 303.79,
+    "p99": 493.39947399999994,
+    "max": 493.39947399999994
+   },
+   "gc_finishes": 5,
+   "gc_second_tick_ms": {
+    "median": 319.379758,
+    "max": 352.288619
+   },
+   "other_seconds_tick_ms_median": 218.440923,
+   "heap_mb": {
+    "min": 349,
+    "max": 790
+   },
+   "dropped_lines": 0,
+   "from_tick": 82935825,
+   "until_tick": 82939425,
+   "ups": {
+    "samples": 11,
+    "min": 59.38313277373909,
+    "median": 59.973395923633916
+   }
+  },
+  {
+   "seconds": 60,
+   "tick_ms_per_s": {
+    "avg": 240.15,
+    "p99": 508.258875,
+    "max": 508.258875
+   },
+   "tick_ms_per_tick_avg": 4.003,
+   "harness_ms_per_s": {
+    "avg": 297.17,
+    "p99": 544.640059,
+    "max": 544.640059
+   },
+   "gc_finishes": 7,
+   "gc_second_tick_ms": {
+    "median": 334.343442,
+    "max": 369.968883
+   },
+   "other_seconds_tick_ms_median": 215.546521,
+   "heap_mb": {
+    "min": 338,
+    "max": 777
+   },
+   "dropped_lines": 0,
+   "from_tick": 82940198,
+   "until_tick": 82943798,
+   "ups": {
+    "samples": 11,
+    "min": 57.98822861221737,
+    "median": 59.965271705647076
+   }
+  }
+ ],
+ "parts": {
+  "*": {
+   "avg_ms_per_s": 303.69,
+   "max_ms_per_s": 646.978161
+  },
+  "tick": {
+   "avg_ms_per_s": 244.156,
+   "max_ms_per_s": 543.37554
+  },
+  "part pushalerts.tick": {
+   "avg_ms_per_s": 32.528,
+   "max_ms_per_s": 91.241744
+  },
+  "part networks.tick": {
+   "avg_ms_per_s": 26.487,
+   "max_ms_per_s": 171.896572
+  },
+  "part census.step": {
+   "avg_ms_per_s": 25.064,
+   "max_ms_per_s": 121.779448
+  },
+  "part census.walk": {
+   "avg_ms_per_s": 20.549,
+   "max_ms_per_s": 114.55701
+  },
+  "part networks.view_tick": {
+   "avg_ms_per_s": 19.469,
+   "max_ms_per_s": 169.837638
+  },
+  "dispatch observe": {
+   "avg_ms_per_s": 15.704,
+   "max_ms_per_s": 113.678487
+  },
+  "part threat.tick": {
+   "avg_ms_per_s": 14.879,
+   "max_ms_per_s": 105.256796
+  },
+  "part scheduler.tick": {
+   "avg_ms_per_s": 14.169,
+   "max_ms_per_s": 190.455772
+  },
+  "part pushalerts.band": {
+   "avg_ms_per_s": 13.269,
+   "max_ms_per_s": 31.27151
+  },
+  "part board.team": {
+   "avg_ms_per_s": 13.013,
+   "max_ms_per_s": 26.368255
+  },
+  "dispatch status": {
+   "avg_ms_per_s": 11.32,
+   "max_ms_per_s": 96.026444
+  },
+  "part survey.tick": {
+   "avg_ms_per_s": 10.803,
+   "max_ms_per_s": 111.302269
+  },
+  "part pushalerts.slice": {
+   "avg_ms_per_s": 10.671,
+   "max_ms_per_s": 63.964935
+  },
+  "part networks.view.walk_band": {
+   "avg_ms_per_s": 9.186,
+   "max_ms_per_s": 49.345604
+  },
+  "part scheduler.step craft": {
+   "avg_ms_per_s": 7.691,
+   "max_ms_per_s": 182.522942
+  },
+  "part productionlegs.tick": {
+   "avg_ms_per_s": 6.34,
+   "max_ms_per_s": 8.915369
+  },
+  "dispatch build": {
+   "avg_ms_per_s": 6.326,
+   "max_ms_per_s": 88.497988
+  },
+  "part threat.sweep_step": {
+   "avg_ms_per_s": 6.323,
+   "max_ms_per_s": 94.561559
+  },
+  "part survey.band": {
+   "avg_ms_per_s": 6.205,
+   "max_ms_per_s": 23.995046
+  },
+  "part bots.tick": {
+   "avg_ms_per_s": 5.669,
+   "max_ms_per_s": 95.233766
+  },
+  "part pipes.overlong": {
+   "avg_ms_per_s": 5.468,
+   "max_ms_per_s": 64.879125
+  },
+  "part netmap.tick": {
+   "avg_ms_per_s": 5.185,
+   "max_ms_per_s": 164.520519
+  },
+  "dispatch game_alerts": {
+   "avg_ms_per_s": 4.782,
+   "max_ms_per_s": 20.848663
+  },
+  "dispatch mine": {
+   "avg_ms_per_s": 4.485,
+   "max_ms_per_s": 23.515061
+  },
+  "part networks.view.orders": {
+   "avg_ms_per_s": 4.186,
+   "max_ms_per_s": 127.823586
+  },
+  "part survey.slice": {
+   "avg_ms_per_s": 3.489,
+   "max_ms_per_s": 96.525161
+  },
+  "dispatch wait_ticks": {
+   "avg_ms_per_s": 3.132,
+   "max_ms_per_s": 18.136679
+  },
+  "part pushalerts.lines": {
+   "avg_ms_per_s": 2.987,
+   "max_ms_per_s": 9.098507
+  },
+  "part freight.tick": {
+   "avg_ms_per_s": 2.95,
+   "max_ms_per_s": 95.790498
+  },
+  "dispatch tells": {
+   "avg_ms_per_s": 2.796,
+   "max_ms_per_s": 19.532231
+  },
+  "dispatch board": {
+   "avg_ms_per_s": 2.733,
+   "max_ms_per_s": 12.133196
+  },
+  "part pushalerts.strike": {
+   "avg_ms_per_s": 2.608,
+   "max_ms_per_s": 49.869185
+  },
+  "part threat.nest_step": {
+   "avg_ms_per_s": 2.233,
+   "max_ms_per_s": 6.457354
+  }
+ },
+ "worst_total_seconds": [
+  [
+   82932060,
+   646.978161
+  ],
+  [
+   82929480,
+   574.869228
+  ],
+  [
+   82930740,
+   561.335477
+  ],
+  [
+   82934400,
+   555.08249
+  ],
+  [
+   82921860,
+   552.5319139999999
+  ],
+  [
+   82943220,
+   544.640059
+  ],
+  [
+   82928400,
+   541.7181360000001
+  ],
+  [
+   82928340,
+   523.904878
+  ]
+ ],
+ "calls": {
+  "total": 5167,
+  "failures": [
+   {
+    "t": 1794715148.339,
+    "bot": "bb3",
+    "action": "mine",
+    "phase": "steady",
+    "ms": 16.31,
+    "bytes": 486,
+    "ok": false,
+    "tick": 82915226,
+    "error": "entity not found at (414.5,-287.5): nearest bb2's character (416.188,-287.238) 1.7 tiles, cliff (414,-289.5) 2.1 tiles, gun-turret (413,-286) 2.1 tiles (chunk ("
+   },
+   {
+    "t": 1794715149.355,
+    "bot": "bb2",
+    "action": "mine",
+    "phase": "steady",
+    "ms": 4.24,
+    "bytes": 524,
+    "ok": false,
+    "tick": 82915287,
+    "error": "entity not found at (419.5,-287.5): nearest express-transport-belt (420.5,-287.5) 1.0 tiles, express-transport-belt (420.5,-288.5) 1.4 tiles, express-transport-"
+   }
+  ],
+  "startup_max_ms": 111.25,
+  "startup_slowest": [
+   {
+    "t": 1794715147.133,
+    "bot": "rb1",
+    "action": "status",
+    "phase": "startup",
+    "ms": 111.25,
+    "bytes": 6510,
+    "ok": true,
+    "tick": 82915144,
+    "error": null
+   },
+   {
+    "t": 1794715147.675,
+    "bot": "gb3",
+    "action": "status",
+    "phase": "startup",
+    "ms": 102.14,
+    "bytes": 7169,
+    "ok": true,
+    "tick": 82915186,
+    "error": null
+   },
+   {
+    "t": 1794715147.488,
+    "bot": "gb1",
+    "action": "status",
+    "phase": "startup",
+    "ms": 46.59,
+    "bytes": 7169,
+    "ok": true,
+    "tick": 82915173,
+    "error": null
+   },
+   {
+    "t": 1794715147.314,
+    "bot": "bb1",
+    "action": "status",
+    "phase": "startup",
+    "ms": 39.75,
+    "bytes": 7050,
+    "ok": true,
+    "tick": 82915163,
+    "error": null
+   },
+   {
+    "t": 1794715147.744,
+    "bot": "yb1",
+    "action": "status",
+    "phase": "startup",
+    "ms": 36.96,
+    "bytes": 6160,
+    "ok": true,
+    "tick": 82915189,
+    "error": null
+   },
+   {
+    "t": 1794715147.392,
+    "bot": "bb2",
+    "action": "queue_repeat",
+    "phase": "startup",
+    "ms": 24.67,
+    "bytes": 1282,
+    "ok": true,
+    "tick": 82915169,
+    "error": null
+   }
+  ]
+ }
+}

@@ -16,11 +16,31 @@ import pog  # noqa: E402
 
 SECOND = re.compile(r'agent-harness profile second tick=(\d+) n=(\d+) key=(.+) time=\D*?([\d.]+) ?ms\s*$')
 HEAP = re.compile(r'agent-harness profile heap tick=(\d+) kb=(\d+) grew_kb=(\d+) fell_kb=(\d+)')
+DONE = re.compile(r'agent-harness profile done from_tick=(\d+) to_tick=(\d+).*?dropped=(\d+)')
 
 
 def pct(xs, p):
     xs = sorted(xs)
     return xs[min(len(xs) - 1, int(len(xs) * p))] if xs else None
+
+
+def ups_window(samples, start_tick, end_tick):
+    # Exclude intervals crossing a boundary, rather than assigning a stall
+    # before this profile to its first minute. Keep raw intervals in the file.
+    rates = [s["ups"] for s in samples if start_tick <= s["from_tick"] and s["to_tick"] <= end_tick]
+    return {"samples": len(rates), "min": min(rates) if rates else None,
+            "median": statistics.median(rates) if rates else None}
+
+
+def profile_completion(text, start_tick, end_tick):
+    # A busy team run exhausts profile.lua's 20,000-line cap in about 150 s.
+    # Keep the measured subset, but never call a truncated window complete.
+    matches = [m for m in DONE.finditer(text) if int(m[1]) == start_tick]
+    if not matches:
+        return {"complete": False, "dropped_lines": None, "profile_to_tick": None}
+    m = matches[-1]
+    return {"complete": int(m[2]) >= end_tick and int(m[3]) == 0,
+            "dropped_lines": int(m[3]), "profile_to_tick": int(m[2])}
 
 
 def window_stats(text, start_tick, end_tick):
@@ -61,7 +81,7 @@ def main():
     ap.add_argument("--password-file", required=True)
     ap.add_argument("--log-cmd", required=True)
     ap.add_argument("--minutes", type=float, default=30)
-    ap.add_argument("--window", type=int, default=300)
+    ap.add_argument("--window", type=int, default=60)
     ap.add_argument("--every", type=float, default=10)
     ap.add_argument("--label", default="")
     ap.add_argument("--out", required=True)
@@ -73,6 +93,7 @@ def main():
     r2 = pog.Rcon(a.host, a.port, pw, timeout=120)
     t_end = time.time() + a.minutes * 60
     samples = []
+    ups_samples = []
 
     def ups():
         last = None
@@ -80,7 +101,9 @@ def main():
             tk = int(r2.command("/silent-command rcon.print(game.tick)").strip())
             now = time.time()
             if last:
-                samples.append((tk - last[0]) / (now - last[1]))
+                value = (tk - last[0]) / (now - last[1])
+                samples.append(value)
+                ups_samples.append({"t": now, "from_tick": last[0], "to_tick": tk, "ups": value})
             last = (tk, now)
             time.sleep(a.every)
     th = threading.Thread(target=ups, daemon=True)
@@ -99,6 +122,12 @@ def main():
         text = subprocess.run(a.log_cmd, shell=True, capture_output=True, text=True).stdout
         w = window_stats(text, s_tick, s_tick + seconds * 60)
         w["from_tick"] = s_tick
+        w["until_tick"] = s_tick + seconds * 60
+        w["requested_seconds"] = seconds
+        w.update(profile_completion(text, s_tick, w["until_tick"]))
+        if w["seconds"] < seconds - 1:
+            w["complete"] = False
+        w["ups"] = ups_window(ups_samples, s_tick, s_tick + seconds * 60)
         windows.append(w)
         print(json.dumps({"window": len(windows), **w}))
     t_end = time.time()  # the UPS samples stop with the last window
@@ -106,7 +135,7 @@ def main():
     res = {"label": a.label, "at": time.strftime("%Y-%m-%d %H:%M:%S %Z"),
            "ups": {"samples": len(samples), "min": round(min(samples), 1) if samples else None,
                    "median": round(statistics.median(samples), 1) if samples else None, "max": round(max(samples), 1) if samples else None},
-           "windows": windows}
+           "windows": windows, "ups_samples": ups_samples}
     json.dump(res, open(a.out, "w"), indent=1)
     print(json.dumps(res["ups"]))
 

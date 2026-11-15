@@ -1,0 +1,121 @@
+{
+ "at": "2026-11-14 20:07:09",
+ "end": {
+  "tick": 82943956,
+  "pads": {
+   "red": "4600/1800",
+   "blue": "4600/1800",
+   "green": "303/1800",
+   "yellow": "4600/1800"
+  },
+  "vpads": {
+   "red": 950,
+   "blue": 950,
+   "green": 950,
+   "yellow": 950
+  },
+  "pods": 43,
+  "turrets": 2,
+  "ammo": 168,
+  "turret_hp": 608,
+  "containers": 0,
+  "red_n": 14151,
+  "blue_n": 15833,
+  "heap_mb": 549
+ },
+ "market": {
+  "audit": {
+   "issuance": 240000,
+   "wallets": 240000,
+   "reserved": 0,
+   "escrow": 0,
+   "physical": 0,
+   "destroyed": 0,
+   "total": 240000,
+   "faults": {}
+  },
+  "records": {
+   "receipts": 2,
+   "full_receipts": 2,
+   "transactions": 1,
+   "folded_transactions": 0,
+   "deposits": 0,
+   "folded_deposits": 0,
+   "order_counters": 2
+  },
+  "red_blue": [
+   {
+    "blue>red": {
+     "a": "red",
+     "b": "blue",
+     "next": 2,
+     "transactions": [
+      {
+       "id": 1,
+       "status": "delivered",
+       "tick": 82915200,
+       "eta": 82920600,
+       "price": 20,
+       "escrow": 0,
+       "item": "iron-plate",
+       "count": 300,
+       "freight": true,
+       "ended_tick": 82918860,
+       "legs": [
+        {
+         "from": "red",
+         "to": "blue",
+         "item": "iron-plate",
+         "count": 300,
+         "delivered": 300,
+         "from_post": 1,
+         "to_post": 1,
+         "removed": 300,
+         "buyer_side": {
+          "blue": true,
+          "player": true,
+          "green": true,
+          "yellow": true
+         },
+         "seller_side": {
+          "red": true,
+          "player": true,
+          "green": true,
+          "yellow": true
+         },
+         "surface": "nauvis",
+         "origin": {
+          "y": -294.5,
+          "x": -121.5
+         },
+         "destination": {
+          "y": -293.5,
+          "x": 422.5
+         },
+         "position": {
+          "y": -289.515625,
+          "x": 407.11328125
+         },
+         "unit": 70042728,
+         "mode": "unit",
+         "path_started": 82915200,
+         "last_progress_tick": 82918818,
+         "last_progress": {
+          "y": -289.515625,
+          "x": 406.71484375
+         },
+         "arrived": true
+        }
+       ]
+      }
+     ],
+     "pending": {}
+    }
+   }
+  ],
+  "blue_post": {
+   "tick": 82943966,
+   "blue_iron": 300
+  }
+ }
+}

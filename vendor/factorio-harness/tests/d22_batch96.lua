@@ -333,7 +333,7 @@ do
     return out
   end
   local st,steps={},{}
-  local A=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,agents=function() return {} end,who=function() return 'opus' end,
+  local A=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){background=true,state=function() return st end,agents=function() return {} end,who=function() return 'opus' end,
     timed=function(name,f,...)
       local j=st.push_jobs.player; local list,at=j.list,j.at
       f(...)
