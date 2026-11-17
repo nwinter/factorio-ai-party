@@ -28,7 +28,7 @@ class Saves(unittest.TestCase):
             run_state.write(dest/'index.json',dict(copies=[dict(file='old.zip',tick=100,copied_at=1)],seen={name:json.dumps([1,100,stamp])}))
             clock=dict(prefix='trial',enabled=True,records={'1':dict(name=name,sequence=2,tick=200)})
             with patch.object(autosave,'ARCHIVE',root),patch.object(autosave,'op_dir',return_value=op),patch.object(autosave,'pinned'), \
-                 patch.object(Path,'is_mount',return_value=True),patch.object(autosave,'rcon',return_value=json.dumps(clock)), \
+                 patch.object(autosave,'rcon',return_value=json.dumps(clock)), \
                  patch.object(autosave,'stat',return_value=stamp),patch.object(autosave.time,'time',return_value=1000):
                 index=autosave.copy_new('trial');self.assertEqual(len(index['copies']),1)
                 with patch.object(autosave.time,'time',return_value=1121),self.assertRaisesRegex(RuntimeError,'not replaced'):

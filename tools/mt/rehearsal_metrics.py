@@ -11,7 +11,7 @@ import signal
 import threading
 import time
 
-from run_state import alert, lock, op_dir, pinned, read, write
+from run_state import TEAM_RUNS, alert, lock, op_dir, pinned, read, write
 from map_probe import call, lua
 
 
@@ -41,8 +41,8 @@ def main():
     if not a.execute:print(f'Private {a.every}s samples; no agent messages or profiler.');return
     op=op_dir(a.run);pinned();stop=threading.Event()
     for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,lambda *_:stop.set())
-    archive=Path('/Volumes/POG Media/pog-runs/team-runs')/a.run/'metrics'
-    assert Path('/Volumes/POG Media').is_mount();archive.mkdir(parents=True,exist_ok=True)
+    archive=TEAM_RUNS/a.run/'metrics'
+    assert TEAM_RUNS.is_dir(),f'{TEAM_RUNS} is missing';archive.mkdir(parents=True,exist_ok=True)
     previous=None;last_error=0;seq=0
     with lock(op/'metrics.lock'),(archive/'samples.jsonl').open('a') as out:
         while not stop.is_set():

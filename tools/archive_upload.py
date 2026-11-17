@@ -6,10 +6,10 @@ operator d24 14:45, Nick approved shift 63's private test).
   python3 tools/archive_upload.py --dry-run                # each shift's plan: files, cut or join, size, time
   python3 tools/archive_upload.py --shifts 2,4             # upload those (in order); --shifts 1-69 --limit 10
 
-Recordings: the masters on the Extreme SSD (pog-recordings/{public-run, C-pog-recordings, C-pog-recordings-moved,
+Recordings: the masters in ~/pog-media (pog-recordings/{public-run, C-pog-recordings, C-pog-recordings-moved,
 D-pog-recordings}) and the box's D:\\pog\\recordings and C:\\pog\\recordings (ssh pogwin, ffprobe there), each named
-by the box's clock (PST, UTC-8); Replay_ clips and empty files are left out; a name on the SSD and the box is the
-SSD's. Durations come from ffprobe (kept in --durations by path, size and mtime). Each shift's recordings and in/out
+by the box's clock (PST, UTC-8); Replay_ clips and empty files are left out; a name on the Mac and the box is the
+Mac's. Durations come from ffprobe (kept in --durations by path, size and mtime). Each shift's recordings and in/out
 points are tools/shift_video.py's (segments: a file overlapping the shift by under a minute is the next or last
 shift's; one running more than 10 minutes past an end is cut a minute past it).
 
@@ -41,17 +41,18 @@ REPO = HERE.parent
 sys.path.insert(0, str(HERE))
 import shift_video as sv  # noqa: E402
 
-SSD = Path("/Volumes/Extreme SSD")
-SOURCES = [SSD / "pog-recordings" / d for d in ("public-run", "C-pog-recordings", "C-pog-recordings-moved", "D-pog-recordings")]
+# (d46 Nov 16) the masters and the work folder moved from the Extreme SSD to ~/pog-media on the internal disk
+MEDIA = Path(os.environ.get("POG_MEDIA") or Path.home() / "pog-media")
+SOURCES = [MEDIA / "pog-recordings" / d for d in ("public-run", "C-pog-recordings", "C-pog-recordings-moved", "D-pog-recordings")]
 BOX_DIRS = [r"D:\pog\recordings", r"C:\pog\recordings"]
-TMP = SSD / "pog-videos" / "tmp"
+TMP = MEDIA / "pog-videos" / "tmp"
 OPERATOR = Path.home() / "code" / "pog-operator" / "video-work"
 MANIFEST = OPERATOR / "videos-private.json"
-DURATIONS = SSD / "pog-videos" / "durations.json"  # ffprobe durations by path, size, mtime (not the masters folder)
+DURATIONS = MEDIA / "pog-videos" / "durations.json"  # ffprobe durations by path, size, mtime (not the masters folder)
 RUNS = Path(os.environ.get("POG_SITE_RUNS") or Path.home() / "code" / "player-of-games" / "runs")
 NAME = re.compile(r"^20\d\d-\d\d-\d\d[ _]\d\d-\d\d-\d\d\.(mkv|mp4|mov|flv)$", re.I)
 GAP = 60  # seconds of a shift with no recording that count as a gap
-# for the dry run's time (estimates): the LAN copy from the box and the join's read and write on the SSD
+# for the dry run's time (estimates): the LAN copy from the box and the join's read and write on the Mac's disk
 SCP_MBS, JOIN_MBS = 100, 250
 
 
@@ -80,7 +81,7 @@ def probe(path):
 
 
 def local_files(sources, cache):
-    """[{name, path, size, duration, where}] for the SSD's recordings; durations kept in `cache` by path."""
+    """[{name, path, size, duration, where}] for the Mac's recordings; durations kept in `cache` by path."""
     out = []
     for src in sources:
         if not Path(src).is_dir():
@@ -134,7 +135,7 @@ def box_files(host, dirs):
 
 
 def catalogue(local, box):
-    """One row per recording name, the SSD's copy first; files with no duration are left out (a recording still
+    """One row per recording name, the Mac's copy first; files with no duration are left out (a recording still
     being written: OBS writes the duration at the end)."""
     by = {}
     for f in local + box:
@@ -332,7 +333,7 @@ def main():
     ap.add_argument("--shifts", help="shift numbers, e.g. 2,4 or 1-69 (default every ended shift)")
     ap.add_argument("--limit", type=int, help="stop after this many uploads")
     ap.add_argument("--runs-dir", default=str(RUNS))
-    ap.add_argument("--source", action="append", help="a folder of masters (default the Extreme SSD's four)")
+    ap.add_argument("--source", action="append", help="a folder of masters (default the four in ~/pog-media/pog-recordings)")
     ap.add_argument("--box", default="pogwin", help="ssh host of the box ('' for none)")
     ap.add_argument("--tmp", default=str(TMP))
     ap.add_argument("--manifest", default=str(MANIFEST))
@@ -357,7 +358,7 @@ def main():
             plans.append(plan(run, a.runs_dir, files, a.tmp))
         except SystemExit as e:
             print(f"{run}: no plan ({e})")
-    print(f"{len(files)} recordings ({sum(f['where'] != 'box' for f in files)} on the SSD, {sum(f['where'] == 'box' for f in files)} only on the box); {len(plans)} shifts")
+    print(f"{len(files)} recordings ({sum(f['where'] != 'box' for f in files)} on the Mac, {sum(f['where'] == 'box' for f in files)} only on the box); {len(plans)} shifts")
     if a.inventory or a.dry_run:
         head = "| shift | window (Pacific) | recordings | covered | gaps |" + (" plan | upload | time |" if a.dry_run else "")
         print(head)

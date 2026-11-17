@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The clip library's catalogue: every shift with a master on the SSD and logs, indexed, its candidate clips ranked
+"""The clip library's catalogue: every shift with a master in ~/pog-media and logs, indexed, its candidate clips ranked
 across the whole run (batch129 CL1, CL3):
 
     python3 tools/archive/catalogue.py build [--shifts 1-61] [--force] [--data DIR] [--runs-dir DIR] [--logs-dir DIR]
@@ -9,7 +9,7 @@ across the whole run (batch129 CL1, CL3):
     python3 tools/archive/catalogue.py show ID
     python3 tools/archive/catalogue.py best [--n 50] [--md FILE]
 
-build: for each shift (runs/shiftNN that has ended and has a recording on the SSD), the index
+build: for each shift (runs/shiftNN that has ended and has a recording in ~/pog-media), the index
 (tools/archive/archive_index.py) with each recording's offset fitted from its voiced lines (tools/archive/calibrate.py;
 kept in DATA/calibration.json, so a rerun reads no audio), then the shift's candidate clips (tools/archive/clips.py).
 A shift whose index is newer than its logs is not rebuilt (--force does). Writes DATA/shifts/RUN-index.json and
@@ -48,8 +48,9 @@ import clips  # noqa: E402
 
 PACIFIC = archive_index.PACIFIC
 MAIN = Path("/Users/owner/code/player-of-games")
-SSD = Path("/Volumes/Extreme SSD/pog-recordings")
-REC_DIRS = [SSD / d for d in ("public-run", "C-pog-recordings", "C-pog-recordings-moved", "D-pog-recordings")]
+# (d46 Nov 16) the masters moved from the Extreme SSD to ~/pog-media on the Mac's internal disk
+RECORDINGS = Path(os.environ.get("POG_MEDIA") or Path.home() / "pog-media") / "pog-recordings"
+REC_DIRS = [RECORDINGS / d for d in ("public-run", "C-pog-recordings", "C-pog-recordings-moved", "D-pog-recordings")]
 DEFAULT_DATA = MAIN / "runs" / "archive"
 RUN_FIRST = 1.4         # the first of its kind in the whole run (a death: the agent's first; an arrival: the planet's)
 ROUTINE_ROCKET = 0.5    # "first rocket of the shift" comes every shift
@@ -329,7 +330,7 @@ def cmd_build(a):
             idx = build_shift(d.name, a, data, cal, probe, hidden)
             probe.save()
             if idx is None:
-                print(f"{d.name}: no recording on the SSD")
+                print(f"{d.name}: no recording among the masters")
                 continue
             path.write_text(json.dumps(idx, ensure_ascii=False, separators=(",", ":")))
         else:

@@ -33,7 +33,7 @@ from public_overlay import PublicOverlay, CAMERA, CAMERA_RECT
 from udp_bridge import Bridge
 from obs_audio import setup_audio, MUSIC_FILE
 from stream_recovery import Recovery, FrameProgress, require, terminate, recording_space_ok
-from run_state import pinned
+from run_state import TEAM_RUNS, pinned
 
 SCENE = 'mt-stream'
 REMOTE = 'D:/pog/mt-stream21' if os.environ.get('MT_EXPECT_VERSION') == '2.1.24' else 'D:/pog/mt-stream'
@@ -220,7 +220,7 @@ def supervise(op, run):
         else:
             raise RuntimeError('camera did not join and frame a team within 240s; inspect pogwin camera log')
         require(not obs.call('GetRecordStatus')['outputActive'], 'existing recording must be stopped before staging')
-        require(os.path.ismount('/Volumes/POG Media'), 'POG Media must be mounted for recording archive')
+        require(TEAM_RUNS.is_dir(), f'{TEAM_RUNS} is missing: no recording archive')
         receipt['previous_record_directory']=obs.call('GetRecordDirectory')['recordDirectory']
         receipt['record_directory']=f'{REMOTE}/recordings/{run}'
         receipt['previous_split_settings']={key:obs.call('GetProfileParameter',{

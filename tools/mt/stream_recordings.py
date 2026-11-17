@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Move closed, dedicated OBS segments to POG Media after SHA-256 verification.
+"""Move closed, dedicated OBS segments to the media folder (run_state.TEAM_RUNS) after SHA-256 verification.
 
 Only this run's spool is inspected. Open files are skipped, never copied/deleted.
-The Mac filesystem must report the external volume as mounted before any write.
+The media folder must exist before any write (nothing here creates it).
 """
 import argparse
 import fcntl
@@ -16,15 +16,13 @@ import threading
 import time
 
 from public_stream import checked, powershell
-from run_state import alert, write
-
-MEDIA = Path('/Volumes/POG Media')
+from run_state import TEAM_RUNS, alert, write
 
 
 def archive(op, run):
-    if not os.path.ismount(MEDIA):
-        raise RuntimeError('POG Media is not mounted; recordings retained on pogwin')
-    dest=MEDIA/'pog-runs/team-runs'/run/'recordings'
+    if not TEAM_RUNS.is_dir():
+        raise RuntimeError(f'{TEAM_RUNS} is missing; recordings retained on pogwin')
+    dest=TEAM_RUNS/run/'recordings'
     dest.mkdir(parents=True,exist_ok=True)
     spool=f'D:/pog/mt-stream21/recordings/{run}'
     script=r"""

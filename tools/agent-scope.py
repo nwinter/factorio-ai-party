@@ -35,10 +35,13 @@ def profile(root,home,proxy=None,native=None):
         exceptions=[root,home/'Dropbox (Personal)/misc/env/agents',home/'.profiles/agents']
         allowed=' '.join(f'(subpath {quote(str(p.resolve()))})' for p in exceptions)
         clauses.append(f'(deny file-read-data file-write* (require-all (subpath {quote(str(path.resolve()))}) (require-not (require-any {allowed}))))')
-    # Closed test trees and recordings live on the external disk. Moving them
-    # must not make another pair's old notes or spectator footage agent inputs.
-    for path in ('/Volumes/POG Media/pog-runs','/Volumes/POG Media/pog-recordings'):
-        clauses.append(f'(deny file-read* file-write* (subpath {quote(path)}))')
+    # Closed test trees and recordings live in the media folder (~/pog-media since d46 Nov 16; before that the
+    # external POG Media volume, still denied while it may be attached). Moving them must not make another
+    # pair's old notes or spectator footage agent inputs.
+    media=Path(os.environ.get('POG_MEDIA') or home/'pog-media')
+    for path in (media/'pog-runs',media/'pog-recordings',
+                 Path('/Volumes/POG Media/pog-runs'),Path('/Volumes/POG Media/pog-recordings')):
+        clauses.append(f'(deny file-read* file-write* (subpath {quote(str(path.resolve()))}))')
     clauses.append(f'(deny file-read* file-write* (subpath {quote(str(home/".config/pog"))}))')
     if native:
         clauses.append(f'(deny file-read-data file-write* (require-all (subpath "/private/tmp") (require-not (literal "/private/tmp")) (require-not (subpath {quote(str(native))}))))')

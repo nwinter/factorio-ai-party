@@ -59,12 +59,12 @@ needs Google permissions that have not been granted yet (see "Permissions" below
     python3 tools/archive_upload.py --dry-run         # each shift's plan, size and time; nothing copied or sent
     python3 tools/archive_upload.py --shifts 2,4      # upload those; --shifts 1-69 --limit 10; again to resume
 
-- **Recordings:** the masters on the Extreme SSD (`pog-recordings/` public-run, C-pog-recordings,
+- **Recordings:** the masters in `~/pog-media/pog-recordings` (public-run, C-pog-recordings,
   C-pog-recordings-moved, D-pog-recordings) and the box's `D:\pog\recordings` and `C:\pog\recordings` (one ssh with
-  ffprobe there). The SSD's copy of a name comes first. Replay_ clips, empty files and a file still being written (no
-  duration) are left out. Durations are kept in `/Volumes/Extreme SSD/pog-videos/durations.json`.
+  ffprobe there). The Mac's copy of a name comes first. Replay_ clips, empty files and a file still being written (no
+  duration) are left out. Durations are kept in `~/pog-media/pog-videos/durations.json`.
 - **Plan:** shift_video's window and segments. One file with no cut goes up as it is. A box file is first copied by
-  scp to `/Volumes/Extreme SSD/pog-videos/tmp/`, and its size is checked. Several files, or a cut, are joined there
+  scp to `~/pog-media/pog-videos/tmp/`, and its size is checked. Several files, or a cut, are joined there
   without re-encoding (the concat demuxer, `-c copy`, shift_video's inpoint/outpoint), after a check that their
   streams match. The join's duration is checked against the plan.
 - **Upload:** shift_video builds `runs/RUN/video/` from the same recording list, then yt_upload goes up with
@@ -91,7 +91,7 @@ becomes public and the previous latest goes back to unlisted.
   `site/content/videos.json` of the checkout it ran from, which the site's clean copy of main never had).
 - `rotate`: uploads the finished shifts with no video, the newest first, then the backlog oldest first. Each goes
   through `archive_upload.py --privacy private`, then `apply`. The backlog keeps 200 units for each shift end left
-  today, and a shift is skipped when its copy and join would leave the SSD under 35 GB free.
+  today, and a shift is skipped when its copy and join would leave the disk under 35 GB free.
 - `follow`: runs `rotate` after each new `shiftN up` line in the autopilot's log, and once at the start of each
   Pacific day for the backlog's next share.
 - The follower (d28 batch315). The d27 rotation was a one-shot `rotate` (pid 85368, from pog-d20-b207). It ended at
@@ -242,10 +242,10 @@ on two director lines counts once.
 # The video archive (tools/archive/, batch126: a first working test)
 
 A per-shift index keyed on wall-clock UTC seconds, captions from the voiced lines, ranked candidate clips, and an HLS
-sample with a player page (report-D's plan). All local and read-only on the masters (`/Volumes/Extreme SSD/
+sample with a player page (report-D's plan). All local and read-only on the masters (`~/pog-media/
 pog-recordings`, never moved or renamed); the R2 bucket `pog-archive` holds web renditions only.
 
-    python3 tools/archive/archive.py shift48 --out DIR --recordings "/Volumes/Extreme SSD/pog-recordings/D-pog-recordings" \
+    python3 tools/archive/archive.py shift48 --out DIR --recordings ~/pog-media/pog-recordings/D-pog-recordings \
         --runs-dir ~/code/player-of-games/runs --logs-dir ~/code/player-of-games/tools/stream/logs [--cut 3]
 
 writes DIR/shift48-index.json, DIR/calibration.json, a captions file per recording and DIR/clips/ (candidates.json,
@@ -274,7 +274,7 @@ review.md, the cut MP4s). Its parts, each a CLI of its own:
 
 ## The clip library (batch129: old moments for the tour and the director)
 
-    python3 tools/archive/catalogue.py build                     # every ended shift with a master on the SSD
+    python3 tools/archive/catalogue.py build                     # every ended shift with a master in ~/pog-media
     python3 tools/archive/catalogue.py search --kind death --agent opus --planet nauvis --text "artillery"
     python3 tools/archive/catalogue.py best --md FILE             # the run's best 50, for the tour writer
     python3 tools/archive/clipmaker.py s48-platform_lost-001      # cut, upload, print {url, seconds, ...}
@@ -301,7 +301,7 @@ network).
     python3 tools/archive/r2_shifts.py shift01 [shift02 ...]      # or --shifts 2-69; --dry-run prints the plan
 
 One shift at a time: the index (archive.py, the run's offsets copied in, no clip cut), the encode at nice 19 with
-hls.py's ladder into `/Volumes/Extreme SSD/pog-hls/RUN/full/`, the upload to `RUN/full/` at or under 150 Mbit/s
+hls.py's ladder into `~/pog-media/pog-hls/RUN/full/`, the upload to `RUN/full/` at or under 150 Mbit/s
 (jobs rise from 4 while the measured rate is under 80% of the cap, never past 16, and stop rising at the cap; puts
 pause while `tools/obs.py stream-status` shows skipped frames rising or congestion), a HEAD of every object at the
 public URL against its local size, then `RUN/full/receipt.json` in R2 and in `~/code/pog-operator/r2-receipts/`,

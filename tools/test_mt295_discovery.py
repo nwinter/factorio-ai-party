@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 ROOT=Path(__file__).resolve().parents[1]
+MEDIA=Path(os.environ.get('POG_MEDIA') or Path.home()/'pog-media')
 sys.path[:0]=[str(ROOT/'tools/mt'),str(ROOT/'tools/stream')]
 import workspaces
 import viewers
@@ -59,10 +60,10 @@ class DiscoveryTests(unittest.TestCase):
             feed=viewers.Feed({},inbox=str(p),operator_only=True)
             self.assertIsNone(feed.relay)
 
-    @unittest.skipUnless(sys.platform=='darwin' and Path('/Volumes/POG Media/pog-runs').is_dir(),
-                         'macOS archive disk required')
-    def test_closed_external_archive_is_not_an_agent_input(self):
-        with tempfile.TemporaryDirectory(dir='/Volumes/POG Media/pog-runs',prefix='.scope-test-') as tmp:
+    @unittest.skipUnless(sys.platform=='darwin' and (MEDIA/'pog-runs').is_dir(),
+                         'macOS media folder required')
+    def test_closed_media_archive_is_not_an_agent_input(self):
+        with tempfile.TemporaryDirectory(dir=MEDIA/'pog-runs',prefix='.scope-test-') as tmp:
             secret=Path(tmp)/'private-notes';secret.write_text('another pair historical notes')
             with tempfile.TemporaryDirectory() as local:
                 policy=Path(local)/'scope.sb';policy.write_text(scope.profile(ROOT,Path.home()))

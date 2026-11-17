@@ -12,6 +12,11 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 CLAIM = Path('/Users/owner/code/pog-operator/server-claim.txt')
 DEFAULT_WAKE = Path('/Users/owner/code/pog-operator/mt300-wake.jsonl')
+# (d46 Nov 16) Team-run archives (saves, metrics, recordings) live in an ordinary folder on the Mac's internal
+# disk, ~/pog-media; until then they were on the external "POG Media" volume. POG_MEDIA names another folder.
+# The tools write only when TEAM_RUNS exists and never create it: a missing one means the wrong machine or path.
+MEDIA = Path(os.environ.get('POG_MEDIA') or Path.home()/'pog-media')
+TEAM_RUNS = MEDIA/'pog-runs'/'team-runs'
 
 def read(path, default=None):
     try:

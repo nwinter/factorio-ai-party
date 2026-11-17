@@ -38,7 +38,7 @@ rotate: the finished shifts with no video, the newest first, then the rest oldes
 tools/archive_upload.py --shifts N --limit 1 --privacy private, then apply (public when it is the latest, else
 unlisted; the previous latest unlisted), while
 the day's quota has room for the upload and its follow-ups (thumbnail, playlist insert, the previous latest's
-demotion) and the SSD keeps --keep-free-gb free after the copy and join (the R2 encode needs about 35 GB). Then apply.
+demotion) and the disk keeps --keep-free-gb free after the copy and join (the R2 encode needs about 35 GB). Then apply.
 
 follow (d28 batch315): one follower per Mac, across shifts. The d27 rotation was a one-shot `rotate` (pid 85368, from
 pog-d20-b207): it ended at 11:35 when the day's quota was spent, as rotate does, and the follower meant to come after
@@ -85,7 +85,7 @@ SITE_VIDEOS = WORK / "videos-site.json"  # (batch315) outside any checkout; tool
 FOLLOW_PID = WORK / "yt-follow.pid"
 FOLLOW_LOG = WORK / "yt-follow.log"
 RUNS = Path(os.environ.get("POG_SITE_RUNS") or Path.home() / "code" / "player-of-games" / "runs")
-SSD = Path("/Volumes/Extreme SSD")
+MEDIA = Path(os.environ.get("POG_MEDIA") or Path.home() / "pog-media")  # (d46) archive_upload's copy and join folder (pog-videos/tmp)
 PLAYLIST = yt.PLAYLIST
 PLAYLIST_ABOUT = ("Every shift of the Factorio AI Party in order: nine AI agents from five labs build one Factorio: "
                   "Space Age factory together, live, by the same rules as a human player. https://factorio.nickwinter.net")
@@ -671,9 +671,9 @@ def _rotate(a):
         if plan is None:
             print(f"shift{n:02d}: no recording to upload; skipped")
             continue
-        free = ssd_free_gb(SSD)
+        free = ssd_free_gb(MEDIA)
         if free is not None and free - plan["need_gb"] < a.keep_free_gb:
-            print(f"shift{n:02d}: needs {plan['need_gb']:.0f} GB on the SSD for the copy and join, {free:.0f} GB free "
+            print(f"shift{n:02d}: needs {plan['need_gb']:.0f} GB on the Mac's disk for the copy and join, {free:.0f} GB free "
                   f"(keep {a.keep_free_gb:.0f} GB): skipped")
             continue
         merge_wait(REPO, a.merge_wait)
@@ -701,7 +701,7 @@ def _rotate(a):
 
 
 def shift_plan(n, a):
-    """archive_upload's plan for one shift (None: no recording) with the GB the copy and join need on the SSD."""
+    """archive_upload's plan for one shift (None: no recording) with the GB the copy and join need on the disk."""
     out = subprocess.run([sys.executable, str(HERE / "archive_upload.py"), "--dry-run", "--shifts", str(n), "--runs-dir",
                           str(a.runs_dir), "--manifest", str(a.manifest)], capture_output=True, text=True, timeout=900)
     row = next((ln for ln in out.stdout.splitlines() if ln.startswith(f"| shift{n:02d}")), "")

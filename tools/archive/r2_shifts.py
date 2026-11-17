@@ -5,7 +5,7 @@
     python3 tools/archive/r2_shifts.py shift01 --dry-run            # the plan: recordings, in/out, the encodes
 
 Per shift, in order (a shift with a receipt in --receipts is skipped):
-1. The index: tools/archive/archive.py RUN --out HLS/RUN/work --recordings <the SSD's master folders> (no clip cut).
+1. The index: tools/archive/archive.py RUN --out HLS/RUN/work --recordings <the master folders in ~/pog-media/pog-recordings> (no clip cut).
    The run's fitted offsets (runs/archive/calibration.json) are copied in first, so no master is read to calibrate.
 2. The encode, at nice 19, one ffmpeg at a time, hls.py's ladder (1080p CRF 23 capped 6 Mbit/s, 540p 1.2 Mbit/s,
    4 s fMP4, a keyframe every 2 s) into HLS/RUN/full/: each recording that covers the shift is one part
@@ -26,12 +26,13 @@ Per shift, in order (a shift with a receipt in --receipts is skipped):
 5. HLS/RUN/ is removed (the renditions only: the folder must hold no master), and RUN's row in --status reads
    "complete (r2-receipts/RUN.json)".
 
-The masters are only read (ffprobe, ffmpeg input); r2_put refuses .mkv/.mov/.flv. Before an encode the SSD must have
+The masters are only read (ffprobe, ffmpeg input); r2_put refuses .mkv/.mov/.flv. Before an encode the disk must have
 the shift's estimate (8 Mbit/s for its length) plus --margin-gb free and the estimate must be under --max-local-gb.
 """
 import argparse
 import datetime
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -51,10 +52,11 @@ import hls  # noqa: E402
 import r2_put  # noqa: E402
 
 MAIN = Path.home() / "code" / "player-of-games"
-SSD = Path("/Volumes/Extreme SSD")
-SOURCES = [SSD / "pog-recordings" / d for d in ("public-run", "C-pog-recordings", "C-pog-recordings-moved",
-                                                "D-pog-recordings")]
-HLS_ROOT = SSD / "pog-hls"
+# (d46 Nov 16) the masters and the HLS work folder moved from the Extreme SSD to ~/pog-media on the internal disk
+MEDIA = Path(os.environ.get("POG_MEDIA") or Path.home() / "pog-media")
+SOURCES = [MEDIA / "pog-recordings" / d for d in ("public-run", "C-pog-recordings", "C-pog-recordings-moved",
+                                                  "D-pog-recordings")]
+HLS_ROOT = MEDIA / "pog-hls"
 OPERATOR = Path.home() / "code" / "pog-operator"
 PUBLIC = "https://pub-107dd9c2d81e4ef687f434b9c598414b.r2.dev"
 PLAYER = PUBLIC + "/player/index.html"

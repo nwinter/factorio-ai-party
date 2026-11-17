@@ -28,7 +28,7 @@ With the normal 2.1 environment exported:
     agent-python tools/mt/autosave.py arm RUN
     agent-python tools/mt/autosave.py watch RUN
 
-The host copies changed slots to /Volumes/POG Media/pog-runs/team-runs/RUN/saves.
+The host copies changed slots to ~/pog-media/pog-runs/team-runs/RUN/saves (POG_MEDIA names another media folder).
 Remote hashing/stat use IMAC_PYTHON (default /usr/local/bin/python3, the installed
 iMac interpreter); bare python3 there resolves to the unusable Xcode stub.
 It checks remote size/mtime around the transfer, compares SHA-256 at both ends,
@@ -51,7 +51,7 @@ A copy receipt is not proof of a later unobserved engine write.
        agent-python tools/mt/autosave.py verify RUN --file FILENAME.zip
 
 3. Stop only imac2 with the pinned tools/mt/imac_mt.sh stop. Start its copy using
-   tools/mt/imac_mt.sh start '/Volumes/POG Media/pog-runs/team-runs/RUN/saves/FILENAME.zip'.
+   tools/mt/imac_mt.sh start ~/pog-media/pog-runs/team-runs/RUN/saves/FILENAME.zip.
    The input archive is immutable; the launcher copies it to the server's mt.zip.
 4. Read game.tick, remote.call("agent_harness","autosave_status") and own-force profiles/production after
    load, verify the selected save, then restart agents from their private notes
@@ -100,7 +100,7 @@ unlisted publication with --keep-world before stopping staging and the game.
 Without this option, restore still refuses a publication receipt.
 
 `rehearsal_metrics.py RUN --execute` writes private minute samples directly to
-POG Media. They include milestones, contacts, market records, moving shipment
+~/pog-media. They include milestones, contacts, market records, moving shipment
 positions, account quota observations, UPS and the harness heap. Gaps and restore
 outages stay explicit. Use `load_bench.py --window 60 --every 10` separately for
 performance, with default GC settings. Stop its collector before restore and

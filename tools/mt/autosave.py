@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Arm a server tick clock and copy completed rotating saves onto external storage."""
+"""Arm a server tick clock and copy completed rotating saves into the media folder (run_state.TEAM_RUNS)."""
 import argparse
 import hashlib
 import json
@@ -10,9 +10,9 @@ import signal
 import time
 import zipfile
 
-from run_state import alert, command, lock, op_dir, pinned, read, rcon, write
+from run_state import TEAM_RUNS, alert, command, lock, op_dir, pinned, read, rcon, write
 
-ARCHIVE = Path('/Volumes/POG Media/pog-runs/team-runs')
+ARCHIVE = TEAM_RUNS
 REMOTE = '/Users/owner/pog-mt21/data/saves'
 
 def sha(path):
@@ -46,7 +46,7 @@ def retain(rows, keep):
 
 def copy_new(run, keep=12):
     pinned(); op = op_dir(run)
-    assert Path('/Volumes/POG Media').is_mount(), 'external archive volume is not mounted'
+    assert ARCHIVE.is_dir(), f'archive folder {ARCHIVE} is missing'
     dest = ARCHIVE/run/'saves'; dest.mkdir(parents=True,exist_ok=True)
     with lock(dest/'.copy.lock'):
         index = read(dest/'index.json', {'copies':[], 'seen':{}})

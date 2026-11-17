@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 
-from run_state import ROOT,alert,command,lock,op_dir,pinned,read,rcon,write
+from run_state import ROOT,TEAM_RUNS,alert,command,lock,op_dir,pinned,read,rcon,write
 import full_run
 import restore
 from map_probe import call
@@ -41,12 +41,12 @@ def main():
     receipt=op/'rehearsal.json';assert not receipt.exists(),'rehearsal already attempted'
     state=dict(started=time.time(),phase='launching',run=a.run,errors=[])
     collectors=[]
-    archive=Path('/Volumes/POG Media/pog-runs/team-runs')/a.run/'metrics'
+    archive=TEAM_RUNS/a.run/'metrics'
     deadline=time.time()+(2*a.shift_minutes+60)*60
     def record(**fields):state.update(fields,heartbeat=time.time());write(receipt,state)
     def start_bench(shift):
         if not a.measure:return None
-        assert Path('/Volumes/POG Media').is_mount()
+        assert TEAM_RUNS.is_dir(),f'{TEAM_RUNS} is missing'
         archive.mkdir(parents=True,exist_ok=True)
         dest=ROOT.parent.parent/'artifacts/mt307';dest.mkdir(parents=True,exist_ok=True)
         host=os.environ.get('IMAC_HOST','imac.local')

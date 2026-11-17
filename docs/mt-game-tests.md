@@ -65,6 +65,6 @@ and cross-check the actions; the fixture does not do those actions for them.
 Inspect the prepared fixture receipt and six feeds before starting the usual
 bounded public guardian. Each exercise uses only the pinned isolated server;
 finish and verify teardown before launching the next. Closed run trees and
-recordings on `/Volumes/POG Media/pog-runs` and `pog-recordings` are denied to
+recordings in `~/pog-media/pog-runs` and `pog-recordings` are denied to
 native agents as well as the internal operator checkout. Archive only closed
 trees through the existing verified process.
