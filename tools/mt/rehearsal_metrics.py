@@ -19,8 +19,8 @@ def quota_snapshot():
     b=read(Path.home()/'.cache/ai-usage/agent-brief.json',{})
     now=time.time();age=now-b.get('generated_at',0);expired=not 0<=age<=900
     profiles=[{k:p.get(k) for k in
-        ('command','source','observed_at','stale','available','windows','status_note')} for p in b.get('profiles',[])
-        if p.get('command') in ('codex-b','agy','grok','muse')]
+        ('id','command','source','observed_at','stale','available','windows','status_note')} for p in b.get('profiles',[])
+        if p.get('command') in ('codex-b','agy','grok','muse') and '@' not in str(p.get('id') or '')]  # (mt308) the brief also lists other hosts' rows (id NAME@HOST, d49); only this Mac's rows describe our agents
     for p in profiles:
         p['age_seconds']=now-(p.get('observed_at') or b.get('generated_at',0))
         p['stale']=bool(expired or p.get('stale') or not 0<=p['age_seconds']<=900)

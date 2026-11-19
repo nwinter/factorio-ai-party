@@ -244,6 +244,7 @@ def supervise(op, run):
         print('READY: public overlay, one camera, mt-stream scene, recording; OBS streaming is OFF', flush=True)
         recovery, frame = Recovery(op, 'staging'), FrameProgress()
         last_frame, rehooked = 0, False
+        overlay_fresh = False   # (mt308) the browser source has loaded the page over a healthy wire
         last_memory_spawn = last_archive_spawn = time.time()
 
         def wire_check():
@@ -335,6 +336,18 @@ def supervise(op, run):
         while not stop.wait(10):
             pinned()
             wire_ok = recovery.run('wire', wire_check, wire_repair, grace=0)
+            if not wire_ok:
+                overlay_fresh = False
+            elif not overlay_fresh:
+                # (mt308) OBS's browser source keeps a page that failed to load (staging before the reverse forward
+                # answered, or a reload during a wire outage) and never retries: r308's overlay was blank for ~10 min
+                # after staging and again after the restore until a manual refresh. Reload it once the wire is healthy.
+                try:
+                    obs.call('PressInputPropertiesButton', {'inputName': 'mt overlay', 'propertyName': 'refreshnocache'})
+                    overlay_fresh = True
+                    receipt['overlay_refreshed'] = time.time()
+                except Exception:
+                    pass
             if wire_ok:
                 # Do not let an archive outage fill D: and take down the stream.
                 # OBS transport errors belong to obs recovery, not a disk hold.

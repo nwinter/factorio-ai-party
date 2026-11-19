@@ -14,12 +14,31 @@ PORTS = {"live": 27015, "a": 27021, "b": 27022, "c": 27023, "n": 27025, "sa": 27
 HOSTS = {"imac": "imac.local", "imac2": "imac.local"}
 
 
+def connect(host, port, timeout):
+    """A TCP connection, IPv4 addresses tried first. (mt308) On chonk imac.local resolves to two IPv6 addresses before
+    its IPv4 one, and Factorio's RCON listens on IPv4 only (0.0.0.0): socket.create_connection waited out the IPv6
+    attempts on every new connection, ~1.0-1.3 s (r308: most Gemini requests took 1.27 s, r307 0.15 s)."""
+    infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    infos.sort(key=lambda i: i[0] != socket.AF_INET)
+    err = OSError(f"no address for {host}")
+    for family, kind, proto, _, addr in infos:
+        sock = socket.socket(family, kind, proto)
+        sock.settimeout(timeout)
+        try:
+            sock.connect(addr)
+            return sock
+        except OSError as e:
+            err = e
+            sock.close()
+    raise err
+
+
 class Rcon:
     def __init__(self, host, port, password, timeout=15):
         # (d24 batch186) a test run (POG_TEST=1) talks only to its own fake servers, never a world's port
         if os.environ.get("POG_TEST") == "1" and int(port) in PORTS.values():
             raise SystemExit(f"POG_TEST=1: no RCON to port {port} (a world's) in a test run")
-        self.sock = socket.create_connection((host, port), timeout=timeout)
+        self.sock = connect(host, port, timeout)
         self.next_id = 1
         if self._request(3, password)[0] == -1:
             raise SystemExit("rcon auth failed")
