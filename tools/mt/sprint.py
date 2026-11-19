@@ -369,6 +369,28 @@ def rcon_connect_s(n=5):
         t = time.time(); pog.connect(host, 27475, 5).close(); out.append(time.time() - t)
     return round(statistics.median(out), 4)
 
+# (s1r1c) the 2.1.24 server pins tools/mt/launch.py sets for start-mt.sh. stop-mt.sh (imac_mt.sh stop, imac_cam.py
+# stop) without them looks in the default /Users/owner/pog-mt, finds no server.pid, prints "not running" and leaves
+# imac2's server and camera running.
+MT_PINS = dict(MT_DIR='/Users/owner/pog-mt21', MT_FACTORIO_APP='/Users/owner/code/factorio-mac-2.1.24/factorio.app',
+               MT_EXPECT_VERSION='2.1.24', MT_RCON_PORT='27475', MT_GAME_PORT='34475',
+               MT_MODS_FILE=str(ROOT/'agent/mt/mods-2.1.24.tsv'), POG_KB='space-age-2.1.24')
+
+
+def stop_run(run, env):
+    """stop-mt.sh with the pins, then the server must read not running (imac_mt.sh status)."""
+    env = dict(env, **MT_PINS, POG_STOP_WORLD='1')
+    subprocess.run(['bash', str(ROOT/'tools/mt/stop-mt.sh'), run], env=env, check=False)
+    st = subprocess.run(['bash', str(ROOT/'tools/mt/imac_mt.sh'), 'status'], env=env, capture_output=True, text=True).stdout.strip()
+    if not st.startswith('not running'):
+        subprocess.run(['bash', str(ROOT/'tools/mt/imac_mt.sh'), 'stop'], env=env, check=False)
+        st = subprocess.run(['bash', str(ROOT/'tools/mt/imac_mt.sh'), 'status'], env=env, capture_output=True, text=True).stdout.strip()
+    if not st.startswith('not running'):
+        wake(f"{run}: imac2 server still running after stop-mt.sh: {st}")
+        raise SystemExit(f'{run}: server still running: {st}')
+    return st
+
+
 WAKE = Path('/Users/owner/code/pog-operator/mt309-wake.jsonl')
 EXPECT = {'opus': 'claude-opus-5-5', 'sonnet': 'claude-sonnet-5-5', 'haiku': 'claude-haiku-5-5', 'fable': 'claude-fable-5-2'}
 
@@ -507,7 +529,7 @@ def supervise(run, op, state, env, next_check):
     played = min(a.minutes, (tick - state['start_tick']) / 3600)
     state.update(end_tick=tick, end_at=time.time(), played_minutes=round(played, 2)); save()
     cmd_score(argparse.Namespace(run=a.run, minutes=played))
-    subprocess.run(['bash', str(ROOT/'tools/mt/stop-mt.sh'), a.run], env=env, check=False)
+    state['stopped'] = stop_run(a.run, env); save()
     cmd_burn(argparse.Namespace(run=a.run))
     if any(r['kind'] == 'codex' for r in roster):   # a later arm never reads this run's Codex transcripts
         sys.path.insert(0, str(ROOT/'tools')); import codex_pog_home
