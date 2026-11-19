@@ -15,22 +15,20 @@ HOSTS = {"imac": "imac.local", "imac2": "imac.local"}
 
 
 def connect(host, port, timeout):
-    """A TCP connection, IPv4 addresses tried first. (mt308) On chonk imac.local resolves to two IPv6 addresses before
-    its IPv4 one, and Factorio's RCON listens on IPv4 only (0.0.0.0): socket.create_connection waited out the IPv6
-    attempts on every new connection, ~1.0-1.3 s (r308: most Gemini requests took 1.27 s, r307 0.15 s)."""
-    infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    infos.sort(key=lambda i: i[0] != socket.AF_INET)
-    err = OSError(f"no address for {host}")
-    for family, kind, proto, _, addr in infos:
-        sock = socket.socket(family, kind, proto)
-        sock.settimeout(timeout)
+    """A TCP connection, the host's IPv4 addresses tried first. (mt308) On chonk imac.local resolves to two IPv6
+    addresses before its IPv4 one, and Factorio's RCON listens on IPv4 only (0.0.0.0): socket.create_connection by
+    name waited out the IPv6 attempts on every new connection, ~1.0-1.3 s (r308: most Gemini requests took 1.27 s,
+    r307 0.15 s). socket.create_connection stays the only place a connection is made (tools/test_live_guard.py)."""
+    try:
+        ipv4 = list(dict.fromkeys(a[4][0] for a in socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)))
+    except OSError:
+        ipv4 = []
+    for ip in ipv4:
         try:
-            sock.connect(addr)
-            return sock
-        except OSError as e:
-            err = e
-            sock.close()
-    raise err
+            return socket.create_connection((ip, port), timeout=timeout)
+        except OSError:
+            pass
+    return socket.create_connection((host, port), timeout=timeout)
 
 
 class Rcon:

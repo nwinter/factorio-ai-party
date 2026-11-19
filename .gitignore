@@ -27,3 +27,4 @@ runs/
 .wrangler/
 # tools/operator_updates.py's lock beside the updates file (d24 batch159)
 site/content/*.lock
+.venv/
