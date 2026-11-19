@@ -639,7 +639,12 @@ def netgate():
     tmp = tempfile.mkdtemp()
     try:
         tf = os.path.join(tmp, "team.tsv")
-        open(tf, "w").write("# name\tkind\nastra\tcodex\tx\ngrok\tgrok\tx\nmuse\tmuse\tx\n")
+        # (mt309) a scoped Codex player gets a gate port too; Claude Code (not process-scoped) does not
+        tc = os.path.join(tmp, "codex.tsv")
+        open(tc, "w").write("# name\tkind\nastra\tcodex\tx\n")
+        c = full_tools.netgate_config([tc], os.path.join(tmp, "c.json"), os.path.join(tmp, "c.tsv"), base=18160)
+        assert list(c) == ["astra"] and "chatgpt.com" in c["astra"]["allow"], c
+        open(tf, "w").write("# name\tkind\nopus\tclaude\tx\ngrok\tgrok\tx\nmuse\tmuse\tx\n")
         agents = full_tools.netgate_config([tf], os.path.join(tmp, "g.json"), os.path.join(tmp, "g.tsv"), base=18151)
         assert list(agents) == ["grok", "muse"] and agents["grok"]["port"] == 18151 and "api.x.ai" in agents["grok"]["allow"], agents
         log = os.path.join(tmp, "g.jsonl")
