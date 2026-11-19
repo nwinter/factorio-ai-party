@@ -257,7 +257,7 @@ claude_settings() {
     file_allow="$(for f in $readable; do f=${f//\"/}; [ -f "$f" ] && printf '"Read(/%s)", ' "$f" || printf '"Read(/%s/**)", ' "$f"; done)${allow#\"Read\", \"Grep\", \"Glob\", }"
     keys_rules=""
   elif [ "${POG_READ_SCOPE:-0}" = 1 ] && [ "${POG_ISOLATED:-0}" = 1 ] && [ "${1:-}" != nosandbox ]; then
-    # (mt309) A multi-team run: the whole tree is this team's (tools/mt/workspaces.py), so the shell and the Read tool
+    # (mt309) An isolated run (POG_ISOLATED): the whole tree is this team's (tools/mt/workspaces.py), so the shell and the Read tool
     # read it and nothing else under ~/code, Dropbox, the media folder or the CLIs' homes (rival trees, the operator's
     # checkout and reports, transcripts). No other team's path is named.
     local roots="\"$HOME/code\", \"$HOME/pog-media\", \"$HOME/.claude-profiles\", \"$HOME/.codex\"" f
@@ -338,6 +338,24 @@ case $kind in
     ;;
   codex)
     model=${6:-gpt-6-astra} effort=${7:-low}
+    if [ "${POG_ISOLATED:-0}" = 1 ]; then
+      # (mt309) An isolated Codex player (POG_ISOLATED): tools/agent-scope.py's process scope with the POG Codex home (its own device
+      # login; ~/.codex and its auth.json are never read or copied), Codex's own sandbox off (macOS refuses a nested
+      # profile), provider traffic through the run's network gate, the shell's network only the tree's broker socket.
+      codex_home=${POG_CODEX_HOME:-$HOME/.pog-codex/home}
+      [ -f "$codex_home/auth.json" ] || { echo "$codex_home has no login: CODEX_HOME=$codex_home codex login --device-auth (once, by the owner)" >&2; exit 1; }
+      python3 "$root/tools/context.py" setup "$kind" "$model" "$dir" >/dev/null
+      { "$dir/fh" call ground_rules >/dev/null 2>&1 && python3 "$root/tools/brief.py" rules "$dir" >/dev/null; } || true
+      python3 "$root/tools/clean-profile.py" "$kind" "$dir"
+      python3 "$root/tools/sleepcap/setup.py" codex "$dir"
+      python3 "$root/tools/codex_pog_home.py" trust "$codex_home" "$dir"
+      pane=$(new_pane)
+      printf '%s\n' '#!/usr/bin/env bash' "cd '$dir'" "${proxy_env:+export $proxy_env}" \
+        "exec /opt/homebrew/bin/codex -C '$dir' -m '$model' -c 'model_reasoning_effort=\"$effort\"' -s danger-full-access -c 'approval_policy=\"never\"' -- \"\$(cat '$prompt')\"" \
+        > "$dir/.codex-run.sh"
+      chmod +x "$dir/.codex-run.sh"
+      run_prepared "$pane" "$dir/.codex-run.sh"
+    else
     args=(--route "${POG_ROUTE:-codex-b}" --model "$model" --thinking "$effort" --sandbox workspace-write --network --approval never)
     # ai-session passes no extra flags or env, so compaction settings go in the workspace's own config.
     python3 "$root/tools/context.py" setup "$kind" "$model" "$dir" >/dev/null
@@ -371,6 +389,7 @@ case $kind in
       tab=$POG_TAB
     else
       herdr tab rename "$tab" "$label" >/dev/null 2>&1 || true
+    fi
     fi
     ;;
   grok)

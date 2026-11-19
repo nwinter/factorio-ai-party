@@ -144,5 +144,31 @@ class ServerBackup(unittest.TestCase):
             self.assertTrue(run('verify', 'eng-x')['same'])
 
 
+class CodexHome(unittest.TestCase):
+    def test_init_trust_archive(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        import codex_pog_home as c
+        with tempfile.TemporaryDirectory() as t:
+            h = Path(t)/'h'/'home'
+            st = c.init(h)
+            self.assertTrue(st['file_store']); self.assertFalse(st['logged_in'])
+            c.trust(h, '/x/y'); c.trust(h, '/x/y')
+            self.assertEqual((h/'config.toml').read_text().count('[projects."/x/y"]'), 1)
+            (h/'sessions'/'2026'/'11').mkdir(parents=True); (h/'sessions'/'2026'/'11'/'r.jsonl').write_text('{}')
+            c.archive(h, Path(t)/'dest')
+            self.assertTrue((Path(t)/'dest'/'2026'/'11'/'r.jsonl').exists())
+            self.assertEqual(list((h/'sessions').iterdir()), [])
+
+    def test_scope_allows_pog_home_not_owner_codex(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('agent_scope', Path(__file__).resolve().parents[1]/'agent-scope.py')
+        m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+        with tempfile.TemporaryDirectory() as t:
+            home = Path(t); pog = home/'.pog-codex'/'home'
+            prof = m.profile(home/'tree', home, None, None, pog)
+            self.assertIn(str(pog.resolve()), prof)
+            self.assertIn(f'(subpath "{home/".codex"}")', prof)      # the owner's Codex home stays denied
+
+
 if __name__ == '__main__':
     unittest.main()

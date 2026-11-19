@@ -587,6 +587,9 @@ NETGATE_ALLOW = {
     "muse": ["api.meta.ai", "auth.meta.com", "lookaside.facebook.com"],
     "agy": ["oauth2.googleapis.com", "www.googleapis.com", "daily-cloudcode-pa.googleapis.com", "cloudcode-pa.googleapis.com",
             "aicode.googleapis.com", "play.googleapis.com", "antigravity-unleash.goog", "lh3.googleusercontent.com"],
+    # (mt309) Codex in its POG home under tools/agent-scope.py: expected hosts, to be confirmed with netgate.py --learn
+    # in the scoped smoke test (tools/mt/codex_scope_smoke.py --live) before any Codex arm
+    "codex": ["chatgpt.com", "auth.openai.com", "api.openai.com", "ab.chatgpt.com"],
 }
 
 

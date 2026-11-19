@@ -95,15 +95,21 @@ def escaped(path):
     return str(path).replace('/', '-').replace('.', '-')
 
 
-def arm_files(kind, route, ws):
-    """Session files of one arm's workspace ws (absolute)."""
+POG_CODEX = Path(os.environ.get('POG_CODEX_HOME') or Path.home()/'.pog-codex'/'home')
+
+
+def arm_files(kind, route, ws, extra=()):
+    """Session files of one arm's workspace ws (absolute); extra: more session folders (a run's archived ones)."""
     ws = os.path.abspath(ws)   # the agent's cwd as the CLI saw it (no symlink resolution)
     if kind == 'claude':
         home = Path(os.path.expanduser(ROUTE_HOME.get(route, '~/.claude')))
         return sorted(glob.glob(str(home/'projects'/escaped(ws)/'**'/'*.jsonl'), recursive=True))
     if kind == 'codex':
         out = []
-        for p in glob.glob(os.path.expanduser('~/.codex/sessions/*/*/*/rollout-*.jsonl')):
+        found = glob.glob(os.path.expanduser('~/.codex/sessions/*/*/*/rollout-*.jsonl'))
+        for base in (POG_CODEX/'sessions', *extra):
+            found += glob.glob(str(Path(base)/'**'/'rollout-*.jsonl'), recursive=True)
+        for p in found:
             if os.path.getmtime(p) < os.path.getmtime(ws) - 86400:
                 continue
             with open(p, 'rb') as f:
@@ -276,7 +282,7 @@ def cmd_burn(a):
     out = {}
     for r in roster_rows(op_dir(a.run)/'teams.tsv'):
         ws = Path((ws_map.get(r['team']) or {}).get('dir') or tree/'runs'/a.run)/r['arm']
-        files = arm_files(r['kind'], r['route'], ws)
+        files = arm_files(r['kind'], r['route'], ws, extra=[op_dir(a.run)/'codex-sessions'])
         tok = arm_tokens(r['kind'], files)
         out[r['arm']] = dict(team=r['team'], kind=r['kind'], route=r['route'], model=r['model'], effort=r['effort'],
                              tokens=tok, meter=meter(r['kind'], r['route'], r['model'], tok))
@@ -427,6 +433,9 @@ def cmd_run(a):
     cmd_score(argparse.Namespace(run=a.run, minutes=played))
     subprocess.run(['bash', str(ROOT/'tools/mt/stop-mt.sh'), a.run], env=env, check=False)
     cmd_burn(argparse.Namespace(run=a.run))
+    if any(r['kind'] == 'codex' for r in roster):   # a later arm never reads this run's Codex transcripts
+        sys.path.insert(0, str(ROOT/'tools')); import codex_pog_home
+        state['codex_sessions'] = codex_pog_home.archive(POG_CODEX, op/'codex-sessions'); save()
     import meter as M
     time.sleep(300)  # ai-usage refreshes every ~5 minutes: one reading after the end
     M.run_meter(a.run)

@@ -17,7 +17,12 @@ KEEP={'PATH','HOME','USER','LOGNAME','SHELL','TMPDIR','LANG','LC_ALL','TERM','CO
 def environment(env):
     return {k:v for k,v in env.items() if k in KEEP}
 
-def profile(root,home,proxy=None,native=None):
+def codex_home(home=None):
+    """(mt309) The POG Codex home: its own device login (never a copy of ~/.codex/auth.json, whose refresh token is
+    shared with the owner's other work), its config and the sessions of the current run only."""
+    return Path(os.environ.get('POG_CODEX_HOME') or Path(home or Path.home())/'.pog-codex'/'home')
+
+def profile(root,home,proxy=None,native=None,codex=None):
     quote=json.dumps
     protected=[home/'code',home/'Dropbox',home/'Dropbox (Personal)']
     clauses=['(version 1)','(allow default)','(deny process-info*)','(allow process-info* (target self))',
@@ -28,7 +33,7 @@ def profile(root,home,proxy=None,native=None):
     installs=[root,home/'.local/bin',home/'.local/lib',home/'.nvm',home/'.grok/bin',home/'.grok/auth.json',
               home/'.gemini/config/projects',
               home/'.gemini/antigravity-cli',home/'.cache/antigravity',home/'Library/Keychains',
-              home/'Dropbox (Personal)/misc/env/agents']
+              home/'Dropbox (Personal)/misc/env/agents']+([codex] if codex else [])
     allowed=' '.join(f'(subpath {quote(str(p.resolve()))})' for p in installs)
     clauses.append(f'(deny file-read-data file-write* (require-all (subpath {quote(str(home))}) (require-not (require-any {allowed}))))')
     for path in protected:
@@ -78,7 +83,7 @@ def profile(root,home,proxy=None,native=None):
         clauses.append(f'(allow network-outbound (remote tcp "localhost:{address.port}"))')
     return '\n'.join(clauses)+'\n'
 
-def native_environment(env,folder,home,muse=False):
+def native_environment(env,folder,home,muse=False,codex=None):
     # Call native binaries, not the owner's session-registry wrappers.
     env['PATH']=str(home/'.local/bin')+':'+env.get('PATH','/usr/bin:/bin')
     marker=folder/'.native-root'
@@ -95,14 +100,19 @@ def native_environment(env,folder,home,muse=False):
         if not auth.exists():
             shutil.copyfile(home/'.config/muse/auth.json',auth);auth.chmod(0o600)
     env.update(XDG_CONFIG_HOME=str(config),XDG_DATA_HOME=str(data),MUSE_NO_AUTO_UPDATE='1',TMPDIR=str(native)+'/',POG_SCOPE_ACTIVE='1')
+    if codex:
+        assert (codex/'auth.json').is_file(),f'{codex} has no login: run CODEX_HOME={codex} codex login --device-auth once'
+        env['CODEX_HOME']=str(codex)
     return env
 
 def main():
     root=Path(sys.argv[1]).resolve();proxy=sys.argv[2];command=sys.argv[3:]
     assert (root/'.launch-tree').is_file() and command,'expected a prepared project tree and command'
-    env=native_environment(environment(os.environ),Path(command[0]).parent,Path.home(),muse='.muse' in Path(command[0]).name)
+    name=Path(command[0]).name
+    codex=codex_home() if '.codex' in name else None
+    env=native_environment(environment(os.environ),Path(command[0]).parent,Path.home(),muse='.muse' in name,codex=codex)
     policy=Path(command[0]).parent/'.scope.sb'
-    policy.write_text(profile(root,Path.home(),proxy,Path(env['XDG_DATA_HOME']).parent))
+    policy.write_text(profile(root,Path.home(),proxy,Path(env['XDG_DATA_HOME']).parent,codex))
     os.execve('/usr/bin/sandbox-exec',['sandbox-exec','-f',str(policy),*command],env)
 
 if __name__=='__main__':main()
