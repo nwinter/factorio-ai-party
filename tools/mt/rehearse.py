@@ -21,7 +21,7 @@ def weekly_usage(profile):
     brief=read(Path.home()/'.cache/ai-usage/agent-brief.json',{})
     if not 0<=time.time()-brief.get('generated_at',0)<=900:return None
     for p in brief.get('profiles',[]):
-        if p.get('command')==profile and not p.get('stale') and p.get('available',True):
+        if p.get('command')==profile and '@' not in str(p.get('id') or '') and not p.get('stale') and p.get('available',True):
             if not 0<=time.time()-p.get('observed_at',brief.get('generated_at',0))<=900:return None
             values=[w['percent'] for w in p.get('windows',[]) if w.get('duration_minutes')==10080 and 'percent' in w]
             return max(values) if values else None

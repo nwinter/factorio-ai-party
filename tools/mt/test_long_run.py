@@ -88,6 +88,18 @@ class Shifts(unittest.TestCase):
             stop.assert_not_called();change.assert_not_called();rest.assert_not_called()
             self.assertFalse(a.get('held'));self.assertNotIn('rest_until',a)
 
+    def test_other_hosts_quota_rows_are_ignored(self):
+        # (mt308, d49) the brief lists NAME@HOST rows for other Macs; a stale laptop row listed last must not hide
+        # this Mac's fresh one (the r308 10:41 alert)
+        brief=dict(generated_at=1000,profiles=[dict(id='muse_local',command='muse',observed_at=1000,available=True,stale=False,windows=[]),
+                                               dict(id='muse_local@work-laptop',command='muse',observed_at=10,available=False,stale=True,windows=[])])
+        self.assertEqual(quota_refresh.unavailable(brief,{'muse'},1100),[])
+        with patch.object(rehearsal_metrics,'read',return_value=brief),patch.object(rehearsal_metrics.time,'time',return_value=1100):
+            sample=rehearsal_metrics.quota_snapshot()
+        self.assertEqual([p['id'] for p in sample['profiles']],['muse_local'])
+        import quota_check
+        self.assertEqual([p['id'] for p in quota_check.local_profiles(brief)],['muse_local'])
+
     def test_quota_cache_age_overrides_saved_availability_without_zeroing_windows(self):
         brief=dict(generated_at=1000,profiles=[dict(command='grok',observed_at=1000,available=True,stale=False,windows=[dict(percent=29)])])
         self.assertEqual(quota_refresh.unavailable(brief,{'grok'},1900),[])

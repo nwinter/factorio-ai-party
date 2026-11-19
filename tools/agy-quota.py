@@ -196,7 +196,7 @@ def weekly():
     def read():
         d = json.load(open(BRIEF))
         for a in d.get("profiles", []):
-            if a.get("command") == "agy":
+            if a.get("command") == "agy" and "@" not in str(a.get("id") or ""):  # (mt308) not another host's row
                 for w in a.get("windows", []):
                     if w.get("key") == "agy:gemini:10080":
                         return float(w.get("percent") or 0), float(w.get("resets_at") or 0), a.get("observed_at") or 0
