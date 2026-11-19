@@ -113,9 +113,13 @@ class Meter(unittest.TestCase):
             {'id': 'muse_local', 'available': True, 'stale': False, 'observed_at': now - 5000,
              'windows': [{'key': 'muse:10080', 'label': 'Muse · Weekly', 'percent': 3.0, 'duration_minutes': 10080}]},
             {'id': 'claude_account_b', 'available': True, 'stale': False, 'observed_at': now,
-             'windows': [{'key': 'weekly_all:Weekly', 'label': 'Weekly', 'percent': 1.0, 'duration_minutes': 10080}]}]}
+             'windows': [{'key': 'weekly_all:Weekly', 'label': 'Weekly', 'percent': 1.0, 'duration_minutes': 10080}]},
+            # (mt308 05fe2c753) another host's row (id NAME@HOST), listed after this Mac's: never this Mac's agents
+            {'id': 'muse_local@work-laptop', 'command': 'muse', 'available': True, 'stale': False, 'observed_at': now,
+             'windows': [{'key': 'muse:10080', 'label': 'Muse · Weekly', 'percent': 77.0, 'duration_minutes': 10080}]}]}
         a = meter.accounts(brief, now)
         self.assertEqual(a['grok']['windows']['grok:weekly']['percent'], 10.0)
+        self.assertNotIn('77.0', json.dumps(a))
         self.assertAlmostEqual(a['grok']['windows']['grok:weekly']['used_usd'], round(0.10 * 300 / 4.333, 2))
         self.assertIsNone(a['muse']['windows']['muse:10080']['percent'])
         self.assertNotIn('claude_account_b', json.dumps(a))
