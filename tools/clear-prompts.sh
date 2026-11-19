@@ -29,8 +29,17 @@ while [ "$pending" -gt 0 ] && [ "$(date +%s)" -lt "$end" ]; do
       herdr pane send-text "$pane" 3 >/dev/null; s=hooks-untrusted
     elif grep -q "Yes, I trust this folder" <<<"$screen"; then
       # Claude lists "No, exit" first; Antigravity preselects "Yes". Move only if Yes is not highlighted.
-      grep -qE "^[[:space:]]*(❯|>)[[:space:]]*Yes, I trust" <<<"$screen" || { herdr pane send-keys "$pane" down >/dev/null; sleep 0.3; }
-      herdr pane send-keys "$pane" enter >/dev/null; s=trust
+      # (mt309 s1r1c) Enter only once the screen shows Yes highlighted: under load a "down" sent 0.3 s before Enter
+      # had not landed and Enter answered "No, exit" (Claude Code quit). Otherwise the next pass tries again.
+      yes='^[[:space:]]*(❯|>)[[:space:]]*Yes, I trust'
+      if ! grep -qE "$yes" <<<"$screen"; then
+        herdr pane send-keys "$pane" down >/dev/null
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+          sleep 0.5; screen=$(herdr pane read "$pane" --source visible --lines 40 2>/dev/null || true)
+          grep -qE "$yes" <<<"$screen" && break
+        done
+      fi
+      if grep -qE "$yes" <<<"$screen"; then herdr pane send-keys "$pane" enter >/dev/null; s=trust; fi
     elif grep -q "Trust and continue" <<<"$screen"; then
       herdr agent send-keys "$pane" enter >/dev/null; s=trust
     elif grep -qiE "trust this (folder|project|directory)" <<<"$screen"; then

@@ -174,5 +174,32 @@ class CodexHome(unittest.TestCase):
             self.assertIn(f'(subpath "{home/".codex"}")', prof)      # the owner's Codex home stays denied
 
 
+class TrustPrompt(unittest.TestCase):
+    def test_enter_only_once_yes_is_highlighted(self):
+        # (s1r1c) a "down" that lands late must not let Enter answer Claude Code's "No, exit"
+        import os, subprocess
+        root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as t:
+            t = Path(t); (t/'bin').mkdir(); (t/'ws').mkdir()
+            herdr = t/'bin'/'herdr'
+            herdr.write_text(f'''#!/bin/sh
+echo "$@" >> '{t}/log'
+if [ "$2" = read ]; then
+  n=$(grep -c "send-keys .* down" '{t}/log'); r=$(grep -c " read " '{t}/log')
+  if [ "$n" -gt 0 ] && [ "$r" -ge 5 ]; then printf '%s\\n' ' Quick safety check' '   No, exit' ' ❯ Yes, I trust this folder'
+  else printf '%s\\n' ' Quick safety check' ' ❯ No, exit' '   Yes, I trust this folder'; fi
+fi
+exit 0
+''')
+            herdr.chmod(0o755)
+            r = subprocess.run([str(root/'tools/clear-prompts.sh'), '10', 'w9:p1', str(t/'ws')], capture_output=True, text=True,
+                               timeout=30, env=dict(os.environ, PATH=f"{t/'bin'}:{os.environ['PATH']}"))
+            self.assertEqual(r.stdout, 'w9:p1 trust\n')
+            keys = [l for l in (t/'log').read_text().splitlines() if 'send-keys' in l]
+            self.assertEqual(keys, ['pane send-keys w9:p1 down', 'pane send-keys w9:p1 enter'])
+            lines = (t/'log').read_text().splitlines()
+            self.assertGreaterEqual(sum(' read ' in l for l in lines[:lines.index('pane send-keys w9:p1 enter')]), 5)
+
+
 if __name__ == '__main__':
     unittest.main()
