@@ -1,0 +1,14 @@
+[project]
+name = "player-of-games-tools"
+version = "0"
+description = "Third-party packages for the repo's Python tools, stream services, site builder and their tests"
+requires-python = ">=3.15"
+dependencies = [
+    "matplotlib>=3.9",      # tools/mt/market_plot.py, report plotters
+    "numpy>=2.0",           # tools/stream/mapframes.py, voice_bench.py
+    "obsws-python>=1.8.1",  # tools/obs.py
+    "pillow>=12.1",         # tools/stream, tools/game_icons.py, site
+]
+
+[tool.uv]
+package = false

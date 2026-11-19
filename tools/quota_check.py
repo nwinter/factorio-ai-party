@@ -24,6 +24,11 @@ CACHED = os.path.expanduser("~/.cache/ai-usage/agent-brief.json")
 KIND_COMMAND = {"grok": "grok", "agy": "agy", "muse": "muse", "codex": "codex", "claude": "claude"}
 
 
+
+# (mt308) the brief also lists other hosts' rows (id NAME@HOST, d49); only this Mac's rows describe our agents
+def local_profiles(brief):
+    return [p for p in brief.get("profiles", []) if "@" not in str(p.get("id") or "")]
+
 def load_brief(path=None):
     """(brief, note): the given file, else a fresh `ai-usage agent --json`, else its cached copy."""
     if path:
@@ -70,7 +75,7 @@ def relevant(label, model):
 def check(brief, team_file, minutes, now=None):
     now = now or time.time()
     end = now + minutes * 60
-    by_command = {p.get("command"): p for p in brief.get("profiles", [])}
+    by_command = {p.get("command"): p for p in local_profiles(brief)}
     users = {}   # profile id -> [(name, model)]
     lines = []
     for line in open(team_file):
@@ -140,7 +145,7 @@ def at_limit(brief, team_file, now=None):
     its limit now: a window that counts for its model at LIMIT_PCT or more, with its reset ahead (the latest such reset
     when several are). A profile ai-usage marks stale or unavailable is left out: its numbers are not now's."""
     now = now or time.time()
-    by_command = {p.get("command"): p for p in brief.get("profiles", [])}
+    by_command = {p.get("command"): p for p in local_profiles(brief)}
     out = {}
     for name, _, command, model in members(team_file):
         p = by_command.get(command)
@@ -165,7 +170,7 @@ def room(brief, team_file, now=None, hits=None):
     if not brief or now - float(brief.get("generated_at") or 0) > FRESH_S:
         return {}
     hits = at_limit(brief, team_file, now) if hits is None else hits
-    by_command = {p.get("command"): p for p in brief.get("profiles", [])}
+    by_command = {p.get("command"): p for p in local_profiles(brief)}
     out = {}
     for name, _, command, model in members(team_file):
         p = by_command.get(command)

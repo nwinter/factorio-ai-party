@@ -7,6 +7,20 @@ Use `set -e` for operator shell sequences and export POG_CLAIM_OWNER. Server/map
 mutators refuse a mismatched claim. For ad-hoc Lua use run_state.rcon, which checks
 the claim and 2.1 pins before every command; do not bypass it with raw tools/pog.py.
 
+## Python environment (mt308)
+
+The repo's third-party Python packages (Pillow, numpy, obsws-python, matplotlib) come from the uv project at the
+repo root: `pyproject.toml`, the committed `uv.lock` and `.python-version` (3.15). Nothing is installed globally.
+Once per checkout or worktree, and again after `uv.lock` changes:
+
+    uv sync --locked
+
+This makes the ignored `.venv/`. Run tools that need those packages with `.venv/bin/python tools/...` (or
+`uv run --locked --no-sync python tools/...`, or `project run -- python tools/...`). start-mt.sh runs the team
+feeds and public staging with `.venv/bin/python` and refuses to start the stream services without it;
+`POG_APP_PYTHON` names another interpreter with the same packages. Stdlib-only tools (shift, watch, quota, broker)
+keep `python3`/`agent-python`.
+
 A fresh map must complete mt_map.py's one-time `join`/`mt_assign` for each selected
 force before saving its baseline. Factorio does not chart bot surroundings for a
 force with no LuaPlayers, so such a map refuses mining/building even underfoot.
@@ -87,8 +101,8 @@ and a separate `load_bench.py` invocation per shift, archiving each native serve
 profile log before restore/teardown. Restore the prior owner's saves, mods and
 configuration, verify the saved hashes and stopped processes, then release.
 
-When unlisted streaming is authorized, use the application Python
-(`/opt/homebrew/bin/python3`) and add `--unlisted`. Start and inspect the normal
+When unlisted streaming is authorized, use the project env
+(`.venv/bin/python`, above) and add `--unlisted`. Start and inspect the normal
 stream staging/publication after the controller resumes the world. Before the
 restore, this option requires an owned full-mode unlisted session, live YouTube
 privacy verification, and healthy recording, camera, site and output. The stream
@@ -150,9 +164,9 @@ running until the operator's explicit final stop.
 
 Public staging is still separate. After reviewing the actual staged picture:
 
-    /opt/homebrew/bin/python3 tools/mt/public_session.py start RUN --run-mode full --execute
+    .venv/bin/python tools/mt/public_session.py start RUN --run-mode full --execute
 
-Use the verified application Python with Pillow for both stream supervisors and
+Use the project env (`.venv/bin/python`) for both stream supervisors and
 team feeds: feed recovery inherits the publication supervisor's interpreter.
 The stdlib-only agent-python runtime remains suitable for the shift/watch tools.
 Streaming recovery and staffed pogwin maintenance are documented in

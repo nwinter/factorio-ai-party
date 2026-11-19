@@ -89,13 +89,20 @@ HUMAN_TEAM, HUMAN_FACTOR, HUMAN_NEST_CLEAR = "white", 1.75, 400
 HUMAN_BOX, HUMAN_WET = 150, 0.05
 
 
-def layout(teams=4, distance=DISTANCE, planet_ring=PLANET_RING, team_names=None):
-    """Starts on a ring round (0,0), neighbours `distance` apart; patches and sites in map coordinates."""
+def layout(teams=4, distance=DISTANCE, planet_ring=PLANET_RING, team_names=None, home="away", middle=True):
+    """Starts on a ring round (0,0), neighbours `distance` apart; patches and sites in map coordinates.
+    home: where each team's own Nauvis patches lie, "away" from the middle of the map (u as in PRIMARY) or "toward" it
+    (u negated). (mt308) In r307 (1,300 apart, away) every team built round its own patches, on the side away from
+    the others, and no team met another in six hours; toward puts the same patches on the side facing them.
+    middle=False: no third site in the middle (three or more teams); at 400 tiles apart, home toward, its patches would
+    lie on the shared sites' (mt308 contact test map)."""
+    assert home in ("away", "toward"), home
+    hu = -1 if home == "toward" else 1
     assert 2 <= teams <= len(TEAMS)
     names = team_names or TEAMS[:teams]
     assert len(names) == teams and len(set(names)) == teams and set(names) <= set(TEAMS), 'unique supported team names required'
     ring = distance / 2 / math.sin(math.pi / teams) if teams > 2 else distance / 2
-    out = {"teams": [], "sites": [], "distance": distance, "ring": round(ring, 1), "patches": [], "clear": [], "place_sites": [],
+    out = {"teams": [], "sites": [], "distance": distance, "ring": round(ring, 1), "home": home, "middle": middle, "patches": [], "clear": [], "place_sites": [],
            "planets": {p: {"clear": [], "patches": []} for p in PLANETS}}
     for i in range(teams):
         ang = 2 * math.pi * i / teams + math.pi / teams + (math.pi / 2 if teams == 2 else 0)
@@ -115,8 +122,8 @@ def layout(teams=4, distance=DISTANCE, planet_ring=PLANET_RING, team_names=None)
         out["teams"].append(t)
         out["clear"].append({"x": sx, "y": sy, "r": CLEAR_START})
         for q in PRIMARY:
-            x = sx + q["u"] * ux - q["v"] * uy
-            y = sy + q["u"] * uy + q["v"] * ux
+            x = sx + hu * q["u"] * ux - q["v"] * uy
+            y = sy + hu * q["u"] * uy + q["v"] * ux
             out["patches"].append(dict({k: v for k, v in q.items() if k not in ("u", "v")}, x=round(x) + 0.5, y=round(y) + 0.5,
                                        site="start " + names[i], max_shift=SHIFT_START))
 
@@ -150,7 +157,8 @@ def layout(teams=4, distance=DISTANCE, planet_ring=PLANET_RING, team_names=None)
         (ax, ay), (bx, by) = a["spawns"]["nauvis"], b["spawns"]["nauvis"]
         site(f"second {a['name']}-{b['name']}", (ax + bx) / 2, (ay + by) / 2, bx - ax, by - ay, "second", CLEAR_SECOND)
     if teams >= 3:
-        site("third middle", 0, 0, 1, 0, "third", CLEAR_THIRD)
+        if middle:
+            site("third middle", 0, 0, 1, 0, "third", CLEAR_THIRD)
     else:
         (ax, ay), (bx, by) = ts[0]["spawns"]["nauvis"], ts[1]["spawns"]["nauvis"]
         px, py = -(by - ay) / distance, (bx - ax) / distance
@@ -269,13 +277,13 @@ def op_from(a):
 
 
 def cmd_layout(a):
-    lay = layout(a.teams, a.distance, a.planet_ring, a.team_names)
+    lay = layout(a.teams, a.distance, a.planet_ring, a.team_names, a.home, not a.no_middle)
     print(json.dumps(with_humans(lay, a.human_factor) if a.humans else lay, indent=1))
 
 
 def cmd_create(a):
     os.makedirs(a.dir, exist_ok=True)
-    lay = layout(a.teams, a.distance, a.planet_ring, a.team_names)
+    lay = layout(a.teams, a.distance, a.planet_ring, a.team_names, a.home, not a.no_middle)
     if a.humans:
         lay = with_humans(lay, a.human_factor)
     lay["seed"] = a.seed
@@ -497,7 +505,7 @@ def cmd_seed_search(a):
     for seed in a.seeds:
         d = os.path.join(a.dir, "seeds", str(seed))
         os.makedirs(d, exist_ok=True)
-        lay = layout(a.teams, a.distance, a.planet_ring, a.team_names)
+        lay = layout(a.teams, a.distance, a.planet_ring, a.team_names, a.home, not a.no_middle)
         lay.update(seed=seed, enemy={"frequency": a.enemy_frequency, "size": a.enemy_size})
         json.dump(lay, open(os.path.join(d, "layout.json"), "w"), indent=1)
         mgs = map_gen_settings(lay, base, seed, a.enemy_frequency, a.enemy_size)
@@ -555,7 +563,7 @@ def cmd_add_humans(a):
     """The human team on a map made without it (mt275-final): mt_setup again with every team (the AI teams' forces and
     spawns as they are, contacts kept), its start's chunks made, natural resources cleared and its patches placed, the
     nests within HUMAN_NEST_CLEAR of its start removed, and its planet spawns' patches."""
-    lay = layout(a.teams, a.distance, a.planet_ring, a.team_names)
+    lay = layout(a.teams, a.distance, a.planet_ring, a.team_names, a.home, not a.no_middle)
     op = op_from(a)
     # dry land: from the target outward (farther only, never nearer an AI start) and round its bearing, the first spot
     # whose box of +-HUMAN_BOX tiles is under HUMAN_WET water (mt275-final: the target sat in a lake, 55% water)
@@ -620,6 +628,8 @@ def main():
         p.add_argument("--teams", type=int, default=4)
         p.add_argument("--team-names", nargs='+', choices=TEAMS)
         p.add_argument("--distance", type=float, default=DISTANCE)
+        p.add_argument("--home", choices=("away", "toward"), default="away", help="each team's own patches: away from or toward the middle")
+        p.add_argument("--no-middle", action="store_true", help="three or more teams: no third site in the middle")
         p.add_argument("--planet-ring", type=float, default=PLANET_RING)
         p.add_argument("--dir")
         p.add_argument("--seed", type=int, default=274274)

@@ -27,7 +27,7 @@ PY
 # used even if this shell no longer has POG_MT_PUBLIC=1. A live OBS broadcast must
 # be stopped by the operator before teardown can blank its program scene.
 if [ -f "$op/public-stream.json" ]; then
-  python3 tools/mt/public_stream.py stop "$run" || exit $?
+  "${POG_APP_PYTHON:-$PWD/.venv/bin/python}" tools/mt/public_stream.py stop "$run" || exit $?   # (mt308) the project env
 fi
 if [ -f "$op/full-run.json" ]; then
   python3 tools/mt/full_run.py shutdown "$run" --execute || exit $?

@@ -20,7 +20,8 @@ def stale(brief,now):
     return not 0<=now-brief.get('generated_at',0)<=CACHE_MAX_AGE
 
 def unavailable(brief,routes,now):
-    profiles={r.get('command'):r for r in brief.get('profiles',[])}
+    # (mt308) the brief also lists other hosts' rows (id NAME@HOST, d49); only this Mac's rows describe our agents
+    profiles={r.get('command'):r for r in brief.get('profiles',[]) if '@' not in str(r.get('id') or '')}
     def missing(route):
         p=profiles.get(route,{})
         observed=p.get('observed_at') or brief.get('generated_at',0)

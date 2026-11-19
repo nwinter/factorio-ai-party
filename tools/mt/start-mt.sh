@@ -58,6 +58,13 @@ if [ "${MT_EXPECT_VERSION:-2.0.77}" = 2.1.24 ] || [ "$run_mode" = full ]; then
   export POG_CONTINUOUS=1 POG_PANE_WATCH=1
 fi
 if [ "$POG_MT_VIEWERS" = 1 ]; then export POG_MT_STREAM=1; fi
+# (mt308) The stream services (team feeds, public staging/publication) need the repo's third-party packages (Pillow,
+# numpy, obsws-python): the project env from pyproject.toml/uv.lock, made with `uv sync --locked` in this checkout.
+# POG_APP_PYTHON names another interpreter with those packages. The stdlib tools keep python3.
+app_py=${POG_APP_PYTHON:-$root/.venv/bin/python}
+if [ "${POG_MT_STREAM:-0}" = 1 ] && ! "$app_py" -c 'import PIL, numpy' 2>/dev/null; then
+  echo "stream services need $app_py with Pillow and numpy: run 'uv sync --locked' in $root (or set POG_APP_PYTHON)" >&2; exit 1
+fi
 case $run in */*|.*|op) echo "RUN_ID: a plain name" >&2; exit 64 ;; esac
 export POG_SPACE_AGE=1 POG_BROKER=1 POG_TIME_MODE=realtime POG_ENEMIES=${POG_ENEMIES:-normal} POG_SEED=${POG_SEED:-274274}
 export POG_KB=${POG_KB:-space-age-2.0.77}
@@ -144,7 +151,7 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   echo "3. agents: one Herdr tab per team, each agent's web and network state in the log; supervisors; per-team scores and chat logs in runs/$run/op/TEAM/, the team views in runs/$run/op/views.html; idle nudges $([ "${POG_IDLE_NUDGE:-0}" = 1 ] && echo 'on (per team)' || echo off)"
   if [ "${POG_MT_PUBLIC:-0}" = 1 ]; then
     echo "4. public staging: team feeds on 8791..., overlay 127.0.0.1:${POG_MT_PUBLIC_PORT:-8790}; one pogwin spectator via reverse SSH/UDP; mt-stream scene; recording ON, streaming OFF; viewer chat to the operator inbox/display only"
-    [ "$paused_start" != 1 ] || echo "   deferred until operator activation/resume: python3 tools/mt/public_stream.py start $run"
+    [ "$paused_start" != 1 ] || echo "   deferred until operator activation/resume: $app_py tools/mt/public_stream.py start $run"
   fi
   exit 0
 fi
@@ -437,7 +444,7 @@ for line in open(sys.argv[1]):
 json.dump({"title": "Factorio: Space Age", "subtitle": "real time", "space_age": True, "agents": agents, "cameras": [],
            "show": False, "cuts": False, "highlights": False, "replays": False, "night": False}, open(sys.argv[2], "w"), indent=1)
 EOF
-    nohup python3 tools/stream/serve.py --world "$world" --team "$t" --run "$td/stream.json" --port $port --poll 5 \
+    nohup "$app_py" tools/stream/serve.py --world "$world" --team "$t" --run "$td/stream.json" --port $port --poll 5 \
       --no-camera --no-highlights --no-replays --no-night --no-cuts --log-dir "$op/$t/stream-logs" >"$op/$t/stream-service.log" 2>&1 &
     echo $! >> "$op/helpers.pid"
     echo "$t http://127.0.0.1:$port/" >> "$op/streams.txt"
@@ -460,8 +467,8 @@ fi
 if [ "${POG_MT_PUBLIC:-0}" = 1 ]; then
   if [ "$paused_start" = 1 ]; then
     # Public camera framing/rendering needs ticks. Never resume behind running agents.
-    log "public staging deferred until operator activation/resume: python3 tools/mt/public_stream.py start $run"
-  elif python3 tools/mt/public_stream.py start "$run" 2>&1 | tee -a "$op/start.log"; then
+    log "public staging deferred until operator activation/resume: $app_py tools/mt/public_stream.py start $run"
+  elif "$app_py" tools/mt/public_stream.py start "$run" 2>&1 | tee -a "$op/start.log"; then
     log "public stream staged: mt-stream scene, recording on; OBS streaming remains OFF"
   else
     log "PUBLIC STAGING FAILED: agents and team services remain running; inspect $op/public-stream.log, then retry public_stream.py start $run"

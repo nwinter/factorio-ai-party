@@ -14,12 +14,29 @@ PORTS = {"live": 27015, "a": 27021, "b": 27022, "c": 27023, "n": 27025, "sa": 27
 HOSTS = {"imac": "imac.local", "imac2": "imac.local"}
 
 
+def connect(host, port, timeout):
+    """A TCP connection, the host's IPv4 addresses tried first. (mt308) On chonk imac.local resolves to two IPv6
+    addresses before its IPv4 one, and Factorio's RCON listens on IPv4 only (0.0.0.0): socket.create_connection by
+    name waited out the IPv6 attempts on every new connection, ~1.0-1.3 s (r308: most Gemini requests took 1.27 s,
+    r307 0.15 s). socket.create_connection stays the only place a connection is made (tools/test_live_guard.py)."""
+    try:
+        ipv4 = list(dict.fromkeys(a[4][0] for a in socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)))
+    except OSError:
+        ipv4 = []
+    for ip in ipv4:
+        try:
+            return socket.create_connection((ip, port), timeout=timeout)
+        except OSError:
+            pass
+    return socket.create_connection((host, port), timeout=timeout)
+
+
 class Rcon:
     def __init__(self, host, port, password, timeout=15):
         # (d24 batch186) a test run (POG_TEST=1) talks only to its own fake servers, never a world's port
         if os.environ.get("POG_TEST") == "1" and int(port) in PORTS.values():
             raise SystemExit(f"POG_TEST=1: no RCON to port {port} (a world's) in a test run")
-        self.sock = socket.create_connection((host, port), timeout=timeout)
+        self.sock = connect(host, port, timeout)
         self.next_id = 1
         if self._request(3, password)[0] == -1:
             raise SystemExit("rcon auth failed")
