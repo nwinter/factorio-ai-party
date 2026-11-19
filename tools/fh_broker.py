@@ -143,7 +143,7 @@ class Rcon(pog.Rcon):
     """pog.Rcon with a strict login: Factorio answers auth with an empty response first, then the auth response."""
 
     def __init__(self, host, port, password, timeout=15):
-        self.sock = socket.create_connection((host, port), timeout=timeout)
+        self.sock = pog.connect(host, port, timeout)  # (mt308) IPv4 first: see pog.connect
         self.next_id = 1
         rid = self._send(3, password)
         while True:
