@@ -337,17 +337,37 @@ def rcon_set_paused(paused):
 
 
 def rcon_route():
-    """(s1r1 12:47) macOS Local Network privacy refused Python's connections from chonk to imac.local: imac2's RCON goes
-    through tools/mt/rcon_tunnel.sh (ssh, 127.0.0.1:27475). Every RCON client here and in the play trees (pog.py,
-    fh_broker.py) follows IMAC_RCON_HOST, which this sets for the runner and everything it starts."""
+    """How this Mac reaches imac2's RCON: directly when Python can open a connection to the iMac, else through
+    tools/mt/rcon_tunnel.sh (ssh, 127.0.0.1:27475). (s1r1 12:47 Nov 19) chonk began failing, first as macOS refusing
+    Python's connections to imac.local (EHOSTUNREACH) while Apple's ssh still connected; it crashed at 13:25. The probe
+    is the iMac's ssh port, which answers while Factorio is down. pog.py and fh_broker.py follow IMAC_RCON_HOST, which
+    this sets for the runner and everything it starts."""
     import socket
+    sys.path.insert(0, str(ROOT/'tools')); import pog
+    try:
+        pog.connect('imac.local', 22, 5).close()
+        os.environ.pop('IMAC_RCON_HOST', None)
+        return 'direct'
+    except OSError as e:
+        direct_err = e
     try:
         socket.create_connection(('127.0.0.1', 27475), 3).close()
     except OSError:
-        raise SystemExit('start the RCON tunnel first: nohup tools/mt/rcon_tunnel.sh > runs/rcon-tunnel.log 2>&1 &')
+        raise SystemExit(f'Python cannot reach imac.local ({direct_err}) and no RCON tunnel listens: '
+                         'nohup tools/mt/rcon_tunnel.sh > runs/rcon-tunnel.log 2>&1 &')
     os.environ['IMAC_RCON_HOST'] = '127.0.0.1'
-    return {'IMAC_RCON_HOST': '127.0.0.1'}
+    return 'tunnel'
 
+
+def rcon_connect_s(n=5):
+    """Median seconds for a new RCON connection to imac2 by the route in use (mt308: ~0.01 s after the IPv4 fix)."""
+    import statistics
+    sys.path.insert(0, str(ROOT/'tools')); import pog
+    host = os.environ.get('IMAC_RCON_HOST') or 'imac.local'
+    out = []
+    for _ in range(n):
+        t = time.time(); pog.connect(host, 27475, 5).close(); out.append(time.time() - t)
+    return round(statistics.median(out), 4)
 
 WAKE = Path('/Users/owner/code/pog-operator/mt309-wake.jsonl')
 EXPECT = {'opus': 'claude-opus-5-5', 'sonnet': 'claude-sonnet-5-5', 'haiku': 'claude-haiku-5-5', 'fable': 'claude-fable-5-2'}
@@ -422,7 +442,7 @@ def cmd_run(a):
     assert sum(r['kind'] == 'agy' and 'gemini-4' in r['model'] for r in roster) <= 1, 'at most one Gemini 4 arm a run'
     assert a.minutes <= 90, 'test runs are bounded to 90 minutes (tools/mt/launch.py)'
     # Paused start: the world waits while the agents launch, and the sprint begins for all of them at once.
-    rcon_route()
+    route = rcon_route()
     env = dict(os.environ, POG_MT_FRESH='1', POG_MT_FRESH_SAVE=str(BASELINE), POG_SEED='30744', POG_GAME_TEST='0',
                POG_IDLE_NUDGE='0', POG_MT_PAUSED_START='1', POG_STOP_WORLD='1',
                POG_CLAIM_OWNER=os.environ.get('POG_CLAIM_OWNER', 'eng-mt309'))
@@ -445,6 +465,7 @@ def cmd_run(a):
     rcon_set_paused(False)
     tick, paused = rcon_tick()
     state = dict(start_tick=tick, start_at=time.time(), minutes=a.minutes, score_version=SCORE_VERSION, roster=roster)
+    state.update(rcon_route=route, rcon_connect_s=rcon_connect_s())
     (op/'sprint.json').write_text(json.dumps(state, indent=1))
     meter_check(op, state)
     supervise(a.run, op, state, env, time.time() + 900)

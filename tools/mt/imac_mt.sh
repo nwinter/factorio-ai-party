@@ -20,12 +20,20 @@ mods_file=${MT_MODS_FILE:-$root/agent/mt/mods.tsv}
 rcon_port=${MT_RCON_PORT:-27475} game_port=${MT_GAME_PORT:-34475}
 pwfile=${MT_PASSWORD_FILE:-$HOME/.config/pog/rcon-imac-mt.pw}
 mod=$root/vendor/factorio-harness/mod/agent-harness_0.1.0
-remote() { ssh -o ConnectTimeout=10 -o BatchMode=yes "$host" "$@"; }
+# (mt309 s1r1) ssh's own failure (255) is retried: one blip read an empty server.pid and stop/status said "not running"
+remote() {
+  local rc
+  for _ in 1 2 3; do ssh -o ConnectTimeout=10 -o BatchMode=yes "$host" "$@"; rc=$?; [ $rc -ne 255 ] && return $rc; sleep 3; done
+  return $rc
+}
+# (mt309 s1r1) RCON from this Mac follows IMAC_RCON_HOST (tools/mt/rcon_tunnel.sh: macOS Local Network privacy refused
+# Python's connections to the iMac on chonk)
+rcon_host=${IMAC_RCON_HOST:-$host}
 ready() {
   python3 -c "
 import sys; sys.path.insert(0, '$root/tools')
 from pog import Rcon
-r = Rcon('$host', $rcon_port, open('$pwfile').read().strip(), timeout=10)
+r = Rcon('$rcon_host', $rcon_port, open('$pwfile').read().strip(), timeout=10)
 out=r.command(\"/silent-command assert(script.active_mods.base=='$expected','wrong engine'); rcon.print('tick ' .. game.tick .. (game.tick_paused and ' (paused)' or ''))\"); assert out.strip().startswith('tick '), out; print(out)"
 }
 case ${1:-status} in
@@ -119,7 +127,7 @@ stop)
   python3 -c "
 import sys; sys.path.insert(0, '$root/tools')
 from pog import Rcon
-Rcon('$host', $rcon_port, open('$pwfile').read().strip(), timeout=10).command('/quit')" >/dev/null 2>&1 || true
+Rcon('$rcon_host', $rcon_port, open('$pwfile').read().strip(), timeout=10).command('/quit')" >/dev/null 2>&1 || true
   for _ in $(seq 1 20); do remote "kill -0 $pid 2>/dev/null" || break; sleep 1; done
   if remote "kill -0 $pid 2>/dev/null"; then remote "kill $pid"; sleep 2; fi   # its own PID only
   remote "rm -f '$dir/server.pid'"
