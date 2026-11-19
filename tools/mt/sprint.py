@@ -259,7 +259,8 @@ def roster_rows(path):
 
 def cmd_score(a):
     roster = roster_rows(op_dir(a.run)/'teams.tsv')
-    minutes = a.minutes or json.loads((op_dir(a.run)/'sprint.json').read_text())['minutes']
+    st = json.loads((op_dir(a.run)/'sprint.json').read_text()) if (op_dir(a.run)/'sprint.json').exists() else {}
+    minutes = a.minutes or st.get('played_minutes') or st['minutes']
     st = start_tick(a.run)
     out = {r['arm']: dict(team=r['team'], **score_rows(read_scores(a.run, r['team']), st, minutes)) for r in roster}
     (op_dir(a.run)/'sprint-score.json').write_text(json.dumps(out, indent=1))
@@ -306,13 +307,81 @@ def rcon_tick():
     return int(out[0]), out[1] == 'true'
 
 
+WAKE = Path('/Users/owner/code/pog-operator/mt309-wake.jsonl')
+EXPECT = {'opus': 'claude-opus-5-5', 'sonnet': 'claude-sonnet-5-5', 'haiku': 'claude-haiku-5-5', 'fable': 'claude-fable-5-2'}
+
+
+def wake(text):
+    with WAKE.open('a') as f:
+        f.write(json.dumps({'t': int(time.time()), 'from': 'eng-mt309', 'text': text}) + '\n')
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0); return True
+    except OSError:
+        return False
+
+
+def meter_check(op, sprint_state):
+    """One 15-minute check: every approved account's windows into op/meter-checks.jsonl; the first time a window
+    passes 80% is noted in sprint.json (the run goes on: a window that runs out is a result)."""
+    import meter as M
+    try:
+        acc = M.accounts()
+    except (OSError, ValueError) as e:
+        acc = {'error': str(e)}
+    with (op/'meter-checks.jsonl').open('a') as f:
+        f.write(json.dumps({'at': time.time(), 'accounts': acc}) + '\n')
+    for route, r in acc.items() if isinstance(acc, dict) else []:
+        for key, w in (r.get('windows') or {}).items() if isinstance(r, dict) else []:
+            if (w.get('percent') or 0) >= 80 and f'{route}:{key}' not in sprint_state.setdefault('over_80', {}):
+                sprint_state['over_80'][f'{route}:{key}'] = time.time()
+
+
+def served_models(op, roster):
+    """{arm: {model: calls}} for the Claude arms, from their transcripts; wakes on a model other than the one asked."""
+    ws = json.loads((op/'workspaces.json').read_text()) if (op/'workspaces.json').exists() else {}
+    out, bad = {}, []
+    for r in roster:
+        if r['kind'] != 'claude':
+            continue
+        d = Path((ws.get(r['team']) or {}).get('dir', ''))/r['arm']
+        out[r['arm']] = arm_tokens('claude', arm_files('claude', r['route'], d))['models']
+        want = EXPECT.get(family(r['model']) or '')
+        if out[r['arm']] and want and set(out[r['arm']]) - {want, '<synthetic>'}:
+            bad.append(f"{r['arm']} asked {r['model']} served {out[r['arm']]}")
+    if bad:
+        wake(f"{op.parent.name}: served model differs: {'; '.join(bad)} (run continues)")
+    return out
+
+
+def summary(run):
+    sc = json.loads((op_dir(run)/'sprint-score.json').read_text())
+    bu = json.loads((op_dir(run)/'sprint-burn.json').read_text()) if (op_dir(run)/'sprint-burn.json').exists() else {}
+    me = json.loads((op_dir(run)/'meter.json').read_text()) if (op_dir(run)/'meter.json').exists() else {}
+    st = json.loads((op_dir(run)/'sprint.json').read_text())
+    parts = []
+    for arm, s in sc.items():
+        b = (bu.get(arm) or {}).get('meter') or {}
+        acct = (me.get('seats', {}).get(arm) or {}).get('account_delta')
+        gates = ', '.join(f'{g} {m}m' for g, m in s['gates'].items()) or 'no gate'
+        parts.append(f"{arm} ({s['team']}): score {s['total']} [{gates}; research {s.get('research', 0)}, plates/min "
+                     f"{s.get('plates_per_min', 0)}]; burn tokens->{b.get('pct')} plan ${b.get('plan_usd')}; account delta {acct}")
+    over = st.get('over_80') or {}
+    return (f"{run} done: " + ' | '.join(parts) + (f" | windows over 80%: {over}" if over else '')
+            + f" | details runs/{run}/op/sprint-*.json")
+
+
 def cmd_run(a):
     roster = roster_rows(a.roster)
     assert 1 <= len(roster) <= 3 and len({r['team'] for r in roster}) == len(roster), 'one arm per force, at most three'
     assert all(r['route'] not in FORBIDDEN_ROUTES for r in roster), 'account B route refused'
+    assert sum(r['kind'] == 'agy' and 'gemini-4' in r['model'] for r in roster) <= 1, 'at most one Gemini 4 arm a run'
     assert a.minutes <= 90, 'test runs are bounded to 90 minutes (tools/mt/launch.py)'
+    # Paused start: the world waits while the agents launch, and the sprint begins for all of them at once.
     env = dict(os.environ, POG_MT_FRESH='1', POG_MT_FRESH_SAVE=str(BASELINE), POG_SEED='30744', POG_GAME_TEST='0',
-               POG_IDLE_NUDGE='0',
+               POG_IDLE_NUDGE='0', POG_MT_PAUSED_START='1', POG_STOP_WORLD='1',
                POG_CLAIM_OWNER=os.environ.get('POG_CLAIM_OWNER', 'eng-mt309'))
     sha = subprocess.run(['shasum', '-a', '256', str(BASELINE)], capture_output=True, text=True).stdout.split()[0]
     assert sha == BASELINE_SHA, f'baseline changed: {sha}'
@@ -321,27 +390,47 @@ def cmd_run(a):
         print('dry run:', ' '.join(launch)); subprocess.run(launch, env=env, check=True); return
     subprocess.run(launch + ['--execute'], env=env, check=True)
     op = op_dir(a.run)
-    # The sprint starts at the first unpaused tick after every agent has started (start-mt.sh unpauses then).
-    while True:
-        tick, paused = rcon_tick()
-        if not paused and (op/'panes.txt').exists():
-            break
+    pid = json.loads((op/'launch-process.json').read_text())['pid']
+    t0 = time.time()
+    while alive(pid):                       # start-mt.sh returns once every agent is launched and helpers run
+        assert time.time() - t0 < 1800, 'start-mt.sh still running after 30 minutes'
         time.sleep(10)
-    (op/'sprint.json').write_text(json.dumps(dict(start_tick=tick, start_at=time.time(), minutes=a.minutes,
-                                                  score_version=SCORE_VERSION, roster=roster), indent=1))
+    log = (op/'start.log').read_text() if (op/'start.log').exists() else ''
+    if (op/'not-started.txt').exists() or 'refusing' in log:
+        wake(f"{a.run}: start failed or an agent did not start; see runs/{a.run}/op (world left paused)")
+        raise SystemExit(f'{a.run}: start failed')
+    subprocess.run([sys.executable, str(ROOT/'tools/pog.py'), '--world', 'imac2', 'rcon',
+                    '/silent-command game.tick_paused = false'], check=True, timeout=30)
+    tick, paused = rcon_tick()
+    state = dict(start_tick=tick, start_at=time.time(), minutes=a.minutes, score_version=SCORE_VERSION, roster=roster)
+    save = lambda: (op/'sprint.json').write_text(json.dumps(state, indent=1))
+    save(); meter_check(op, state); next_check = time.time() + 900; checked_models = False
     while True:   # played game time, so a pause never shortens a sprint
         tick, paused = rcon_tick()
-        if tick - json.loads((op/'sprint.json').read_text())['start_tick'] >= a.minutes * 3600:
+        # full_run.py's single shift (2.1.24 runs are continuous) stops the agents MINUTES after its init, a few
+        # seconds before the unpause: the sprint ends there or at MINUTES of played game time, whichever is first.
+        done = (json.loads((op/'full-run.json').read_text()).get('phase') if (op/'full-run.json').exists() else None) == 'shifts-complete'
+        if done or tick - state['start_tick'] >= a.minutes * 3600:
+            state['ended_by'] = 'shift end' if done else 'game time'
             break
+        if not checked_models and time.time() - state['start_at'] > 600:
+            state['served_models'] = served_models(op, roster); checked_models = True; save()
+        if time.time() >= next_check:
+            meter_check(op, state); save(); next_check += 900
         time.sleep(20)
     subprocess.run([sys.executable, str(ROOT/'tools/pog.py'), '--world', 'imac2', 'rcon',
                     '/silent-command game.tick_paused = true'], check=True, timeout=30)
     time.sleep(130)  # one more score row per force (score-loop.sh, every 120 s), taken on the paused world
-    s = json.loads((op/'sprint.json').read_text()); s.update(end_tick=tick, end_at=time.time())
-    (op/'sprint.json').write_text(json.dumps(s, indent=1))
-    cmd_score(argparse.Namespace(run=a.run, minutes=a.minutes))
+    meter_check(op, state)
+    played = min(a.minutes, (tick - state['start_tick']) / 3600)
+    state.update(end_tick=tick, end_at=time.time(), played_minutes=round(played, 2)); save()
+    cmd_score(argparse.Namespace(run=a.run, minutes=played))
     subprocess.run(['bash', str(ROOT/'tools/mt/stop-mt.sh'), a.run], env=env, check=False)
     cmd_burn(argparse.Namespace(run=a.run))
+    import meter as M
+    time.sleep(300)  # ai-usage refreshes every ~5 minutes: one reading after the end
+    M.run_meter(a.run)
+    wake(summary(a.run))
 
 
 def main(argv=None):
@@ -350,7 +439,7 @@ def main(argv=None):
     q = sub.add_parser('plan'); q.add_argument('arms_file'); q.add_argument('--per-run', type=int, default=3)
     q.add_argument('--runs', type=int); q.add_argument('--prefix', default='s1'); q.add_argument('--out')
     q.add_argument('--minutes', type=int, default=90)
-    q = sub.add_parser('score'); q.add_argument('run'); q.add_argument('--minutes', type=int)
+    q = sub.add_parser('score'); q.add_argument('run'); q.add_argument('--minutes', type=float)
     q = sub.add_parser('burn'); q.add_argument('run')
     q = sub.add_parser('run'); q.add_argument('run'); q.add_argument('roster'); q.add_argument('minutes', type=int)
     q.add_argument('--execute', action='store_true')

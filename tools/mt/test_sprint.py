@@ -121,5 +121,28 @@ class Meter(unittest.TestCase):
         self.assertNotIn('claude_account_b', json.dumps(a))
 
 
+class ServerBackup(unittest.TestCase):
+    def test_backup_restore_round_trip(self):
+        import subprocess, server_backup
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)/'pog-mt21'
+            (root/'saves').mkdir(parents=True); (root/'mods').mkdir(); (root/'config').mkdir()
+            (root/'saves'/'mt.zip').write_bytes(b'prior'); (root/'mods'/'a.zip').write_bytes(b'm')
+            (root/'server-settings.json').write_text('{}'); (root/'saves'/'old.zip').write_bytes(b'o')
+            script = server_backup.REMOTE.replace(repr(server_backup.MT_DIR), repr(str(root)))
+            run = lambda *a: json.loads(subprocess.run([sys.executable, '-', *a], input=script, capture_output=True,
+                                                       text=True, check=True).stdout.splitlines()[-1])
+            self.assertEqual(run('backup', 'eng-x')['entries'], 7)   # mt.zip, mods, mods/a.zip, config, settings, 2 absent
+            (root/'saves'/'mt.zip').write_bytes(b'run'); (root/'saves'/'s1r1.zip').write_bytes(b'r')
+            (root/'mods'/'a.zip').write_bytes(b'changed')
+            self.assertFalse(run('verify', 'eng-x')['same'])
+            self.assertEqual(run('new-saves', 'eng-x')['new'], ['s1r1.zip'])
+            res = run('restore', 'eng-x')
+            self.assertEqual(res['removed_saves'], ['s1r1.zip'])
+            self.assertEqual((root/'saves'/'mt.zip').read_bytes(), b'prior')
+            self.assertTrue((root/'saves'/'old.zip').exists())
+            self.assertTrue(run('verify', 'eng-x')['same'])
+
+
 if __name__ == '__main__':
     unittest.main()
