@@ -55,16 +55,33 @@ def accounts(brief=None, now=None):
 
 
 def history(profile, since, until=None):
-    """{window key: [(at, percent, resets_at)]} from ai-usage's quota history."""
-    snaps = json.loads((CACHE/'quota-history.json').read_text()).get('snapshots', [])
-    out = {}
-    for s in snaps:
-        if s.get('profile') != profile or not since <= s.get('at', 0) <= (until or 9e9):
+    """{window key: [(at, percent, resets_at)]}: ai-quota's replicated observations (quota-observations.jsonl, every
+    window reading, deduplicated by observation_id, by observed_at), plus ai-usage's older quota-history.json for
+    readings before the journal. An exact profile id: another host's own CLI rows are NAME@HOST."""
+    until = until or 9e9
+    seen, pts = set(), {}
+    obs = CACHE/'quota-observations.jsonl'
+    if obs.exists():
+        for line in obs.open():
+            try:
+                o = json.loads(line)
+            except ValueError:
+                continue
+            at = o.get('observed_at') or 0
+            if o.get('profile') != profile or o.get('observation_id') in seen or not since <= at <= until:
+                continue
+            seen.add(o.get('observation_id'))
+            for w in o.get('windows') or []:
+                if w.get('percent') is not None:
+                    pts.setdefault(w['key'], {})[at] = (at, w['percent'], w.get('resets_at'))
+    hist = CACHE/'quota-history.json'
+    for snap in (json.loads(hist.read_text()).get('snapshots', []) if hist.exists() else []):
+        if snap.get('profile') != profile or not since <= snap.get('at', 0) <= until:
             continue
-        for w in s.get('windows') or []:
+        for w in snap.get('windows') or []:
             if w.get('percent') is not None:
-                out.setdefault(w['key'], []).append((s['at'], w['percent'], w.get('resets_at')))
-    return {k: sorted(v) for k, v in out.items()}
+                pts.setdefault(w['key'], {}).setdefault(snap['at'], (snap['at'], w['percent'], w.get('resets_at')))
+    return {k: sorted(v.values()) for k, v in pts.items()}
 
 
 def delta(series):
