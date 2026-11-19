@@ -54,6 +54,34 @@ for n in (2, 3, 4, 6):
     check(f"{n} teams: the cleared circles round two starts do not meet",
           all(math.dist((a["x"], a["y"]), (b["x"], b["y"])) > a["r"] + b["r"] for i, a in enumerate(starts_clear) for b in starts_clear[i + 1:]))
 
+# (mt308) home "toward": each team's own patches mirrored toward the middle, same distances; at 500 tiles apart no two
+# patch discs (oil: its 10-tile placement disc) meet before placement shifts them
+for n in (3,):
+    away, toward = M.layout(n, 500, team_names=["green", "yellow", "blue"]), M.layout(n, 500, team_names=["green", "yellow", "blue"], home="toward")
+    check("home toward: recorded", toward["home"] == "toward" and away["home"] == "away")
+    for t in toward["teams"]:
+        s = t["spawns"]["nauvis"]
+        mine = [p for p in toward["patches"] if p["site"] == "start " + t["name"]]
+        theirs = [p for p in away["patches"] if p["site"] == "start " + t["name"]]
+        check(f"home toward: {t['name']} same patches at the same distances (within 3 tiles: grid rounding)",
+              [p["name"] for p in mine] == [p["name"] for p in theirs]
+              and all(abs(math.dist(s, (p["x"], p["y"])) - math.dist(s, (q["x"], q["y"]))) <= 3 for p, q in zip(mine, theirs)))
+        iron = next(p for p in mine if p["name"] == "iron-ore")
+        check(f"home toward: {t['name']} iron nearer the middle than its start", math.dist((iron["x"], iron["y"]), (0, 0)) < math.dist(s, (0, 0)))
+    discs = [((p["x"], p["y"]), p.get("r") or 10) for p in toward["patches"]]
+    for site in toward["place_sites"]:
+        discs += [((site["x"] + q["dx"], site["y"] + q["dy"]), q.get("r") or 10) for q in site["patches"]]
+    gap = min(math.dist(a[0], b[0]) - a[1] - b[1] for i, a in enumerate(discs) for b in discs[i + 1:])
+    check("home toward, 500 apart: no two patch discs meet", gap > 0, gap)
+
+lay = M.layout(3, 400, team_names=["green", "yellow", "blue"], home="toward", middle=False)
+check("no middle: no third site, three second sites", [s["kind"] for s in lay["sites"]] == ["second"] * 3 and lay["middle"] is False, lay["sites"])
+discs = [((p["x"], p["y"]), p.get("r") or 10) for p in lay["patches"]]
+for site in lay["place_sites"]:
+    discs += [((site["x"] + q["dx"], site["y"] + q["dy"]), q.get("r") or 10) for q in site["patches"]]
+gap = min(math.dist(a[0], b[0]) - a[1] - b[1] for i, a in enumerate(discs) for b in discs[i + 1:])
+check("home toward, 400 apart, no middle: no two patch discs meet", gap > 0, gap)
+
 base = {"autoplace_controls": {"iron-ore": {"frequency": 1, "size": 1, "richness": 1}}, "_comment": "x", "seed": 1}
 mgs = M.map_gen_settings(M.layout(4, 1000), base, 7, 2, 1.5)
 check("map-gen-settings: each start a starting point", len(mgs["starting_points"]) == 4 and mgs["starting_points"][0]["x"] == 500.5,

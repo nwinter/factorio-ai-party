@@ -30,7 +30,10 @@ def weekly_usage(profile):
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('run');p.add_argument('--execute',action='store_true')
     p.add_argument('--shift-minutes',type=int,default=180)
+    # (mt308) chonk has no codex-b: name the engineering route that runs the controller (personal claude on chonk)
     p.add_argument('--quota-profile',default='codex-b');p.add_argument('--quota-stop',type=float,default=70)
+    p.add_argument('--unknown-quota-continue',action='store_true',
+                   help='a stale/missing engineering reading is recorded as a gap and the drill continues; only a fresh reading over the stop ends it')
     p.add_argument('--measure',action='store_true')
     p.add_argument('--unlisted',action='store_true',help='require an unlisted stream at restore and prove its recovery')
     a=p.parse_args();assert a.shift_minutes>=1 and 0<a.quota_stop<=100
@@ -48,7 +51,7 @@ def main():
         if not a.measure:return None
         assert TEAM_RUNS.is_dir(),f'{TEAM_RUNS} is missing'
         archive.mkdir(parents=True,exist_ok=True)
-        dest=ROOT.parent.parent/'artifacts/mt307';dest.mkdir(parents=True,exist_ok=True)
+        dest=ROOT.parent.parent/'artifacts'/a.run;dest.mkdir(parents=True,exist_ok=True)
         host=os.environ.get('IMAC_HOST','imac.local')
         logcmd=shlex.join(['ssh','-o','BatchMode=yes',host,'tail -n 15000 /Users/owner/pog-mt21/data/factorio-current.log'])
         cmd=[sys.executable,'-u',ROOT/'tools/mt/load_bench.py','--host',host,'--port','27475',
@@ -73,7 +76,15 @@ def main():
         while time.time()<end:
             if stop.is_set():raise RuntimeError('rehearsal interrupted')
             used=weekly_usage(a.quota_profile)
+            if used is None and a.unknown_quota_continue:
+                # (mt308) the menubar brief can go stale for minutes; an unknown reading is a gap, never a stop or 0%
+                gaps=state.setdefault('engineering_unknown',[])
+                if not gaps or gaps[-1].get('end') is not None:gaps.append(dict(start=time.time(),end=None))
+                if predicate():return
+                record(engineering_profile=a.quota_profile,engineering_weekly=None);stop.wait(10);continue
             if used is None:raise RuntimeError(f'{a.quota_profile} weekly quota is unavailable or stale')
+            gaps=state.get('engineering_unknown')
+            if gaps and gaps[-1].get('end') is None:gaps[-1]['end']=time.time()
             if used>a.quota_stop:raise RuntimeError(f'{a.quota_profile} weekly {used}% exceeds {a.quota_stop}% stop rule')
             if predicate():return
             record(engineering_profile=a.quota_profile,engineering_weekly=used);stop.wait(10)
