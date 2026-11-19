@@ -1,0 +1,10 @@
+# arm	kind	route	model	effort	label	harness   (mt309 Stage 1 proposal: default effort per model; Astra/Sol only after the Sun Nov 22 20:16 Codex reset)
+opus	claude	claude	opus	medium	Claude Opus 5.5	Claude Code
+sonnet	claude	claude	sonnet	high	Claude Sonnet 5.5	Claude Code
+neon	agy	-	gemini-4-neon-medium	-	Gemini 4 Neon	Antigravity
+carbon	agy	-	gemini-4-carbon-medium	-	Gemini 4 Carbon	Antigravity
+argon	agy	-	gemini-4-argon-medium	-	Gemini 4 Argon	Antigravity
+hydrogen	agy	-	gemini-4-hydrogen-medium	-	Gemini 4 Hydrogen	Antigravity
+flash	agy	-	gemini-3.8-flash-high	-	Gemini 3.8 Flash	Antigravity
+grok	grok	-	grok-4.7	medium	Grok 4.7	Grok Build
+muse	muse	-	muse-spark-1.3	medium	Muse Spark 1.3	Muse Code

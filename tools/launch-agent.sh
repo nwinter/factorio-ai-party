@@ -256,6 +256,15 @@ claude_settings() {
     filesystem="\"denyRead\": [\"$HOME/.config/pog\", $roots], \"allowRead\": [$(echo $readable | sed 's/" "/", "/g')]"
     file_allow="$(for f in $readable; do f=${f//\"/}; [ -f "$f" ] && printf '"Read(/%s)", ' "$f" || printf '"Read(/%s/**)", ' "$f"; done)${allow#\"Read\", \"Grep\", \"Glob\", }"
     keys_rules=""
+  elif [ "${POG_READ_SCOPE:-0}" = 1 ] && [ "${POG_ISOLATED:-0}" = 1 ] && [ "${1:-}" != nosandbox ]; then
+    # (mt309) A multi-team run: the whole tree is this team's (tools/mt/workspaces.py), so the shell and the Read tool
+    # read it and nothing else under ~/code, Dropbox, the media folder or the CLIs' homes (rival trees, the operator's
+    # checkout and reports, transcripts). No other team's path is named.
+    local roots="\"$HOME/code\", \"$HOME/pog-media\", \"$HOME/.claude-profiles\", \"$HOME/.codex\"" f
+    for f in "$HOME/Dropbox" "$HOME/Dropbox (Personal)"; do [ -e "$f" ] && roots="$roots, \"$f\""; done
+    filesystem="\"denyRead\": [\"$HOME/.config/pog\", $roots], \"allowRead\": [\"$root\"]"
+    file_allow="\"Read(/$root/**)\", ${allow#\"Read\", \"Grep\", \"Glob\", }"
+    keys_rules=""
   fi
   local sandbox="\"sandbox\": {\"enabled\": true, \"autoAllowBashIfSandboxed\": true, \"allowUnsandboxedCommands\": false,
     \"network\": {\"allowLocalBinding\": true$sockets}, \"filesystem\": {$filesystem}},"

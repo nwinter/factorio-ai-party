@@ -464,10 +464,41 @@ def claude_settings():
     print("claude settings: ok")
 
 
+def claude_settings_isolated():
+    """(mt309) a multi-team run (POG_ISOLATED, POG_READ_SCOPE, plain RUN): reads are the team's tree only."""
+    text = open(os.path.join(ROOT, "tools", "launch-agent.sh")).read()
+    start = text.index("claude_settings() {")
+    body = text[start:text.index("\nEOS\n}\n", start) + len("\nEOS\n}\n")]
+    tmp = tempfile.mkdtemp()
+    try:
+        ws = os.path.join(tmp, "runs", "now", "arm1")
+        os.makedirs(ws)
+        allow = '"Read", "Grep", "Glob", "Edit(/**)", "Bash(./fh:*)"'
+        script = f"root={tmp!r} run=now dir={ws!r} allow='{allow}'\n{body}\nclaude_settings\n"
+        subprocess.run(["bash", "-c", script], check=True, env=dict(os.environ, POG_BROKER="1", POG_BOT="arm1",
+                       POG_ISOLATED="1", POG_READ_SCOPE="1", POG_DENY_READ="/elsewhere/rival /elsewhere/op"))
+        cfg = json.load(open(os.path.join(ws, ".claude", "settings.json")))
+        fs, perms = cfg["sandbox"]["filesystem"], cfg["permissions"]
+        home = os.path.expanduser("~")
+        assert fs["allowRead"] == [tmp], fs
+        for d in ("code", "pog-media", ".claude-profiles", ".codex"):
+            assert os.path.join(home, d) in fs["denyRead"], fs
+        assert "/elsewhere/rival" not in json.dumps(cfg), "isolated settings name no other team's path"
+        assert '"Read"' not in json.dumps(perms["allow"]) and "Grep" not in perms["allow"], perms["allow"]
+        assert f"Read(/{tmp}/**)" in perms["allow"], perms["allow"]
+    finally:
+        shutil.rmtree(tmp)
+    flags = subprocess.run(["bash", "-c", f"POG_FULL_TOOLS=1 POG_ISOLATED=1 POG_WEB_BLOCK=x; source {os.path.join(ROOT, 'tools', 'profile-flags.sh')!r}; echo $claude_tools"],
+                           capture_output=True, text=True).stdout
+    assert "WebFetch" not in flags and "WebSearch" not in flags, flags
+    print("claude settings isolated: ok")
+
+
 if __name__ == "__main__":
     check()
     new_run()
     claude_settings()
+    claude_settings_isolated()
     handler()
     retries()
     probe()

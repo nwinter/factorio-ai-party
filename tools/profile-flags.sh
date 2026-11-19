@@ -13,7 +13,9 @@ claude_vars="ENABLE_CLAUDEAI_MCP_SERVERS=false CLAUDE_CODE_ENABLE_CFC=false CLAU
 claude_tools="Bash,Read,Edit,Write,Grep,Glob"
 # POG_WEB_BLOCK (tools/full_tools.py): no WebSearch (all or nothing); WebFetch with the hosts denied
 if [ "${POG_FULL_TOOLS:-}" = 1 ]; then
-  if [ -n "${POG_WEB_BLOCK:-}" ]; then claude_tools="$claude_tools,Agent,WebFetch,TaskStop,Monitor"
+  # (mt309) an isolated team gets no WebFetch: any host but the blocked few reaches search pages and rival news
+  if [ "${POG_ISOLATED:-0}" = 1 ]; then claude_tools="$claude_tools,Agent,TaskStop,Monitor"
+  elif [ -n "${POG_WEB_BLOCK:-}" ]; then claude_tools="$claude_tools,Agent,WebFetch,TaskStop,Monitor"
   else claude_tools="$claude_tools,Agent,WebSearch,WebFetch,TaskStop,Monitor"; fi
 fi
 claude_flags="--permission-mode dontAsk --setting-sources project,local --tools $claude_tools --strict-mcp-config --mcp-config '{\"mcpServers\":{}}' --no-chrome --disable-slash-commands"
