@@ -306,11 +306,47 @@ def cmd_plan(a):
             print(f"  {x['team']:6} {x['arm']:10} {x['label']:22} effort {x['effort']:6} expected {expected_burn(x, a.minutes)}")
 
 
-def rcon_tick():
-    out = subprocess.run([sys.executable, str(ROOT/'tools/pog.py'), '--world', 'imac2', 'rcon',
-                          '/silent-command rcon.print(game.tick .. " " .. tostring(game.tick_paused))'],
-                         capture_output=True, text=True, timeout=30).stdout.split()
-    return int(out[0]), out[1] == 'true'
+def rcon_tick(patience=600):
+    """(tick, paused). (s1r1 12:47) chonk lost IPv4 to imac.local for a moment ("No route to host") and one failed
+    read ended the runner: a read is retried for PATIENCE seconds before it fails."""
+    t0, err = time.time(), None
+    while time.time() - t0 < patience:
+        try:
+            r = subprocess.run([sys.executable, str(ROOT/'tools/pog.py'), '--world', 'imac2', 'rcon',
+                                '/silent-command rcon.print(game.tick .. " " .. tostring(game.tick_paused))'],
+                               capture_output=True, text=True, timeout=30)
+            out = r.stdout.split()
+            if len(out) >= 2:
+                return int(out[0]), out[1] == 'true'
+            err = (r.stderr.strip().splitlines() or ['no output'])[-1]
+        except (subprocess.TimeoutExpired, ValueError) as e:
+            err = repr(e)
+        print(time.strftime('%H:%M:%S'), 'tick read failed, retrying:', err, flush=True)
+        time.sleep(15)
+    raise RuntimeError(f'no tick read for {patience} s: {err}')
+
+
+def rcon_set_paused(paused):
+    for i in range(20):
+        r = subprocess.run([sys.executable, str(ROOT/'tools/pog.py'), '--world', 'imac2', 'rcon',
+                            f'/silent-command game.tick_paused = {"true" if paused else "false"}'], capture_output=True, timeout=30)
+        if r.returncode == 0:
+            return
+        time.sleep(15)
+    raise RuntimeError('pause/unpause failed for 5 minutes')
+
+
+def rcon_route():
+    """(s1r1 12:47) macOS Local Network privacy refused Python's connections from chonk to imac.local: imac2's RCON goes
+    through tools/mt/rcon_tunnel.sh (ssh, 127.0.0.1:27475). Every RCON client here and in the play trees (pog.py,
+    fh_broker.py) follows IMAC_RCON_HOST, which this sets for the runner and everything it starts."""
+    import socket
+    try:
+        socket.create_connection(('127.0.0.1', 27475), 3).close()
+    except OSError:
+        raise SystemExit('start the RCON tunnel first: nohup tools/mt/rcon_tunnel.sh > runs/rcon-tunnel.log 2>&1 &')
+    os.environ['IMAC_RCON_HOST'] = '127.0.0.1'
+    return {'IMAC_RCON_HOST': '127.0.0.1'}
 
 
 WAKE = Path('/Users/owner/code/pog-operator/mt309-wake.jsonl')
@@ -386,6 +422,7 @@ def cmd_run(a):
     assert sum(r['kind'] == 'agy' and 'gemini-4' in r['model'] for r in roster) <= 1, 'at most one Gemini 4 arm a run'
     assert a.minutes <= 90, 'test runs are bounded to 90 minutes (tools/mt/launch.py)'
     # Paused start: the world waits while the agents launch, and the sprint begins for all of them at once.
+    rcon_route()
     env = dict(os.environ, POG_MT_FRESH='1', POG_MT_FRESH_SAVE=str(BASELINE), POG_SEED='30744', POG_GAME_TEST='0',
                POG_IDLE_NUDGE='0', POG_MT_PAUSED_START='1', POG_STOP_WORLD='1',
                POG_CLAIM_OWNER=os.environ.get('POG_CLAIM_OWNER', 'eng-mt309'))
@@ -405,12 +442,31 @@ def cmd_run(a):
     if (op/'not-started.txt').exists() or 'refusing' in log:
         wake(f"{a.run}: start failed or an agent did not start; see runs/{a.run}/op (world left paused)")
         raise SystemExit(f'{a.run}: start failed')
-    subprocess.run([sys.executable, str(ROOT/'tools/pog.py'), '--world', 'imac2', 'rcon',
-                    '/silent-command game.tick_paused = false'], check=True, timeout=30)
+    rcon_set_paused(False)
     tick, paused = rcon_tick()
     state = dict(start_tick=tick, start_at=time.time(), minutes=a.minutes, score_version=SCORE_VERSION, roster=roster)
+    (op/'sprint.json').write_text(json.dumps(state, indent=1))
+    meter_check(op, state)
+    supervise(a.run, op, state, env, time.time() + 900)
+
+
+def cmd_resume(a):
+    """Re-enter a running sprint's supervision from its sprint.json (the runner process died, the world did not)."""
+    op = op_dir(a.run)
+    state = json.loads((op/'sprint.json').read_text())
+    state.setdefault('resumed_at', []).append(time.time())
+    rcon_route()
+    env = dict(os.environ, POG_STOP_WORLD='1', POG_CLAIM_OWNER=os.environ.get('POG_CLAIM_OWNER', 'eng-mt309'))
+    checks = [json.loads(l)['at'] for l in (op/'meter-checks.jsonl').read_text().splitlines()] if (op/'meter-checks.jsonl').exists() else []
+    nxt = (max(checks) + 900) if checks else time.time()
+    supervise(a.run, op, state, env, max(time.time(), nxt))
+
+
+def supervise(run, op, state, env, next_check):
+    roster, minutes = state['roster'], state['minutes']
+    a = argparse.Namespace(run=run, minutes=minutes)
     save = lambda: (op/'sprint.json').write_text(json.dumps(state, indent=1))
-    save(); meter_check(op, state); next_check = time.time() + 900; checked_models = False
+    save(); checked_models = 'served_models' in state
     while True:   # played game time, so a pause never shortens a sprint
         tick, paused = rcon_tick()
         # full_run.py's single shift (2.1.24 runs are continuous) stops the agents MINUTES after its init, a few
@@ -424,8 +480,7 @@ def cmd_run(a):
         if time.time() >= next_check:
             meter_check(op, state); save(); next_check += 900
         time.sleep(20)
-    subprocess.run([sys.executable, str(ROOT/'tools/pog.py'), '--world', 'imac2', 'rcon',
-                    '/silent-command game.tick_paused = true'], check=True, timeout=30)
+    rcon_set_paused(True)
     time.sleep(130)  # one more score row per force (score-loop.sh, every 120 s), taken on the paused world
     meter_check(op, state)
     played = min(a.minutes, (tick - state['start_tick']) / 3600)
@@ -452,8 +507,9 @@ def main(argv=None):
     q = sub.add_parser('burn'); q.add_argument('run')
     q = sub.add_parser('run'); q.add_argument('run'); q.add_argument('roster'); q.add_argument('minutes', type=int)
     q.add_argument('--execute', action='store_true')
+    q = sub.add_parser('resume'); q.add_argument('run')
     a = p.parse_args(argv)
-    return {'plan': cmd_plan, 'score': cmd_score, 'burn': cmd_burn, 'run': cmd_run}[a.cmd](a)
+    return {'plan': cmd_plan, 'score': cmd_score, 'burn': cmd_burn, 'run': cmd_run, 'resume': cmd_resume}[a.cmd](a)
 
 
 if __name__ == '__main__':
