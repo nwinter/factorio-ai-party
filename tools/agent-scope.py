@@ -40,6 +40,18 @@ def profile(root,home,proxy=None,native=None,codex=None):
         exceptions=[root,home/'Dropbox (Personal)/misc/env/agents',home/'.profiles/agents']
         allowed=' '.join(f'(subpath {quote(str(p.resolve()))})' for p in exceptions)
         clauses.append(f'(deny file-read-data file-write* (require-all (subpath {quote(str(path.resolve()))}) (require-not (require-any {allowed}))))')
+    # (mt309 s1r1d/s1r2) Nick's personal agent skills and tooling notes are never a player's: Grok listed and Muse put
+    # into its model request the user skills of ~/.agents/skills (a link into the Dropbox agents folder, allowed above
+    # for its programs: ~/.local/bin links there), with descriptions such as "Nick's private lifelog archive".
+    # The folder stays readable only for bin/ and lib/; ~/.agents itself and agy's global rules (an always-on
+    # "Nick's shared agent tooling" note) are denied. Last match wins, so these follow the allows above.
+    for agents in {(home/'Dropbox (Personal)/misc/env/agents').resolve(), (home/'.profiles/agents').resolve()}:
+        clauses.append(f'(deny file-read* file-write* (require-all (subpath {quote(str(agents))}) '
+                       f'(require-not (subpath {quote(str(agents/"bin"))})) (require-not (subpath {quote(str(agents/"lib"))}))))')
+    clauses.append(f'(deny file-read* file-write* (subpath {quote(str(home/".agents"))}))')
+    for part in ('rules', 'skills'):
+        for d in {home/'.gemini/antigravity-cli'/part, (home/'.gemini/antigravity-cli'/part).resolve()}:
+            clauses.append(f'(deny file-read* file-write* (subpath {quote(str(d))}))')
     # Closed test trees and recordings live in the media folder (~/pog-media since d46 Nov 16; before that the
     # external POG Media volume, still denied while it may be attached). Moving them must not make another
     # pair's old notes or spectator footage agent inputs.

@@ -229,6 +229,30 @@ exit 0
             self.assertGreaterEqual(sum(' read ' in l for l in lines[:lines.index('pane send-keys w9:p1 enter')]), 5)
 
 
+class PlayerScopeSkills(unittest.TestCase):
+    def test_personal_skills_and_tooling_notes_refused(self):
+        # (s1r1d/s1r2) Grok listed and Muse sent its model Nick's ~/.agents/skills; agy has an always-on tooling rule
+        import importlib.util, subprocess
+        root = Path(__file__).resolve().parents[2]
+        spec = importlib.util.spec_from_file_location('agent_scope', root/'tools/agent-scope.py')
+        m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+        home = Path.home()
+        agents = (home/'.profiles/agents').resolve()
+        with tempfile.TemporaryDirectory(dir=root.parent) as t:
+            t = Path(t).resolve(); (t/'own.txt').write_text('x')
+            prof = t/'scope.sb'; prof.write_text(m.profile(t, home))
+            run = lambda path: subprocess.run(['/usr/bin/sandbox-exec', '-f', str(prof), '/bin/cat', str(path)],
+                                              capture_output=True, text=True).returncode
+            self.assertEqual(run(t/'own.txt'), 0)
+            for p in (home/'.agents/skills/lifelog/SKILL.md', agents/'skills/herdr/SKILL.md', agents/'README.md',
+                      home/'.gemini/antigravity-cli/rules/agent-tooling.md'):
+                if p.exists():
+                    self.assertNotEqual(run(p), 0, p)
+            tool = next((agents/'bin').iterdir(), None) if (agents/'bin').is_dir() else None
+            if tool and tool.is_file():
+                self.assertEqual(run(tool), 0, tool)        # ~/.local/bin's links into bin/ still work
+
+
 class IdlePrompt(unittest.TestCase):
     def test_idle_and_silent_arms_prompted_busy_not(self):
         # (s1r1d) Grok ended its turn at minute 46 and nothing asked it to go on
