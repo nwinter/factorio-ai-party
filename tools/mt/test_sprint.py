@@ -99,6 +99,34 @@ class Burn(unittest.TestCase):
         self.assertEqual(sprint.escaped('/Users/w/code/a.b/runs/r1/opus'), '-Users-w-code-a-b-runs-r1-opus')
 
 
+class BurnFiles(unittest.TestCase):
+    def test_grok_hidden_home_and_agy_brain(self):
+        # (s1r1d) Grok's logs sit in the hidden .grok-home, agy's in the CLI home's brain/: both read None before
+        import os, time
+        with tempfile.TemporaryDirectory() as t:
+            t = Path(t); run = t/'tree'/'runs'/'s9'
+            g = run/'grok'/'.grok-home'/'logs'; g.mkdir(parents=True)
+            (g/'unified.jsonl').write_text(json.dumps({'msg': 'shell.turn.inference_done', 'ts': '2026-11-19T20:00:00Z',
+                                                        'ctx': {'prompt_tokens': 100, 'cached_prompt_tokens': 60,
+                                                                'completion_tokens': 7}}) + '\n')
+            (run/'neon').mkdir()
+            conv = t/'agyhome'/'brain'/'c1'/'.system_generated'/'logs'; conv.mkdir(parents=True)
+            (conv/'transcript.jsonl').write_text(json.dumps({'type': 'USER', 'content': f'cwd {run}/neon runs/s9/neon'}) + '\n'
+                                                 + json.dumps({'type': 'PLANNER_RESPONSE', 'created_at': '2026-11-19T20:00:00Z',
+                                                               'input_tokens': 50, 'cache_read_tokens': 30, 'output_tokens': 5}) + '\n')
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'stream'))
+            import tokens as T
+            old = os.environ.get('POG_TOKEN_ROOTS'); os.environ['POG_TOKEN_ROOTS'] = json.dumps({'agy': [str(t/'agyhome')]}); T._roots = None
+            try:
+                gt = sprint.arm_tokens('grok', sprint.arm_files('grok', '-', run/'grok', start=time.time() - 3600))
+                at = sprint.arm_tokens('agy', sprint.arm_files('agy', '-', run/'neon', start=time.time() - 3600))
+            finally:
+                T._roots = None
+                os.environ.pop('POG_TOKEN_ROOTS') if old is None else os.environ.__setitem__('POG_TOKEN_ROOTS', old)
+            self.assertEqual((gt['calls'], gt['input'], gt['cache_read'], gt['output']), (1, 100, 60, 7))
+            self.assertEqual((at['calls'], at['input'], at['cache_read'], at['output']), (1, 80, 30, 5))
+
+
 class Meter(unittest.TestCase):
     def test_delta_adds_across_a_reset(self):
         series = [(0, 10, 1000), (100, 14, 1000), (200, 2, 900000), (300, 5, 900000)]

@@ -98,7 +98,7 @@ def escaped(path):
 POG_CODEX = Path(os.environ.get('POG_CODEX_HOME') or Path.home()/'.pog-codex'/'home')
 
 
-def arm_files(kind, route, ws, extra=()):
+def arm_files(kind, route, ws, extra=(), start=None):
     """Session files of one arm's workspace ws (absolute); extra: more session folders (a run's archived ones)."""
     ws = os.path.abspath(ws)   # the agent's cwd as the CLI saw it (no symlink resolution)
     if kind == 'claude':
@@ -116,10 +116,21 @@ def arm_files(kind, route, ws, extra=()):
                 if ws.encode() in f.read(16384):
                     out.append(p)
         return sorted(out)
-    native = Path(ws)/'.native-root'
-    roots = [Path(ws)] + ([Path(native.read_text().strip())] if native.exists() else [])
-    pattern = {'agy': 'transcript.jsonl', 'grok': 'unified.jsonl', 'muse': 'session.jsonl'}.get(kind)
-    return sorted({p for r in roots if pattern for p in glob.glob(str(r/'**'/pattern), recursive=True)})
+    # (s1r1d) agy, Grok and Muse: tools/stream/tokens.py's Finder, which knows each CLI's layout (agy's conversations
+    # in ~/.gemini/antigravity-cli/brain, one every ~5 min, placed by the run they name; Grok's .grok-home in the
+    # workspace; Muse's sessions by cwd). The glob it replaces skipped hidden folders (.grok-home) and searched the
+    # workspace for agy's and Muse's logs, which live in the CLI's home: tokens read None for every such arm.
+    sys.path.insert(0, str(ROOT/'tools'/'stream'))
+    import tokens as T
+    ws = Path(ws)
+    start = start if start is not None else os.path.getmtime(ws)
+    found = T.Finder(str(ws.parent), {ws.name: kind}, start=start, end=time.time()).files()
+    native = ws/'.native-root'          # a scoped CLI's private home, while it still exists
+    if native.exists() and Path(native.read_text().strip()).is_dir():
+        pattern = {'agy': 'transcript.jsonl', 'grok': 'unified.jsonl', 'muse': 'session.jsonl'}[kind]
+        found.update({p: None for p in glob.glob(str(Path(native.read_text().strip())/'**'/pattern), recursive=True,
+                                                 include_hidden=True)})
+    return sorted(found)
 
 
 def arm_tokens(kind, files):
@@ -129,11 +140,12 @@ def arm_tokens(kind, files):
     acc = T.blank(); models = {}
     for p in files:
         st = {}
+        fn = T.grok_updates_line if kind == 'grok' and p.endswith('updates.jsonl') else parse
         with open(p, 'rb') as f:
             for line in f:
                 try:
                     before = acc['input'] + acc['output']
-                    parse(line, acc, st)
+                    fn(line, acc, st)
                 except (ValueError, KeyError, TypeError, AttributeError):
                     continue
                 if kind == 'claude' and acc['input'] + acc['output'] != before and b'"model"' in line:
@@ -279,10 +291,12 @@ def cmd_score(a):
 def cmd_burn(a):
     tree = Path((op_dir(a.run)/'launch-tree').read_text().strip()) if (op_dir(a.run)/'launch-tree').exists() else ROOT
     ws_map = json.loads((op_dir(a.run)/'workspaces.json').read_text()) if (op_dir(a.run)/'workspaces.json').exists() else {}
+    st = json.loads((op_dir(a.run)/'sprint.json').read_text()) if (op_dir(a.run)/'sprint.json').exists() else {}
+    start = st.get('start_at')
     out = {}
     for r in roster_rows(op_dir(a.run)/'teams.tsv'):
         ws = Path((ws_map.get(r['team']) or {}).get('dir') or tree/'runs'/a.run)/r['arm']
-        files = arm_files(r['kind'], r['route'], ws, extra=[op_dir(a.run)/'codex-sessions'])
+        files = arm_files(r['kind'], r['route'], ws, extra=[op_dir(a.run)/'codex-sessions'], start=start)
         tok = arm_tokens(r['kind'], files)
         out[r['arm']] = dict(team=r['team'], kind=r['kind'], route=r['route'], model=r['model'], effort=r['effort'],
                              tokens=tok, meter=meter(r['kind'], r['route'], r['model'], tok))
