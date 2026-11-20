@@ -11,7 +11,10 @@ import argparse, json, os, re, socket, struct, sys
 
 PORTS = {"live": 27015, "a": 27021, "b": 27022, "c": 27023, "n": 27025, "sa": 27030, "imac": 27400, "imac2": 27475}
 # (d27 batch279) the private copy on the iMac (tools/imac-copy.sh), and a second server there (imac2); others: the tunnel
-HOSTS = {"imac": "imac.local", "imac2": "imac.local"}
+# (mt309 s1r1) IMAC_RCON_HOST: on chonk macOS Local Network privacy refused Python's connections to the iMac from 12:47
+# Nov 19 (EHOSTUNREACH, "No route to host"; Apple's ssh and nc still connect). tools/mt/rcon_tunnel.sh forwards
+# 127.0.0.1:27475 over ssh, and IMAC_RCON_HOST=127.0.0.1 sends imac2's RCON (pog.py, fh_broker.py) through it.
+HOSTS = {"imac": "imac.local", "imac2": os.environ.get("IMAC_RCON_HOST") or "imac.local"}
 
 
 def connect(host, port, timeout):

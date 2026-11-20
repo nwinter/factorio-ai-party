@@ -1,0 +1,4 @@
+# team	name	kind	route	model	effort	label	harness
+green	fable	claude	claude	fable	high	Claude Fable 5.2	Claude Code
+yellow	neon	agy	-	gemini-4-neon-medium	-	Gemini 4 Neon	Antigravity
+blue	grok	grok	-	grok-4.7	medium	Grok 4.7	Grok Build

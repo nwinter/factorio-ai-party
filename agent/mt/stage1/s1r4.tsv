@@ -1,0 +1,4 @@
+# team	name	kind	route	model	effort	label	harness
+green	hydrogen	agy	-	gemini-4-hydrogen-medium	-	Gemini 4 Hydrogen	Antigravity
+yellow	opus	claude	claude	opus	medium	Claude Opus 5.5	Claude Code
+blue	flash	agy	-	gemini-3.8-flash-high	-	Gemini 3.8 Flash	Antigravity
