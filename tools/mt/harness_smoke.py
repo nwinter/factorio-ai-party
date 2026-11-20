@@ -11,7 +11,8 @@ worktrees/pog-smoke) and one short headless start of the real CLI as the launche
                     Muse with the scope's native config and home (and `muse skills list --source user` must be empty)
   claude            the launcher's own claude_settings (sandbox and Read rules, run with the run env's POG_ISOLATED and
                     POG_READ_SCOPE) and $claude_unset $claude_vars $claude_flags (tools/profile-flags.sh)
-Each is asked for the single word OK. A row passes when the CLI exits 0, prints OK, and no "Operation not permitted"
+Each is asked for the single word OK (one small model call: a Grok row lands on Grok's window, so check Grok rows
+only while no Grok run is going; a run's window change is its arm's burn, note-mt309-e). A row passes when the CLI exits 0, prints OK, and no "Operation not permitted"
 or "failed to start" shows. Prints one JSON line per row and exits 1 if any failed. One small model call per row.
 The throwaway folders are removed; the scratch tree stays for the next check.
 """
@@ -74,9 +75,12 @@ def scoped(tree, row, folder):
     try:
         lines = ['#!/usr/bin/env bash', f"cd '{folder}'", proxy_lines(proxy), f"source '{tree}/tools/profile-flags.sh'"]
         if kind == 'grok':
+            env = dict(os.environ, **RUN_ENV)     # POG_ISOLATED: a run-local sessions/ (the owner's is denied)
             home_env = subprocess.run([sys.executable, str(tree/'tools/grok-home.py'), 'setup', str(folder), '900'],
-                                      capture_output=True, text=True, check=True).stdout.strip()
-            lines.append(f"exec env $grok_env {home_env} \"$grok_bin\" -m {m} --effort {e} -p '{PROMPT}'")
+                                      capture_output=True, text=True, check=True, env=env).stdout.strip()
+            ctx_env = subprocess.run([sys.executable, str(tree/'tools/context.py'), 'setup', 'grok', m, str(folder)],
+                                     capture_output=True, text=True, check=True, env=env).stdout.strip()
+            lines.append(f"exec env $grok_env {home_env} {ctx_env} \"$grok_bin\" -m {m} --effort {e} -p '{PROMPT}'")
         elif kind == 'agy':
             lines.append(f"exec python3 '{tree}/tools/agy-local.py' -p '{PROMPT}' --model {m} "
                          "--dangerously-skip-permissions --print-timeout 120s")
@@ -114,16 +118,18 @@ def claude(tree, row, folder):
              'source "$root/tools/profile-flags.sh"',
              # the launcher's own Read allowlist and settings writer, taken from the file the run uses
              "eval \"$(sed -n '/^allow=/,/^# Compaction/p' \"$root/tools/launch-agent.sh\" | sed '$d')\"",
-             "eval \"$(sed -n '/^claude_settings() {/,/^}/p' \"$root/tools/launch-agent.sh\")\"",
+             # to the comment after it: its heredoc's JSON has a closing brace at the start of a line
+             "eval \"$(sed -n '/^claude_settings() {/,/^# Open a Herdr pane/p' \"$root/tools/launch-agent.sh\" | sed '$d')\"",
              'claude_settings', 'cd "$dir"',
              f"eval \"exec env $claude_unset {cenv} $claude_vars /Users/owner/.local/bin/claude --model {row['model']} "
-             f"--effort {row['effort']} $claude_flags -p '{PROMPT}'\""]
+             f"--effort {row['effort']} $claude_flags -p '{PROMPT}' < /dev/null\""]
     assert launcher.exists()
     script = folder/'.claude-smoke.sh'
     script.write_text('\n'.join(lines)+'\n'); script.chmod(0o755)
     r = subprocess.run(['/bin/bash', str(script)], cwd=folder, capture_output=True, text=True, timeout=300,
                        env={k: v for k, v in os.environ.items() if not k.startswith('CLAUDE_CODE') and k != 'CLAUDECODE'})
-    settings = json.loads((folder/'.claude/settings.json').read_text())
+    f = folder/'.claude/settings.json'
+    settings = json.loads(f.read_text()) if f.exists() else {}
     return r.returncode, r.stdout + r.stderr, dict(sandbox=bool(settings.get('sandbox', {}).get('enabled')))
 
 
