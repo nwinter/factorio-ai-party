@@ -258,33 +258,39 @@ for dx=0,6 do for _,sx in ipairs{1,-1} do for _,d in ipairs{D.south,D.east,D.wes
   end
 end end end
 if not pump then rcon.print(helpers.table_to_json{error='no pump spot'}) return end
-local function connected(a,b)
-  for i=1,a.fluids_count do for _,c in ipairs(a.get_fluid_box_neighbours(i) or {}) do if c.entity==b then return true end end end
+local function on(a,i,b)
+  for _,c in ipairs(a.get_fluid_box_neighbours(i) or {}) do if c.entity==b then return true end end
   return false
 end
-local function attach(a,bname,avoid)
+local function connected(a,b,ia,ib) return on(a,ia,b) and on(b,ib,a) end
+local function wet_engine(b)
+  if b.name~='steam-engine' then return false end
+  for _,c in ipairs(b.get_fluid_box_neighbours(1) or {}) do if c.entity.name=='boiler' and on(c.entity,1,b) then return true end end
+  return false
+end
+local function attach(a,bname,avoid,ia,ib)
   local best
   for dx=-6,6 do for dy=-6,6 do for _,d in ipairs(dirs) do
     if not best then
       local p={a.position.x+dx,a.position.y+dy}
       if s.can_place_entity{name=bname,position=p,direction=d,force=f} then
         local b=s.create_entity{name=bname,position=p,direction=d,force=f}
-        if b and connected(a,b) and not (avoid and avoid(b)) then best=b elseif b then b.destroy() end
+        if b and connected(a,b,ia,ib) and not wet_engine(b) and not (avoid and avoid(b)) then best=b elseif b then b.destroy() end
       end
     end
   end end end
   return best
 end
 local up=function(b) return b.position.y>oy+5 end
-local b1=attach(pump,'boiler',up); local b2=b1 and attach(b1,'boiler',up)
+local b1=attach(pump,'boiler',up,1,1); local b2=b1 and attach(b1,'boiler',up,1,1)
 local engines={}
 for _,b in ipairs{b1,b2} do
   if b then
-    local e1=attach(b,'steam-engine',up); local e2=e1 and attach(e1,'steam-engine',up)
+    local e1=attach(b,'steam-engine',up,2,1); local e2=e1 and attach(e1,'steam-engine',up,1,1)
     engines[#engines+1]=e1; engines[#engines+1]=e2
   end
 end
-local fed=0
+local fed,drops=0,{}
 for _,b in ipairs{b1,b2} do
   if b then
     b.insert{name='coal',count=20}
@@ -300,6 +306,9 @@ for _,b in ipairs{b1,b2} do
             for x=math.floor(m.position.x)-2,math.floor(m.position.x)+2 do for y=math.floor(m.position.y)-2,math.floor(m.position.y)+2 do
               if s.get_tile(x,y).collides_with('water_tile')==false and s.count_entities_filtered{position={x+0.5,y+0.5},type='resource'}==0 then
                 s.create_entity{name='coal',position={x+0.5,y+0.5},amount=P.base.ore_per_tile.coal} end end end
+            local mp,md=m.position,m.direction; m.destroy()
+            m=s.create_entity{name='electric-mining-drill',position=mp,direction=md,force=f}
+            drops[#drops+1]=m.drop_target and m.drop_target.name or 'none'
           else m.destroy() end
         end
       end
@@ -324,7 +333,7 @@ end
 local top={ox+6.5,oy-4.5}
 for _,pl in pairs(s.find_entities_filtered{area={{ox-12,oy-6},{ox+12,oy+14}},type='electric-pole',force=f}) do
   if pl.get_wire_connector(defines.wire_connector_id.pole_copper,true).connection_count==0 then chain(pl.position.x,pl.position.y,top[1],top[2]) end end
-rcon.print(helpers.table_to_json{pump={pump.position.x-ox,pump.position.y-oy,pump.direction},boilers=(b1 and 1 or 0)+(b2 and 1 or 0),engines=#engines,fed=fed,poles=poles})
+rcon.print(helpers.table_to_json{pump={pump.position.x-ox,pump.position.y-oy,pump.direction},boilers=(b1 and 1 or 0)+(b2 and 1 or 0),engines=#engines,fed=fed,drops=drops,poles=poles})
 '''
 
 LUA_KIT = r'''
