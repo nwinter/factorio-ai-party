@@ -106,6 +106,7 @@ def scoped(tree, row, folder):
 
 
 def claude(tree, row, folder):
+    assert not set('`$\'"\\') & set(PROMPT), 'the prompt goes through eval: no shell syntax'
     route = row['route'] if row['route'] != '-' else 'claude'
     croot = subprocess.run(['/Users/owner/.local/bin/ai-session', 'routes'], capture_output=True, text=True).stdout
     croot = next((l.split()[-1] for l in croot.splitlines() if l.split()[:2] == [route, 'claude']), None)
