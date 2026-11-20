@@ -31,6 +31,7 @@ BASELINE = ROOT/'docs/reports/mt307/data/map/baseline-ready.zip'
 BASELINE_SHA = '1859bda9bf77b23ec622aca2d6b13c72629a01150c330e195e582bc78009479a'
 # (mt309 Stage 2) the prepared mid-game save (tools/mt/stage2_save.py), its SHA-256 beside it
 STAGE2_SAVE = ROOT/'docs/reports/mt309/data/stage2-ready.zip'
+STAGE2_SPAWN = dict(green='near', yellow='far', blue='far')   # nearest base building to its nest: 90, 115, 112 tiles
 FORBIDDEN_ROUTES = ('claude-b', 'codex-b', 'gsopenrouter')
 ROUTE_HOME = {'claude': '~/.claude-profiles/personal', 'claude-c': '~/.claude-profiles/account-c', 'codex': '~/.codex'}
 
@@ -606,18 +607,21 @@ def stage2_measure(op, env):
 
 def stage2_summary(op, state, path=None):
     """Per force from op/stage2.jsonl: minutes (played game time from the start tick) to the nest's last spawner
-    and to the first working drill on the second field, and at the last reading what is left of the nest, losses
-    (entities of the force killed) and character deaths."""
+    and to the first working drill on the second field, to the first attack (the first reading with a loss or a kill),
+    and at the last reading what is left of the nest, losses (entities of the force killed) and character deaths.
+    (note-mt309-f) green is the near spawn: its nearest building is about 90 tiles from its nest, 113 for the others."""
     rows = [json.loads(l) for l in (path or op/'stage2.jsonl').read_text().splitlines() if l.strip()]
     team_arm = {r['team']: r['arm'] for r in state['roster']}
     out = {}
-    for team, arm in team_arm.items():
+    for team in FORCES:   # an empty spawn too (its arm reads empty-TEAM): its first attack is the unplayed baseline
+        arm = team_arm.get(team, f'empty-{team}')
         mins = lambda row: round((row['tick'] - state['start_tick']) / 3600, 1)
         mine = [(r, r[team]) for r in rows if team in r]
         cleared = next((mins(r) for r, m in mine if m['spawners'] == 0), None)
         mining = next((mins(r) for r, m in mine if m['field_drills_working'] > 0), None)
+        attacked = next((mins(r) for r, m in mine if m['lost'] > 0 or m['killed'] > 0), None)
         last = mine[-1][1] if mine else {}
-        out[arm] = dict(team=team, nest_cleared_min=cleared, second_field_min=mining, spawners_left=last.get('spawners'),
+        out[arm] = dict(team=team, spawn=STAGE2_SPAWN.get(team), first_attack_min=attacked, nest_cleared_min=cleared, second_field_min=mining, spawners_left=last.get('spawners'),
                         worms_left=last.get('worms'), lost=last.get('lost'), characters_lost=last.get('characters_lost'),
                         killed=last.get('killed'), readings=len(mine))
     (op/'stage2-summary.json').write_text(json.dumps(out, indent=1))

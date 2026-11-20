@@ -313,6 +313,7 @@ class Stage2(unittest.TestCase):
             out = sprint.stage2_summary(op, dict(start_tick=1000, roster=[dict(team='green', arm='grok')]))
             g = out['grok']
             self.assertEqual((g['nest_cleared_min'], g['second_field_min'], g['lost'], g['characters_lost']), (24.0, 40.0, 6, 1))
+            self.assertEqual((g['first_attack_min'], g['spawn']), (10.0, 'near'))
 
 
 if __name__ == '__main__':
