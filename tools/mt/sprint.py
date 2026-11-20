@@ -29,6 +29,8 @@ CAL = json.loads((Path(__file__).with_name('burn_calibration.json')).read_text()
 FORCES = ('green', 'yellow', 'blue')        # the r307 baseline's three spawns (seed 30744, ~1,300 tiles apart)
 BASELINE = ROOT/'docs/reports/mt307/data/map/baseline-ready.zip'
 BASELINE_SHA = '1859bda9bf77b23ec622aca2d6b13c72629a01150c330e195e582bc78009479a'
+# (mt309 Stage 2) the prepared mid-game save (tools/mt/stage2_save.py), its SHA-256 beside it
+STAGE2_SAVE = ROOT/'docs/reports/mt309/data/stage2-ready.zip'
 FORBIDDEN_ROUTES = ('claude-b', 'codex-b', 'gsopenrouter')
 ROUTE_HOME = {'claude': '~/.claude-profiles/personal', 'claude-c': '~/.claude-profiles/account-c', 'codex': '~/.codex'}
 
@@ -545,11 +547,12 @@ def cmd_run(a):
     assert a.minutes <= 120, 'sprints are bounded to 120 minutes (Stage 2: two hours; tools/mt/launch.py --max-minutes)'
     # Paused start: the world waits while the agents launch, and the sprint begins for all of them at once.
     route = rcon_route()
-    env = dict(os.environ, POG_MT_FRESH='1', POG_MT_FRESH_SAVE=str(BASELINE), POG_SEED='30744', POG_GAME_TEST='0',
+    save, want = (BASELINE, BASELINE_SHA) if a.save == 'r307' else (STAGE2_SAVE, STAGE2_SAVE.with_suffix('.sha256').read_text().split()[0])
+    env = dict(os.environ, POG_MT_FRESH='1', POG_MT_FRESH_SAVE=str(save), POG_SEED='30744', POG_GAME_TEST='0',
                POG_IDLE_NUDGE='0', POG_MT_PAUSED_START='1', POG_STOP_WORLD='1',
                POG_CLAIM_OWNER=os.environ.get('POG_CLAIM_OWNER', 'eng-mt309'))
-    sha = subprocess.run(['shasum', '-a', '256', str(BASELINE)], capture_output=True, text=True).stdout.split()[0]
-    assert sha == BASELINE_SHA, f'baseline changed: {sha}'
+    sha = subprocess.run(['shasum', '-a', '256', str(save)], capture_output=True, text=True).stdout.split()[0]
+    assert sha == want, f'{save.name} changed: {sha}'
     launch = [sys.executable, str(ROOT/'tools/mt/launch.py'), a.run, str(a.minutes), '--roster', str(Path(a.roster).resolve())]
     if a.minutes > 90:
         launch += ['--max-minutes', '120']
@@ -568,7 +571,8 @@ def cmd_run(a):
         raise SystemExit(f'{a.run}: start failed')
     rcon_set_paused(False)
     tick, paused = rcon_tick()
-    state = dict(start_tick=tick, start_at=time.time(), minutes=a.minutes, score_version=SCORE_VERSION, roster=roster)
+    state = dict(start_tick=tick, start_at=time.time(), minutes=a.minutes, score_version=SCORE_VERSION, roster=roster,
+                 save=a.save, save_sha=sha)
     state.update(rcon_route=route, rcon_connect_s=rcon_connect_s())
     (op/'sprint.json').write_text(json.dumps(state, indent=1))
     meter_check(op, state)
@@ -585,6 +589,39 @@ def cmd_resume(a):
     checks = [json.loads(l)['at'] for l in (op/'meter-checks.jsonl').read_text().splitlines()] if (op/'meter-checks.jsonl').exists() else []
     nxt = (max(checks) + 900) if checks else time.time()
     supervise(a.run, op, state, env, max(time.time(), nxt))
+
+
+def stage2_measure(op, env):
+    """One Stage 2 reading per force (tools/mt/stage2_save.py measure) into op/stage2.jsonl; a failed read never
+    ends a sprint."""
+    try:
+        r = subprocess.run([sys.executable, str(ROOT/'tools/mt/stage2_save.py'), 'measure'], env=env, capture_output=True,
+                           text=True, timeout=60)
+        row = dict(json.loads(r.stdout), at=time.time())
+        with (op/'stage2.jsonl').open('a') as f:
+            f.write(json.dumps(row) + '\n')
+    except Exception as e:
+        print(time.strftime('%H:%M:%S'), 'stage 2 measure failed:', repr(e), flush=True)
+
+
+def stage2_summary(op, state, path=None):
+    """Per force from op/stage2.jsonl: minutes (played game time from the start tick) to the nest's last spawner
+    and to the first working drill on the second field, and at the last reading what is left of the nest, losses
+    (entities of the force killed) and character deaths."""
+    rows = [json.loads(l) for l in (path or op/'stage2.jsonl').read_text().splitlines() if l.strip()]
+    team_arm = {r['team']: r['arm'] for r in state['roster']}
+    out = {}
+    for team, arm in team_arm.items():
+        mins = lambda row: round((row['tick'] - state['start_tick']) / 3600, 1)
+        mine = [(r, r[team]) for r in rows if team in r]
+        cleared = next((mins(r) for r, m in mine if m['spawners'] == 0), None)
+        mining = next((mins(r) for r, m in mine if m['field_drills_working'] > 0), None)
+        last = mine[-1][1] if mine else {}
+        out[arm] = dict(team=team, nest_cleared_min=cleared, second_field_min=mining, spawners_left=last.get('spawners'),
+                        worms_left=last.get('worms'), lost=last.get('lost'), characters_lost=last.get('characters_lost'),
+                        killed=last.get('killed'), readings=len(mine))
+    (op/'stage2-summary.json').write_text(json.dumps(out, indent=1))
+    return out
 
 
 def supervise(run, op, state, env, next_check):
@@ -604,6 +641,8 @@ def supervise(run, op, state, env, next_check):
             state['served_models'] = served_models(op, roster); checked_models = True; save()
         if time.time() >= next_check:
             meter_check(op, state); save(); next_check += 900
+        if state.get('save') == 'stage2' and time.time() >= state.get('next_stage2', 0):
+            stage2_measure(op, env); state['next_stage2'] = time.time() + 120
         try:
             n = sum(len(v) for v in state.get('idle_prompts', {}).values())
             idle_prompts(op, state)
@@ -618,6 +657,8 @@ def supervise(run, op, state, env, next_check):
     played = min(a.minutes, (tick - state['start_tick']) / 3600)
     state.update(end_tick=tick, end_at=time.time(), played_minutes=round(played, 2)); save()
     cmd_score(argparse.Namespace(run=a.run, minutes=played))
+    if state.get('save') == 'stage2':
+        stage2_measure(op, env); state['stage2'] = stage2_summary(op, state); save()
     state['stopped'] = stop_run(a.run, env); save()
     cmd_burn(argparse.Namespace(run=a.run))
     if any(r['kind'] == 'codex' for r in roster):   # a later arm never reads this run's Codex transcripts
@@ -639,6 +680,7 @@ def main(argv=None):
     q = sub.add_parser('burn'); q.add_argument('run')
     q = sub.add_parser('run'); q.add_argument('run'); q.add_argument('roster'); q.add_argument('minutes', type=int)
     q.add_argument('--execute', action='store_true')
+    q.add_argument('--save', choices=['r307', 'stage2'], default='r307')
     q = sub.add_parser('resume'); q.add_argument('run')
     q = sub.add_parser('idle-watch'); q.add_argument('run')
     a = p.parse_args(argv)

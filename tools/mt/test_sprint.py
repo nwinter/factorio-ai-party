@@ -283,5 +283,37 @@ class IdlePrompt(unittest.TestCase):
             self.assertEqual(len((op/'idle-prompts.jsonl').read_text().splitlines()), 2)
 
 
+class Stage2(unittest.TestCase):
+    def test_plan_is_the_same_at_every_spawn(self):
+        import math, stage2_save as S
+        p = S.plan()
+        self.assertEqual(set(p['teams']), {'green', 'yellow', 'blue'})
+        for t in p['teams'].values():
+            self.assertEqual(t['distances'], {'nest': 150, 'field': 270, 'nest_to_field': 120})
+            for n, x, y in t['spawners'] + t['worms']:
+                self.assertLessEqual(math.dist((x, y), t['nest']), p['nest_r'])
+            for f in t['field']:   # inside the cleared radius, beyond the nest
+                self.assertLess(math.dist(f['at'], t['spawn']) + f['r'], p['clear_enemies'])
+        self.assertEqual(S.overlaps(p['base']['entities']), [])
+        x1, y1, x2, y2 = p['base']['box']
+        for n, x, y, d, _ in p['base']['entities']:
+            self.assertTrue(x1 + 2 <= x <= x2 - 2 and y1 + 2 <= y <= y2 - 2, (n, x, y))
+        # the base's iron and copper last about an hour at the furnaces' 0.3125 ore/s (note-mt309-d)
+        per_cell = 20 * p['base']['ore_per_tile']['iron-ore']
+        self.assertAlmostEqual(per_cell / 0.3125 / 60, 60, delta=3)
+
+    def test_summary_times_from_the_start_tick(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            op = Path(tmp)
+            rows = [dict(tick=1000 + 3600*m, at=0, green=dict(spawners=s, worms=w, field_drills_working=d,
+                         outside_drills_working={}, lost=l, killed=k, characters_lost=c))
+                    for m, s, w, d, l, k, c in ((0, 4, 4, 0, 0, 0, 0), (10, 2, 4, 0, 3, 20, 1), (24, 0, 1, 0, 5, 60, 1),
+                                                (40, 0, 0, 2, 6, 70, 1))]
+            (op/'stage2.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in rows))
+            out = sprint.stage2_summary(op, dict(start_tick=1000, roster=[dict(team='green', arm='grok')]))
+            g = out['grok']
+            self.assertEqual((g['nest_cleared_min'], g['second_field_min'], g['lost'], g['characters_lost']), (24.0, 40.0, 6, 1))
+
+
 if __name__ == '__main__':
     unittest.main()
