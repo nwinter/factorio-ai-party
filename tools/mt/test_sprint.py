@@ -337,6 +337,8 @@ class Stage2(unittest.TestCase):
             g = out['grok']
             self.assertEqual((g['nest_cleared_min'], g['second_field_min'], g['lost'], g['characters_lost']), (24.0, 40.0, 6, 1))
             self.assertEqual((g['first_attack_min'], g['spawn']), (10.0, 'near'))
+            # drills 0, 0, 0, 2 over gaps of 10, 14, 16 minutes: 2 x 16 drill-minutes, peak 2, 2 at the end
+            self.assertEqual((g['field_drills_peak'], g['field_drill_min'], g['field_drills_end']), (2, 32.0, 2))
 
 
 if __name__ == '__main__':

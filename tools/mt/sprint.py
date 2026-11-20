@@ -608,7 +608,8 @@ def stage2_measure(op, env):
 def stage2_summary(op, state, path=None):
     """Per force from op/stage2.jsonl: minutes (played game time from the start tick) to the nest's last spawner
     and to the first working drill on the second field, to the first attack (the first reading with a loss or a kill),
-    and at the last reading what is left of the nest, losses (entities of the force killed) and character deaths.
+    and at the last reading what is left of the nest, losses (entities of the force killed) and character deaths;
+    the second field's peak working drills, drill-minutes and drills working at the end (note-mt309-j).
     (note-mt309-f) green is the near spawn: its nearest building is about 90 tiles from its nest, 113 for the others."""
     rows = [json.loads(l) for l in (path or op/'stage2.jsonl').read_text().splitlines() if l.strip()]
     team_arm = {r['team']: r['arm'] for r in state['roster']}
@@ -621,7 +622,13 @@ def stage2_summary(op, state, path=None):
         mining = next((mins(r) for r, m in mine if m['field_drills_working'] > 0), None)
         attacked = next((mins(r) for r, m in mine if m['lost'] > 0 or m['killed'] > 0), None)
         last = mine[-1][1] if mine else {}
-        out[arm] = dict(team=team, spawn=STAGE2_SPAWN.get(team), first_attack_min=attacked, nest_cleared_min=cleared, second_field_min=mining, spawners_left=last.get('spawners'),
+        # (note-mt309-j) how much the second field mined: the peak, drill-minutes (each reading's working drills times
+        # the game minutes since the reading before it) and what still works at the end
+        drills = [m['field_drills_working'] for r, m in mine]
+        drill_min = sum(d * (r['tick'] - p['tick']) / 3600 for (p, _), (r, _), d in zip(mine, mine[1:], drills[1:]))
+        out[arm] = dict(team=team, spawn=STAGE2_SPAWN.get(team), first_attack_min=attacked, nest_cleared_min=cleared, second_field_min=mining,
+                        field_drills_peak=max(drills, default=None), field_drill_min=round(drill_min, 1),
+                        field_drills_end=drills[-1] if drills else None, spawners_left=last.get('spawners'),
                         worms_left=last.get('worms'), lost=last.get('lost'), characters_lost=last.get('characters_lost'),
                         killed=last.get('killed'), readings=len(mine))
     (op/'stage2-summary.json').write_text(json.dumps(out, indent=1))
