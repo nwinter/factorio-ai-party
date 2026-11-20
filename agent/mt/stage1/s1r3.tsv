@@ -1,3 +1,4 @@
 # team	name	kind	route	model	effort	label	harness
 green	argon	agy	-	gemini-4-argon-medium	-	Gemini 4 Argon	Antigravity
 blue	sonnet	claude	claude	sonnet	high	Claude Sonnet 5.5	Claude Code
+yellow	grok	grok	-	grok-4.7	medium	Grok 4.7	Grok Build
