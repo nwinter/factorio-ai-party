@@ -417,7 +417,10 @@ def meter_check(op, sprint_state):
         acc = {'error': str(e)}
     with (op/'meter-checks.jsonl').open('a') as f:
         f.write(json.dumps({'at': time.time(), 'accounts': acc}) + '\n')
+    used = {r['route'] if r['kind'] == 'claude' else r['kind'] for r in sprint_state.get('roster', [])}
     for route, r in acc.items() if isinstance(acc, dict) else []:
+        if route not in used:      # (s1r1d) Codex's 100% week was noted with no Codex arm in the run
+            continue
         for key, w in (r.get('windows') or {}).items() if isinstance(r, dict) else []:
             if (w.get('percent') or 0) >= 80 and f'{route}:{key}' not in sprint_state.setdefault('over_80', {}):
                 sprint_state['over_80'][f'{route}:{key}'] = time.time()
