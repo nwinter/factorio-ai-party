@@ -229,5 +229,35 @@ exit 0
             self.assertGreaterEqual(sum(' read ' in l for l in lines[:lines.index('pane send-keys w9:p1 enter')]), 5)
 
 
+class IdlePrompt(unittest.TestCase):
+    def test_idle_and_silent_arms_prompted_busy_not(self):
+        # (s1r1d) Grok ended its turn at minute 46 and nothing asked it to go on
+        import os, time
+        class Panes:
+            def __init__(self, st, scr): self.st, self.scr, self.sent = st, scr, []
+            def status(self, pane): return self.st[pane]
+            def read(self, pane): return self.scr[pane]
+            def prompt(self, pane, text): self.sent.append((pane, text)); return 'agent prompt', True, ''
+        with tempfile.TemporaryDirectory() as t:
+            t = Path(t); op = t/'op'; op.mkdir(); now = time.time()
+            ws = {}
+            for team, arm, age in (('green', 'idle', 300), ('yellow', 'working', 30), ('blue', 'muse', 700), ('red', 'busy', 700)):
+                d = t/team/'runs'/'s9'; (d/arm).mkdir(parents=True); j = d/arm/'journal.jsonl'; j.write_text('{}')
+                os.utime(j, (now - age, now - age)); ws[team] = {'tree': str(t/team), 'dir': str(d)}
+            (op/'workspaces.json').write_text(json.dumps(ws))
+            (op/'panes.txt').write_text('green idle p1 claude\nyellow working p2 agy\nblue muse p3 muse\nred busy p4 muse\n')
+            roster = [dict(team=tm, arm=a, kind=k) for tm, a, k in (('green', 'idle', 'claude'), ('yellow', 'working', 'agy'),
+                                                                      ('blue', 'muse', 'muse'), ('red', 'busy', 'muse'))]
+            state = dict(roster=roster, start_at=now - 3600)
+            panes = Panes({'p1': 'idle', 'p2': 'working', 'p3': 'working', 'p4': 'working'},
+                          {'p1': '> ', 'p2': '', 'p3': '> ', 'p4': 'esc to interrupt'})
+            sprint.idle_prompts(op, state, panes, now)
+            self.assertEqual(sorted(p for p, _ in panes.sent), ['p1', 'p3'])
+            self.assertNotIn('teammate', panes.sent[0][1])
+            sprint.idle_prompts(op, state, panes, now + 60)          # no second prompt within 180 s
+            self.assertEqual(len(panes.sent), 2)
+            self.assertEqual(len((op/'idle-prompts.jsonl').read_text().splitlines()), 2)
+
+
 if __name__ == '__main__':
     unittest.main()

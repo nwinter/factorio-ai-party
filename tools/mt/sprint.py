@@ -405,6 +405,69 @@ def stop_run(run, env):
     return st
 
 
+# (s1r1d) An agent that ends its turn is never asked to go on in a sprint: supervise.sh needs a deadline.txt that
+# continuous runs do not write ("deadline reached after 0 nudges" at launch), and full_run.py's watch, whose
+# idle-prompt does this in full runs, does not start (its init refuses Claude arms). Grok ended its turn at game
+# minute 46 of s1r1d ("research is running in a stable state") and sat idle for 44 minutes. The sprint applies
+# full_run's rule to every arm alike, with its text minus "with your teammate" (sprint arms play alone), plus one
+# rule for panes whose status never reads idle (Muse): 10 minutes without a game request and no busy marker.
+SPRINT_NUDGE = ('Operator (automatic): check your own status, tells, board and notes.md. Keep building toward the '
+                'goal. If blocked, explain the blocker once and choose another useful task. Keep your current '
+                'identity and update your notes.')
+
+
+def idle_prompts(op, state, panes=None, now=None):
+    """Prompt each arm that is idle: herdr reads idle/done (or Grok's native end_turn at an empty prompt), its journal
+    unchanged 120 s and no prompt in 180 s; or no journal change in 600 s with no busy marker on its screen."""
+    sys.path.insert(0, str(ROOT/'tools'))
+    import full_run, pane_resume
+    now = now or time.time()
+    panes = panes or pane_resume.HerdrPanes()
+    ws = json.loads((op/'workspaces.json').read_text())
+    pane_of = {l.split()[1]: l.split()[2] for l in (op/'panes.txt').read_text().splitlines() if len(l.split()) == 4}
+    log = state.setdefault('idle_prompts', {})
+    for r in state['roster']:
+        pane = pane_of.get(r['arm'])
+        if not pane:
+            continue
+        folder = Path(ws[r['team']]['dir'])
+        journal = folder/r['arm']/'journal.jsonl'
+        quiet = now - (journal.stat().st_mtime if journal.exists() else state['start_at'])
+        last = max([state['start_at']] + [x['at'] for x in log.get(r['arm'], [])])
+        if now - last < 180 or quiet < 120:
+            continue
+        status = panes.status(pane)
+        screen = panes.read(pane)
+        a = dict(kind=r['kind'], folder=str(folder), name=r['arm'], started=state['start_at'])
+        native = status == 'unknown' and full_run.native_idle(a, screen, now)
+        busy = bool(pane_resume.BUSY.search('\n'.join(screen.splitlines()[-25:])))
+        why = ('status ' + status) if status in ('idle', 'done') else 'grok end_turn' if native else \
+              'silent 600 s' if quiet >= 600 and not busy else None
+        if not why:
+            continue
+        how, ok, detail = panes.prompt(pane, SPRINT_NUDGE)
+        row = dict(at=now, why=why, quiet_s=round(quiet), how=how, ok=ok, detail=detail[:120])
+        log.setdefault(r['arm'], []).append(row)
+        with (op/'idle-prompts.jsonl').open('a') as f:
+            f.write(json.dumps(dict(arm=r['arm'], **row)) + '\n')
+        print(time.strftime('%H:%M:%S'), 'idle prompt', r['arm'], why, how, ok, flush=True)
+
+
+def cmd_idle_watch(a):
+    """idle_prompts for a sprint whose runner started before them (s1r2), until its world pauses at the end."""
+    op = op_dir(a.run)
+    state = json.loads((op/'sprint.json').read_text())
+    state['idle_watch_from'] = time.time()
+    rcon_route()
+    while True:
+        tick, paused = rcon_tick()
+        if tick - state['start_tick'] >= state['minutes'] * 3600 or (paused and tick > state['start_tick'] + 3600):
+            break
+        idle_prompts(op, state)
+        (op/'idle-watch.json').write_text(json.dumps({k: state.get(k) for k in ('idle_watch_from', 'idle_prompts')}, indent=1))
+        time.sleep(20)
+
+
 WAKE = Path('/Users/owner/code/pog-operator/mt309-wake.jsonl')
 EXPECT = {'opus': 'claude-opus-5-5', 'sonnet': 'claude-sonnet-5-5', 'haiku': 'claude-haiku-5-5', 'fable': 'claude-fable-5-2'}
 
@@ -539,6 +602,13 @@ def supervise(run, op, state, env, next_check):
             state['served_models'] = served_models(op, roster); checked_models = True; save()
         if time.time() >= next_check:
             meter_check(op, state); save(); next_check += 900
+        try:
+            n = sum(len(v) for v in state.get('idle_prompts', {}).values())
+            idle_prompts(op, state)
+            if sum(len(v) for v in state.get('idle_prompts', {}).values()) != n:
+                save()
+        except Exception as e:      # a pane read never ends a sprint
+            print(time.strftime('%H:%M:%S'), 'idle prompt check failed:', repr(e), flush=True)
         time.sleep(20)
     rcon_set_paused(True)
     time.sleep(130)  # one more score row per force (score-loop.sh, every 120 s), taken on the paused world
@@ -568,8 +638,9 @@ def main(argv=None):
     q = sub.add_parser('run'); q.add_argument('run'); q.add_argument('roster'); q.add_argument('minutes', type=int)
     q.add_argument('--execute', action='store_true')
     q = sub.add_parser('resume'); q.add_argument('run')
+    q = sub.add_parser('idle-watch'); q.add_argument('run')
     a = p.parse_args(argv)
-    return {'plan': cmd_plan, 'score': cmd_score, 'burn': cmd_burn, 'run': cmd_run, 'resume': cmd_resume}[a.cmd](a)
+    return {'plan': cmd_plan, 'score': cmd_score, 'burn': cmd_burn, 'run': cmd_run, 'resume': cmd_resume, 'idle-watch': cmd_idle_watch}[a.cmd](a)
 
 
 if __name__ == '__main__':
