@@ -542,7 +542,7 @@ def cmd_run(a):
     assert 1 <= len(roster) <= 3 and len({r['team'] for r in roster}) == len(roster), 'one arm per force, at most three'
     assert all(r['route'] not in FORBIDDEN_ROUTES for r in roster), 'account B route refused'
     assert sum(r['kind'] == 'agy' and 'gemini-4' in r['model'] for r in roster) <= 1, 'at most one Gemini 4 arm a run'
-    assert a.minutes <= 90, 'test runs are bounded to 90 minutes (tools/mt/launch.py)'
+    assert a.minutes <= 120, 'sprints are bounded to 120 minutes (Stage 2: two hours; tools/mt/launch.py --max-minutes)'
     # Paused start: the world waits while the agents launch, and the sprint begins for all of them at once.
     route = rcon_route()
     env = dict(os.environ, POG_MT_FRESH='1', POG_MT_FRESH_SAVE=str(BASELINE), POG_SEED='30744', POG_GAME_TEST='0',
@@ -551,6 +551,8 @@ def cmd_run(a):
     sha = subprocess.run(['shasum', '-a', '256', str(BASELINE)], capture_output=True, text=True).stdout.split()[0]
     assert sha == BASELINE_SHA, f'baseline changed: {sha}'
     launch = [sys.executable, str(ROOT/'tools/mt/launch.py'), a.run, str(a.minutes), '--roster', str(Path(a.roster).resolve())]
+    if a.minutes > 90:
+        launch += ['--max-minutes', '120']
     if not a.execute:
         print('dry run:', ' '.join(launch)); subprocess.run(launch, env=env, check=True); return
     subprocess.run(launch + ['--execute'], env=env, check=True)
