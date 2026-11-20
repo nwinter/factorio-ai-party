@@ -22,7 +22,7 @@ def codex_home(home=None):
     shared with the owner's other work), its config and the sessions of the current run only."""
     return Path(os.environ.get('POG_CODEX_HOME') or Path(home or Path.home())/'.pog-codex'/'home')
 
-def profile(root,home,proxy=None,native=None,codex=None):
+def profile(root,home,proxy=None,native=None,codex=None,keychain=True):
     quote=json.dumps
     protected=[home/'code',home/'Dropbox',home/'Dropbox (Personal)']
     clauses=['(version 1)','(allow default)','(deny process-info*)','(allow process-info* (target self))',
@@ -32,7 +32,7 @@ def profile(root,home,proxy=None,native=None,codex=None):
     # runtime roots are visible; narrower history denies below still apply.
     installs=[root,home/'.local/bin',home/'.local/lib',home/'.nvm',home/'.grok/bin',home/'.grok/auth.json',
               home/'.gemini/config/projects',
-              home/'.gemini/antigravity-cli',home/'.cache/antigravity',home/'Library/Keychains',
+              home/'.gemini/antigravity-cli',home/'.cache/antigravity',*([home/'Library/Keychains'] if keychain else []),
               home/'Dropbox (Personal)/misc/env/agents']+([codex] if codex else [])
     allowed=' '.join(f'(subpath {quote(str(p.resolve()))})' for p in installs)
     clauses.append(f'(deny file-read-data file-write* (require-all (subpath {quote(str(home))}) (require-not (require-any {allowed}))))')
@@ -60,6 +60,14 @@ def profile(root,home,proxy=None,native=None,codex=None):
                  Path('/Volumes/POG Media/pog-runs'),Path('/Volumes/POG Media/pog-recordings')):
         clauses.append(f'(deny file-read* file-write* (subpath {quote(str(path.resolve()))}))')
     clauses.append(f'(deny file-read* file-write* (subpath {quote(str(home/".config/pog"))}))')
+    # (mt309 note-mt309-i) The login keychain's Claude Code, GitHub CLI and gemini items trust /usr/bin/security, so
+    # any scoped shell read them with no dialog. Only agy and Muse, whose own logins live there, keep it; Grok and
+    # Codex log in from files. The file is refused and so is the SecurityServer lookup (last match wins).
+    if not keychain:
+        for d in {home/'Library/Keychains', (home/'Library/Keychains').resolve()}:
+            clauses.append(f'(deny file-read* file-write* (subpath {quote(str(d))}))')
+        clauses.append('(deny mach-lookup (global-name "com.apple.SecurityServer") (global-name "com.apple.securityd.xpc")'
+                       ' (global-name "com.apple.security.keychainsyncingoveridsproxy"))')
     if native:
         clauses.append(f'(deny file-read-data file-write* (require-all (subpath "/private/tmp") (require-not (literal "/private/tmp")) (require-not (subpath {quote(str(native))}))))')
     # Shared native transcripts and session indexes contain old project paths.
@@ -133,7 +141,8 @@ def main():
     codex=codex_home() if '.codex' in name else None
     env=native_environment(environment(os.environ),Path(command[0]).parent,Path.home(),muse='.muse' in name,codex=codex)
     policy=Path(command[0]).parent/'.scope.sb'
-    policy.write_text(profile(root,Path.home(),proxy,Path(env['XDG_DATA_HOME']).parent,codex))
+    keychain=any(k in name for k in ('.agy','.muse'))   # their own logins need it (note-mt309-i)
+    policy.write_text(profile(root,Path.home(),proxy,Path(env['XDG_DATA_HOME']).parent,codex,keychain))
     os.execve('/usr/bin/sandbox-exec',['sandbox-exec','-f',str(policy),*command],env)
 
 if __name__=='__main__':main()

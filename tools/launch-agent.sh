@@ -247,13 +247,16 @@ claude_settings() {
   # the list above would name the run's other parts. Instead the shell reads nothing under ~/code or Dropbox but this
   # tree's shared files and this part's folder (and the same part of the runs it resumes), and the Read tool the same
   # paths (allow rules: no bare Read, Grep or Glob; the shell's grep, rg and ls stay).
-  local filesystem="\"denyRead\": [\"$HOME/.config/pog\"$keys_read]" file_allow=$allow
+  # (mt309 note-mt309-i) The Bash sandbox reads no keychain: the login keychain's Claude Code, GitHub CLI and gemini
+  # items trust /usr/bin/security, so any shell could read every Claude profile's token. Claude Code reads its own
+  # login outside the sandbox.
+  local filesystem="\"denyRead\": [\"$HOME/.config/pog\", \"$HOME/Library/Keychains\"$keys_read]" file_allow=$allow
   if [ "${POG_READ_SCOPE:-0}" = 1 ] && [ -n "$part" ] && [ "${1:-}" != nosandbox ]; then
     local roots="\"$HOME/code\"" readable="" f
     for f in "$HOME/Dropbox" "$HOME/Dropbox (Personal)"; do [ -e "$f" ] && roots="$roots, \"$f\""; done
     for f in "$root"/*; do [ "${f##*/}" = runs ] || readable="$readable \"$f\""; done
     for r in $chain; do readable="$readable \"$root/runs/$r/$part\""; done
-    filesystem="\"denyRead\": [\"$HOME/.config/pog\", $roots], \"allowRead\": [$(echo $readable | sed 's/" "/", "/g')]"
+    filesystem="\"denyRead\": [\"$HOME/.config/pog\", \"$HOME/Library/Keychains\", $roots], \"allowRead\": [$(echo $readable | sed 's/" "/", "/g')]"
     file_allow="$(for f in $readable; do f=${f//\"/}; [ -f "$f" ] && printf '"Read(/%s)", ' "$f" || printf '"Read(/%s/**)", ' "$f"; done)${allow#\"Read\", \"Grep\", \"Glob\", }"
     keys_rules=""
   elif [ "${POG_READ_SCOPE:-0}" = 1 ] && [ "${POG_ISOLATED:-0}" = 1 ] && [ "${1:-}" != nosandbox ]; then
@@ -262,7 +265,7 @@ claude_settings() {
     # checkout and reports, transcripts). No other team's path is named.
     local roots="\"$HOME/code\", \"$HOME/pog-media\", \"$HOME/.claude-profiles\", \"$HOME/.codex\"" f
     for f in "$HOME/Dropbox" "$HOME/Dropbox (Personal)"; do [ -e "$f" ] && roots="$roots, \"$f\""; done
-    filesystem="\"denyRead\": [\"$HOME/.config/pog\", $roots], \"allowRead\": [\"$root\"]"
+    filesystem="\"denyRead\": [\"$HOME/.config/pog\", \"$HOME/Library/Keychains\", $roots], \"allowRead\": [\"$root\"]"
     file_allow="\"Read(/$root/**)\", ${allow#\"Read\", \"Grep\", \"Glob\", }"
     keys_rules=""
   fi
