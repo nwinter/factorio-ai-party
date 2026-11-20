@@ -111,6 +111,15 @@ def native_environment(env,folder,home,muse=False,codex=None):
         auth=provider/'auth.json'
         if not auth.exists():
             shutil.copyfile(home/'.config/muse/auth.json',auth);auth.chmod(0o600)
+        # (mt309 s2a) Muse reads $HOME/.agents/skills and $HOME/.claude/skills (whose entries link into
+        # ~/.agents/skills) on every start, and fails outright ("runtime host failed to start: failed to read skill
+        # file") when the deny below refuses them; context.foreign_personal_skills=false does not stop the read and
+        # TBH_USER_SKILLS_HOME moves only the first. So Muse gets a home of its own: empty but for the keychain its
+        # login token lives in (auth.json says storage keychain; ~/Library/Keychains is allowed above). The deny of
+        # ~/.agents stays whole. muse-local.py finds the launcher through POG_MUSE_BIN.
+        own=native/'home';(own/'Library').mkdir(parents=True,exist_ok=True,mode=0o700)
+        if not (own/'Library/Keychains').is_symlink():(own/'Library/Keychains').symlink_to(home/'Library/Keychains')
+        env.update(HOME=str(own),POG_MUSE_BIN=str(home/'.local/bin/muse'))
     env.update(XDG_CONFIG_HOME=str(config),XDG_DATA_HOME=str(data),MUSE_NO_AUTO_UPDATE='1',TMPDIR=str(native)+'/',POG_SCOPE_ACTIVE='1')
     if codex:
         assert (codex/'auth.json').is_file(),f'{codex} has no login: run CODEX_HOME={codex} codex login --device-auth once'

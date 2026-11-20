@@ -245,12 +245,35 @@ class PlayerScopeSkills(unittest.TestCase):
                                               capture_output=True, text=True).returncode
             self.assertEqual(run(t/'own.txt'), 0)
             for p in (home/'.agents/skills/lifelog/SKILL.md', agents/'skills/herdr/SKILL.md', agents/'README.md',
-                      home/'.gemini/antigravity-cli/rules/agent-tooling.md'):
+                      home/'.claude/skills/lifelog/SKILL.md', home/'.gemini/antigravity-cli/rules/agent-tooling.md'):
                 if p.exists():
                     self.assertNotEqual(run(p), 0, p)
             tool = next((agents/'bin').iterdir(), None) if (agents/'bin').is_dir() else None
             if tool and tool.is_file():
                 self.assertEqual(run(tool), 0, tool)        # ~/.local/bin's links into bin/ still work
+
+    def test_muse_gets_a_home_without_user_skills(self):
+        # (s2a) Muse read $HOME/.agents/skills and $HOME/.claude/skills on start and died on the deny's EPERM
+        import importlib.util, shutil
+        home = Path.home()
+        if not (home/'.config/muse/auth.json').exists():
+            self.skipTest('no Muse login on this machine')
+        root = Path(__file__).resolve().parents[2]
+        spec = importlib.util.spec_from_file_location('agent_scope', root/'tools/agent-scope.py')
+        m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+        with tempfile.TemporaryDirectory() as t:
+            env = m.native_environment({'PATH': '/usr/bin:/bin'}, Path(t), home, muse=True)
+            native = Path((Path(t)/'.native-root').read_text().strip())
+            try:
+                own = Path(env['HOME'])
+                self.assertEqual(own, native/'home')
+                self.assertEqual(sorted(p.name for p in own.iterdir()), ['Library'])
+                self.assertEqual((own/'Library/Keychains').resolve(), (home/'Library/Keychains').resolve())
+                self.assertFalse((own/'.agents').exists() or (own/'.claude').exists())
+                self.assertEqual(env['POG_MUSE_BIN'], str(home/'.local/bin/muse'))
+                self.assertTrue(env['PATH'].startswith(str(home/'.local/bin')))
+            finally:
+                shutil.rmtree(native)
 
 
 class IdlePrompt(unittest.TestCase):
