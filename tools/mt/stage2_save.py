@@ -249,13 +249,17 @@ local water={}
 for x=ox-6,ox+5 do for y=oy+6,oy+13 do water[#water+1]={name='water',position={x,y}} end end
 s.set_tiles(water,true,true,true,true)
 local pump
-for dx=0,6 do for _,sx in ipairs{1,-1} do for _,d in ipairs(dirs) do
+for dx=0,6 do for _,sx in ipairs{1,-1} do for _,d in ipairs{D.south,D.east,D.west,D.north} do
   local p={ox+sx*dx+0.5,oy+5.5}
-  if not pump and s.can_place_entity{name='offshore-pump',position=p,direction=d,force=f} then pump=s.create_entity{name='offshore-pump',position=p,direction=d,force=f} end
+  if not pump and s.can_place_entity{name='offshore-pump',position=p,direction=d,force=f} then
+    local q=s.create_entity{name='offshore-pump',position=p,direction=d,force=f}
+    local c=q and q.get_fluid_box_pipe_connections(1)[1]
+    if c and not s.get_tile(c.target_position.x,c.target_position.y).name:find('water') then pump=q elseif q then q.destroy() end
+  end
 end end end
 if not pump then rcon.print(helpers.table_to_json{error='no pump spot'}) return end
 local function connected(a,b)
-  for i=1,#a.fluidbox do for _,c in pairs(a.fluidbox.get_connections(i)) do if c.owner==b then return true end end end
+  for i=1,a.fluids_count do for _,c in ipairs(a.get_fluid_box_neighbours(i) or {}) do if c.entity==b then return true end end end
   return false
 end
 local function attach(a,bname,avoid)
@@ -319,7 +323,7 @@ local function chain(x1,y1,x2,y2)
 end
 local top={ox+6.5,oy-4.5}
 for _,pl in pairs(s.find_entities_filtered{area={{ox-12,oy-6},{ox+12,oy+14}},type='electric-pole',force=f}) do
-  if #pl.neighbours.copper==0 then chain(pl.position.x,pl.position.y,top[1],top[2]) end end
+  if pl.get_wire_connector(defines.wire_connector_id.pole_copper,true).connection_count==0 then chain(pl.position.x,pl.position.y,top[1],top[2]) end end
 rcon.print(helpers.table_to_json{pump={pump.position.x-ox,pump.position.y-oy,pump.direction},boilers=(b1 and 1 or 0)+(b2 and 1 or 0),engines=#engines,fed=fed,poles=poles})
 '''
 
