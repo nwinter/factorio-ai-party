@@ -505,6 +505,18 @@ def meter_check(op, sprint_state):
         for key, w in (r.get('windows') or {}).items() if isinstance(r, dict) else []:
             if (w.get('percent') or 0) >= 80 and f'{route}:{key}' not in sprint_state.setdefault('over_80', {}):
                 sprint_state['over_80'][f'{route}:{key}'] = time.time()
+    return acc
+
+
+def codex_at_limit(acc, roster):
+    """(note-mt309-m) The Codex window a Codex arm draws on at 99% or more (whole percents: 99 may be 99.9): no player
+    ever runs on credits, so the sprint ends there. None when no Codex arm plays or the window is under 99."""
+    if not any(r['kind'] == 'codex' for r in roster) or not isinstance(acc, dict):
+        return None
+    for key, w in ((acc.get('codex') or {}).get('windows') or {}).items():
+        if (w.get('percent') or 0) >= 99:
+            return f'codex {key} at {w.get("percent")}%'
+    return None
 
 
 def served_models(op, roster):
@@ -662,7 +674,10 @@ def supervise(run, op, state, env, next_check):
         if not checked_models and time.time() - state['start_at'] > 600:
             state['served_models'] = served_models(op, roster); checked_models = True; save()
         if time.time() >= next_check:
-            meter_check(op, state); save(); next_check += 900
+            limit = codex_at_limit(meter_check(op, state), roster); save(); next_check += 900
+            if limit:      # every arm stops with it: the run's world and score end at the same tick
+                state['ended_by'] = limit; wake(f'{run}: {limit}: the sprint ends now (no Codex player on credits)')
+                break
         if state.get('save') == 'stage2' and time.time() >= state.get('next_stage2', 0):
             stage2_measure(op, env); state['next_stage2'] = time.time() + 120
         try:

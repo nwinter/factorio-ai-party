@@ -75,6 +75,14 @@ class Plan(unittest.TestCase):
             sprint.read_arms(f.name)
 
 
+    def test_codex_window_limit_ends_a_codex_sprint(self):
+        acc = lambda pct: {'codex': {'windows': {'codex:10080:primary': {'percent': pct}}}}
+        codex, grok = [dict(kind='codex', arm='astra')], [dict(kind='grok', arm='grok')]
+        self.assertIsNone(sprint.codex_at_limit(acc(98.0), codex))
+        self.assertEqual(sprint.codex_at_limit(acc(99.0), codex), 'codex codex:10080:primary at 99.0%')
+        self.assertIsNone(sprint.codex_at_limit(acc(100.0), grok))
+        self.assertIsNone(sprint.codex_at_limit({'error': 'x'}, codex))
+
     def test_two_agents_on_one_force(self):
         row = lambda t, n: dict(team=t, arm=n)
         sprint.check_roster([row('green', 'hydrogen'), row('green', 'grok')])
