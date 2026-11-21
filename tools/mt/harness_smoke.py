@@ -5,10 +5,12 @@
 
 For each roster row, a throwaway folder in a scratch launch tree (tools/mt/launch-tree.sh from HEAD, default
 worktrees/pog-smoke) and one short headless start of the real CLI as the launcher starts it:
-  grok, agy, muse   under tools/agent-scope.py (the exact process scope a player gets: POG_ISOLATED runs) with the
+  grok, agy, muse,  under tools/agent-scope.py (the exact process scope a player gets: POG_ISOLATED runs) with the
                     provider traffic through a netgate.py port holding that CLI's allowlist (full_tools.NETGATE_ALLOW);
                     Grok with its run-local home (tools/grok-home.py) and $grok_env, agy through tools/agy-local.py,
-                    Muse with the scope's native config and home (and `muse skills list --source user` must be empty)
+                    Muse with the scope's native config and home (and `muse skills list --source user` must be empty),
+  codex             Codex with the POG Codex home and its own sandbox off, as launch-agent.sh's isolated player (refused
+                    while personal Codex reads 99% or more or is stale: never on credits)
   claude            the launcher's own claude_settings (sandbox and Read rules, run with the run env's POG_ISOLATED and
                     POG_READ_SCOPE) and $claude_unset $claude_vars $claude_flags (tools/profile-flags.sh)
 Each is asked for the single word OK (one small model call: a Grok row lands on Grok's window, so check Grok rows
@@ -43,6 +45,13 @@ def roster(path):
         team, name, kind, route, model, effort = line.split('\t')[:6]
         rows.append(dict(team=team, name=name, kind=kind, route=route, model=model, effort=effort))
     return rows
+
+
+def codex_window_ok():
+    """(ok, percent): the personal Codex window below 99% and fresh (codex_scope_smoke.live_ok), so a smoke call is
+    never on credits."""
+    from codex_scope_smoke import live_ok
+    return live_ok()
 
 
 def free_port():
@@ -88,6 +97,11 @@ def scoped(tree, row, folder):
             lines += ['echo "== user skills"; muse skills list --source user --json',
                       f"echo '== reply'; exec env $muse_env muse exec -c 'hooks={{}}' -c context.foreign_personal_rules=false "
                       f"-c context.foreign_personal_skills=false --model {m} --effort {e} --approval-mode never '{PROMPT}'"]
+        elif kind == 'codex':
+            # (note-mt309-m) as tools/launch-agent.sh's isolated Codex player: the POG Codex home (agent-scope keys it on
+            # ".codex" in the script name; ~/.codex stays denied), Codex's own sandbox off, the run's gate as proxy
+            lines.append(f"exec /opt/homebrew/bin/codex exec -C '{folder}' -m {m} -c 'model_reasoning_effort=\"{e}\"' "
+                         f"-s danger-full-access --skip-git-repo-check '{PROMPT}'")
         script = folder/f'.{kind}-smoke.sh'          # agent-scope keys Muse's native setup on ".muse" in the name
         script.write_text('\n'.join(lines)+'\n'); script.chmod(0o755)
         r = subprocess.run([sys.executable, str(tree/'tools/agent-scope.py'), str(tree), proxy, str(script)], cwd=folder,
@@ -154,7 +168,9 @@ def main():
         folder.mkdir(parents=True)
         t0 = time.time()
         try:
-            if row['kind'] in ('grok', 'agy', 'muse'):
+            if row['kind'] == 'codex' and not codex_window_ok()[0]:
+                rc, out, extra = 1, f'personal Codex reads {codex_window_ok()[1]}% of its week or is stale: no call on credits', {}
+            elif row['kind'] in ('grok', 'agy', 'muse', 'codex'):
                 rc, out, extra = scoped(tree, row, folder)
             elif row['kind'] == 'claude':
                 rc, out, extra = claude(tree, row, folder)
