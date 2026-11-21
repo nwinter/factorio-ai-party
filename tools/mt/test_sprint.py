@@ -75,6 +75,15 @@ class Plan(unittest.TestCase):
             sprint.read_arms(f.name)
 
 
+    def test_two_agents_on_one_force(self):
+        row = lambda t, n: dict(team=t, arm=n)
+        sprint.check_roster([row('green', 'hydrogen'), row('green', 'grok')])
+        for bad in ([row('green', 'a'), row('green', 'b'), row('green', 'c')], [row('red', 'a')],
+                    [row('green', n) for n in 'ab'] + [row('blue', 'c'), row('yellow', 'd')]):
+            with self.assertRaises(AssertionError):
+                sprint.check_roster(bad)
+
+
 class Burn(unittest.TestCase):
     def test_claude_list_dollars_and_percent(self):
         tok = dict(input=10_000_000, cache_read=9_000_000, cache_write=500_000, output=100_000)
@@ -339,6 +348,10 @@ class Stage2(unittest.TestCase):
             self.assertEqual((g['first_attack_min'], g['spawn']), (10.0, 'near'))
             # drills 0, 0, 0, 2 over gaps of 10, 14, 16 minutes: 2 x 16 drill-minutes, peak 2, 2 at the end
             self.assertEqual((g['field_drills_peak'], g['field_drill_min'], g['field_drills_end']), (2, 32.0, 2))
+            pair = sprint.stage2_summary(op, dict(start_tick=1000, roster=[dict(team='green', arm='hydrogen'),
+                                                                     dict(team='green', arm='grok')]))
+            self.assertEqual(pair['hydrogen+grok']['field_drill_min'], 32.0)
+            self.assertEqual(set(pair), {'hydrogen+grok', 'empty-yellow', 'empty-blue'})
 
 
 if __name__ == '__main__':

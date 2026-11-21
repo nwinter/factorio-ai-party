@@ -15,6 +15,7 @@ nothing here writes into a workspace. Never a account B route. One private serve
 """
 import argparse
 import bisect
+import collections
 import glob
 import json
 import math
@@ -540,9 +541,17 @@ def summary(run):
             + f" | details runs/{run}/op/sprint-*.json")
 
 
+def check_roster(roster):
+    """At most three agents on the three spawns. (note-mt309-l) A team may hold two agents (a mixed pair on one force);
+    each agent stays its own arm for burn and idle prompts, and the force's score is the team's."""
+    assert 1 <= len(roster) <= 3 and all(r['team'] in FORCES for r in roster), 'at most three agents, on green, yellow, blue'
+    per_team = collections.Counter(r['team'] for r in roster)
+    assert max(per_team.values()) <= 2, 'at most two agents on one force'
+
+
 def cmd_run(a):
     roster = roster_rows(a.roster)
-    assert 1 <= len(roster) <= 3 and len({r['team'] for r in roster}) == len(roster), 'one arm per force, at most three'
+    check_roster(roster)
     assert all(r['route'] not in FORBIDDEN_ROUTES for r in roster), 'account B route refused'
     assert sum(r['kind'] == 'agy' and 'gemini-4' in r['model'] for r in roster) <= 1, 'at most one Gemini 4 arm a run'
     assert a.minutes <= 120, 'sprints are bounded to 120 minutes (Stage 2: two hours; tools/mt/launch.py --max-minutes)'
@@ -612,7 +621,9 @@ def stage2_summary(op, state, path=None):
     the second field's peak working drills, drill-minutes and drills working at the end (note-mt309-j).
     (note-mt309-f) green is the near spawn: its nearest building is about 90 tiles from its nest, 113 for the others."""
     rows = [json.loads(l) for l in (path or op/'stage2.jsonl').read_text().splitlines() if l.strip()]
-    team_arm = {r['team']: r['arm'] for r in state['roster']}
+    team_arm = {}   # (note-mt309-l) a two-agent team reads under both names, e.g. hydrogen+grok
+    for r in state['roster']:
+        team_arm[r['team']] = team_arm[r['team']] + '+' + r['arm'] if r['team'] in team_arm else r['arm']
     out = {}
     for team in FORCES:   # an empty spawn too (its arm reads empty-TEAM): its first attack is the unplayed baseline
         arm = team_arm.get(team, f'empty-{team}')
