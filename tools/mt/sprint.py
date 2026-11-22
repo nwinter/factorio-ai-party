@@ -538,13 +538,15 @@ def meter_check(op, sprint_state):
     """One 15-minute check: every approved account's windows into op/meter-checks.jsonl; the first time a window
     passes 80% is noted in sprint.json (the run goes on: a window that runs out is a result)."""
     import meter as M
+    used = {r['route'] if r['kind'] == 'claude' else r['kind'] for r in sprint_state.get('roster', [])}
     try:
-        acc = M.accounts()
+        # (note-mt309-t) only the roster's own accounts (Grok and Muse are out: no reads of theirs). accounts() reads
+        # the menu bar's cached brief, never a provider.
+        acc = {k: v for k, v in M.accounts().items() if k in used}
     except (OSError, ValueError) as e:
         acc = {'error': str(e)}
     with (op/'meter-checks.jsonl').open('a') as f:
         f.write(json.dumps({'at': time.time(), 'accounts': acc}) + '\n')
-    used = {r['route'] if r['kind'] == 'claude' else r['kind'] for r in sprint_state.get('roster', [])}
     for route, r in acc.items() if isinstance(acc, dict) else []:
         if route not in used:      # (s1r1d) Codex's 100% week was noted with no Codex arm in the run
             continue

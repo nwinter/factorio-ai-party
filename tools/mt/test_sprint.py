@@ -108,6 +108,21 @@ class Plan(unittest.TestCase):
         self.assertIsNone(sprint.codex_at_limit(acc(100.0), grok))
         self.assertIsNone(sprint.codex_at_limit({'error': 'x'}, codex))
 
+    def test_meter_check_keeps_only_the_roster_accounts(self):
+        # (note-mt309-t) Grok and Muse are out: a check of the three arms logs their accounts only
+        import meter as M
+        w = lambda p: {'windows': {'k': {'percent': p}}}
+        real = M.accounts; M.accounts = lambda: {'claude': w(61), 'codex': w(65), 'agy': w(6), 'grok': w(3), 'muse': w(5)}
+        try:
+            with tempfile.TemporaryDirectory() as t:
+                st = dict(roster=[dict(kind='agy', route='-'), dict(kind='codex', route='codex'), dict(kind='claude', route='claude')])
+                acc = sprint.meter_check(Path(t), st)
+                self.assertEqual(set(acc), {'claude', 'codex', 'agy'})
+                logged = json.loads((Path(t)/'meter-checks.jsonl').read_text())['accounts']
+                self.assertEqual(set(logged), {'claude', 'codex', 'agy'})
+        finally:
+            M.accounts = real
+
     def test_two_agents_on_one_force(self):
         row = lambda t, n: dict(team=t, arm=n)
         sprint.check_roster([row('green', 'hydrogen'), row('green', 'grok')])
