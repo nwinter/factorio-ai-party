@@ -23,7 +23,8 @@ def main():
     p.add_argument('--execute',action='store_true')
     p.add_argument('--run-mode',choices=['test','full'],default='test')
     # (mt309) Stage 2's two-hour sprints: a test run may be 120 minutes only when the caller says so.
-    p.add_argument('--max-minutes',type=int,choices=[90,120],default=90)
+    # (note-mt309-t) the three-team contact test: four hours
+    p.add_argument('--max-minutes',type=int,choices=[90,120,240],default=90)
     a=p.parse_args()
     assert re.fullmatch(r'[A-Za-z0-9_-]{1,16}',a.run) and a.minutes>=1
     assert a.run_mode=='full' or a.minutes<=a.max_minutes, f'test runs are bounded to {a.max_minutes} minutes'
