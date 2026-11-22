@@ -1,5 +1,6 @@
 """(mt309) The bake-off sprint tools: the fixed score, spawn rotation, burn conversion and the meter."""
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -74,6 +75,26 @@ class Plan(unittest.TestCase):
         with self.assertRaises(AssertionError):
             sprint.read_arms(f.name)
 
+
+    def test_codex_turn_end_from_its_rollout(self):
+        import full_run
+        with tempfile.TemporaryDirectory() as tmp:
+            home, folder = Path(tmp)/'home', Path(tmp)/'runs'
+            (home/'sessions/2026').mkdir(parents=True); (folder/'astra').mkdir(parents=True)
+            ws = os.path.abspath(folder/'astra')
+            ev = lambda t, kind: json.dumps(dict(timestamp=t, type='event_msg', payload=dict(type=kind)))
+            f = home/'sessions/2026/rollout-x.jsonl'
+            f.write_text(json.dumps(dict(type='session_meta', payload=dict(cwd=ws))) + '\n' + ev('2026-11-22T01:44:20.000Z', 'task_started')
+                         + '\n' + ev('2026-11-22T01:51:59.000Z', 'task_complete') + '\n')
+            a = dict(kind='codex', folder=str(folder), name='astra', started=0)
+            done = 1795312319.0
+            idle = lambda screen, now: full_run.codex_idle(a, screen, now, home=home)
+            self.assertTrue(idle('› Ask Codex to do anything', done + 130))
+            self.assertFalse(idle('› Ask Codex to do anything', done + 60))           # under 120 s
+            self.assertFalse(idle('• Working (11s • esc to interrupt)', done + 130))   # a turn running
+            with f.open('a') as g:
+                g.write(ev('2026-11-22T02:02:13.000Z', 'task_started') + '\n')
+            self.assertFalse(idle('› Ask Codex to do anything', done + 900))           # a new turn began
 
     def test_codex_window_limit_ends_a_codex_sprint(self):
         acc = lambda pct: {'codex': {'windows': {'codex:10080:primary': {'percent': pct}}}}
