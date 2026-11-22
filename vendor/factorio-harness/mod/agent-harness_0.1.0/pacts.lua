@@ -49,12 +49,27 @@ return function(api)
     end
     return false
   end
+  -- (mt309 ct1, note-mt309-v) A tell to "pact", "diplomacy" or a contacted team's name: the words for the refusal (nil:
+  -- no hint; a team with no contact yet gets none, nor any team's name).
+  function M.tell_hint(team, name)
+    if not (team and teams()[team] and M.open_for(team) and type(name) == 'string') then return nil end
+    local n = (name:lower():gsub('^@', ''))
+    if n == 'pact' or n == 'diplomacy' then
+      return 'pact and diplomacy lines come from the harness, not an agent: answer another team with diplomacy_send {to: TEAM, text: ...}'
+    end
+    for t in pairs(teams()) do
+      if t ~= team and t:lower() == n and M.contacted(team, t) then
+        return t .. ' is another team, not an agent of yours: use diplomacy_send {to: "' .. t .. '", text: ...}'
+      end
+    end
+    return nil
+  end
   function M.open_for(team)
     if not (mt() and teams()[team]) then return false end
     for other in pairs(teams()) do if other ~= team and M.contacted(team, other) then return true end end
     return false
   end
-  local function fact(team, text, wake) if api.fact then api.fact(team, text, wake) end end
+  local function fact(team, text, wake, from) if api.fact then api.fact(team, text, wake, from) end end
   local function both(p, text, wake) fact(p.a, text, wake); fact(p.b, text, wake) end
   local function other_of(p, team) return team == p.a and p.b or p.a end
   local function roster(reader,other) return api.roster and api.roster(reader,other) or {} end
@@ -169,7 +184,10 @@ return function(api)
     local shown=author.display_name or who
     if author.model then shown=shown..' · '..author.model end
     local line='Diplomacy '..team..' ('..shown..') -> '..a.to..': '..text
-    fact(team,line,false);fact(a.to,line,true)
+    -- (mt309 ct1, note-mt309-v) the receiving team's line comes from "diplomacy", names the sender's team and says how
+    -- to answer: blue read "pact, 44s ago: Diplomacy green ..." and replied with tell {to: "pact"}, then say
+    fact(team,line,false)
+    fact(a.to,'from '..team..' ('..shown..'): '..text..' (reply: diplomacy_send {to: "'..team..'", text: ...})',true,'diplomacy')
     return {message=m,delivered_to={team,a.to},note='Every agent of these two teams receives this message. Ordinary say/tell/board are private to your team.'}
   end
   function M.messages(team,a)
