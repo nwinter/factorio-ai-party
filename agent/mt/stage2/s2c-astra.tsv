@@ -1,0 +1,4 @@
+# team	name	kind	route	model	effort	label	harness
+green	hydrogen	agy	-	gemini-4-hydrogen-medium	-	Gemini 4 Hydrogen	Antigravity
+yellow	astra	codex	codex	gpt-6.2-astra	low	GPT-6.2 Astra	Codex
+blue	muse	muse	-	muse-spark-1.3	medium	Muse Spark 1.3	Muse Code
