@@ -20,7 +20,7 @@ def deadline(path):
 
 
 def command(prompt, options):
-    return [str(Path.home()/'.local/bin/muse'), 'exec', '--json',
+    return [os.environ.get('POG_MUSE_BIN') or str(Path.home()/'.local/bin/muse'), 'exec', '--json',
             '--no-foreign-personal-context', '--disable-reminders',
             '--disable-request-user-input', *options, prompt]
 

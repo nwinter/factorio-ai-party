@@ -22,7 +22,7 @@ def codex_home(home=None):
     shared with the owner's other work), its config and the sessions of the current run only."""
     return Path(os.environ.get('POG_CODEX_HOME') or Path(home or Path.home())/'.pog-codex'/'home')
 
-def profile(root,home,proxy=None,native=None,codex=None):
+def profile(root,home,proxy=None,native=None,codex=None,keychain=True):
     quote=json.dumps
     protected=[home/'code',home/'Dropbox',home/'Dropbox (Personal)']
     clauses=['(version 1)','(allow default)','(deny process-info*)','(allow process-info* (target self))',
@@ -32,7 +32,7 @@ def profile(root,home,proxy=None,native=None,codex=None):
     # runtime roots are visible; narrower history denies below still apply.
     installs=[root,home/'.local/bin',home/'.local/lib',home/'.nvm',home/'.grok/bin',home/'.grok/auth.json',
               home/'.gemini/config/projects',
-              home/'.gemini/antigravity-cli',home/'.cache/antigravity',home/'Library/Keychains',
+              home/'.gemini/antigravity-cli',home/'.cache/antigravity',*([home/'Library/Keychains'] if keychain else []),
               home/'Dropbox (Personal)/misc/env/agents']+([codex] if codex else [])
     allowed=' '.join(f'(subpath {quote(str(p.resolve()))})' for p in installs)
     clauses.append(f'(deny file-read-data file-write* (require-all (subpath {quote(str(home))}) (require-not (require-any {allowed}))))')
@@ -60,6 +60,13 @@ def profile(root,home,proxy=None,native=None,codex=None):
                  Path('/Volumes/POG Media/pog-runs'),Path('/Volumes/POG Media/pog-recordings')):
         clauses.append(f'(deny file-read* file-write* (subpath {quote(str(path.resolve()))}))')
     clauses.append(f'(deny file-read* file-write* (subpath {quote(str(home/".config/pog"))}))')
+    # (mt309 note-mt309-i) No keychain in this scope: its files and the SecurityServer lookup are refused (last match
+    # wins). agy and Muse keep it because their own logins live there; Grok and Codex log in from files.
+    if not keychain:
+        for d in {home/'Library/Keychains', (home/'Library/Keychains').resolve()}:
+            clauses.append(f'(deny file-read* file-write* (subpath {quote(str(d))}))')
+        clauses.append('(deny mach-lookup (global-name "com.apple.SecurityServer") (global-name "com.apple.securityd.xpc")'
+                       ' (global-name "com.apple.security.keychainsyncingoveridsproxy"))')
     if native:
         clauses.append(f'(deny file-read-data file-write* (require-all (subpath "/private/tmp") (require-not (literal "/private/tmp")) (require-not (subpath {quote(str(native))}))))')
     # Shared native transcripts and session indexes contain old project paths.
@@ -111,10 +118,22 @@ def native_environment(env,folder,home,muse=False,codex=None):
         auth=provider/'auth.json'
         if not auth.exists():
             shutil.copyfile(home/'.config/muse/auth.json',auth);auth.chmod(0o600)
+        # (mt309 s2a) Muse reads $HOME/.agents/skills and $HOME/.claude/skills (whose entries link into
+        # ~/.agents/skills) on every start, and fails outright ("runtime host failed to start: failed to read skill
+        # file") when the deny below refuses them; context.foreign_personal_skills=false does not stop the read and
+        # TBH_USER_SKILLS_HOME moves only the first. So Muse gets a home of its own: empty but for the keychain its
+        # login lives in. The deny of ~/.agents stays whole. muse-local.py finds the launcher through POG_MUSE_BIN.
+        own=native/'home';(own/'Library').mkdir(parents=True,exist_ok=True,mode=0o700)
+        if not (own/'Library/Keychains').is_symlink():(own/'Library/Keychains').symlink_to(home/'Library/Keychains')
+        env.update(HOME=str(own),POG_MUSE_BIN=str(home/'.local/bin/muse'))
     env.update(XDG_CONFIG_HOME=str(config),XDG_DATA_HOME=str(data),MUSE_NO_AUTO_UPDATE='1',TMPDIR=str(native)+'/',POG_SCOPE_ACTIVE='1')
     if codex:
         assert (codex/'auth.json').is_file(),f'{codex} has no login: run CODEX_HOME={codex} codex login --device-auth once'
         env['CODEX_HOME']=str(codex)
+        # (note-mt309-m) Codex verifies TLS through the Security framework, which needs the SecurityServer lookup the
+        # scope refuses (note-mt309-i): every request failed ("error sending request", 5 reconnects). It reads this
+        # CA file instead, and the scope keeps no keychain.
+        if Path('/etc/ssl/cert.pem').is_file():env.setdefault('SSL_CERT_FILE','/etc/ssl/cert.pem')
     return env
 
 def main():
@@ -124,7 +143,8 @@ def main():
     codex=codex_home() if '.codex' in name else None
     env=native_environment(environment(os.environ),Path(command[0]).parent,Path.home(),muse='.muse' in name,codex=codex)
     policy=Path(command[0]).parent/'.scope.sb'
-    policy.write_text(profile(root,Path.home(),proxy,Path(env['XDG_DATA_HOME']).parent,codex))
+    keychain=any(k in name for k in ('.agy','.muse'))   # their own logins need it (note-mt309-i)
+    policy.write_text(profile(root,Path.home(),proxy,Path(env['XDG_DATA_HOME']).parent,codex,keychain))
     os.execve('/usr/bin/sandbox-exec',['sandbox-exec','-f',str(policy),*command],env)
 
 if __name__=='__main__':main()

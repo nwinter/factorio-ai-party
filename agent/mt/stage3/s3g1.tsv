@@ -1,0 +1,4 @@
+# team	name	kind	route	model	effort	label	harness
+green	grok1	grok	grok	grok-4.7-build-fast	medium	Grok 4.7 Build Fast	Grok Build
+yellow	grok2	grok	grok	grok-4.7	low	Grok 4.7 low	Grok Build
+blue	grok3	grok	grok	grok-4.7	high	Grok 4.7 high	Grok Build

@@ -211,6 +211,7 @@ def native_idle(a,screen,now):
     Require both the native successful completion receipt and the empty prompt;
     journal silence alone cannot distinguish thinking from a finished turn.
     """
+    if a['kind']=='codex':return codex_idle(a,screen,now)
     if a['kind']!='grok':return False
     tail='\n'.join(screen.splitlines()[-25:])
     if pane_resume.BUSY.search(tail) or pane_resume.PURCHASE.search(screen):return False
@@ -224,7 +225,31 @@ def native_idle(a,screen,now):
             row=json.loads(f.read().splitlines()[-1])
         update=row.get('params',{}).get('update',{})
         return (row.get('method')=='_x.ai/session/update' and update.get('sessionUpdate')=='turn_completed'
-                and update.get('stop_reason')=='end_turn' and a['started']<=row['timestamp']<=now-120)
+                and update.get('stop_reason')=='end_turn' and a['started']<=row['timestamp']<=now-a.get('nudge_s',120))
+    except (OSError,ValueError,KeyError,IndexError,TypeError):return False
+
+def codex_idle(a,screen,now,home=None):
+    """(s1cx3) A scoped Codex pane reads unknown to Herdr, so a finished turn waited for the 600 s silence rule
+    (Astra: 10 min at game 9m). Idle when the arm's newest rollout in the POG Codex home ends its last turn with
+    task_complete at least a['nudge_s'] (default 120) s ago and the screen shows no running turn."""
+    if pane_resume.BUSY.search('\n'.join(screen.splitlines()[-25:])) or pane_resume.PURCHASE.search(screen):return False
+    home=Path(home or os.environ.get('POG_CODEX_HOME') or Path.home()/'.pog-codex'/'home')
+    ws=os.path.abspath(os.path.join(a['folder'],a['name'])).encode()
+    try:
+        mine=[]
+        for path in (home/'sessions').rglob('rollout-*.jsonl'):
+            if path.stat().st_mtime<a['started']:continue
+            with path.open('rb') as f:
+                if ws in f.read(16384):mine.append(path)
+        if not mine:return False
+        path=max(mine,key=lambda p:p.stat().st_mtime)
+        with path.open('rb') as f:
+            f.seek(max(0,path.stat().st_size-262144))
+            rows=[json.loads(l) for l in f.read().splitlines()[1:] if l.strip()]
+        turns=[r for r in rows if r.get('type')=='event_msg' and r.get('payload',{}).get('type') in ('task_started','task_complete')]
+        if not turns or turns[-1]['payload']['type']!='task_complete':return False
+        done=datetime.datetime.fromisoformat(turns[-1]['timestamp'].replace('Z','+00:00')).timestamp()
+        return a['started']<=done<=now-a.get('nudge_s',120)
     except (OSError,ValueError,KeyError,IndexError,TypeError):return False
 
 def due_agents(state,now,rooms):

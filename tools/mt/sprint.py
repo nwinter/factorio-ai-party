@@ -15,6 +15,7 @@ nothing here writes into a workspace. Never a account B route. One private serve
 """
 import argparse
 import bisect
+import collections
 import glob
 import json
 import math
@@ -29,6 +30,9 @@ CAL = json.loads((Path(__file__).with_name('burn_calibration.json')).read_text()
 FORCES = ('green', 'yellow', 'blue')        # the r307 baseline's three spawns (seed 30744, ~1,300 tiles apart)
 BASELINE = ROOT/'docs/reports/mt307/data/map/baseline-ready.zip'
 BASELINE_SHA = '1859bda9bf77b23ec622aca2d6b13c72629a01150c330e195e582bc78009479a'
+# (mt309 Stage 2) the prepared mid-game save (tools/mt/stage2_save.py), its SHA-256 beside it
+STAGE2_SAVE = ROOT/'docs/reports/mt309/data/stage2-ready.zip'
+STAGE2_SPAWN = dict(green='near', yellow='far', blue='far')   # nearest base building to its nest: 90, 115, 112 tiles
 FORBIDDEN_ROUTES = ('claude-b', 'codex-b', 'gsopenrouter')
 ROUTE_HOME = {'claude': '~/.claude-profiles/personal', 'claude-c': '~/.claude-profiles/account-c', 'codex': '~/.codex'}
 
@@ -411,6 +415,7 @@ def stop_run(run, env):
 # minute 46 of s1r1d ("research is running in a stable state") and sat idle for 44 minutes. The sprint applies
 # full_run's rule to every arm alike, with its text minus "with your teammate" (sprint arms play alone), plus one
 # rule for panes whose status never reads idle (Muse): 10 minutes without a game request and no busy marker.
+NUDGE_S = 120     # seconds after a turn ends before the idle prompt (sprint run --nudge-s; note-mt309-p)
 SPRINT_NUDGE = ('Operator (automatic): check your own status, tells, board and notes.md. Keep building toward the '
                 'goal. If blocked, explain the blocker once and choose another useful task. Keep your current '
                 'identity and update your notes.')
@@ -434,14 +439,17 @@ def idle_prompts(op, state, panes=None, now=None):
         journal = folder/r['arm']/'journal.jsonl'
         quiet = now - (journal.stat().st_mtime if journal.exists() else state['start_at'])
         last = max([state['start_at']] + [x['at'] for x in log.get(r['arm'], [])])
-        if now - last < 180 or quiet < 120:
+        # (note-mt309-p) the wait after a turn ends is the run's nudge_s (default 120 s); the gap between two prompts
+        # to one arm scales with it (180 s at 120, 30 s at 20), so a prompt is never sent twice before its turn starts
+        wait = state.get('nudge_s', NUDGE_S)
+        if now - last < wait * 1.5 or quiet < wait:
             continue
         status = panes.status(pane)
         screen = panes.read(pane)
-        a = dict(kind=r['kind'], folder=str(folder), name=r['arm'], started=state['start_at'])
+        a = dict(kind=r['kind'], folder=str(folder), name=r['arm'], started=state['start_at'], nudge_s=wait)
         native = status == 'unknown' and full_run.native_idle(a, screen, now)
         busy = bool(pane_resume.BUSY.search('\n'.join(screen.splitlines()[-25:])))
-        why = ('status ' + status) if status in ('idle', 'done') else 'grok end_turn' if native else \
+        why = ('status ' + status) if status in ('idle', 'done') else f"{r['kind']} end_turn" if native else \
               'silent 600 s' if quiet >= 600 and not busy else None
         if not why:
             continue
@@ -501,6 +509,18 @@ def meter_check(op, sprint_state):
         for key, w in (r.get('windows') or {}).items() if isinstance(r, dict) else []:
             if (w.get('percent') or 0) >= 80 and f'{route}:{key}' not in sprint_state.setdefault('over_80', {}):
                 sprint_state['over_80'][f'{route}:{key}'] = time.time()
+    return acc
+
+
+def codex_at_limit(acc, roster):
+    """(note-mt309-m) The Codex window a Codex arm draws on at 99% or more (whole percents: 99 may be 99.9): no player
+    ever runs on credits, so the sprint ends there. None when no Codex arm plays or the window is under 99."""
+    if not any(r['kind'] == 'codex' for r in roster) or not isinstance(acc, dict):
+        return None
+    for key, w in ((acc.get('codex') or {}).get('windows') or {}).items():
+        if (w.get('percent') or 0) >= 99:
+            return f'codex {key} at {w.get("percent")}%'
+    return None
 
 
 def served_models(op, roster):
@@ -537,20 +557,31 @@ def summary(run):
             + f" | details runs/{run}/op/sprint-*.json")
 
 
+def check_roster(roster):
+    """At most three agents on the three spawns. (note-mt309-l) A team may hold two agents (a mixed pair on one force);
+    each agent stays its own arm for burn and idle prompts, and the force's score is the team's."""
+    assert 1 <= len(roster) <= 3 and all(r['team'] in FORCES for r in roster), 'at most three agents, on green, yellow, blue'
+    per_team = collections.Counter(r['team'] for r in roster)
+    assert max(per_team.values()) <= 2, 'at most two agents on one force'
+
+
 def cmd_run(a):
     roster = roster_rows(a.roster)
-    assert 1 <= len(roster) <= 3 and len({r['team'] for r in roster}) == len(roster), 'one arm per force, at most three'
+    check_roster(roster)
     assert all(r['route'] not in FORBIDDEN_ROUTES for r in roster), 'account B route refused'
     assert sum(r['kind'] == 'agy' and 'gemini-4' in r['model'] for r in roster) <= 1, 'at most one Gemini 4 arm a run'
-    assert a.minutes <= 90, 'test runs are bounded to 90 minutes (tools/mt/launch.py)'
+    assert a.minutes <= 120, 'sprints are bounded to 120 minutes (Stage 2: two hours; tools/mt/launch.py --max-minutes)'
     # Paused start: the world waits while the agents launch, and the sprint begins for all of them at once.
     route = rcon_route()
-    env = dict(os.environ, POG_MT_FRESH='1', POG_MT_FRESH_SAVE=str(BASELINE), POG_SEED='30744', POG_GAME_TEST='0',
+    save, want = (BASELINE, BASELINE_SHA) if a.save == 'r307' else (STAGE2_SAVE, STAGE2_SAVE.with_suffix('.sha256').read_text().split()[0])
+    env = dict(os.environ, POG_MT_FRESH='1', POG_MT_FRESH_SAVE=str(save), POG_SEED='30744', POG_GAME_TEST='0',
                POG_IDLE_NUDGE='0', POG_MT_PAUSED_START='1', POG_STOP_WORLD='1',
                POG_CLAIM_OWNER=os.environ.get('POG_CLAIM_OWNER', 'eng-mt309'))
-    sha = subprocess.run(['shasum', '-a', '256', str(BASELINE)], capture_output=True, text=True).stdout.split()[0]
-    assert sha == BASELINE_SHA, f'baseline changed: {sha}'
+    sha = subprocess.run(['shasum', '-a', '256', str(save)], capture_output=True, text=True).stdout.split()[0]
+    assert sha == want, f'{save.name} changed: {sha}'
     launch = [sys.executable, str(ROOT/'tools/mt/launch.py'), a.run, str(a.minutes), '--roster', str(Path(a.roster).resolve())]
+    if a.minutes > 90:
+        launch += ['--max-minutes', '120']
     if not a.execute:
         print('dry run:', ' '.join(launch)); subprocess.run(launch, env=env, check=True); return
     subprocess.run(launch + ['--execute'], env=env, check=True)
@@ -566,7 +597,8 @@ def cmd_run(a):
         raise SystemExit(f'{a.run}: start failed')
     rcon_set_paused(False)
     tick, paused = rcon_tick()
-    state = dict(start_tick=tick, start_at=time.time(), minutes=a.minutes, score_version=SCORE_VERSION, roster=roster)
+    state = dict(start_tick=tick, start_at=time.time(), minutes=a.minutes, score_version=SCORE_VERSION, roster=roster,
+                 save=a.save, save_sha=sha, nudge_s=a.nudge_s)
     state.update(rcon_route=route, rcon_connect_s=rcon_connect_s())
     (op/'sprint.json').write_text(json.dumps(state, indent=1))
     meter_check(op, state)
@@ -585,6 +617,51 @@ def cmd_resume(a):
     supervise(a.run, op, state, env, max(time.time(), nxt))
 
 
+def stage2_measure(op, env):
+    """One Stage 2 reading per force (tools/mt/stage2_save.py measure) into op/stage2.jsonl; a failed read never
+    ends a sprint."""
+    try:
+        r = subprocess.run([sys.executable, str(ROOT/'tools/mt/stage2_save.py'), 'measure'], env=env, capture_output=True,
+                           text=True, timeout=60)
+        row = dict(json.loads(r.stdout), at=time.time())
+        with (op/'stage2.jsonl').open('a') as f:
+            f.write(json.dumps(row) + '\n')
+    except Exception as e:
+        print(time.strftime('%H:%M:%S'), 'stage 2 measure failed:', repr(e), flush=True)
+
+
+def stage2_summary(op, state, path=None):
+    """Per force from op/stage2.jsonl: minutes (played game time from the start tick) to the nest's last spawner
+    and to the first working drill on the second field, to the first attack (the first reading with a loss or a kill),
+    and at the last reading what is left of the nest, losses (entities of the force killed) and character deaths;
+    the second field's peak working drills, drill-minutes and drills working at the end (note-mt309-j).
+    (note-mt309-f) green is the near spawn: its nearest building is about 90 tiles from its nest, 113 for the others."""
+    rows = [json.loads(l) for l in (path or op/'stage2.jsonl').read_text().splitlines() if l.strip()]
+    team_arm = {}   # (note-mt309-l) a two-agent team reads under both names, e.g. hydrogen+grok
+    for r in state['roster']:
+        team_arm[r['team']] = team_arm[r['team']] + '+' + r['arm'] if r['team'] in team_arm else r['arm']
+    out = {}
+    for team in FORCES:   # an empty spawn too (its arm reads empty-TEAM): its first attack is the unplayed baseline
+        arm = team_arm.get(team, f'empty-{team}')
+        mins = lambda row: round((row['tick'] - state['start_tick']) / 3600, 1)
+        mine = [(r, r[team]) for r in rows if team in r]
+        cleared = next((mins(r) for r, m in mine if m['spawners'] == 0), None)
+        mining = next((mins(r) for r, m in mine if m['field_drills_working'] > 0), None)
+        attacked = next((mins(r) for r, m in mine if m['lost'] > 0 or m['killed'] > 0), None)
+        last = mine[-1][1] if mine else {}
+        # (note-mt309-j) how much the second field mined: the peak, drill-minutes (each reading's working drills times
+        # the game minutes since the reading before it) and what still works at the end
+        drills = [m['field_drills_working'] for r, m in mine]
+        drill_min = sum(d * (r['tick'] - p['tick']) / 3600 for (p, _), (r, _), d in zip(mine, mine[1:], drills[1:]))
+        out[arm] = dict(team=team, spawn=STAGE2_SPAWN.get(team), first_attack_min=attacked, nest_cleared_min=cleared, second_field_min=mining,
+                        field_drills_peak=max(drills, default=None), field_drill_min=round(drill_min, 1),
+                        field_drills_end=drills[-1] if drills else None, spawners_left=last.get('spawners'),
+                        worms_left=last.get('worms'), lost=last.get('lost'), characters_lost=last.get('characters_lost'),
+                        killed=last.get('killed'), readings=len(mine))
+    (op/'stage2-summary.json').write_text(json.dumps(out, indent=1))
+    return out
+
+
 def supervise(run, op, state, env, next_check):
     roster, minutes = state['roster'], state['minutes']
     a = argparse.Namespace(run=run, minutes=minutes)
@@ -601,7 +678,12 @@ def supervise(run, op, state, env, next_check):
         if not checked_models and time.time() - state['start_at'] > 600:
             state['served_models'] = served_models(op, roster); checked_models = True; save()
         if time.time() >= next_check:
-            meter_check(op, state); save(); next_check += 900
+            limit = codex_at_limit(meter_check(op, state), roster); save(); next_check += 900
+            if limit:      # every arm stops with it: the run's world and score end at the same tick
+                state['ended_by'] = limit; wake(f'{run}: {limit}: the sprint ends now (no Codex player on credits)')
+                break
+        if state.get('save') == 'stage2' and time.time() >= state.get('next_stage2', 0):
+            stage2_measure(op, env); state['next_stage2'] = time.time() + 120
         try:
             n = sum(len(v) for v in state.get('idle_prompts', {}).values())
             idle_prompts(op, state)
@@ -616,6 +698,8 @@ def supervise(run, op, state, env, next_check):
     played = min(a.minutes, (tick - state['start_tick']) / 3600)
     state.update(end_tick=tick, end_at=time.time(), played_minutes=round(played, 2)); save()
     cmd_score(argparse.Namespace(run=a.run, minutes=played))
+    if state.get('save') == 'stage2':
+        stage2_measure(op, env); state['stage2'] = stage2_summary(op, state); save()
     state['stopped'] = stop_run(a.run, env); save()
     cmd_burn(argparse.Namespace(run=a.run))
     if any(r['kind'] == 'codex' for r in roster):   # a later arm never reads this run's Codex transcripts
@@ -637,6 +721,8 @@ def main(argv=None):
     q = sub.add_parser('burn'); q.add_argument('run')
     q = sub.add_parser('run'); q.add_argument('run'); q.add_argument('roster'); q.add_argument('minutes', type=int)
     q.add_argument('--execute', action='store_true')
+    q.add_argument('--save', choices=['r307', 'stage2'], default='r307')
+    q.add_argument('--nudge-s', type=int, default=NUDGE_S, help='seconds after a turn ends before the idle prompt')
     q = sub.add_parser('resume'); q.add_argument('run')
     q = sub.add_parser('idle-watch'); q.add_argument('run')
     a = p.parse_args(argv)

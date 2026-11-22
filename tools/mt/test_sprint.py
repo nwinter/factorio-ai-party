@@ -1,5 +1,6 @@
 """(mt309) The bake-off sprint tools: the fixed score, spawn rotation, burn conversion and the meter."""
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -73,6 +74,47 @@ class Plan(unittest.TestCase):
             f.write('x\tclaude\tclaude-b\topus\tmedium\tOpus\tClaude Code\n')
         with self.assertRaises(AssertionError):
             sprint.read_arms(f.name)
+
+
+    def test_codex_turn_end_from_its_rollout(self):
+        import full_run
+        with tempfile.TemporaryDirectory() as tmp:
+            home, folder = Path(tmp)/'home', Path(tmp)/'runs'
+            (home/'sessions/2026').mkdir(parents=True); (folder/'astra').mkdir(parents=True)
+            ws = os.path.abspath(folder/'astra')
+            ev = lambda t, kind: json.dumps(dict(timestamp=t, type='event_msg', payload=dict(type=kind)))
+            f = home/'sessions/2026/rollout-x.jsonl'
+            f.write_text(json.dumps(dict(type='session_meta', payload=dict(cwd=ws))) + '\n' + ev('2026-11-22T01:44:20.000Z', 'task_started')
+                         + '\n' + ev('2026-11-22T01:51:59.000Z', 'task_complete') + '\n')
+            a = dict(kind='codex', folder=str(folder), name='astra', started=0)
+            done = 1795312319.0
+            idle = lambda screen, now: full_run.codex_idle(a, screen, now, home=home)
+            self.assertTrue(idle('› Ask Codex to do anything', done + 130))
+            self.assertFalse(idle('› Ask Codex to do anything', done + 60))           # under 120 s
+            a['nudge_s'] = 20                                                           # note-mt309-p
+            self.assertTrue(idle('› Ask Codex to do anything', done + 25))
+            self.assertFalse(idle('› Ask Codex to do anything', done + 10))
+            a['nudge_s'] = 120
+            self.assertFalse(idle('• Working (11s • esc to interrupt)', done + 130))   # a turn running
+            with f.open('a') as g:
+                g.write(ev('2026-11-22T02:02:13.000Z', 'task_started') + '\n')
+            self.assertFalse(idle('› Ask Codex to do anything', done + 900))           # a new turn began
+
+    def test_codex_window_limit_ends_a_codex_sprint(self):
+        acc = lambda pct: {'codex': {'windows': {'codex:10080:primary': {'percent': pct}}}}
+        codex, grok = [dict(kind='codex', arm='astra')], [dict(kind='grok', arm='grok')]
+        self.assertIsNone(sprint.codex_at_limit(acc(98.0), codex))
+        self.assertEqual(sprint.codex_at_limit(acc(99.0), codex), 'codex codex:10080:primary at 99.0%')
+        self.assertIsNone(sprint.codex_at_limit(acc(100.0), grok))
+        self.assertIsNone(sprint.codex_at_limit({'error': 'x'}, codex))
+
+    def test_two_agents_on_one_force(self):
+        row = lambda t, n: dict(team=t, arm=n)
+        sprint.check_roster([row('green', 'hydrogen'), row('green', 'grok')])
+        for bad in ([row('green', 'a'), row('green', 'b'), row('green', 'c')], [row('red', 'a')],
+                    [row('green', n) for n in 'ab'] + [row('blue', 'c'), row('yellow', 'd')]):
+            with self.assertRaises(AssertionError):
+                sprint.check_roster(bad)
 
 
 class Burn(unittest.TestCase):
@@ -245,12 +287,35 @@ class PlayerScopeSkills(unittest.TestCase):
                                               capture_output=True, text=True).returncode
             self.assertEqual(run(t/'own.txt'), 0)
             for p in (home/'.agents/skills/lifelog/SKILL.md', agents/'skills/herdr/SKILL.md', agents/'README.md',
-                      home/'.gemini/antigravity-cli/rules/agent-tooling.md'):
+                      home/'.claude/skills/lifelog/SKILL.md', home/'.gemini/antigravity-cli/rules/agent-tooling.md'):
                 if p.exists():
                     self.assertNotEqual(run(p), 0, p)
             tool = next((agents/'bin').iterdir(), None) if (agents/'bin').is_dir() else None
             if tool and tool.is_file():
                 self.assertEqual(run(tool), 0, tool)        # ~/.local/bin's links into bin/ still work
+
+    def test_muse_gets_a_home_without_user_skills(self):
+        # (s2a) Muse read $HOME/.agents/skills and $HOME/.claude/skills on start and died on the deny's EPERM
+        import importlib.util, shutil
+        home = Path.home()
+        if not (home/'.config/muse/auth.json').exists():
+            self.skipTest('no Muse login on this machine')
+        root = Path(__file__).resolve().parents[2]
+        spec = importlib.util.spec_from_file_location('agent_scope', root/'tools/agent-scope.py')
+        m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+        with tempfile.TemporaryDirectory() as t:
+            env = m.native_environment({'PATH': '/usr/bin:/bin'}, Path(t), home, muse=True)
+            native = Path((Path(t)/'.native-root').read_text().strip())
+            try:
+                own = Path(env['HOME'])
+                self.assertEqual(own, native/'home')
+                self.assertEqual(sorted(p.name for p in own.iterdir()), ['Library'])
+                self.assertEqual((own/'Library/Keychains').resolve(), (home/'Library/Keychains').resolve())
+                self.assertFalse((own/'.agents').exists() or (own/'.claude').exists())
+                self.assertEqual(env['POG_MUSE_BIN'], str(home/'.local/bin/muse'))
+                self.assertTrue(env['PATH'].startswith(str(home/'.local/bin')))
+            finally:
+                shutil.rmtree(native)
 
 
 class IdlePrompt(unittest.TestCase):
@@ -281,6 +346,55 @@ class IdlePrompt(unittest.TestCase):
             sprint.idle_prompts(op, state, panes, now + 60)          # no second prompt within 180 s
             self.assertEqual(len(panes.sent), 2)
             self.assertEqual(len((op/'idle-prompts.jsonl').read_text().splitlines()), 2)
+            # (note-mt309-p) a 20 s nudge: 'working' (journal quiet 30 s) is prompted once idle, and the gap between
+            # two prompts to one arm is 30 s
+            state20 = dict(roster=roster[:2], start_at=now - 3600, nudge_s=20)
+            panes20 = Panes({'p1': 'idle', 'p2': 'idle'}, {'p1': '> ', 'p2': '> '})
+            sprint.idle_prompts(op, state20, panes20, now)
+            self.assertEqual(sorted(p for p, _ in panes20.sent), ['p1', 'p2'])
+            sprint.idle_prompts(op, state20, panes20, now + 20)
+            self.assertEqual(len(panes20.sent), 2)
+            sprint.idle_prompts(op, state20, panes20, now + 31)
+            self.assertEqual(len(panes20.sent), 4)
+
+
+class Stage2(unittest.TestCase):
+    def test_plan_is_the_same_at_every_spawn(self):
+        import math, stage2_save as S
+        p = S.plan()
+        self.assertEqual(set(p['teams']), {'green', 'yellow', 'blue'})
+        for t in p['teams'].values():
+            self.assertEqual(t['distances'], {'nest': 150, 'field': 270, 'nest_to_field': 120})
+            for n, x, y in t['spawners'] + t['worms']:
+                self.assertLessEqual(math.dist((x, y), t['nest']), p['nest_r'])
+            for f in t['field']:   # inside the cleared radius, beyond the nest
+                self.assertLess(math.dist(f['at'], t['spawn']) + f['r'], p['clear_enemies'])
+        self.assertEqual(S.overlaps(p['base']['entities']), [])
+        x1, y1, x2, y2 = p['base']['box']
+        for n, x, y, d, _ in p['base']['entities']:
+            self.assertTrue(x1 + 2 <= x <= x2 - 2 and y1 + 2 <= y <= y2 - 2, (n, x, y))
+        # the base's iron and copper last about an hour at the furnaces' 0.3125 ore/s (note-mt309-d)
+        per_cell = 20 * p['base']['ore_per_tile']['iron-ore']
+        self.assertAlmostEqual(per_cell / 0.3125 / 60, 60, delta=3)
+
+    def test_summary_times_from_the_start_tick(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            op = Path(tmp)
+            rows = [dict(tick=1000 + 3600*m, at=0, green=dict(spawners=s, worms=w, field_drills_working=d,
+                         outside_drills_working={}, lost=l, killed=k, characters_lost=c))
+                    for m, s, w, d, l, k, c in ((0, 4, 4, 0, 0, 0, 0), (10, 2, 4, 0, 3, 20, 1), (24, 0, 1, 0, 5, 60, 1),
+                                                (40, 0, 0, 2, 6, 70, 1))]
+            (op/'stage2.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in rows))
+            out = sprint.stage2_summary(op, dict(start_tick=1000, roster=[dict(team='green', arm='grok')]))
+            g = out['grok']
+            self.assertEqual((g['nest_cleared_min'], g['second_field_min'], g['lost'], g['characters_lost']), (24.0, 40.0, 6, 1))
+            self.assertEqual((g['first_attack_min'], g['spawn']), (10.0, 'near'))
+            # drills 0, 0, 0, 2 over gaps of 10, 14, 16 minutes: 2 x 16 drill-minutes, peak 2, 2 at the end
+            self.assertEqual((g['field_drills_peak'], g['field_drill_min'], g['field_drills_end']), (2, 32.0, 2))
+            pair = sprint.stage2_summary(op, dict(start_tick=1000, roster=[dict(team='green', arm='hydrogen'),
+                                                                     dict(team='green', arm='grok')]))
+            self.assertEqual(pair['hydrogen+grok']['field_drill_min'], 32.0)
+            self.assertEqual(set(pair), {'hydrogen+grok', 'empty-yellow', 'empty-blue'})
 
 
 if __name__ == '__main__':

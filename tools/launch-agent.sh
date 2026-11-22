@@ -247,13 +247,14 @@ claude_settings() {
   # the list above would name the run's other parts. Instead the shell reads nothing under ~/code or Dropbox but this
   # tree's shared files and this part's folder (and the same part of the runs it resumes), and the Read tool the same
   # paths (allow rules: no bare Read, Grep or Glob; the shell's grep, rg and ls stay).
-  local filesystem="\"denyRead\": [\"$HOME/.config/pog\"$keys_read]" file_allow=$allow
+  # (mt309 note-mt309-i) No keychain in the Bash sandbox; Claude Code reads its own login outside the sandbox.
+  local filesystem="\"denyRead\": [\"$HOME/.config/pog\", \"$HOME/Library/Keychains\"$keys_read]" file_allow=$allow
   if [ "${POG_READ_SCOPE:-0}" = 1 ] && [ -n "$part" ] && [ "${1:-}" != nosandbox ]; then
     local roots="\"$HOME/code\"" readable="" f
     for f in "$HOME/Dropbox" "$HOME/Dropbox (Personal)"; do [ -e "$f" ] && roots="$roots, \"$f\""; done
     for f in "$root"/*; do [ "${f##*/}" = runs ] || readable="$readable \"$f\""; done
     for r in $chain; do readable="$readable \"$root/runs/$r/$part\""; done
-    filesystem="\"denyRead\": [\"$HOME/.config/pog\", $roots], \"allowRead\": [$(echo $readable | sed 's/" "/", "/g')]"
+    filesystem="\"denyRead\": [\"$HOME/.config/pog\", \"$HOME/Library/Keychains\", $roots], \"allowRead\": [$(echo $readable | sed 's/" "/", "/g')]"
     file_allow="$(for f in $readable; do f=${f//\"/}; [ -f "$f" ] && printf '"Read(/%s)", ' "$f" || printf '"Read(/%s/**)", ' "$f"; done)${allow#\"Read\", \"Grep\", \"Glob\", }"
     keys_rules=""
   elif [ "${POG_READ_SCOPE:-0}" = 1 ] && [ "${POG_ISOLATED:-0}" = 1 ] && [ "${1:-}" != nosandbox ]; then
@@ -262,7 +263,7 @@ claude_settings() {
     # checkout and reports, transcripts). No other team's path is named.
     local roots="\"$HOME/code\", \"$HOME/pog-media\", \"$HOME/.claude-profiles\", \"$HOME/.codex\"" f
     for f in "$HOME/Dropbox" "$HOME/Dropbox (Personal)"; do [ -e "$f" ] && roots="$roots, \"$f\""; done
-    filesystem="\"denyRead\": [\"$HOME/.config/pog\", $roots], \"allowRead\": [\"$root\"]"
+    filesystem="\"denyRead\": [\"$HOME/.config/pog\", \"$HOME/Library/Keychains\", $roots], \"allowRead\": [\"$root\"]"
     file_allow="\"Read(/$root/**)\", ${allow#\"Read\", \"Grep\", \"Glob\", }"
     keys_rules=""
   fi
@@ -348,7 +349,8 @@ case $kind in
       { "$dir/fh" call ground_rules >/dev/null 2>&1 && python3 "$root/tools/brief.py" rules "$dir" >/dev/null; } || true
       python3 "$root/tools/clean-profile.py" "$kind" "$dir"
       python3 "$root/tools/sleepcap/setup.py" codex "$dir"
-      python3 "$root/tools/codex_pog_home.py" trust "$codex_home" "$dir"
+      # (s1cx) its JSON reply to stderr: the caller reads the pane and tab from this script's stdout
+      python3 "$root/tools/codex_pog_home.py" trust "$codex_home" "$dir" >&2
       pane=$(new_pane)
       printf '%s\n' '#!/usr/bin/env bash' "cd '$dir'" "${proxy_env:+export $proxy_env}" \
         "exec /opt/homebrew/bin/codex -C '$dir' -m '$model' -c 'model_reasoning_effort=\"$effort\"' -s danger-full-access -c 'approval_policy=\"never\"' -- \"\$(cat '$prompt')\"" \

@@ -43,7 +43,9 @@ def fingerprint(p):
 
 
 def run_scoped(profile_path, env, cmd, timeout=20, cwd=None):
-    r = subprocess.run(['/usr/bin/sandbox-exec', '-f', str(profile_path), '/bin/sh', '-c', cmd], env=env, cwd=cwd,
+    # stdin closed: `codex exec` appends a piped stdin to its prompt and waits for it to end (a smoke run from a tool
+    # whose stdin is an open pipe hung for the whole timeout)
+    r = subprocess.run(['/usr/bin/sandbox-exec', '-f', str(profile_path), '/bin/sh', '-c', cmd], env=env, cwd=cwd, stdin=subprocess.DEVNULL,
                        capture_output=True, text=True, timeout=timeout)
     return r.returncode, (r.stdout + r.stderr).strip()[:200]
 
@@ -108,9 +110,14 @@ def main(argv=None):
                 penv = dict(env, HTTPS_PROXY='http://127.0.0.1:18199', HTTP_PROXY='http://127.0.0.1:18199', ALL_PROXY='http://127.0.0.1:18199')
                 live_policy = ws/'.scope-live.sb'
                 live_policy.write_text(scope.profile(tree.resolve(), HOME, 'http://127.0.0.1:18199', native.resolve(), home))
-                rc, out = run_scoped(live_policy, penv, f"/opt/homebrew/bin/codex exec -C {q(ws)} -s danger-full-access --skip-git-repo-check 'Reply with the single word OK.'", timeout=300, cwd=ws)
-                gate.terminate()
-                hosts = sorted({json.loads(l).get('host') for l in log.read_text().splitlines()} if log.exists() else set())
+                try:     # a hung call (timeout) must not leave the learn gate running
+                    rc, out = run_scoped(live_policy, penv, f"/opt/homebrew/bin/codex exec -C {q(ws)} -s danger-full-access --skip-git-repo-check 'Reply with the single word OK.'", timeout=300, cwd=ws)
+                except subprocess.TimeoutExpired as e:
+                    rc, out = 124, f'timed out after 300 s: {(e.stdout or b"")[-200:]!r}'
+                finally:
+                    gate.terminate()
+                # the learn log's first line is the gate's own start event (no host)
+                hosts = sorted({json.loads(l).get('host') for l in log.read_text().splitlines()} - {None} if log.exists() else set())
                 checks['live'] = dict(ok=rc == 0 and 'OK' in out, rc=rc, out=out[-200:], hosts=hosts)
     finally:
         try:

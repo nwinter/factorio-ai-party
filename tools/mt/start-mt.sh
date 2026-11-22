@@ -385,7 +385,14 @@ for t in $teams; do
     if out=$(POG_PROXY="$(proxy_of "$name")" POG_TEAM="$td/team.txt" POG_NO_WAIT=1 POG_TAB="$tab" POG_WS="$name" POG_BOT="$name" \
           POG_MODEL="$label ($harness)" POG_ROUTE="$route" "$tree/tools/launch-agent.sh" "$run" "$world" "$name" "$minutes" "$kind" "$model" "$effort" \
           2> >(tee "$op/launch-$t-$name.err" >&2)); then
-      pane=$(echo "$out" | awk '{print $1}'); tab=$(echo "$out" | awk '{print $2}')
+      # (s1cx) the last line names the pane and tab; anything else there (a helper's JSON, mt309 s1cx) once became a
+      # pane named {"trusted": and the supervisor step stopped the start before the score loops
+      pane=$(echo "$out" | tail -1 | awk '{print $1}'); tab=$(echo "$out" | tail -1 | awk '{print $2}')
+      if ! [[ $pane =~ ^[A-Za-z0-9_-]+:[A-Za-z0-9_-]+$ ]]; then
+        log "$t agent $name ($label, $kind) NOT STARTED: the launcher's output names no pane: $(echo "$out" | tr '\n' ' ' | cut -c1-200)"
+        printf '%s\t%s\t%s\t%s\n' "$t" "$name" "$kind" "$(date '+%Y-%m-%d %H:%M:%S')" >> "$op/not-started.txt"
+        missing="$missing $t/$name"; continue
+      fi
       log "$t agent $name ($label, $kind) in pane $pane tab $tab; $(cat "$td/$name/.web-state" 2>/dev/null || echo 'no .web-state')"
       echo "$name $pane $kind" >> "$td/panes.txt"
       echo "$t $name $pane $kind" >> "$op/panes.txt"
