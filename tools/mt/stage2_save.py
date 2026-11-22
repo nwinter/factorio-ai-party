@@ -6,6 +6,16 @@ spawn (task-mt309 Stage 2; layout in report-mt309 section 6b).
   stage2_save.py build                 apply it to the running imac2 server (the r307 baseline loaded, no agents)
   stage2_save.py check                 read back each spawn: base output, power, nest, field, research
   stage2_save.py measure               the Stage 2 measures per force (nest left, second-field drills, losses)
+  stage2_save.py --map contact ...      (note-mt309-t) the same on the three-team contact map (layout below)
+
+The contact map (note-mt309-t: Astra low, Opus high and Neon on one map where they can meet). mt_map.py's layout
+(three starts CONTACT_D apart, each team's own patches toward the middle, the shared sites at each pair's midpoint
+with their oil, no middle site) with this file's base at every spawn, but the nest and the second field split
+between the team's two corridors: a half nest (two spawners, two worms) on the bearing to each neighbour, the iron
+field behind the nest toward the next team (green, yellow, blue, round) and the copper field toward the other. Each
+nest and field is the same gap from the base box on every bearing (the box is axis-aligned; Stage 2's nest was 90
+tiles from green's base and 112-115 from the others'). The start's own iron, copper and oil (mt_map PRIMARY) are
+removed as Stage 2 removed r307's: the base's ore runs short in about an hour, and oil lies at the shared sites.
 
 Geometry. The base is axis-aligned and the same offsets from every spawn (entities cannot turn by a team's 60 or
 300 degree bearing). The nest and the second field go inward, toward the map centre, in each team's own frame
@@ -27,7 +37,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT/'tools'), str(ROOT/'tools/stream'), str(ROOT/'tools/mt')]
-LAYOUT = ROOT/'docs/reports/mt307/data/map/layout.json'
+LAYOUTS = {'stage2': ROOT/'docs/reports/mt307/data/map/layout.json', 'contact': ROOT/'docs/reports/mt309/data/contact/layout.json'}
+MAP = 'stage2'          # main --map
 TEAMS = ('green', 'yellow', 'blue')
 
 NEST_U = -150            # nest centre, tiles from the spawn along the team's bearing (negative: inward)
@@ -52,10 +63,21 @@ KIT = (('gun-turret', 10), ('firearm-magazine', 200), ('grenade', 20), ('stone-w
 # at the drill's full 0.5/s.
 ORE_PER_TILE = {'iron-ore': 56, 'copper-ore': 56, 'coal': 20000}
 CLEAR_ORE = ('iron-ore', 'copper-ore')   # removed within CLEAR_ENEMIES of each start (r307's start patches with them)
+# (note-mt309-t) the contact map. The nest's gap: from its centre to the nearest base building's centre (the built
+# base, data/contact/base-footprint.json, the same at every spawn); its worms 9 tiles nearer (Stage 2's far spawns:
+# nearest building 112-115 from the nearest enemy). The field lies CONTACT_FIELD_PAST beyond the nest (Stage 2: 120).
+CONTACT_D = 900
+CONTACT_NEST_GAP = 122
+CONTACT_FIELD_PAST = 121
+FOOTPRINT = ROOT/'docs/reports/mt309/data/contact/base-footprint.json'
+CONTACT_FIELDS = {'next': ('iron-ore', 18, 1500000), 'prev': ('copper-ore', 16, 1200000)}   # Stage 2's amounts
+CONTACT_SPAWNERS = (('biter-spawner', 0, -4), ('spitter-spawner', 0, 4))      # along the bearing, to its side
+CONTACT_WORMS = (('small-worm-turret', -9, -6), ('medium-worm-turret', -9, 6))  # along < 0 faces the base
+CONTACT_CLEAR_ORE = (220, ('iron-ore', 'copper-ore', 'crude-oil'))  # the start's own patches (shared sites: 390+)
 
 
 def teams():
-    lay = json.loads(LAYOUT.read_text())
+    lay = json.loads(LAYOUTS[MAP].read_text())
     out = {}
     for t in lay['teams']:
         if t['name'] in TEAMS:
@@ -115,15 +137,69 @@ def base_entities():
 POWER_X, POWER_Y = 0, 20     # the power block's origin (from the spawn tile): water rows POWER_Y+6 .. +13
 
 
+def box_gap(spawn, x, y):
+    """Distance from (x, y) to the base box round spawn (0 inside)."""
+    ox, oy = math.floor(spawn[0]), math.floor(spawn[1])
+    dx = max(ox + BASE_BOX[0] - x, 0, x - (ox + BASE_BOX[2]))
+    dy = max(oy + BASE_BOX[1] - y, 0, y - (oy + BASE_BOX[3]))
+    return math.hypot(dx, dy)
+
+
+def building_gap(spawn, x, y):
+    """Distance from (x, y) to the nearest base building's centre (FOOTPRINT; the box edge without it)."""
+    if not FOOTPRINT.exists():
+        return box_gap(spawn, x, y)
+    ox, oy = math.floor(spawn[0]), math.floor(spawn[1])
+    return min(math.hypot(x - ox - e[0], y - oy - e[1]) for e in json.loads(FOOTPRINT.read_text())['entities'])
+
+
+def at_gap(spawn, ang, gap):
+    """How far along bearing ang (radians) from spawn a point is `gap` tiles from the nearest base building."""
+    lo, hi = 0.0, gap + 200.0
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if building_gap(spawn, spawn[0] + mid*math.cos(ang), spawn[1] + mid*math.sin(ang)) < gap: lo = mid
+        else: hi = mid
+    return (lo + hi) / 2
+
+
+def contact_plan():
+    """(note-mt309-t) Each team's two corridors: toward the next team (iron) and the previous one (copper)."""
+    ts = teams(); order = [n for n in TEAMS if n in ts]; out = {}
+    for i, name in enumerate(order):
+        s = ts[name]['spawn']; nests, fields, spawners, worms, corridors, dist = [], [], [], [], [], {}
+        for side, other in (('next', order[(i + 1) % len(order)]), ('prev', order[(i - 1) % len(order)])):
+            o = ts[other]['spawn']; ang = math.atan2(o[1] - s[1], o[0] - s[0]); deg = math.degrees(ang)
+            pt = lambda a, v: (s[0] + a*math.cos(ang) - v*math.sin(ang), s[1] + a*math.sin(ang) + v*math.cos(ang))
+            na = at_gap(s, ang, CONTACT_NEST_GAP); fa = na + CONTACT_FIELD_PAST
+            nest = pt(na, 0); nests.append(nest)
+            spawners += [(n, *pt(na + du, dv)) for n, du, dv in CONTACT_SPAWNERS]
+            worms += [(n, *pt(na + du, dv)) for n, du, dv in CONTACT_WORMS]
+            ore, r, amount = CONTACT_FIELDS[side]
+            fields.append(dict(name=ore, r=r, amount=amount, at=pt(fa, 0), toward=other))
+            # LUA_CORRIDOR's frame: u along the bearing given, the corridor at negative u
+            corridors.append(dict(u1=-50, u2=-round(fa + r + 30), half=70, bearing=deg + 180, toward=other))
+            dist[other] = dict(bearing=round(deg, 1), nest=round(na), field=round(fa), ore=ore,
+                               nest_gap=round(building_gap(s, *nest)), field_gap=round(building_gap(s, *pt(fa, 0))))
+        out[name] = dict(spawn=s, bearing=ts[name]['bearing'], nest=nests[0], nests=nests, spawners=spawners, worms=worms,
+                         field=fields, corridors=corridors, corridor=corridors[0], distances=dist)
+    return out
+
+
 def plan():
     ents, ores = base_entities()
     out = {}
+    if MAP == 'contact':
+        return dict(teams=contact_plan(), base=dict(entities=ents, ores=ores, box=BASE_BOX, power=(POWER_X, POWER_Y), kit=KIT,
+                                                    ore_per_tile=ORE_PER_TILE),
+                    research=RESEARCH, evolution=EVOLUTION, clear_enemies=CLEAR_ENEMIES, nest_r=NEST_R,
+                    clear_ore=list(CONTACT_CLEAR_ORE[1]), clear_ore_r=CONTACT_CLEAR_ORE[0], map='contact')
     for name, t in teams().items():
         s, b = t['spawn'], t['bearing']
         field = [local(s, b, FIELD_U, dv) for *_, dv in FIELD]
         nest = local(s, b, NEST_U, 0)
         out[name] = dict(
-            spawn=s, bearing=b, nest=nest,
+            spawn=s, bearing=b, nest=nest, nests=[nest],
             spawners=[(n, *local(s, b, NEST_U + du, dv)) for n, du, dv in SPAWNERS],
             worms=[(n, *local(s, b, NEST_U + du, dv)) for n, du, dv in WORMS],
             field=[dict(name=n, r=r, amount=a, at=local(s, b, FIELD_U, dv)) for n, r, a, dv in FIELD],
@@ -132,7 +208,8 @@ def plan():
                            nest_to_field=FIELD_U and abs(FIELD_U - NEST_U)))
     return dict(teams=out, base=dict(entities=ents, ores=ores, box=BASE_BOX, power=(POWER_X, POWER_Y), kit=KIT,
                                      ore_per_tile=ORE_PER_TILE),
-                research=RESEARCH, evolution=EVOLUTION, clear_enemies=CLEAR_ENEMIES, nest_r=NEST_R, clear_ore=CLEAR_ORE)
+                research=RESEARCH, evolution=EVOLUTION, clear_enemies=CLEAR_ENEMIES, nest_r=NEST_R, clear_ore=CLEAR_ORE,
+                clear_ore_r=CLEAR_ENEMIES, map='stage2')
 
 
 def overlaps(ents):
@@ -164,7 +241,7 @@ for name,t in pairs(P.teams) do
   local n=0
   for _,e in pairs(s.find_entities_filtered{position={t.spawn[1],t.spawn[2]},radius=P.clear_enemies,force='enemy'}) do e.destroy(); n=n+1 end
   local o,ot=0,0
-  for _,e in pairs(s.find_entities_filtered{position={t.spawn[1],t.spawn[2]},radius=P.clear_enemies,name=P.clear_ore}) do o=o+e.amount; ot=ot+1; e.destroy() end
+  for _,e in pairs(s.find_entities_filtered{position={t.spawn[1],t.spawn[2]},radius=P.clear_ore_r,name=P.clear_ore}) do o=o+e.amount; ot=ot+1; e.destroy() end
   out[name]={enemies_removed=n,ore_removed=o,ore_tiles_removed=ot}
 end
 rcon.print(helpers.table_to_json(out))
@@ -356,14 +433,20 @@ for name,t in pairs(P.teams) do
   end
   local st={}; for k,v in pairs(defines.entity_status) do st[v]=k end
   local named={}; for k,v in pairs(r.status) do local n,c=k:match('^(.-):(%%d+)$'); named[n..':'..(st[tonumber(c)] or c)]=v end; r.status=named
-  r.nest_spawners=s.count_entities_filtered{position=t.nest,radius=P.nest_r+6,type='unit-spawner',force='enemy'}
-  r.nest_worms=s.count_entities_filtered{position=t.nest,radius=P.nest_r+6,type='turret',force='enemy'}
+  r.nest_spawners=0; r.nest_worms=0; r.nests={}
+  for _,nst in ipairs(t.nests) do local sp=s.count_entities_filtered{position=nst,radius=P.nest_r+6,type='unit-spawner',force='enemy'}
+    local wm=s.count_entities_filtered{position=nst,radius=P.nest_r+6,type='turret',force='enemy'}
+    local near=s.find_entities_filtered{position=nst,radius=200,force=name}; local gap=nil
+    for _,e in ipairs(near) do local d=math.sqrt((e.position.x-nst[1])^2+(e.position.y-nst[2])^2); if not gap or d<gap then gap=d end end
+    r.nest_spawners=r.nest_spawners+sp; r.nest_worms=r.nest_worms+wm; r.nests[#r.nests+1]={spawners=sp,worms=wm,nearest_building=gap and math.floor(gap+0.5)} end
   r.field={}; for _,fl in ipairs(t.field) do r.field[fl.name]=s.count_entities_filtered{position=fl.at,radius=fl.r+1,name=fl.name} end
   local n=0; for _,tech in pairs(game.forces[name].technologies) do if tech.researched then n=n+1 end end; r.researched=n
   local fo=game.forces[name]; local cp=function(x,y) return fo.is_chunk_charted(s,{math.floor(x/32),math.floor(y/32)}) end
-  r.charted={nest=cp(t.nest[1],t.nest[2]),field=cp(t.field[1].at[1],t.field[1].at[2]) and cp(t.field[2].at[1],t.field[2].at[2])}
+  local cn=true; for _,nst in ipairs(t.nests) do cn=cn and cp(nst[1],nst[2]) end
+  local cf=true; for _,fl in ipairs(t.field) do cf=cf and cp(fl.at[1],fl.at[2]) end
+  r.charted={nest=cn,field=cf}
   r.base_ore={}; for _,e in pairs(s.find_entities_filtered{area=box,type='resource'}) do r.base_ore[e.name]=(r.base_ore[e.name] or 0)+e.amount end
-  local stray=0; for _,e in pairs(s.find_entities_filtered{position=t.spawn,radius=P.clear_enemies,name=P.clear_ore}) do
+  local stray=0; for _,e in pairs(s.find_entities_filtered{position=t.spawn,radius=P.clear_ore_r,name=P.clear_ore}) do
     local onf=false; for _,fl in ipairs(t.field) do if (e.position.x-fl.at[1])^2+(e.position.y-fl.at[2])^2<=(fl.r+2)^2 then onf=true end end
     if not onf and not (e.position.x>=box[1][1] and e.position.x<=box[2][1] and e.position.y>=box[1][2] and e.position.y<=box[2][2]) then stray=stray+1 end end
   r.iron_copper_tiles_outside=stray
@@ -390,8 +473,10 @@ for name,t in pairs(P.teams) do
         local m=d.mining_target; local k=m and m.valid and m.name or '?'; outside[k]=(outside[k] or 0)+1 end
     end
   end
-  out[name]={spawners=s.count_entities_filtered{position=t.nest,radius=P.nest_r+6,type='unit-spawner',force='enemy'},
-    worms=s.count_entities_filtered{position=t.nest,radius=P.nest_r+6,type='turret',force='enemy'},
+  local sp,wm,nests=0,0,{}
+  for _,nst in ipairs(t.nests) do local a=s.count_entities_filtered{position=nst,radius=P.nest_r+6,type='unit-spawner',force='enemy'}
+    local b=s.count_entities_filtered{position=nst,radius=P.nest_r+6,type='turret',force='enemy'}; sp=sp+a; wm=wm+b; nests[#nests+1]={a,b} end
+  out[name]={spawners=sp,worms=wm,nests=nests,
     field_drills_working=drills,outside_drills_working=outside,lost=lost,killed=kills,characters_lost=k.get_output_count and k.get_output_count('character') or nil}
 end
 rcon.print(helpers.table_to_json(out))
@@ -420,31 +505,51 @@ def build():
     res['prep'] = run_lua(r, LUA_PREP, p)
     for name, t in p['teams'].items():
         one = dict(team=t, name=name, base=p['base'], research=p['research'], nest_r=p['nest_r'])
-        res[name] = dict(corridor=run_lua(r, LUA_CORRIDOR, one), place=run_lua(r, LUA_PLACE, one),
-                         base=run_lua(r, LUA_BASE, one), power=run_lua(r, LUA_POWER, one), kit=run_lua(r, LUA_KIT, one))
+        if p['map'] == 'contact':      # each corridor: cleared, then its half nest and its field placed and charted
+            res[name] = dict(corridor=[], place=[])
+            for k, c in enumerate(t['corridors']):
+                sub = dict(t, corridor=c, nest=t['nests'][k], spawners=t['spawners'][2*k:2*k + 2], worms=t['worms'][2*k:2*k + 2],
+                           field=[t['field'][k]])
+                res[name]['corridor'].append(run_lua(r, LUA_CORRIDOR, dict(one, team=sub)))
+                res[name]['place'].append(run_lua(r, LUA_PLACE, dict(one, team=sub)))
+        else:
+            res[name] = dict(corridor=run_lua(r, LUA_CORRIDOR, one), place=run_lua(r, LUA_PLACE, one))
+        res[name].update(base=run_lua(r, LUA_BASE, one), power=run_lua(r, LUA_POWER, one), kit=run_lua(r, LUA_KIT, one))
     print(json.dumps(res, indent=1))
     return res
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--map', choices=sorted(LAYOUTS), default='stage2')
     sub = ap.add_subparsers(dest='cmd', required=True)
     q = sub.add_parser('plan'); q.add_argument('--json', action='store_true')
     sub.add_parser('build'); sub.add_parser('check'); sub.add_parser('measure')
     q = sub.add_parser('save'); q.add_argument('name')
     a = ap.parse_args(argv)
+    global MAP
+    MAP = a.map
     if a.cmd == 'plan':
         p = plan()
         if a.json:
             print(json.dumps(p, indent=1)); return
         for n, t in p['teams'].items():
-            print(n, 'spawn', t['spawn'], 'bearing', t['bearing'], 'nest', tuple(round(c, 1) for c in t['nest']),
+            print(n, 'spawn', t['spawn'], 'bearing', t['bearing'], 'nests', [tuple(round(c, 1) for c in x) for x in t['nests']],
                   'field', [tuple(round(c, 1) for c in f['at']) for f in t['field']], t['distances'])
         print('base entities', len(p['base']['entities']), 'overlaps', len(overlaps(p['base']['entities'])))
     elif a.cmd == 'build':
         build()
     elif a.cmd in ('check', 'measure'):
-        print(json.dumps(run_lua(rcon(), LUA_CHECK if a.cmd == 'check' else LUA_MEASURE, plan()), indent=1))
+        r = rcon(); out = run_lua(r, LUA_CHECK if a.cmd == 'check' else LUA_MEASURE, plan())
+        if MAP == 'contact' and a.cmd == 'measure':
+            # (note-mt309-t) the harness's first contacts (chart, shot) and losses by killer, from its own storage
+            got = r.command('/silent-command __agent-harness__ local m=storage.agent_harness.mt or {} '
+                            'rcon.print(helpers.table_to_json({first=m.first or {},losses=m.losses or {}}))')
+            try:
+                out.update(json.loads(got))
+            except ValueError:
+                out['contacts_error'] = got[:300]
+        print(json.dumps(out, indent=1))
     elif a.cmd == 'save':
         # chart requests need ticks: run 10 s of game time, then save paused (the sprint's paused start unpauses)
         assert a.name.replace('-', '').isalnum() and a.name != 'mt'

@@ -33,6 +33,10 @@ BASELINE_SHA = '1859bda9bf77b23ec622aca2d6b13c72629a01150c330e195e582bc78009479a
 # (mt309 Stage 2) the prepared mid-game save (tools/mt/stage2_save.py), its SHA-256 beside it
 STAGE2_SAVE = ROOT/'docs/reports/mt309/data/stage2-ready.zip'
 STAGE2_SPAWN = dict(green='near', yellow='far', blue='far')   # nearest base building to its nest: 90, 115, 112 tiles
+# (note-mt309-t) the three-team contact map (stage2_save.py --map contact): every nest 122 tiles from its base
+CONTACT_SAVE = ROOT/'docs/reports/mt309/data/contact-ready.zip'
+SAVES = {'stage2': STAGE2_SAVE, 'contact': CONTACT_SAVE}
+CONTACT_MINUTES = 240
 FORBIDDEN_ROUTES = ('claude-b', 'codex-b', 'gsopenrouter')
 ROUTE_HOME = {'claude': '~/.claude-profiles/personal', 'claude-c': '~/.claude-profiles/account-c', 'codex': '~/.codex'}
 
@@ -157,6 +161,43 @@ def arm_tokens(kind, files):
                     models[m] = models.get(m, 0) + 1
     out = {k: acc[k] for k in ('input', 'cache_read', 'cache_write', 'output', 'reasoning', 'calls', 'compactions')}
     out.update(first=acc['first'], last=acc['last'], files=len(files), models=models)
+    if kind == 'codex':     # (note-mt309-t) sub-agent threads: their rollouts are among files, so in the sums above
+        out['subagents'] = len(codex_subagent_files(files))
+    return out
+
+
+def codex_subagent_files(files):
+    """The Codex rollouts among files that a spawn_agent call started (session_meta thread_source subagent, s1ax)."""
+    out = []
+    for p in files:
+        try:
+            with open(p) as f:
+                meta = json.loads(f.readline()).get('payload') or {}
+        except (OSError, ValueError):
+            continue
+        if meta.get('thread_source') == 'subagent':
+            out.append(p)
+    return out
+
+
+def codex_subagents(op, state):
+    """(note-mt309-t: spawn_agent stays allowed) Each Codex arm's sub-agent rollouts; a new one is logged in
+    sprint.json's subagents and woken once. Their tokens count in the arm's burn (cmd_burn reads every rollout of the
+    arm's workspace, sub-agents' too). Returns {arm: count}."""
+    ws = json.loads((op/'workspaces.json').read_text()) if (op/'workspaces.json').exists() else {}
+    seen = state.setdefault('subagents', {})
+    out = {}
+    for r in state.get('roster', []):
+        if r['kind'] != 'codex':
+            continue
+        d = Path((ws.get(r['team']) or {}).get('dir', ''))/r['arm']
+        files = codex_subagent_files(arm_files('codex', r['route'], d, extra=[op/'codex-sessions']))
+        new = [p for p in files if p not in seen.get(r['arm'], [])]
+        if new:
+            seen.setdefault(r['arm'], []).extend(new)
+            wake(f"{op.parent.name}: {r['arm']} started {len(new)} Codex sub-agent(s) ({len(seen[r['arm']])} in all); "
+                 f"allowed, their tokens count in its burn")
+        out[r['arm']] = len(seen.get(r['arm'], []))
     return out
 
 
@@ -415,7 +456,8 @@ def stop_run(run, env):
 # minute 46 of s1r1d ("research is running in a stable state") and sat idle for 44 minutes. The sprint applies
 # full_run's rule to every arm alike, with its text minus "with your teammate" (sprint arms play alone), plus one
 # rule for panes whose status never reads idle (Muse): 10 minutes without a game request and no busy marker.
-NUDGE_S = 120     # seconds after a turn ends before the idle prompt (sprint run --nudge-s; note-mt309-p)
+NUDGE_S = 20      # seconds after a turn ends before the idle prompt (sprint run --nudge-s; note-mt309-p; 20 s the
+                  # default from note-mt309-t, every arm: Astra's waits fell from 47.8 to 15.2 min of 90)
 SPRINT_NUDGE = ('Operator (automatic): check your own status, tells, board and notes.md. Keep building toward the '
                 'goal. If blocked, explain the blocker once and choose another useful task. Keep your current '
                 'identity and update your notes.')
@@ -439,7 +481,7 @@ def idle_prompts(op, state, panes=None, now=None):
         journal = folder/r['arm']/'journal.jsonl'
         quiet = now - (journal.stat().st_mtime if journal.exists() else state['start_at'])
         last = max([state['start_at']] + [x['at'] for x in log.get(r['arm'], [])])
-        # (note-mt309-p) the wait after a turn ends is the run's nudge_s (default 120 s); the gap between two prompts
+        # (note-mt309-p) the wait after a turn ends is the run's nudge_s (default 20 s); the gap between two prompts
         # to one arm scales with it (180 s at 120, 30 s at 20), so a prompt is never sent twice before its turn starts
         wait = state.get('nudge_s', NUDGE_S)
         if now - last < wait * 1.5 or quiet < wait:
@@ -550,8 +592,10 @@ def summary(run):
         b = (bu.get(arm) or {}).get('meter') or {}
         acct = (me.get('seats', {}).get(arm) or {}).get('account_delta')
         gates = ', '.join(f'{g} {m}m' for g, m in s['gates'].items()) or 'no gate'
+        sub = ((bu.get(arm) or {}).get('tokens') or {}).get('subagents')
         parts.append(f"{arm} ({s['team']}): score {s['total']} [{gates}; research {s.get('research', 0)}, plates/min "
-                     f"{s.get('plates_per_min', 0)}]; burn tokens->{b.get('pct')} plan ${b.get('plan_usd')}; account delta {acct}")
+                     f"{s.get('plates_per_min', 0)}]; burn tokens->{b.get('pct')} plan ${b.get('plan_usd')}; account delta {acct}"
+                     + (f"; Codex sub-agents {sub} (in its burn)" if sub else ''))
     over = st.get('over_80') or {}
     return (f"{run} done: " + ' | '.join(parts) + (f" | windows over 80%: {over}" if over else '')
             + f" | details runs/{run}/op/sprint-*.json")
@@ -570,10 +614,11 @@ def cmd_run(a):
     check_roster(roster)
     assert all(r['route'] not in FORBIDDEN_ROUTES for r in roster), 'account B route refused'
     assert sum(r['kind'] == 'agy' and 'gemini-4' in r['model'] for r in roster) <= 1, 'at most one Gemini 4 arm a run'
-    assert a.minutes <= 120, 'sprints are bounded to 120 minutes (Stage 2: two hours; tools/mt/launch.py --max-minutes)'
+    bound = CONTACT_MINUTES if a.save == 'contact' else 120
+    assert a.minutes <= bound, f'sprints are bounded to {bound} minutes (Stage 2: two hours; the contact test four; launch.py --max-minutes)'
     # Paused start: the world waits while the agents launch, and the sprint begins for all of them at once.
     route = rcon_route()
-    save, want = (BASELINE, BASELINE_SHA) if a.save == 'r307' else (STAGE2_SAVE, STAGE2_SAVE.with_suffix('.sha256').read_text().split()[0])
+    save, want = (BASELINE, BASELINE_SHA) if a.save == 'r307' else (SAVES[a.save], SAVES[a.save].with_suffix('.sha256').read_text().split()[0])
     env = dict(os.environ, POG_MT_FRESH='1', POG_MT_FRESH_SAVE=str(save), POG_SEED='30744', POG_GAME_TEST='0',
                POG_IDLE_NUDGE='0', POG_MT_PAUSED_START='1', POG_STOP_WORLD='1',
                POG_CLAIM_OWNER=os.environ.get('POG_CLAIM_OWNER', 'eng-mt309'))
@@ -581,7 +626,7 @@ def cmd_run(a):
     assert sha == want, f'{save.name} changed: {sha}'
     launch = [sys.executable, str(ROOT/'tools/mt/launch.py'), a.run, str(a.minutes), '--roster', str(Path(a.roster).resolve())]
     if a.minutes > 90:
-        launch += ['--max-minutes', '120']
+        launch += ['--max-minutes', '240' if a.minutes > 120 else '120']
     if not a.execute:
         print('dry run:', ' '.join(launch)); subprocess.run(launch, env=env, check=True); return
     subprocess.run(launch + ['--execute'], env=env, check=True)
@@ -617,15 +662,23 @@ def cmd_resume(a):
     supervise(a.run, op, state, env, max(time.time(), nxt))
 
 
-def stage2_measure(op, env):
+def stage2_measure(op, env, state=None):
     """One Stage 2 reading per force (tools/mt/stage2_save.py measure) into op/stage2.jsonl; a failed read never
-    ends a sprint."""
+    ends a sprint. (note-mt309-t) On the contact map the reading also holds the harness's first contacts (chart and
+    shot, per ordered pair) and each team's losses by killer; each pair's first contact is woken once."""
     try:
-        r = subprocess.run([sys.executable, str(ROOT/'tools/mt/stage2_save.py'), 'measure'], env=env, capture_output=True,
-                           text=True, timeout=60)
+        cmap = (state or {}).get('save') == 'contact'
+        r = subprocess.run([sys.executable, str(ROOT/'tools/mt/stage2_save.py'), *(['--map', 'contact'] if cmap else []), 'measure'],
+                           env=env, capture_output=True, text=True, timeout=60)
         row = dict(json.loads(r.stdout), at=time.time())
         with (op/'stage2.jsonl').open('a') as f:
             f.write(json.dumps(row) + '\n')
+        if cmap:
+            seen = state.setdefault('contacts_woken', [])
+            for key, tick in sorted((row.get('first') or {}).items(), key=lambda kv: kv[1]):
+                if key not in seen:
+                    seen.append(key)
+                    wake(f"{op.parent.name}: first contact {key} at game minute {round((tick - state['start_tick']) / 3600, 1)}")
     except Exception as e:
         print(time.strftime('%H:%M:%S'), 'stage 2 measure failed:', repr(e), flush=True)
 
@@ -653,7 +706,15 @@ def stage2_summary(op, state, path=None):
         # the game minutes since the reading before it) and what still works at the end
         drills = [m['field_drills_working'] for r, m in mine]
         drill_min = sum(d * (r['tick'] - p['tick']) / 3600 for (p, _), (r, _), d in zip(mine, mine[1:], drills[1:]))
-        out[arm] = dict(team=team, spawn=STAGE2_SPAWN.get(team), first_attack_min=attacked, nest_cleared_min=cleared, second_field_min=mining,
+        # (note-mt309-t) the contact map: each of the team's two nests, and the losses by killer at the end
+        nests = [next((mins(r) for r, m in mine if (m.get('nests') or [[1]] * (k + 1))[k][0] == 0), None)
+                 for k in range(len(last.get('nests') or []))]
+        if state.get('save') == 'contact':
+            out.setdefault('_contacts', {k: round((v - state['start_tick']) / 3600, 1) for k, v in (rows[-1].get('first') or {}).items()}
+                           if rows else {})
+            out.setdefault('_losses', (rows[-1].get('losses') or {}) if rows else {})
+        out[arm] = dict(team=team, spawn=STAGE2_SPAWN.get(team) if state.get('save') != 'contact' else 'contact',
+                        first_attack_min=attacked, nest_cleared_min=cleared, nests_cleared_min=nests or None, second_field_min=mining,
                         field_drills_peak=max(drills, default=None), field_drill_min=round(drill_min, 1),
                         field_drills_end=drills[-1] if drills else None, spawners_left=last.get('spawners'),
                         worms_left=last.get('worms'), lost=last.get('lost'), characters_lost=last.get('characters_lost'),
@@ -679,11 +740,15 @@ def supervise(run, op, state, env, next_check):
             state['served_models'] = served_models(op, roster); checked_models = True; save()
         if time.time() >= next_check:
             limit = codex_at_limit(meter_check(op, state), roster); save(); next_check += 900
+            try:
+                codex_subagents(op, state); save()
+            except Exception as e:      # a log read never ends a sprint
+                print(time.strftime('%H:%M:%S'), 'sub-agent check failed:', repr(e), flush=True)
             if limit:      # every arm stops with it: the run's world and score end at the same tick
                 state['ended_by'] = limit; wake(f'{run}: {limit}: the sprint ends now (no Codex player on credits)')
                 break
-        if state.get('save') == 'stage2' and time.time() >= state.get('next_stage2', 0):
-            stage2_measure(op, env); state['next_stage2'] = time.time() + 120
+        if state.get('save') in SAVES and time.time() >= state.get('next_stage2', 0):
+            stage2_measure(op, env, state); state['next_stage2'] = time.time() + 120
         try:
             n = sum(len(v) for v in state.get('idle_prompts', {}).values())
             idle_prompts(op, state)
@@ -698,8 +763,8 @@ def supervise(run, op, state, env, next_check):
     played = min(a.minutes, (tick - state['start_tick']) / 3600)
     state.update(end_tick=tick, end_at=time.time(), played_minutes=round(played, 2)); save()
     cmd_score(argparse.Namespace(run=a.run, minutes=played))
-    if state.get('save') == 'stage2':
-        stage2_measure(op, env); state['stage2'] = stage2_summary(op, state); save()
+    if state.get('save') in SAVES:
+        stage2_measure(op, env, state); state['stage2'] = stage2_summary(op, state); save()
     state['stopped'] = stop_run(a.run, env); save()
     cmd_burn(argparse.Namespace(run=a.run))
     if any(r['kind'] == 'codex' for r in roster):   # a later arm never reads this run's Codex transcripts
@@ -721,7 +786,7 @@ def main(argv=None):
     q = sub.add_parser('burn'); q.add_argument('run')
     q = sub.add_parser('run'); q.add_argument('run'); q.add_argument('roster'); q.add_argument('minutes', type=int)
     q.add_argument('--execute', action='store_true')
-    q.add_argument('--save', choices=['r307', 'stage2'], default='r307')
+    q.add_argument('--save', choices=['r307', 'stage2', 'contact'], default='r307')
     q.add_argument('--nudge-s', type=int, default=NUDGE_S, help='seconds after a turn ends before the idle prompt')
     q = sub.add_parser('resume'); q.add_argument('run')
     q = sub.add_parser('idle-watch'); q.add_argument('run')

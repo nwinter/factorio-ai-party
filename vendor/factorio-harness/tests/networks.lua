@@ -463,6 +463,20 @@ do
   put{type='inserter',name='inserter',unit_number=4200,position={x=37,y=61},drop_target=ugb.e,pickup_target=ug_out}
   N4.boiler_supply({ugb},n2,force)
   eq(ugb.fed,true); eq(ugb.feeder,'inserter (37,61) from underground-belt (36,60) (with 3 belt tiles up to it holding 6 coal)')
+  -- (mt309 note-mt309-t; s2h) A burner drill on coal drops straight into a boiler: that drill feeds it. Out of fuel
+  -- (stopped) or on iron, it is named and the boiler is not fed.
+  local es=defines.entity_status; es.no_fuel=3
+  local db={e={valid=true,type='boiler',name='boiler',unit_number=4300,position={x=60,y=63},burner={remaining_burning_fuel=0,inventory={{valid_for_read=true,name='coal',count=50}}}},j=200e6}
+  local drill=put{type='mining-drill',name='burner-mining-drill',unit_number=4301,position={x=60,y=61},drop_target=db.e,mining_target={valid=true,name='coal'},status=0}
+  N4.boiler_supply({db},n2,force)
+  eq(db.fed,true); eq(db.feeder,'burner-mining-drill (60,61) mining coal into it')
+  drill.status=3; N4.boiler_supply({db},n2,force)
+  eq(db.fed,false); eq(db.feeder,'burner-mining-drill (60,61) mining coal into it (stopped)')
+  drill.status=0; drill.mining_target={valid=true,name='iron-ore'}; N4.boiler_supply({db},n2,force)
+  eq(db.fed,false); eq(db.feeder,'burner-mining-drill (60,61) mining iron-ore into it')
+  drill.drop_target=nil; N4.boiler_supply({db},n2,force)
+  eq(db.fed,false); eq(db.feeder,'no inserter feeds it')
+  drill.valid=false; es.no_fuel=nil
   -- A trickle (shift10 03:36-03:38: boiler (-15,42) from 8 to 6 min on a belt with 4 solid-fuel): fed from a belt
   -- holding fuel, but its own fuel fell by 80% or more of its burn at its share since a look 2+ min back: told.
   -- An inserter-sized swing (60 to 56 coal) is not; nor a look under 2 min back. Boiler 1 burns at its share

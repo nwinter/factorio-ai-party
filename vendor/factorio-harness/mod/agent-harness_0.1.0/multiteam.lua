@@ -576,7 +576,7 @@ return function(api)
     for _, c in ipairs(s.contacts or {}) do
       if not a.since or c.tick > a.since then out[#out+1] = c end
     end
-    return {teams=team_names(), contacts=out, since_setup_tick=s.set_tick, rules=s.rules}
+    return {teams=team_names(), contacts=out, since_setup_tick=s.set_tick, rules=s.rules, losses=s.losses}
   end
   function M.operator.mt_rules(a)
     local s = st()
@@ -818,11 +818,24 @@ return function(api)
       end
       return false
     end
+    -- (mt309 note-mt309-t) every death of a team's entity, by the force that killed it (another team, the enemy force,
+    -- none): mt_contacts' losses, the contact test's losses to rivals and to biters. One count a death.
+    local function count_loss(m, e, event)
+      local victim = e.force.name
+      if not m.teams[victim] then return end
+      local by = event.force and event.force.name or 'none'
+      m.losses = m.losses or {}
+      local row = m.losses[victim] or {}
+      m.losses[victim] = row
+      row[by] = (row[by] or 0) + 1
+    end
     -- A character of a team's agent killed by another team within respawn_window_s of its (re)spawn.
     function G.on_died(event)
       local m = on()
       local e = event.entity
-      if not (m and e and e.valid and e.type == 'character') then return end
+      if not (m and e and e.valid) then return end
+      count_loss(m, e, event)
+      if e.type ~= 'character' then return end
       local victim, by = e.force.name, event.force and event.force.name
       if not (m.teams[victim] and by and m.teams[by] and by ~= victim) then return end
       local unit = e.unit_number

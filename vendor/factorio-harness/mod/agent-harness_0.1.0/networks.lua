@@ -2240,6 +2240,26 @@ return function(api)
             else b.feeder = b.feeder or text end
           end
         end
+        -- (mt309 note-mt309-t) A mining drill dropping straight into the boiler (a burner drill on coal) feeds it too,
+        -- while it mines a fuel it burns and is not stopped (s2h: boilers at 50 coal read "no inserter feeds it").
+        if not b.fed then
+          local es = defines.entity_status or EMPTY
+          for _, d in ipairs(tcall(surface, 'find_entities_filtered', {type='mining-drill', force=f, position=e.position, radius=5}) or EMPTY) do
+            if not b.fed and d.valid and same(tget(d, 'drop_target'), e) then
+              local res = tget(d, 'mining_target')
+              local rn = res and res.valid and res.name
+              local fuel
+              for _, n in ipairs(rn and names or EMPTY) do if n == rn then fuel = true end end
+              local st = tget(d, 'status')
+              local stopped = st ~= nil and (st == es.no_fuel or st == es.no_power or st == es.no_minable_resources
+                or st == es.disabled_by_script or st == es.disabled_by_control_behavior or st == es.marked_for_deconstruction)
+              local dp = d.position
+              local text = string.format('%s %s mining %s into it%s', d.name, at(dp.x, dp.y), rn or 'nothing', stopped and ' (stopped)' or '')
+              if fuel and not stopped then b.fed, b.feeder = true, text
+              else b.feeder = b.feeder or text end
+            end
+          end
+        end
       end
       b.feeder = b.feeder or 'no inserter feeds it'
     end

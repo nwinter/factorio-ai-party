@@ -1,0 +1,4 @@
+# team	name	kind	route	model	effort	label	harness
+green	neon	agy	-	gemini-4-neon-medium	-	Gemini 4 Neon	Antigravity
+yellow	astra	codex	codex	gpt-6.2-astra	low	GPT-6.2 Astra	Codex
+blue	opus	claude	claude	opus	high	Claude Opus 5.5	Claude Code

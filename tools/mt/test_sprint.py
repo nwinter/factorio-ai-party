@@ -337,7 +337,7 @@ class IdlePrompt(unittest.TestCase):
             (op/'panes.txt').write_text('green idle p1 claude\nyellow working p2 agy\nblue muse p3 muse\nred busy p4 muse\n')
             roster = [dict(team=tm, arm=a, kind=k) for tm, a, k in (('green', 'idle', 'claude'), ('yellow', 'working', 'agy'),
                                                                       ('blue', 'muse', 'muse'), ('red', 'busy', 'muse'))]
-            state = dict(roster=roster, start_at=now - 3600)
+            state = dict(roster=roster, start_at=now - 3600, nudge_s=120)   # the 120 s nudge of Stage 1 and 2
             panes = Panes({'p1': 'idle', 'p2': 'working', 'p3': 'working', 'p4': 'working'},
                           {'p1': '> ', 'p2': '', 'p3': '> ', 'p4': 'esc to interrupt'})
             sprint.idle_prompts(op, state, panes, now)
@@ -356,9 +356,70 @@ class IdlePrompt(unittest.TestCase):
             self.assertEqual(len(panes20.sent), 2)
             sprint.idle_prompts(op, state20, panes20, now + 31)
             self.assertEqual(len(panes20.sent), 4)
+            # (note-mt309-t) 20 s is the default: a run made without --nudge-s nudges as state20 does
+            self.assertEqual(sprint.NUDGE_S, 20)
+
+    def test_codex_subagents_logged_and_in_the_burn(self):
+        # (note-mt309-t) spawn_agent stays allowed: each sub-agent rollout is woken once and its tokens count
+        with tempfile.TemporaryDirectory() as t:
+            t = Path(t); op = t/'runs'/'s9'/'op'; op.mkdir(parents=True); d = t/'runs'/'s9'; (d/'astra').mkdir()
+            ws = os.path.abspath(d/'astra')
+            (op/'workspaces.json').write_text(json.dumps({'yellow': {'dir': str(d)}}))
+            sess = op/'codex-sessions'/'2026'; sess.mkdir(parents=True)
+            tok = lambda n: json.dumps(dict(type='token_usage_record', timestamp='2026-11-22T20:00:00.000Z', payload=dict(
+                response_id=f'r{n}', usage=dict(input_tokens=n, cached_input_tokens=0, output_tokens=10))))
+            (sess/'rollout-main.jsonl').write_text(json.dumps(dict(type='session_meta', payload=dict(cwd=ws))) + '\n' + tok(1000) + '\n')
+            state = dict(roster=[dict(team='yellow', arm='astra', kind='codex', route='codex')])
+            woke = []
+            real, sprint.wake = sprint.wake, woke.append
+            try:
+                self.assertEqual(sprint.codex_subagents(op, state), {'astra': 0})
+                (sess/'rollout-sub.jsonl').write_text(json.dumps(dict(type='session_meta', payload=dict(
+                    cwd=ws, thread_source='subagent'))) + '\n' + tok(500) + '\n')
+                self.assertEqual(sprint.codex_subagents(op, state), {'astra': 1})
+                self.assertEqual(sprint.codex_subagents(op, state), {'astra': 1})     # woken once
+            finally:
+                sprint.wake = real
+            self.assertEqual(len(woke), 1); self.assertIn('astra started 1 Codex sub-agent', woke[0])
+            files = sprint.arm_files('codex', 'codex', d/'astra', extra=[op/'codex-sessions'])
+            tk = sprint.arm_tokens('codex', files)
+            self.assertEqual(tk['subagents'], 1); self.assertEqual(tk['files'], 2)
+            self.assertEqual((tk['input'], tk['output']), (1500, 20))     # the sub-agent's tokens in the arm's
 
 
 class Stage2(unittest.TestCase):
+    def test_contact_plan_has_a_nest_in_every_corridor(self):
+        # (note-mt309-t) each team: a half nest and a field on the bearing to each neighbour, the same gaps from its
+        # base box on every bearing; between.py's corridor (30 degrees of the bearing, nearer than the neighbour)
+        import math, stage2_save as S
+        S.MAP = 'contact'
+        try:
+            p = S.plan(); lay = json.loads(S.LAYOUTS['contact'].read_text())
+        finally:
+            S.MAP = 'stage2'
+        T = p['teams']; D = lay['distance']
+        self.assertEqual((D, lay['home'], lay['middle']), (S.CONTACT_D, 'toward', False))
+        ores = []
+        for a, t in T.items():
+            self.assertEqual(len(t['nests']), 2); self.assertEqual(len(t['spawners']), 4); self.assertEqual(len(t['worms']), 4)
+            for b, d in t['distances'].items():
+                self.assertEqual((d['nest_gap'], d['field'] - d['nest']), (S.CONTACT_NEST_GAP, S.CONTACT_FIELD_PAST))
+            for k, nest in enumerate(t['nests']):
+                f = t['field'][k]; b = f['toward']; sb = T[b]['spawn']
+                bear = math.atan2(sb[1] - t['spawn'][1], sb[0] - t['spawn'][0])
+                for pt in (nest, f['at']):
+                    off = abs((math.degrees(math.atan2(pt[1] - t['spawn'][1], pt[0] - t['spawn'][0]) - bear) + 180) % 360 - 180)
+                    self.assertLess(off, 1); self.assertLess(math.dist(pt, t['spawn']), D / 2)
+                for n, x, y in t['spawners'][2*k:2*k + 2] + t['worms'][2*k:2*k + 2]:
+                    self.assertLessEqual(math.dist((x, y), nest), p['nest_r'])
+                mid = ((t['spawn'][0] + sb[0]) / 2, (t['spawn'][1] + sb[1]) / 2)
+                self.assertGreater(math.dist(f['at'], mid), f['r'] + 140)      # clear of the shared site (r 20, e 40)
+                self.assertGreater(math.dist(f['at'], t['spawn']) - f['r'], p['clear_ore_r'])
+                ores.append(f['name'])
+        self.assertEqual(sorted(ores), ['copper-ore'] * 3 + ['iron-ore'] * 3)
+        self.assertEqual({x['toward'] for x in T['green']['field']}, {'yellow', 'blue'})
+        self.assertEqual(p['clear_ore'], ['iron-ore', 'copper-ore', 'crude-oil'])
+
     def test_plan_is_the_same_at_every_spawn(self):
         import math, stage2_save as S
         p = S.plan()
@@ -395,6 +456,35 @@ class Stage2(unittest.TestCase):
                                                                      dict(team='green', arm='grok')]))
             self.assertEqual(pair['hydrogen+grok']['field_drill_min'], 32.0)
             self.assertEqual(set(pair), {'hydrogen+grok', 'empty-yellow', 'empty-blue'})
+
+    def test_contact_summary_and_first_contact_woken_once(self):
+        # (note-mt309-t) each nest's clear, the first contacts and losses by killer; each pair woken once
+        with tempfile.TemporaryDirectory() as tmp:
+            op = Path(tmp)/'ct9'/'op'; op.mkdir(parents=True)
+            g = lambda n1, n2: dict(spawners=n1 + n2, worms=0, nests=[[n1, 0], [n2, 0]], field_drills_working=0,
+                                    outside_drills_working={}, lost=1, killed=1, characters_lost=0)
+            rows = [dict(tick=1000, green=g(2, 2), first={}), dict(tick=1000 + 3600*30, green=g(0, 2), first={'chart green>yellow': 1000 + 3600*30}),
+                    dict(tick=1000 + 3600*90, green=g(0, 0), first={'chart green>yellow': 1000 + 3600*30, 'shot yellow>green': 1000 + 3600*80},
+                         losses={'green': {'enemy': 5, 'yellow': 2}})]
+            state = dict(start_tick=1000, save='contact', roster=[dict(team='green', arm='opus')])
+            (op/'stage2.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in rows))
+            out = sprint.stage2_summary(op, state)
+            self.assertEqual(out['opus']['nests_cleared_min'], [30.0, 90.0]); self.assertEqual(out['opus']['nest_cleared_min'], 90.0)
+            self.assertEqual(out['_contacts'], {'chart green>yellow': 30.0, 'shot yellow>green': 80.0})
+            self.assertEqual(out['_losses'], {'green': {'enemy': 5, 'yellow': 2}})
+            woke = []; real_wake, real_run = sprint.wake, sprint.subprocess.run
+            class R: pass
+            def fake(cmd, **kw):
+                self.assertEqual(cmd[2:5], ['--map', 'contact', 'measure']); r = R(); r.stdout = json.dumps(rows[fake.i]); fake.i += 1; return r
+            fake.i = 0
+            sprint.wake, sprint.subprocess.run = woke.append, fake
+            try:
+                for _ in rows:
+                    sprint.stage2_measure(op, {}, state)
+            finally:
+                sprint.wake, sprint.subprocess.run = real_wake, real_run
+            self.assertEqual(woke, ['ct9: first contact chart green>yellow at game minute 30.0',
+                                    'ct9: first contact shot yellow>green at game minute 80.0'])
 
 
 if __name__ == '__main__':
