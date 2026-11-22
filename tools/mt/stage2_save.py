@@ -543,8 +543,12 @@ def main(argv=None):
         r = rcon(); out = run_lua(r, LUA_CHECK if a.cmd == 'check' else LUA_MEASURE, plan())
         if MAP == 'contact' and a.cmd == 'measure':
             # (note-mt309-t) the harness's first contacts (chart, shot) and losses by killer, from its own storage
-            got = r.command('/silent-command __agent-harness__ local m=storage.agent_harness.mt or {} '
-                            'rcon.print(helpers.table_to_json({first=m.first or {},losses=m.losses or {}}))')
+            # (note-mt309-u) and Post raids (the market's spill records), shipments made, and a harness fault
+            got = r.command('/silent-command __agent-harness__ local h=storage.agent_harness local m=h.mt or {} '
+                            'local mk=m.market or {} local sp=0 for k in pairs(mk.spills or {}) do if type(k)=="string" then sp=sp+1 end end '
+                            'local tx=0 for _,p in pairs(mk.pairs or {}) do tx=tx+#(p.transactions or {}) end '
+                            'rcon.print(helpers.table_to_json({first=m.first or {},losses=m.losses or {},post_spills=sp,'
+                            'transactions=tx,runtime_fault=h.runtime_fault and tostring(h.runtime_fault) or nil}))')
             try:
                 out.update(json.loads(got))
             except ValueError:

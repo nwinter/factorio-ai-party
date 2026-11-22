@@ -642,14 +642,47 @@ def cmd_run(a):
     if (op/'not-started.txt').exists() or 'refusing' in log:
         wake(f"{a.run}: start failed or an agent did not start; see runs/{a.run}/op (world left paused)")
         raise SystemExit(f'{a.run}: start failed')
+    market = None
+    if a.market == 'full':     # (note-mt309-u) design v3's market: Posts raidable, 25% of the wallet into a coin wreck
+        market = market_full(a.run)
     rcon_set_paused(False)
     tick, paused = rcon_tick()
     state = dict(start_tick=tick, start_at=time.time(), minutes=a.minutes, score_version=SCORE_VERSION, roster=roster,
-                 save=a.save, save_sha=sha, nudge_s=a.nudge_s)
+                 save=a.save, save_sha=sha, nudge_s=a.nudge_s, market=market)
     state.update(rcon_route=route, rcon_connect_s=rcon_connect_s())
     (op/'sprint.json').write_text(json.dumps(state, indent=1))
     meter_check(op, state)
-    supervise(a.run, op, state, env, time.time() + 900)
+    supervised(a.run, op, state, env, time.time() + 900)
+
+
+def market_full(run):
+    """mt_market {profile: full} on the paused world (as start-mt.sh does for a full run); the reply's settings, or
+    SystemExit with the world left paused. It sends the agents nothing (pacts.lua)."""
+    req = json.dumps({'id': f'sprint-market-{run}', 'operator': True, 'action': 'mt_market', 'args': {'profile': 'full'}})
+    lua = ("local r=remote.call('agent_harness','dispatch',[[" + req + "]]) local j=helpers.json_to_table(r) "
+           "rcon.print(j and j.ok and helpers.table_to_json(j.result.settings or {}) or ('REFUSED '..r))")
+    sys.path.insert(0, str(ROOT/'tools'))
+    out = subprocess.run([sys.executable, str(ROOT/'tools/pog.py'), '--world', 'imac2', 'rcon', '/silent-command ' + lua],
+                         capture_output=True, text=True, timeout=60).stdout.strip()
+    if not out.startswith('{'):
+        wake(f'{run}: market profile full refused: {out[:300]} (world left paused)')
+        raise SystemExit(f'{run}: market profile full refused')
+    return json.loads(out)
+
+
+def supervised(run, op, state, env, next_check):
+    """supervise, and (note-mt309-u) when the runner itself fails (an unreadable server, a crash): wake the operator
+    and stop the run rather than leave the agents playing unwatched."""
+    try:
+        supervise(run, op, state, env, next_check)
+    except Exception as e:
+        wake(f'{run}: RUNNER FAILED ({e!r}); stopping the run (server crash or lost RCON?)')
+        state['ended_by'] = f'runner error: {e!r}'
+        try:
+            (op/'sprint.json').write_text(json.dumps(state, indent=1))
+            state['stopped'] = stop_run(run, env); (op/'sprint.json').write_text(json.dumps(state, indent=1))
+        finally:
+            raise
 
 
 def cmd_resume(a):
@@ -661,7 +694,7 @@ def cmd_resume(a):
     env = dict(os.environ, POG_STOP_WORLD='1', POG_CLAIM_OWNER=os.environ.get('POG_CLAIM_OWNER', 'eng-mt309'))
     checks = [json.loads(l)['at'] for l in (op/'meter-checks.jsonl').read_text().splitlines()] if (op/'meter-checks.jsonl').exists() else []
     nxt = (max(checks) + 900) if checks else time.time()
-    supervise(a.run, op, state, env, max(time.time(), nxt))
+    supervised(a.run, op, state, env, max(time.time(), nxt))
 
 
 def stage2_measure(op, env, state=None):
@@ -676,13 +709,50 @@ def stage2_measure(op, env, state=None):
         with (op/'stage2.jsonl').open('a') as f:
             f.write(json.dumps(row) + '\n')
         if cmap:
-            seen = state.setdefault('contacts_woken', [])
-            for key, tick in sorted((row.get('first') or {}).items(), key=lambda kv: kv[1]):
-                if key not in seen:
-                    seen.append(key)
-                    wake(f"{op.parent.name}: first contact {key} at game minute {round((tick - state['start_tick']) / 3600, 1)}")
+            contact_wakes(op.parent.name, row, state)
     except Exception as e:
         print(time.strftime('%H:%M:%S'), 'stage 2 measure failed:', repr(e), flush=True)
+
+
+def contact_wakes(run, row, state):
+    """(note-mt309-t/u) Wake rows from one contact-map reading: each pair's first contact (chart) and first shot
+    between teams, once each; losses to a rival team (the first, then at most every 10 minutes a pair while they
+    grow); a home Post raided (a new spill record); a harness fault (a new runtime_fault)."""
+    at = lambda tick: round((tick - state['start_tick']) / 3600, 1)
+    seen = state.setdefault('contacts_woken', [])
+    for key, tick in sorted((row.get('first') or {}).items(), key=lambda kv: kv[1]):
+        if key not in seen:
+            seen.append(key)
+            kind, pair = key.split(' ', 1)
+            wake(f"{run}: first contact {key} at game minute {at(tick)}" if kind == 'chart' else
+                 f"{run}: ATTACK between teams: first {key} (damage) at game minute {at(tick)}")
+    teams = {r['team'] for r in state.get('roster', [])}
+    woke = state.setdefault('rival_losses_woken', {})
+    now = row.get('tick', 0)
+    for victim, by_all in (row.get('losses') or {}).items():
+        for by, n in by_all.items():
+            if by not in teams or by == victim:
+                continue
+            k = f'{victim}<{by}'; last = woke.get(k)
+            if not last or (n > last['n'] and now - last['tick'] >= 36000):
+                woke[k] = dict(n=n, tick=now)
+                wake(f"{run}: {victim} has lost {n} entities to {by} (game minute {at(now)})")
+    if (row.get('post_spills') or 0) > state.get('post_spills_woken', 0):
+        wake(f"{run}: RAID: a Post was destroyed ({row['post_spills']} spill records; game minute {at(now)})")
+        state['post_spills_woken'] = row['post_spills']
+    fault = row.get('runtime_fault')
+    if fault and fault != state.get('fault_woken'):
+        wake(f"{run}: HARNESS ERROR runtime_fault: {fault[:300]} (game minute {at(now)})"); state['fault_woken'] = fault
+
+
+def integrity_fault(op):
+    """(note-mt309-u) A failed integrity check in the run's own logs: an autosave copy whose ZIP CRC or archive hash
+    failed (autosave.py; 'save changed during copy' and 'slot rotated' are retries, not faults). None when clean."""
+    log = op/'autosave.log'
+    for line in (log.read_text(errors='replace').splitlines() if log.exists() else []):
+        if 'CRC failed' in line or 'hash mismatch' in line:
+            return f'autosave: {line.strip()[:200]}'
+    return None
 
 
 def stage2_summary(op, state, path=None):
@@ -746,6 +816,9 @@ def supervise(run, op, state, env, next_check):
                 codex_subagents(op, state); save()
             except Exception as e:      # a log read never ends a sprint
                 print(time.strftime('%H:%M:%S'), 'sub-agent check failed:', repr(e), flush=True)
+            bad = integrity_fault(op)
+            if bad:      # (note-mt309-u) an integrity check failed: stop the run and wake the operator
+                state['ended_by'] = f'integrity: {bad}'; wake(f'{run}: INTEGRITY {bad}: the run stops now'); break
             if limit:      # every arm stops with it: the run's world and score end at the same tick
                 state['ended_by'] = limit; wake(f'{run}: {limit}: the sprint ends now (no Codex player on credits)')
                 break
@@ -789,6 +862,7 @@ def main(argv=None):
     q = sub.add_parser('run'); q.add_argument('run'); q.add_argument('roster'); q.add_argument('minutes', type=int)
     q.add_argument('--execute', action='store_true')
     q.add_argument('--save', choices=['r307', 'stage2', 'contact'], default='r307')
+    q.add_argument('--market', choices=['save', 'full'], default='save', help='full: mt_market profile full at the start')
     q.add_argument('--nudge-s', type=int, default=NUDGE_S, help='seconds after a turn ends before the idle prompt')
     q = sub.add_parser('resume'); q.add_argument('run')
     q = sub.add_parser('idle-watch'); q.add_argument('run')
