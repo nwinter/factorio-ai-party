@@ -247,9 +247,7 @@ claude_settings() {
   # the list above would name the run's other parts. Instead the shell reads nothing under ~/code or Dropbox but this
   # tree's shared files and this part's folder (and the same part of the runs it resumes), and the Read tool the same
   # paths (allow rules: no bare Read, Grep or Glob; the shell's grep, rg and ls stay).
-  # (mt309 note-mt309-i) The Bash sandbox reads no keychain: the login keychain's Claude Code, GitHub CLI and gemini
-  # items trust /usr/bin/security, so any shell could read every Claude profile's token. Claude Code reads its own
-  # login outside the sandbox.
+  # (mt309 note-mt309-i) No keychain in the Bash sandbox; Claude Code reads its own login outside the sandbox.
   local filesystem="\"denyRead\": [\"$HOME/.config/pog\", \"$HOME/Library/Keychains\"$keys_read]" file_allow=$allow
   if [ "${POG_READ_SCOPE:-0}" = 1 ] && [ -n "$part" ] && [ "${1:-}" != nosandbox ]; then
     local roots="\"$HOME/code\"" readable="" f

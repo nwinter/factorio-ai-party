@@ -60,9 +60,8 @@ def profile(root,home,proxy=None,native=None,codex=None,keychain=True):
                  Path('/Volumes/POG Media/pog-runs'),Path('/Volumes/POG Media/pog-recordings')):
         clauses.append(f'(deny file-read* file-write* (subpath {quote(str(path.resolve()))}))')
     clauses.append(f'(deny file-read* file-write* (subpath {quote(str(home/".config/pog"))}))')
-    # (mt309 note-mt309-i) The login keychain's Claude Code, GitHub CLI and gemini items trust /usr/bin/security, so
-    # any scoped shell read them with no dialog. Only agy and Muse, whose own logins live there, keep it; Grok and
-    # Codex log in from files. The file is refused and so is the SecurityServer lookup (last match wins).
+    # (mt309 note-mt309-i) No keychain in this scope: its files and the SecurityServer lookup are refused (last match
+    # wins). agy and Muse keep it because their own logins live there; Grok and Codex log in from files.
     if not keychain:
         for d in {home/'Library/Keychains', (home/'Library/Keychains').resolve()}:
             clauses.append(f'(deny file-read* file-write* (subpath {quote(str(d))}))')
@@ -123,8 +122,7 @@ def native_environment(env,folder,home,muse=False,codex=None):
         # ~/.agents/skills) on every start, and fails outright ("runtime host failed to start: failed to read skill
         # file") when the deny below refuses them; context.foreign_personal_skills=false does not stop the read and
         # TBH_USER_SKILLS_HOME moves only the first. So Muse gets a home of its own: empty but for the keychain its
-        # login token lives in (auth.json says storage keychain; ~/Library/Keychains is allowed above). The deny of
-        # ~/.agents stays whole. muse-local.py finds the launcher through POG_MUSE_BIN.
+        # login lives in. The deny of ~/.agents stays whole. muse-local.py finds the launcher through POG_MUSE_BIN.
         own=native/'home';(own/'Library').mkdir(parents=True,exist_ok=True,mode=0o700)
         if not (own/'Library/Keychains').is_symlink():(own/'Library/Keychains').symlink_to(home/'Library/Keychains')
         env.update(HOME=str(own),POG_MUSE_BIN=str(home/'.local/bin/muse'))
@@ -133,8 +131,8 @@ def native_environment(env,folder,home,muse=False,codex=None):
         assert (codex/'auth.json').is_file(),f'{codex} has no login: run CODEX_HOME={codex} codex login --device-auth once'
         env['CODEX_HOME']=str(codex)
         # (note-mt309-m) Codex verifies TLS through the Security framework, which needs the SecurityServer lookup the
-        # scope refuses (note-mt309-i): every request failed ("error sending request", 5 reconnects). A CA file it
-        # reads instead keeps the keychain closed (the exit-code probe still reads 44, item not found).
+        # scope refuses (note-mt309-i): every request failed ("error sending request", 5 reconnects). It reads this
+        # CA file instead, and the scope keeps no keychain.
         if Path('/etc/ssl/cert.pem').is_file():env.setdefault('SSL_CERT_FILE','/etc/ssl/cert.pem')
     return env
 
