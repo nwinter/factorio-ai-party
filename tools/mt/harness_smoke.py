@@ -101,7 +101,7 @@ def scoped(tree, row, folder):
             # (note-mt309-m) as tools/launch-agent.sh's isolated Codex player: the POG Codex home (agent-scope keys it on
             # ".codex" in the script name; ~/.codex stays denied), Codex's own sandbox off, the run's gate as proxy
             lines.append(f"exec /opt/homebrew/bin/codex exec -C '{folder}' -m {m} -c 'model_reasoning_effort=\"{e}\"' "
-                         f"-s danger-full-access --skip-git-repo-check '{PROMPT}'")
+                         f"-s danger-full-access --skip-git-repo-check '{PROMPT}' < /dev/null")   # exec waits for a piped stdin to close
         script = folder/f'.{kind}-smoke.sh'          # agent-scope keys Muse's native setup on ".muse" in the name
         script.write_text('\n'.join(lines)+'\n'); script.chmod(0o755)
         r = subprocess.run([sys.executable, str(tree/'tools/agent-scope.py'), str(tree), proxy, str(script)], cwd=folder,
@@ -150,7 +150,9 @@ def claude(tree, row, folder):
 
 def verdict(rc, out, extra):
     replied = any(l.strip().strip('.').upper() == 'OK' for l in out.splitlines())
-    blocked = [l.strip()[:200] for l in out.splitlines() if 'Operation not permitted' in l or 'failed to start' in l]
+    # the scope's own deny of ~/.agents (Nick's skills: never a player's) shows in Codex's log and is the point
+    blocked = [l.strip()[:200] for l in out.splitlines() if ('Operation not permitted' in l or 'failed to start' in l)
+               and '/.agents/skills' not in l]
     ok = rc == 0 and replied and not blocked and extra.get('user_skills', 0) == 0 and extra.get('sandbox', True)
     return ok, replied, blocked
 

@@ -132,6 +132,10 @@ def native_environment(env,folder,home,muse=False,codex=None):
     if codex:
         assert (codex/'auth.json').is_file(),f'{codex} has no login: run CODEX_HOME={codex} codex login --device-auth once'
         env['CODEX_HOME']=str(codex)
+        # (note-mt309-m) Codex verifies TLS through the Security framework, which needs the SecurityServer lookup the
+        # scope refuses (note-mt309-i): every request failed ("error sending request", 5 reconnects). A CA file it
+        # reads instead keeps the keychain closed (the exit-code probe still reads 44, item not found).
+        if Path('/etc/ssl/cert.pem').is_file():env.setdefault('SSL_CERT_FILE','/etc/ssl/cert.pem')
     return env
 
 def main():
