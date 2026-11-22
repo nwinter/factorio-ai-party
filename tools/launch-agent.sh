@@ -351,7 +351,8 @@ case $kind in
       { "$dir/fh" call ground_rules >/dev/null 2>&1 && python3 "$root/tools/brief.py" rules "$dir" >/dev/null; } || true
       python3 "$root/tools/clean-profile.py" "$kind" "$dir"
       python3 "$root/tools/sleepcap/setup.py" codex "$dir"
-      python3 "$root/tools/codex_pog_home.py" trust "$codex_home" "$dir"
+      # (s1cx) its JSON reply to stderr: start-mt.sh reads the pane and tab from this script's stdout
+      python3 "$root/tools/codex_pog_home.py" trust "$codex_home" "$dir" >&2
       pane=$(new_pane)
       printf '%s\n' '#!/usr/bin/env bash' "cd '$dir'" "${proxy_env:+export $proxy_env}" \
         "exec /opt/homebrew/bin/codex -C '$dir' -m '$model' -c 'model_reasoning_effort=\"$effort\"' -s danger-full-access -c 'approval_policy=\"never\"' -- \"\$(cat '$prompt')\"" \

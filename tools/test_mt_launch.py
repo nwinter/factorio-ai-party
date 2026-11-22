@@ -125,7 +125,8 @@ def claude_settings():
         cfg = json.loads(raw)
         fs, perms = cfg["sandbox"]["filesystem"], cfg["permissions"]
         home = os.path.expanduser("~")
-        assert fs["denyRead"][:2] == [f"{home}/.config/pog", f"{home}/code"], fs
+        # (note-mt309-i) the login keychain too: a player's Bash never reads the owner's keychain items
+        assert fs["denyRead"][:3] == [f"{home}/.config/pog", f"{home}/Library/Keychains", f"{home}/code"], fs
         want = [os.path.join(tmp, "agent"), os.path.join(tmp, "tools"), os.path.join(runs, "mt9", "blue"), os.path.join(runs, "mt8", "blue")]
         assert fs["allowRead"] == want, fs
         assert perms["allow"] == [f"Read(/{p}/**)" for p in want] + ["Edit(/**)", "Bash(./fh:*)"], perms["allow"]
