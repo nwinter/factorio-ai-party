@@ -415,6 +415,7 @@ def stop_run(run, env):
 # minute 46 of s1r1d ("research is running in a stable state") and sat idle for 44 minutes. The sprint applies
 # full_run's rule to every arm alike, with its text minus "with your teammate" (sprint arms play alone), plus one
 # rule for panes whose status never reads idle (Muse): 10 minutes without a game request and no busy marker.
+NUDGE_S = 120     # seconds after a turn ends before the idle prompt (sprint run --nudge-s; note-mt309-p)
 SPRINT_NUDGE = ('Operator (automatic): check your own status, tells, board and notes.md. Keep building toward the '
                 'goal. If blocked, explain the blocker once and choose another useful task. Keep your current '
                 'identity and update your notes.')
@@ -438,14 +439,17 @@ def idle_prompts(op, state, panes=None, now=None):
         journal = folder/r['arm']/'journal.jsonl'
         quiet = now - (journal.stat().st_mtime if journal.exists() else state['start_at'])
         last = max([state['start_at']] + [x['at'] for x in log.get(r['arm'], [])])
-        if now - last < 180 or quiet < 120:
+        # (note-mt309-p) the wait after a turn ends is the run's nudge_s (default 120 s); the gap between two prompts
+        # to one arm scales with it (180 s at 120, 30 s at 20), so a prompt is never sent twice before its turn starts
+        wait = state.get('nudge_s', NUDGE_S)
+        if now - last < wait * 1.5 or quiet < wait:
             continue
         status = panes.status(pane)
         screen = panes.read(pane)
-        a = dict(kind=r['kind'], folder=str(folder), name=r['arm'], started=state['start_at'])
+        a = dict(kind=r['kind'], folder=str(folder), name=r['arm'], started=state['start_at'], nudge_s=wait)
         native = status == 'unknown' and full_run.native_idle(a, screen, now)
         busy = bool(pane_resume.BUSY.search('\n'.join(screen.splitlines()[-25:])))
-        why = ('status ' + status) if status in ('idle', 'done') else 'grok end_turn' if native else \
+        why = ('status ' + status) if status in ('idle', 'done') else f"{r['kind']} end_turn" if native else \
               'silent 600 s' if quiet >= 600 and not busy else None
         if not why:
             continue
@@ -594,7 +598,7 @@ def cmd_run(a):
     rcon_set_paused(False)
     tick, paused = rcon_tick()
     state = dict(start_tick=tick, start_at=time.time(), minutes=a.minutes, score_version=SCORE_VERSION, roster=roster,
-                 save=a.save, save_sha=sha)
+                 save=a.save, save_sha=sha, nudge_s=a.nudge_s)
     state.update(rcon_route=route, rcon_connect_s=rcon_connect_s())
     (op/'sprint.json').write_text(json.dumps(state, indent=1))
     meter_check(op, state)
@@ -718,6 +722,7 @@ def main(argv=None):
     q = sub.add_parser('run'); q.add_argument('run'); q.add_argument('roster'); q.add_argument('minutes', type=int)
     q.add_argument('--execute', action='store_true')
     q.add_argument('--save', choices=['r307', 'stage2'], default='r307')
+    q.add_argument('--nudge-s', type=int, default=NUDGE_S, help='seconds after a turn ends before the idle prompt')
     q = sub.add_parser('resume'); q.add_argument('run')
     q = sub.add_parser('idle-watch'); q.add_argument('run')
     a = p.parse_args(argv)

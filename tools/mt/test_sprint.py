@@ -91,6 +91,10 @@ class Plan(unittest.TestCase):
             idle = lambda screen, now: full_run.codex_idle(a, screen, now, home=home)
             self.assertTrue(idle('› Ask Codex to do anything', done + 130))
             self.assertFalse(idle('› Ask Codex to do anything', done + 60))           # under 120 s
+            a['nudge_s'] = 20                                                           # note-mt309-p
+            self.assertTrue(idle('› Ask Codex to do anything', done + 25))
+            self.assertFalse(idle('› Ask Codex to do anything', done + 10))
+            a['nudge_s'] = 120
             self.assertFalse(idle('• Working (11s • esc to interrupt)', done + 130))   # a turn running
             with f.open('a') as g:
                 g.write(ev('2026-11-22T02:02:13.000Z', 'task_started') + '\n')
@@ -342,6 +346,16 @@ class IdlePrompt(unittest.TestCase):
             sprint.idle_prompts(op, state, panes, now + 60)          # no second prompt within 180 s
             self.assertEqual(len(panes.sent), 2)
             self.assertEqual(len((op/'idle-prompts.jsonl').read_text().splitlines()), 2)
+            # (note-mt309-p) a 20 s nudge: 'working' (journal quiet 30 s) is prompted once idle, and the gap between
+            # two prompts to one arm is 30 s
+            state20 = dict(roster=roster[:2], start_at=now - 3600, nudge_s=20)
+            panes20 = Panes({'p1': 'idle', 'p2': 'idle'}, {'p1': '> ', 'p2': '> '})
+            sprint.idle_prompts(op, state20, panes20, now)
+            self.assertEqual(sorted(p for p, _ in panes20.sent), ['p1', 'p2'])
+            sprint.idle_prompts(op, state20, panes20, now + 20)
+            self.assertEqual(len(panes20.sent), 2)
+            sprint.idle_prompts(op, state20, panes20, now + 31)
+            self.assertEqual(len(panes20.sent), 4)
 
 
 class Stage2(unittest.TestCase):

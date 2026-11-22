@@ -225,13 +225,13 @@ def native_idle(a,screen,now):
             row=json.loads(f.read().splitlines()[-1])
         update=row.get('params',{}).get('update',{})
         return (row.get('method')=='_x.ai/session/update' and update.get('sessionUpdate')=='turn_completed'
-                and update.get('stop_reason')=='end_turn' and a['started']<=row['timestamp']<=now-120)
+                and update.get('stop_reason')=='end_turn' and a['started']<=row['timestamp']<=now-a.get('nudge_s',120))
     except (OSError,ValueError,KeyError,IndexError,TypeError):return False
 
 def codex_idle(a,screen,now,home=None):
     """(s1cx3) A scoped Codex pane reads unknown to Herdr, so a finished turn waited for the 600 s silence rule
     (Astra: 10 min at game 9m). Idle when the arm's newest rollout in the POG Codex home ends its last turn with
-    task_complete at least 120 s ago and the screen shows no running turn."""
+    task_complete at least a['nudge_s'] (default 120) s ago and the screen shows no running turn."""
     if pane_resume.BUSY.search('\n'.join(screen.splitlines()[-25:])) or pane_resume.PURCHASE.search(screen):return False
     home=Path(home or os.environ.get('POG_CODEX_HOME') or Path.home()/'.pog-codex'/'home')
     ws=os.path.abspath(os.path.join(a['folder'],a['name'])).encode()
@@ -249,7 +249,7 @@ def codex_idle(a,screen,now,home=None):
         turns=[r for r in rows if r.get('type')=='event_msg' and r.get('payload',{}).get('type') in ('task_started','task_complete')]
         if not turns or turns[-1]['payload']['type']!='task_complete':return False
         done=datetime.datetime.fromisoformat(turns[-1]['timestamp'].replace('Z','+00:00')).timestamp()
-        return a['started']<=done<=now-120
+        return a['started']<=done<=now-a.get('nudge_s',120)
     except (OSError,ValueError,KeyError,IndexError,TypeError):return False
 
 def due_agents(state,now,rooms):
