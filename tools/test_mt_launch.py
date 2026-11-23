@@ -640,20 +640,22 @@ def netgate():
     tmp = tempfile.mkdtemp()
     try:
         tf = os.path.join(tmp, "team.tsv")
-        # (mt309) a scoped Codex player gets a gate port too; Claude Code (not process-scoped) does not
+        # (mt309) a scoped Codex player gets a gate port too; (note-mt309-x) and Claude Code, whose own traffic the
+        # launcher sends through it (proxy_env)
         tc = os.path.join(tmp, "codex.tsv")
         open(tc, "w").write("# name\tkind\nastra\tcodex\tx\n")
         c = full_tools.netgate_config([tc], os.path.join(tmp, "c.json"), os.path.join(tmp, "c.tsv"), base=18160)
         assert list(c) == ["astra"] and "chatgpt.com" in c["astra"]["allow"], c
         open(tf, "w").write("# name\tkind\nopus\tclaude\tx\ngrok\tgrok\tx\nmuse\tmuse\tx\n")
         agents = full_tools.netgate_config([tf], os.path.join(tmp, "g.json"), os.path.join(tmp, "g.tsv"), base=18151)
-        assert list(agents) == ["grok", "muse"] and agents["grok"]["port"] == 18151 and "api.x.ai" in agents["grok"]["allow"], agents
+        assert list(agents) == ["opus", "grok", "muse"] and agents["grok"]["port"] == 18152 and "api.x.ai" in agents["grok"]["allow"], agents
+        assert agents["opus"]["port"] == 18151 and "api.anthropic.com" in agents["opus"]["allow"], agents
         log = os.path.join(tmp, "g.jsonl")
         p = subprocess.Popen([sys.executable, os.path.join(ROOT, "tools", "mt", "netgate.py"), os.path.join(tmp, "g.json"), log])
         try:
             for _ in range(50):
                 try:
-                    c = socket.create_connection(("127.0.0.1", 18151), timeout=1)
+                    c = socket.create_connection(("127.0.0.1", agents["grok"]["port"]), timeout=1)
                     break
                 except OSError:
                     time.sleep(0.1)
@@ -666,7 +668,7 @@ def netgate():
             assert ref and ref[0]["agent"] == "grok" and ref[0]["host"] == "factorio.nickwinter.net" and ref[0]["user_agent"] == "curl/8.7.1", rows
         finally:
             p.terminate()
-        os.environ["POG_PROXY"] = "http://127.0.0.1:18151"
+        os.environ["POG_PROXY"] = "http://127.0.0.1:%d" % agents["grok"]["port"]
         assert "shell network through the run's gate" in full_tools.web_state(tmp, "grok")
         del os.environ["POG_PROXY"]
     finally:
