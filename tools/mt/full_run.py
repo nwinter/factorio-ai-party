@@ -324,7 +324,8 @@ def watch_agent(op,state,a,now,panes,hits,rooms):
         recent=folder/'journal.jsonl'
         if not recent.exists() or now-recent.stat().st_mtime>=wait:
             how,ok,detail=panes.prompt(a['pane'],NUDGE);a['last_prompt']=now
-            event(op,'idle-prompt',agent=a['name'],method=how,accepted=ok,native_completion=native_ready)
+            event(op,'idle-prompt',agent=a['name'],method=how,accepted=ok,native_completion=native_ready,
+                  first_failed=(lambda v:v if isinstance(v,str) else None)(getattr(panes,'last_failed',None)))
             if not ok:alert(op,'idle-prompt-failed',f"{a['name']}: {detail}")
 
 
