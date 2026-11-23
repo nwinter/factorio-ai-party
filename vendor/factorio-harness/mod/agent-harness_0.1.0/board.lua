@@ -142,7 +142,8 @@ return function(api)
     local names = {}
     for _, a in ipairs(roster) do names[#names+1] = a.name end
     table.sort(names)
-    error('unknown agent ' .. name .. '; agents: ' .. table.concat(names, ', '), 0)
+    local hint = api.tell_hint and api.tell_hint(name)   -- (mt309 note-mt309-v) diplomacy_send for another team
+    error('unknown agent ' .. name .. '; agents: ' .. table.concat(names, ', ') .. (hint and ('. ' .. hint) or ''), 0)
   end
   -- Ticks since agent `name`'s own last request (a peek is not one; nil: none
   -- yet), and its index (nil: not an agent here).

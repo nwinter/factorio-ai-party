@@ -499,7 +499,49 @@ class Stage2(unittest.TestCase):
             finally:
                 sprint.wake, sprint.subprocess.run = real_wake, real_run
             self.assertEqual(woke, ['ct9: first contact chart green>yellow at game minute 30.0',
-                                    'ct9: first contact shot yellow>green at game minute 80.0'])
+                                    'ct9: ATTACK between teams: first shot yellow>green (damage) at game minute 80.0'])
+
+    def test_contact_wakes_raids_rival_losses_faults_and_integrity(self):
+        # (note-mt309-u) wake at any raid or attack between teams and any harness error; stop on an integrity fault
+        state = dict(start_tick=0, roster=[dict(team='green'), dict(team='yellow'), dict(team='blue')])
+        woke = []; real = sprint.wake; sprint.wake = woke.append
+        try:
+            row = lambda tick, n, sp=0, fault=None: dict(tick=tick, first={}, losses={'green': {'enemy': 40, 'yellow': n}},
+                                                       post_spills=sp, runtime_fault=fault)
+            sprint.contact_wakes('ct9', row(3600, 1), state)
+            sprint.contact_wakes('ct9', row(7200, 3), state)               # 1 min later: no second row
+            sprint.contact_wakes('ct9', row(3600 + 36000, 5, sp=1), state)  # 10 min later, and a Post raided
+            sprint.contact_wakes('ct9', row(3600 + 36600, 5, sp=1, fault='boom'), state)
+            sprint.contact_wakes('ct9', row(3600 + 37200, 5, sp=1, fault='boom'), state)
+        finally:
+            sprint.wake = real
+        self.assertEqual(woke, ['ct9: green has lost 1 entities to yellow (game minute 1.0)',
+                                'ct9: green has lost 5 entities to yellow (game minute 11.0)',
+                                'ct9: RAID: a Post was destroyed (1 spill records; game minute 11.0)',
+                                'ct9: HARNESS ERROR runtime_fault: boom (game minute 11.2)'])
+        with tempfile.TemporaryDirectory() as t:
+            op = Path(t); (op/'autosave.log').write_text('save changed during copy; retry next poll\n')
+            self.assertIsNone(sprint.integrity_fault(op))
+            (op/'autosave.log').write_text('save ZIP CRC failed\n')
+            self.assertEqual(sprint.integrity_fault(op), 'autosave: save ZIP CRC failed')
+
+    def test_market_full_at_the_start(self):
+        class R: pass
+        calls = []
+        def fake(cmd, **kw):
+            calls.append(cmd[-1]); r = R(); r.stdout = fake.out; return r
+        real = sprint.subprocess.run; sprint.subprocess.run = fake
+        woke = []; rw = sprint.wake; sprint.wake = woke.append
+        try:
+            fake.out = '{"profile":"full"}\n'
+            self.assertEqual(sprint.market_full('ct9'), {'profile': 'full'})
+            self.assertIn('"profile": "full"', calls[0])
+            fake.out = 'REFUSED {"ok":false}'
+            with self.assertRaises(SystemExit):
+                sprint.market_full('ct9')
+        finally:
+            sprint.subprocess.run, sprint.wake = real, rw
+        self.assertIn('market profile full refused', woke[0])
 
 
 if __name__ == '__main__':

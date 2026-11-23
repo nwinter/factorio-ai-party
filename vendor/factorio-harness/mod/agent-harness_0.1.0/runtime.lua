@@ -18399,8 +18399,8 @@ M.pacts=require('pacts'){state=state,research_units=function(t,l) return M.resea
   on_market=function(e) M.teamfeed.market(e) end,
   on_message=function(m) M.teamfeed.emit(m.agent,'diplomacy','diplomacy',m.text,{m.to_team},m.seq) end,
   as_team=function(t,fn,...) return M.as_team(t,fn,...) end,
-  fact=function(team,text,wake) M.as_team(team,function()
-    for _,ag in ipairs(M.board.agents()) do M.board.deliver(ag.index,{seq='pact',tick=game.tick,from='pact',text=text,wake=wake or nil,fyi=not wake or nil}) end
+  fact=function(team,text,wake,from) M.as_team(team,function()
+    for _,ag in ipairs(M.board.agents()) do M.board.deliver(ag.index,{seq='pact',tick=game.tick,from=from or 'pact',text=text,wake=wake or nil,fyi=not wake or nil}) end
   end) end}
 M.market=M.pacts.market
 -- (mt274, private) several teams: setup and first contact (multiteam.lua), operator only
@@ -18461,7 +18461,7 @@ for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
 -- Team board, reply hints, harness requests and saved plans (board.lua).
 -- Bots are never directors (and game.get_player refuses their indices).
 function M.is_director(index) return not M.bots.is_index(index) and M.cameras.director(index) end
-M.board=require('board'){wall=function() return M.wall_ms end,state=state,team_now=function() return M.team_now() end,cause_text=function(c,own) return M.cause_text(c,own) end,rest_label=function(name) local r=M.rests and M.rests.get(name); return r and M.rests.label(r) or nil end,on_update=function(by,item,removed) return M.progress and M.progress.on_update(by,item,removed) end,check_lines=function(id) return M.checks and M.checks.item_lines(id) end,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
+M.board=require('board'){tell_hint=function(name) return M.pacts and M.pacts.tell_hint(M.team_now(),name) end,wall=function() return M.wall_ms end,state=state,team_now=function() return M.team_now() end,cause_text=function(c,own) return M.cause_text(c,own) end,rest_label=function(name) local r=M.rests and M.rests.get(name); return r and M.rests.label(r) or nil end,on_update=function(by,item,removed) return M.progress and M.progress.on_update(by,item,removed) end,check_lines=function(id) return M.checks and M.checks.item_lines(id) end,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
   on_event=function(e) M.teamfeed.emit(e.by,'board','team-private',string.format('#%s %s: %s%s',e.id,e.change,e.title or '',e.text and ' — '..e.text or ''),nil,e.seq) end,
   lesson_score=function(i) if M.lessonbook then return M.lessonbook.score(i) end end,lesson_extra=function(i) return M.lessonbook and M.lessonbook.extra(i) end,
   lesson_fields=function(a,i) return M.lessonbook and M.lessonbook.fields(a,i) end,lesson_surfaced=function(index,list,action) if M.lessonbook then M.lessonbook.surfaced(index,list,action) end end,claims=M.claims,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
