@@ -59,11 +59,18 @@ def free_port():
         s.bind(('127.0.0.1', 0)); return s.getsockname()[1]
 
 
+LEARN = False      # main --learn: every row's gate passes every host and logs it (netgate.py --learn)
+
+
 def gate(kind, folder):
     port = free_port()
-    cfg = folder/'netgate.json'
-    cfg.write_text(json.dumps({'agents': {'smoke': {'port': port, 'allow': NETGATE_ALLOW[kind], 'kind': kind}}}))
-    p = subprocess.Popen([sys.executable, str(ROOT/'tools/mt/netgate.py'), str(cfg), str(folder/'netgate.jsonl')],
+    if LEARN or kind not in NETGATE_ALLOW:
+        args = ['--learn', str(port), str(folder/'netgate.jsonl')]
+    else:
+        cfg = folder/'netgate.json'
+        cfg.write_text(json.dumps({'agents': {'smoke': {'port': port, 'allow': NETGATE_ALLOW[kind], 'kind': kind}}}))
+        args = [str(cfg), str(folder/'netgate.jsonl')]
+    p = subprocess.Popen([sys.executable, str(ROOT/'tools/mt/netgate.py'), *args],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(50):
         try:
@@ -119,6 +126,20 @@ def scoped(tree, row, folder):
         gp.terminate()
 
 
+def gate_hosts(folder):
+    """(note-mt309-x) The hosts a row's gate saw: {host: passed}."""
+    out = {}
+    log = folder/'netgate.jsonl'
+    for line in (log.read_text().splitlines() if log.exists() else []):
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        if r.get('host'):
+            out[r['host']] = out.get(r['host'], True) and bool(r.get('passed'))
+    return out
+
+
 def claude(tree, row, folder):
     assert not set('`$\'"\\') & set(PROMPT), 'the prompt goes through eval: no shell syntax'
     route = row['route'] if row['route'] != '-' else 'claude'
@@ -128,6 +149,7 @@ def claude(tree, row, folder):
         return 1, f'unknown Claude route {route}', {}
     cenv = '-u CLAUDE_CONFIG_DIR' if route == 'claude' else f"CLAUDE_CONFIG_DIR='{croot}'"
     launcher = tree/'tools/launch-agent.sh'
+    gp, proxy = gate('claude', folder)
     lines = ['#!/usr/bin/env bash', 'set -u', f"root='{tree}'; dir='{folder}'; run=smoke",
              *(f'export {k}={v}' for k, v in RUN_ENV.items()),
              'source "$root/tools/profile-flags.sh"',
@@ -136,16 +158,23 @@ def claude(tree, row, folder):
              # to the comment after it: its heredoc's JSON has a closing brace at the start of a line
              "eval \"$(sed -n '/^claude_settings() {/,/^# Open a Herdr pane/p' \"$root/tools/launch-agent.sh\" | sed '$d')\"",
              'claude_settings', 'cd "$dir"',
+             # (note-mt309-x) the run's gate as Claude Code's proxy, as launch-agent.sh's proxy_env gives it
+             proxy_lines(proxy),
              f"eval \"exec env $claude_unset {cenv} $claude_vars /Users/owner/.local/bin/claude --model {row['model']} "
              f"--effort {row['effort']} $claude_flags -p '{PROMPT}' < /dev/null\""]
     assert launcher.exists()
     script = folder/'.claude-smoke.sh'
     script.write_text('\n'.join(lines)+'\n'); script.chmod(0o755)
-    r = subprocess.run(['/bin/bash', str(script)], cwd=folder, capture_output=True, text=True, timeout=300,
-                       env={k: v for k, v in os.environ.items() if not k.startswith('CLAUDE_CODE') and k != 'CLAUDECODE'})
+    try:
+        r = subprocess.run(['/bin/bash', str(script)], cwd=folder, capture_output=True, text=True, timeout=300,
+                           env={k: v for k, v in os.environ.items() if not k.startswith('CLAUDE_CODE') and k != 'CLAUDECODE'})
+    finally:
+        gp.terminate()
     f = folder/'.claude/settings.json'
     settings = json.loads(f.read_text()) if f.exists() else {}
-    return r.returncode, r.stdout + r.stderr, dict(sandbox=bool(settings.get('sandbox', {}).get('enabled')))
+    hosts = gate_hosts(folder)
+    return r.returncode, r.stdout + r.stderr, dict(sandbox=bool(settings.get('sandbox', {}).get('enabled')), hosts=hosts,
+                                                   refused=sorted(h for h, ok in hosts.items() if not ok))
 
 
 def verdict(rc, out, extra):
@@ -153,14 +182,18 @@ def verdict(rc, out, extra):
     # the scope's own deny of ~/.agents (Nick's skills: never a player's) shows in Codex's log and is the point
     blocked = [l.strip()[:200] for l in out.splitlines() if ('Operation not permitted' in l or 'failed to start' in l)
                and '/.agents/skills' not in l]
-    ok = rc == 0 and replied and not blocked and extra.get('user_skills', 0) == 0 and extra.get('sandbox', True)
+    ok = (rc == 0 and replied and not blocked and extra.get('user_skills', 0) == 0 and extra.get('sandbox', True)
+          and not extra.get('refused'))
     return ok, replied, blocked
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('roster'); ap.add_argument('--tree', default=str(WORKTREES/'pog-smoke'))
+    ap.add_argument('--learn', action='store_true', help="every row's gate passes all hosts and reports them (to find a CLI's)")
     a = ap.parse_args()
+    global LEARN
+    LEARN = a.learn
     tree = Path(subprocess.run([str(ROOT/'tools/mt/launch-tree.sh'), a.tree], capture_output=True, text=True,
                                check=True).stdout.strip().splitlines()[-1])
     head = subprocess.run(['git', '-C', str(ROOT), 'rev-parse', '--short', 'HEAD'], capture_output=True, text=True).stdout.strip()

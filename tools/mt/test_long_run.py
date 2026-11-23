@@ -338,4 +338,109 @@ class Shifts(unittest.TestCase):
             public_session.main()
             self.assertIn('until explicit stop',output.call_args.args[0])
 
+class FullRunCodexClaude(unittest.TestCase):
+    """(note-mt309-x) full runs for the Codex and Claude arms."""
+    def roster(self,temp,rows):
+        op=Path(temp)/'runs'/'fr1'/'op';op.mkdir(parents=True);ws={}
+        for team in {r[0] for r in rows}:
+            tree=Path(temp)/f'play-{team}';(tree/'runs'/'fr1').mkdir(parents=True);ws[team]=dict(tree=str(tree),dir=str(tree/'runs'/'fr1'))
+        run_state.write(op/'workspaces.json',ws)
+        (op/'teams.tsv').write_text(''.join('\t'.join(r)+'\n' for r in rows))
+        return op
+
+    def test_members_admit_codex_and_claude_never_gray_swan(self):
+        ok=[('green','neon','agy','-','gemini-4-neon-medium','-','Neon','agy'),('yellow','astra','codex','codex','gpt-6.2-astra','low','Astra','Codex'),
+            ('blue','opus','claude','claude','opus','high','Opus','Claude Code')]
+        with tempfile.TemporaryDirectory() as temp:
+            m=full_run.members(self.roster(temp,ok))
+            self.assertEqual({n:a['kind'] for n,a in m.items()},{'neon':'agy','astra':'codex','opus':'claude'})
+        for bad in [('blue','opus','claude','claude-b','opus','high','O','C'),('yellow','astra','codex','codex-b','gpt','low','A','C'),
+                    ('yellow','astra','codex','claude','gpt','low','A','C'),('blue','x','claude','gsopenrouter','opus','high','O','C')]:
+            with tempfile.TemporaryDirectory() as temp,self.assertRaises(AssertionError):
+                full_run.members(self.roster(temp,[bad]))
+
+    def test_start_mt_full_run_route_check_matches(self):
+        import re,subprocess
+        sh=(Path(__file__).resolve().parent/'start-mt.sh').read_text()
+        code=re.search(r"python3 - \"\$teams_file\" <<'PY'\n(.*?)\nPY",sh,re.S).group(1)
+        with tempfile.TemporaryDirectory() as temp:
+            t=Path(temp)/'teams.tsv'
+            for row,good in ((['astra','codex','codex'],True),(['opus','claude','claude'],True),(['neon','agy','-'],True),
+                             (['opus','claude','claude-b'],False),(['astra','codex','codex-b'],False)):
+                t.write_text('green\t'+'\t'.join(row)+'\tm\te\tl\th\n')
+                r=subprocess.run([sys.executable,'-',str(t)],input=code,capture_output=True,text=True)
+                self.assertEqual(r.returncode==0,good,(row,r.stderr[-200:]))
+
+    def test_twenty_second_nudge_and_gap(self):
+        with tempfile.TemporaryDirectory() as temp:
+            op=Path(temp);a=dict(name='opus',folder=temp,kind='claude',pane='p',started=100,restarts=0,nudge_s=20)
+            panes=unittest.mock.Mock();panes.read.return_value='> ';panes.status.return_value='idle';panes.prompt.return_value=('agent prompt',True,'')
+            with patch.object(full_run,'live_client',return_value=True),patch.object(full_run,'change'),patch.object(full_run,'alert'):
+                for now in (120,129,131,150,162):
+                    full_run.watch_agent(op,dict(agents={'opus':a}),a,now,panes,{},{})
+            # first prompt at 131 (30 s after the start), the next 30 s later at 162; none at 120, 129 or 150
+            self.assertEqual(panes.prompt.call_count,2)
+            self.assertEqual(full_run.NUDGE_S,20)
+
+    def test_codex_rollouts_archived_per_shift_unless_another_codex_is_live(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home=Path(temp)/'home';(home/'sessions'/'2026').mkdir(parents=True);(home/'sessions'/'2026'/'rollout-1.jsonl').write_text('{}')
+            op=Path(temp)/'op';op.mkdir()
+            a=dict(name='astra',kind='codex');b=dict(name='sol',kind='codex');c=dict(name='opus',kind='claude')
+            with patch.dict('os.environ',{'POG_CODEX_HOME':str(home)}),patch.object(full_run,'event'),patch.object(full_run,'alert') as alert:
+                with patch.object(full_run,'live_client',side_effect=lambda x:x is b):
+                    self.assertIsNone(full_run.archive_codex(op,dict(agents={'astra':a,'sol':b}),a,3))
+                    alert.assert_called_once()
+                with patch.object(full_run,'live_client',return_value=False):
+                    self.assertIsNone(full_run.archive_codex(op,dict(agents={'opus':c}),c,3))
+                    out=full_run.archive_codex(op,dict(agents={'astra':a,'opus':c}),a,3)
+            self.assertEqual(out['moved'],['2026'])
+            self.assertTrue((op/'codex-sessions'/'serial-3'/'2026'/'rollout-1.jsonl').exists())
+            self.assertFalse((home/'sessions'/'2026').exists())
+
+    def test_change_archives_a_codex_client_after_it_stops(self):
+        with tempfile.TemporaryDirectory() as temp:
+            op=Path(temp);a=dict(name='astra',team='yellow',kind='codex',shift=1,restarts=0,pane='old',folder=str(op/'y'))
+            state=dict(serial=0,agents={'astra':a});calls=[]
+            with patch.object(full_run,'stop_client',side_effect=lambda a:calls.append('stop')), \
+                 patch.object(full_run,'archive_codex',side_effect=lambda op,st,a,n:calls.append(('archive',n))), \
+                 patch.object(full_run,'snapshot',return_value=op/'history'), \
+                 patch.object(full_run,'start_client',side_effect=lambda op,a,c:calls.append('start')), \
+                 patch.object(full_run,'say'),patch.object(full_run,'indexes'),patch.object(full_run,'event'),patch.object(full_run,'set_deadline'):
+                full_run.change(op,state,['astra'],90)
+            self.assertEqual(calls,['stop',('archive',1),'start'])
+
+    def test_codex_restart_refused_without_isolation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            op=Path(temp);run_state.write(op/'full-env.json',{'POG_ISOLATED':'0'})
+            a=dict(name='astra',kind='codex',route='codex',deadline=10**10,folder=temp,tree=temp)
+            with self.assertRaises(RuntimeError):full_run.start_client(op,a,op)
+            run_state.write(op/'full-env.json',{'POG_ISOLATED':'1'})
+            with self.assertRaises(RuntimeError):full_run.start_client(op,dict(a,kind='claude',route='claude-b'),op)
+
+    def test_restore_fingerprint_reads_the_runs_own_agents(self):
+        reader=unittest.mock.Mock();reader.bots.return_value=[];reader.profiles.side_effect=lambda n:{'name':n}
+        with patch.object(restore,'rcon',return_value=json.dumps(dict(tick=1,paused=True,forces={}))),patch.object(restore,'Reader',return_value=reader):
+            f=restore.fingerprint({'astra':{'team':'yellow'},'opus':{'team':'blue'},'neon':{'team':'green'}})
+        self.assertEqual(f['profiles'],{'blue/opus':{'name':'opus'},'green/neon':{'name':'neon'},'yellow/astra':{'name':'astra'}})
+
+    def test_full_mode_has_no_minute_cap_test_mode_keeps_its_caps(self):
+        with patch.object(sys,'argv',['launch','fr9','600','--run-mode','full']),patch.object(launch.subprocess,'run') as run:
+            launch.main()   # dry run: start-mt.sh with POG_DRY_RUN
+            self.assertEqual(run.call_args.kwargs['env']['POG_RUN_MODE'],'full')
+        for mins,cap,refused in (('121','120',True),('240','240',False),('241','240',True),('91','90',True)):
+            argv=['launch','fr9',mins,'--max-minutes',cap]
+            with patch.object(sys,'argv',argv),patch.object(launch.subprocess,'run'):
+                if refused:
+                    with self.assertRaises(AssertionError):launch.main()
+                else:launch.main()
+
+    def test_netgate_config_gives_claude_its_own_port(self):
+        sys.path.insert(0,str(Path(__file__).resolve().parents[1]));import full_tools
+        with tempfile.TemporaryDirectory() as temp:
+            t=Path(temp)/'team.tsv';t.write_text('opus\tclaude\tclaude\topus\nastra\tcodex\tcodex\tgpt\n')
+            agents=full_tools.netgate_config([str(t)],str(Path(temp)/'n.json'),str(Path(temp)/'n.tsv'))
+        self.assertIn('api.anthropic.com',agents['opus']['allow']);self.assertIn('platform.claude.com',agents['opus']['allow'])
+        self.assertNotEqual(agents['opus']['port'],agents['astra']['port'])
+
 if __name__=='__main__':unittest.main()

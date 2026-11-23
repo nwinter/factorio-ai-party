@@ -37,6 +37,11 @@ ENV_KEYS=('PATH','HOME','USER','LOGNAME','SHELL','TMPDIR','LANG','TZ','HERDR_WOR
 NUDGE=('Operator (automatic): check your own status, tells, board and notes.md. '
        'Keep building toward the goal with your teammate. If blocked, explain the blocker once '
        'and choose another useful task. Keep your current identity and update your notes.')
+# (note-mt309-x) the routes a full run admits: agy, Grok and Muse on their own, Codex on the owner's personal Codex
+# (POG Codex home), Claude on the personal or account C profile; never a account B route
+ROUTES={'agy':('agy','-'),'grok':('grok','-'),'muse':('muse','-'),'codex':('codex',),'claude':('claude','claude-c')}
+FORBIDDEN_ROUTES=('claude-b','codex-b','gsopenrouter')
+NUDGE_S=20   # (note-mt309-x) seconds after a turn ends before the idle prompt; the gap between two prompts is 1.5x
 LIMIT=re.compile(r'usage limit|weekly limit|quota exceeded|resource.exhausted|exhausted.*quota|hit your .*limit',re.I)
 LOGIN=re.compile(r'login expired|not logged in|authentication failed|please (?:run /login|log in)',re.I)
 
@@ -50,7 +55,7 @@ def members(op):
         if not line or line.startswith('#'):continue
         team,name,kind,route,model,effort,label,harness=line.split('\t')
         if team not in work:continue
-        assert kind in ('agy','grok','muse') and route in ('agy','grok','muse','-'), 'unapproved test route'
+        assert route not in FORBIDDEN_ROUTES and route in ROUTES.get(kind,()), f'unapproved route {kind}/{route}'
         folder=Path(work[team]['dir']).resolve();tree=Path(work[team]['tree']).resolve()
         assert tree.name.startswith('play-') and folder==tree/'runs'/op.parent.name
         result[name]=dict(team=team,name=name,kind=kind,route=route,model=model,effort=effort,label=label,
@@ -73,15 +78,15 @@ def set_deadline(a,at):
     # Shift maintenance is operator state; no end time enters an agent's workspace.
     Path(a['folder'],a['name'],'deadline.txt').unlink(missing_ok=True)
 
-def init(run,minutes,max_shifts=0):
+def init(run,minutes,max_shifts=0,nudge_s=NUDGE_S):
     pinned();op=op_dir(run)
     assert not (op/'full-run.json').exists(),'run already registered'
     agents=members(op);panes={p[1]:p[2] for l in (op/'panes.txt').read_text().splitlines() if len(p:=l.split())==4}
     now=time.time()
     for name,a in agents.items():
-        a.update(pane=panes.get(name),shift=1,deadline=now+minutes*60,started=now,restarts=0,next_retry=0)
+        a.update(pane=panes.get(name),shift=1,deadline=now+minutes*60,started=now,restarts=0,next_retry=0,nudge_s=nudge_s)
         set_deadline(a,math.ceil((now+minutes*60)/60)*60)
-    state=dict(run=run,phase='running',started=now,minutes=minutes,max_shifts=max_shifts,agents=agents,serial=0)
+    state=dict(run=run,phase='running',started=now,minutes=minutes,max_shifts=max_shifts,agents=agents,serial=0,nudge_s=nudge_s)
     capture_env(op);write(op/'full-run.json',state)
     event(op,'registered',agents=list(agents),minutes=minutes,max_shifts=max_shifts)
     return state
@@ -113,6 +118,18 @@ def stop_client(a):
         subprocess.run(['herdr','pane','close',a['pane']],capture_output=True,timeout=15)
     a['pane']=None
 
+def archive_codex(op,state,a,serial):
+    """(note-mt309-x) A stopped Codex client's rollouts out of the POG Codex home into op/codex-sessions/serial-N: the
+    next shift's session starts in an empty home, the burn reader still finds them (it reads op/codex-sessions), and
+    its rollout check reads only the new session. Not while another Codex client of the run is live (one home)."""
+    if a.get('kind')!='codex':return None
+    if any(b is not a and b.get('kind')=='codex' and live_client(b) for b in state['agents'].values()):
+        alert(op,'codex-archive-skipped',f"{a['name']}: another Codex client is live");return None
+    sys.path.insert(0,str(ROOT/'tools'));import codex_pog_home
+    home=Path(os.environ.get('POG_CODEX_HOME') or Path.home()/'.pog-codex'/'home')
+    out=codex_pog_home.archive(home,op/'codex-sessions'/f'serial-{serial}')
+    event(op,'codex-archive',agent=a['name'],serial=serial,moved=len(out['moved']));return out
+
 def snapshot(a,serial):
     folder=Path(a['folder']); dest=Path(a['tree'])/'runs'/f'handoff-{serial}'
     target=dest/a['name'];target.mkdir(parents=True,exist_ok=False)
@@ -125,6 +142,9 @@ def start_client(op,a,carry):
     left=math.ceil((a['deadline']-time.time())/60)
     if left<1:raise RuntimeError('shift deadline passed during launch')
     env=read(op/'full-env.json')
+    # (note-mt309-x) a Codex player only in its scope with the POG Codex home; never on a account B route
+    if a['kind']=='codex' and env.get('POG_ISOLATED')!='1':raise RuntimeError('Codex restarts only isolated (POG_ISOLATED=1)')
+    if a['route'] in FORBIDDEN_ROUTES:raise RuntimeError(f"route {a['route']} refused")
     proxies={l.split()[0]:'http://127.0.0.1:'+l.split()[1] for l in (op/'netgate.tsv').read_text().splitlines() if l.strip()}
     folder=Path(a['folder']);tree=Path(a['tree'])
     rest=read(carry/a['name']/'resting.json',{})
@@ -172,6 +192,7 @@ def change(op,state,names,minutes=None,reason='shift',hold=False):
         except Exception as e:alert(op,'announcement-failed',e)
     for a in selected:
         stop_client(a)
+        archive_codex(op,state,a,serial)
         carry=snapshot(a,serial);a['carry']=str(carry)
         if reason=='shift':a['shift']+=1;a['restarts']=0
         if minutes is not None:a['deadline']=time.time()+minutes*60
@@ -297,9 +318,11 @@ def watch_agent(op,state,a,now,panes,hits,rooms):
         change(op,state,[a['name']],reason='restart');return
     # A live interactive client at an idle prompt may need a local prompt, not a game tell.
     native_ready=status=='unknown' and native_idle(a,screen,now)
-    if (status in ('idle','done') or native_ready) and now-a.get('last_prompt',a['started'])>=180:
+    # (note-mt309-x) the run's nudge_s after the turn ends (20 s by default), the same gap rule as sprints: 1.5x
+    wait=a.get('nudge_s',state.get('nudge_s',NUDGE_S))
+    if (status in ('idle','done') or native_ready) and now-a.get('last_prompt',a['started'])>=wait*1.5:
         recent=folder/'journal.jsonl'
-        if not recent.exists() or now-recent.stat().st_mtime>=120:
+        if not recent.exists() or now-recent.stat().st_mtime>=wait:
             how,ok,detail=panes.prompt(a['pane'],NUDGE);a['last_prompt']=now
             event(op,'idle-prompt',agent=a['name'],method=how,accepted=ok,native_completion=native_ready)
             if not ok:alert(op,'idle-prompt-failed',f"{a['name']}: {detail}")
@@ -373,10 +396,11 @@ def main():
     p.add_argument('action',choices=['env','init','watch','shift','hold','release','shutdown','status'])
     p.add_argument('run');p.add_argument('--minutes',type=int,default=90)
     p.add_argument('--max-shifts',type=int,default=0);p.add_argument('--select',default='all')
+    p.add_argument('--nudge-s',type=int,default=NUDGE_S,help='init: seconds after a turn ends before the idle prompt')
     p.add_argument('--execute',action='store_true');a=p.parse_args()
     assert a.minutes>=1 and a.max_shifts>=0;op=op_dir(a.run)
     if a.action=='env':capture_env(op);return
-    if a.action=='init':print(json.dumps(init(a.run,a.minutes,a.max_shifts)));return
+    if a.action=='init':print(json.dumps(init(a.run,a.minutes,a.max_shifts,a.nudge_s)));return
     if a.action=='watch':watch(a.run);return
     if a.action=='status':print(json.dumps(read(op/'full-run.json'),indent=2));return
     with lock(op/'agents.lock'):

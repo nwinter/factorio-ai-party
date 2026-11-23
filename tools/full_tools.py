@@ -590,6 +590,9 @@ NETGATE_ALLOW = {
     # (mt309) Codex in its POG home under tools/agent-scope.py: expected hosts, to be confirmed with netgate.py --learn
     # in the scoped smoke test (tools/mt/codex_scope_smoke.py --live) before any Codex arm
     "codex": ["chatgpt.com", "auth.openai.com", "api.openai.com", "ab.chatgpt.com"],
+    # (note-mt309-x) Claude Code: the API and its OAuth (api.anthropic.com; the token refresh at platform.claude.com;
+    # claude.ai's client metadata), and its telemetry intake, as a learn-mode harness_smoke saw it (Claude Code 2.1.330)
+    "claude": ["api.anthropic.com", "platform.claude.com", "claude.ai", "http-intake.logs.us5.datadoghq.com"],
 }
 
 

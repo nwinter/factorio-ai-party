@@ -13,7 +13,8 @@ from full_run import change, indexes
 from autosave import copy_new, verified
 
 
-def fingerprint():
+def fingerprint(agents=None):
+    # (note-mt309-x) the profiles of the run's own agents (full-run.json: team and name), not the old gemini, grok and muse
     value=json.loads(rcon('local out={tick=game.tick,paused=game.tick_paused,forces={}}; '
         'for _,name in ipairs({"green","yellow","blue"}) do local f=game.forces[name]; if f then '
         'local t={research={},progress=f.research_progress,queue={}}; '
@@ -22,7 +23,8 @@ def fingerprint():
         'rcon.print(helpers.table_to_json(out))'))
     reader=Reader()
     value['bots']=reader.bots()
-    value['profiles']={t:reader.profiles(n) for t,n in [('green','gemini'),('yellow','grok'),('blue','muse')]}
+    pairs=sorted((a['team'],n) for n,a in (agents or {}).items()) or [('green','gemini'),('yellow','grok'),('blue','muse')]
+    value['profiles']={f'{t}/{n}':reader.profiles(n) for t,n in pairs}
     return value
 
 def checkpoint(run):
@@ -53,14 +55,14 @@ def drill(run, allow_unlisted_stream=False):
         change(op,state,list(state['agents']),reason='restore-hold',hold=True)
         indexes(op,state);write(op/'full-run.json',state)
         rcon('game.tick_paused=true; rcon.print(game.tick)')
-        before=fingerprint();write(receipt,dict(phase='paused',before=before,at=time.time()))
+        before=fingerprint(state['agents']);write(receipt,dict(phase='paused',before=before,at=time.time()))
         camera=rcon('local p=game.get_player("pog-cam1"); rcon.print(p and p.connected and "yes" or "no")').strip()=='yes'
         path,row=checkpoint(run)
         write(receipt,dict(phase='archived',before=before,archive=str(path),proof=row,at=time.time()))
         if camera:command([sys.executable,ROOT/'tools/mt/imac_cam.py','stop'],timeout=90)
         command([ROOT/'tools/mt/imac_mt.sh','stop'],timeout=90)
         command([ROOT/'tools/mt/imac_mt.sh','start',path],timeout=240)
-        after=fingerprint()
+        after=fingerprint(state['agents'])
         # Bot counters can include volatile wall-clock observations. The stable engine
         # tick, research and profiles are compared separately from the full evidence.
         exact={k:before[k]==after[k] for k in ('tick','paused','forces','profiles')}
