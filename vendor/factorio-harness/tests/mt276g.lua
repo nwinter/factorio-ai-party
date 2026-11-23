@@ -128,6 +128,15 @@ do
   ok,err=pcall(function() R.dispatch{id='tell-blue-green',bot='bb1',action='tell',args={to='green',text='hi'}} end)
   assert(not ok and not tostring(err):find('diplomacy',1,true),'no contact with green: no hint '..tostring(err))
   eq(#box('green','gb1'),0);eq(#box('green','gb2'),0)
+  -- (mt309 note-mt309-w) say and tell replies carry the diplomacy note once the team has a contact, never before;
+  -- market lines' sender gets the hint too; the roster names each agent's team (two teams may share a display name)
+  local NOTE='private to your team; diplomacy_send reaches a contacted team'
+  eq(R.dispatch{id='tell-team-b',bot='bb1',action='tell',args={to='bb2',text='hello team'}}.diplomacy,NOTE)
+  eq(R.dispatch{id='say-team-b',bot='bb1',action='say',args={text='hello all of blue'}}.diplomacy,NOTE)
+  eq(R.dispatch{id='tell-team-g',bot='gb1',action='tell',args={to='gb2',text='hello team'}}.diplomacy,nil)
+  eq(R.dispatch{id='say-team-g',bot='gb1',action='say',args={text='hello all of green'}}.diplomacy,nil)
+  fails(function() R.dispatch{id='tell-market',bot='bb1',action='tell',args={to='market',text='hi'}} end,'answer another team with diplomacy_send')
+  eq(R.dispatch{id='diplo-roster',bot='bb2',action='diplomacy',args={with='red'}}.agents[1].team,'red')
   local reply=R.dispatch{id='diplo-read',bot='bb2',action='diplomacy',args={with='red'}}
   eq(reply.messages[1].agent,'rb1')
   fails(function() R.dispatch{id='diplo-no-contact',bot='gb1',action='diplomacy',args={with='red'}} end,'unsupported action')

@@ -165,7 +165,8 @@ return function(api)
     local left = a.reply_to == nil and api.owed_left and api.owed_left(p.index, names, team and text or nil) or nil
     return {seq=t.seq, to=team and 'team' or names, left_open=left, away=#away > 0 and table.concat(away, '; ') or nil,
       ignoring=#ignoring > 0 and table.concat(ignoring, '; ') or nil, resting=#resting > 0 and table.concat(resting, '; ') or nil, woken=#woken > 0 and woken or nil, not_woken=#not_woken > 0 and not_woken or nil,
-      note=t.fyi and 'fyi: in their next reply (team: tells), not waking them; not in chat' or 'in their next reply (team: tells), waking them if asleep; not in chat'}
+      note=t.fyi and 'fyi: in their next reply (team: tells), not waking them; not in chat' or 'in their next reply (team: tells), waking them if asleep; not in chat',
+      diplomacy=api.diplomacy_note and api.diplomacy_note() or nil}   -- (mt309 note-mt309-w) once the team has a contact
   end
   local function read(a, me)
     assert(a.since == nil or type(a.since) == 'number', 'since must be a number')

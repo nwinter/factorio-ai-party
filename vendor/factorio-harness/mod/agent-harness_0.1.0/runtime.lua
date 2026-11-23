@@ -18375,7 +18375,7 @@ M.teamfeed=require('teamfeed'){state=state,team_now=function() return M.team_now
   agents=function() return M.board.agents() end,profile=function(index) return M.profiles.get(index) end}
 M.discovery=require('discovery'){state=state,bots=function() return M.bots.list() end,
   profile=function(index) return M.profiles.get(index) end}
-M.chat=M.chat_module{state=state,on_say=function(p,text)
+M.chat=M.chat_module{state=state,diplomacy_note=function() return M.pacts and M.pacts.private_note(M.team_now()) end,on_say=function(p,text)
   M.teamfeed.emit(M.board.who(p),'say','team-private',text);M.profiles.say(p,text)
 end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,
@@ -18528,7 +18528,7 @@ M.rests=require('rests'){state=state,resolve=M.board.resolve,
     local c=index and (state().clocks or {})[index]
     return c and not c.peeked and c.call_tick or nil
   end}
-M.tells=require('tells'){state=state,resolve=M.board.resolve,resting=function(name) return M.rests.tell_line(name) end,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,read_tells=M.board.tells_read,
+M.tells=require('tells'){state=state,diplomacy_note=function() return M.pacts and M.pacts.private_note(M.team_now()) end,resolve=M.board.resolve,resting=function(name) return M.rests.tell_line(name) end,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,read_tells=M.board.tells_read,
   on_send=function(t) M.teamfeed.emit(t.from,'tell','team-private',t.text,t.to,t.seq) end,
   on_reply=function(index,seq) return M.owed.ack(index,seq) end,
   owed_left=function(index,names,text) if text then return M.owed.held(index,text) end return M.owed.held_for(index,names) end,

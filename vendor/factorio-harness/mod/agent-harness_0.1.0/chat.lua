@@ -229,7 +229,7 @@ return function(api)
     local also
     for i = 2, #res do also = also or {}; also[#also+1] = {seq=res[i].seq, to=M.viewer_name(res[i].from)} end
     return {seq=seq, cut=cut, reply_to=re and {seq=re.seq, to=M.viewer_name(re.from), addressed=addressed and addressed .. ' put in front' or nil, also=also} or nil,
-      linked=linked, left_open=held}
+      linked=linked, left_open=held, diplomacy=api.diplomacy_note and api.diplomacy_note() or nil}
   end
   function M.handlers.chat(p, a)
     local c = log()
