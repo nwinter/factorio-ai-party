@@ -54,14 +54,19 @@ return function(api)
   function M.tell_hint(team, name)
     if not (team and teams()[team] and M.open_for(team) and type(name) == 'string') then return nil end
     local n = (name:lower():gsub('^@', ''))
-    if n == 'pact' or n == 'diplomacy' then
-      return 'pact and diplomacy lines come from the harness, not an agent: answer another team with diplomacy_send {to: TEAM, text: ...}'
+    if n == 'pact' or n == 'diplomacy' or n == 'market' then
+      return 'pact, diplomacy and market lines come from the harness, not an agent: answer another team with diplomacy_send {to: TEAM, text: ...}'
     end
     for t in pairs(teams()) do
       if t ~= team and t:lower() == n and M.contacted(team, t) then
         return t .. ' is another team, not an agent of yours: use diplomacy_send {to: "' .. t .. '", text: ...}'
       end
     end
+    return nil
+  end
+  -- (mt309 note-mt309-w) The note say and tell replies carry once the team has a contact (nil before: nothing changes).
+  function M.private_note(team)
+    if team and teams()[team] and M.open_for(team) then return 'private to your team; diplomacy_send reaches a contacted team' end
     return nil
   end
   function M.open_for(team)
@@ -578,6 +583,9 @@ return function(api)
   -- Only stateless normal items cross this boundary. Cargo is persistent escrow, never an exposed chest.
   M.market = (function()
     local K={handlers={},reads={market=true},operator={}}
+    -- (mt309 note-mt309-w) market facts (the Trading Post notice, Coinage, research income, fills, shipments, embargoes,
+    -- raids) come from "market", so "pact" names pact facts only
+    local function mfact(team,text,wake) fact(team,text,wake,'market') end
     local TECH,POST,COIN='mt-coinage','mt-trading-post','mt-coin'
     local PRICES={['iron-ore']=10,['copper-ore']=10,coal=10,stone=10,['iron-plate']=20,['copper-plate']=20,
       ['steel-plate']=100,['iron-gear-wheel']=40,['copper-cable']=10,['electronic-circuit']=70,
@@ -735,7 +743,7 @@ return function(api)
       for _,name in ipairs(tiers or {}) do s.grants[name]=id end
       s.wallet=s.wallet+n;state().issuance=state().issuance+n
       local line='Wallet +'..n..' coin: '..cause..'; this does not depend on when you research it.'
-      fact(t,line,true);news(t,nil,'coinage',line)
+      mfact(t,line,true);news(t,nil,'coinage',line)
     end
     local function grants(t)
       local s=team(t)
@@ -812,7 +820,7 @@ return function(api)
       if hour>r.hour then
         if active or r.hour_coin>0 then
           local line='Wallet +'..r.hour_coin..' coin: research income this hour'
-          fact(t,line,false);news(t,nil,'research_income',line)
+          mfact(t,line,false);news(t,nil,'research_income',line)
         end
         r.hour=hour;r.hour_coin=0
       end
@@ -858,7 +866,7 @@ return function(api)
           s.post=assert(surf.create_entity{name=POST,position=pos,force=f},'Trading Post creation failed')
           s.post.minable_flag=false;s.post.destructible=config('destructible');s.home=s.home or copy(at)
           f.add_chart_tag(surf,{position=pos,text='Trading Post'})
-          fact(t,'Trading Post at ('..pos.x..','..pos.y..'). Call status {} for stock and item swaps; research {technology="mt-coinage"} opens priced orders.',true)
+          mfact(t,'Trading Post at ('..pos.x..','..pos.y..'). Call status {} for stock and item swaps; research {technology="mt-coinage"} opens priced orders.',true)
         end
       end
       if s.post and s.post.valid then s.post.destructible=config('destructible') end
@@ -1152,7 +1160,7 @@ return function(api)
           if not p.embargo[t] then
             p.embargo[t]=true
             local line=t..' embargoes '..a.team..': new matches stop; committed cargo still arrives.'
-            fact(t,line,true);fact(a.team,line,true);news(t,a.team,'embargo',line)
+            mfact(t,line,true);mfact(a.team,line,true);news(t,a.team,'embargo',line)
           end
           return {embargo=true}
         end
@@ -1251,7 +1259,7 @@ return function(api)
         if sf and f.is_chunk_charted and f.is_chunk_charted(sf,{x=math.floor(at.x/32),y=math.floor(at.y/32)}) then
           where=string.format('a wreck on %s at (%.1f,%.1f)',sf.name,at.x,at.y)
         end
-        fact(t,string.format('Shipment #%d lost: %s; %d coin %s; %d %s in %s. Call embargo {"team":"%s"} to stop new matches.',
+        mfact(t,string.format('Shipment #%d lost: %s; %d coin %s; %d %s in %s. Call embargo {"team":"%s"} to stop new matches.',
           tx.id,who,l.loss.coin,coin_outcome,l.count-l.delivered,l.item,where,t==p.a and p.b or p.a),true)
       end
       news(p.a,p.b,'shipment_loss',string.format('%s shipment from %s lost (%s, %s); %d coin %s; cargo in wreck on %s at (%.1f,%.1f)',
@@ -1342,7 +1350,7 @@ return function(api)
         if (event.name==d.on_pre_player_mined_item or event.name==d.on_robot_pre_mined or event.name==d.on_marked_for_deconstruction
           or event.name==d.on_player_driving_changed_state) and force and force.name==l.to then
           e.minable_flag=false;e.operable=false
-          fact(l.to,'Shipment custody is locked: wait for delivery; call market {}.',false);return
+          mfact(l.to,'Shipment custody is locked: wait for delivery; call market {}.',false);return
         end
         K.loss(p,tx,l,force and force.name,reason)
       end)
@@ -1397,7 +1405,7 @@ return function(api)
       local travel=tx.freight and '; shipment dispatched, payment on arrival' or ('; arrival in '..(config('transit_ticks')/60)..' seconds')
       local line=tx.price and string.format('%s sells %d %s to %s at %d',l.from,l.count,l.item,l.to,tx.price)..travel
         or string.format('%s swaps %d %s with %s',l.from,l.count,l.item,l.to)..travel
-      fact(p.a,line,true);fact(p.b,line,true)
+      mfact(p.a,line,true);mfact(p.b,line,true)
       news(p.a,p.b,'fill',line,tx.id)
     end
     local function fill(p,ask,bid)
@@ -1622,7 +1630,7 @@ return function(api)
         assert(actual==n,'coin spill incomplete: quarantined');rec.status='spilled'
       end)
       local line=(home and 'Home Trading Post' or ('Trading Post #'..post_id))..' destroyed: '..n..' coin spilled in the wreck; stocked goods are there too.'
-      fact(t,line,true);news(t,nil,'raid',t..' '..line)
+      mfact(t,line,true);news(t,nil,'raid',t..' '..line)
     end
     deposit=function(t,id)
       local i=inv(t,id);if not i then return end

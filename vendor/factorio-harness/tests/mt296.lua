@@ -4,6 +4,7 @@ local function eq(a,b,m) checks=checks+1;assert(a==b,(m or 'mismatch')..': '..to
 local function ok(v,m) checks=checks+1;assert(v,m) end
 local function refused(fn,msg) local fine,e=pcall(fn);ok(not fine,'expected refusal');ok(tostring(e):find(msg,1,true),tostring(e));return tostring(e) end
 local s,P,K,teamname,requestid,serial,made,spilled,forces,surface,news,facts
+local allfacts={}
 local function inventory()
  local i={items={},capacity=100000}
  i.get_item_count=function(q) return i.items[q.name..'@'..(q.quality or 'normal')] or 0 end
@@ -19,7 +20,7 @@ local function reload()
  roster=function(reader,other) return {{name=other..'1',display_name='Pilot '..other,model=other=='blue' and 'Grok 4.7' or 'Gemini 3.8 Flash'}} end,
  request_id=function() return requestid end,on_market=function(e) news[#news+1]=e end,
  as_team=function(t,fn) local prev=teamname;teamname=t;local r=fn();teamname=prev;return r end,
- fact=function(t,text) facts[#facts+1]={team=t,text=text} end};K=P.market
+ fact=function(t,text,wake,from) facts[#facts+1]={team=t,text=text,from=from};allfacts[#allfacts+1]=facts[#facts] end};K=P.market
 end
 local function reset(contact,coinage)
  defines={inventory={chest=1}};prototypes={item={}};forces={};made={};spilled={};news={};facts={};serial=0;requestid='initial';teamname='red'
@@ -331,4 +332,10 @@ reset(true,true);K.on_died{entity=s.mt.market.teams.red.post};chest,ci=carrier('
 surface.spill_item_stack=function() return {} end
 refused(function() K.on_died{entity=chest} end,'coin spill incomplete');ok(s.mt.market.fault)
 saved_reload();K.on_died{entity=chest};eq(ci.get_item_count{name='mt-coin'},0)
+-- (mt309 note-mt309-w) every market fact (Post notice, Coinage, fills, losses, embargoes, raids) comes from "market"
+local nm,np=0,0
+for _,f in ipairs(allfacts) do
+  if f.text:find('pact #',1,true) then eq(f.from,nil,f.text);np=np+1 else eq(f.from,'market',f.text);nm=nm+1 end
+end
+ok(nm>100 and np>=4,'market and pact facts both seen')
 print('mt290 money supply: '..checks..' total integrity assertions passed')

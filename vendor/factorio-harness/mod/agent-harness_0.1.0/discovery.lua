@@ -21,7 +21,7 @@ return function(api)
     local out={};local models=(api.state().mt or {}).roster or {}
     for _,b in ipairs(api.bots and api.bots() or {}) do if b.force==other then
       local p=api.profile and api.profile(b.index) or {}
-      out[#out+1]={name=b.name,display_name=p.display_name,model=models[b.name] and models[b.name].model}
+      out[#out+1]={name=b.name,team=other,display_name=p.display_name,model=models[b.name] and models[b.name].model}   -- (mt309 note-mt309-w) the team with the name: two teams may share a display name
     end end
     table.sort(out,function(a,b) return a.name<b.name end)
     return out
