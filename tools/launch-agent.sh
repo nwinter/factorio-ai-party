@@ -335,7 +335,8 @@ case $kind in
     pane=$(new_pane)
     # $claude_unset, $claude_vars and $claude_flags: tools/profile-flags.sh.
     # $sleepcap_run: shell and Python waits capped at 60 s (profile-flags.sh).
-    herdr pane run "$pane" "cd '$dir' && env $claude_unset $cenv $claude_vars '$sleepcap_run' /Users/owner/.local/bin/claude --model $model --effort $effort $claude_flags \"\$(cat '$prompt')\"" >/dev/null
+    # (note-mt309-x) $proxy_env: Claude Code's own traffic through the run's network gate (POG_PROXY), as agy and Codex
+    herdr pane run "$pane" "cd '$dir' && env $claude_unset $cenv $claude_vars $proxy_env '$sleepcap_run' /Users/owner/.local/bin/claude --model $model --effort $effort $claude_flags \"\$(cat '$prompt')\"" >/dev/null
     ;;
   codex)
     model=${6:-gpt-6-astra} effort=${7:-low}

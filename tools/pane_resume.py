@@ -279,15 +279,19 @@ class HerdrPanes:
         return out if rc == 0 else ""
 
     def prompt(self, pane, text):
-        """(how, ok, output): herdr agent prompt, else the text typed and Enter."""
+        """(how, ok, output): herdr agent prompt, else the text typed and Enter. output is the method that ran last
+        (note-mt309-x: the log read agent_not_found beside ok true); a failed agent prompt before the fallback is in
+        self.last_failed ("agent prompt: ERROR"), None when the first method worked."""
+        self.last_failed = None
         rc, out = self._run("agent", "prompt", pane, text)
         if rc == 0:
             return "agent prompt", True, out[:160]
+        self.last_failed = "agent prompt: " + out[:120]
         rc, out2 = self._run("pane", "send-text", pane, text)
         if rc == 0:
             time.sleep(0.5)
             rc, out2 = self._run("pane", "send-keys", pane, "enter")
-        return "pane send-text", rc == 0, (out[:80] + " | " + out2[:80]).strip(" |")
+        return "pane send-text", rc == 0, out2[:160]
 
     def keys(self, pane, *keys):
         rc, out = self._run("pane", "send-keys", pane, *keys)

@@ -112,7 +112,8 @@ def claude():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     src = open(os.path.join(ROOT, "tools", "launch-agent.sh")).read()
-    assert "$claude_vars '$sleepcap_run' /Users/owner/.local/bin/claude" in src
+    # (note-mt309-x) $proxy_env between them: Claude Code's own traffic through the run's netgate
+    assert "$claude_vars $proxy_env '$sleepcap_run' /Users/owner/.local/bin/claude" in src
     context, cap = src.index('tools/context.py" setup claude'), src.index('tools/sleepcap/setup.py" claude')
     assert context < cap, "the hook goes in after context.py writes the hooks"
     print("claude: ok (pane command under run; SessionStart hook through CLAUDE_ENV_FILE)")

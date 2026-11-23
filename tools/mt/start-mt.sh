@@ -171,7 +171,9 @@ import sys
 for line in open(sys.argv[1]):
     if line.strip() and not line.startswith('#'):
         f=line.split('\t')
-        assert f[2] in ('agy','grok','muse') and f[3] in ('agy','grok','muse','-'), 'unapproved full-run route'
+        # (note-mt309-x) Codex (POG Codex home) and Claude (personal or account C) too; never a account B route
+        routes={'agy':('agy','-'),'grok':('grok','-'),'muse':('muse','-'),'codex':('codex',),'claude':('claude','claude-c')}
+        assert f[3] not in ('claude-b','codex-b','gsopenrouter') and f[3] in routes.get(f[2],()), 'unapproved full-run route'
 PY
 fi
 log "mt run $run, $minutes min, teams $(echo $teams) from $teams_file; code $(git rev-parse --short HEAD)$(git diff --quiet HEAD -- tools agent vendor 2>/dev/null || echo ' plus uncommitted changes')"

@@ -355,9 +355,12 @@ def wiring():
     hp._run = run
     pr.time.sleep, sleep = (lambda s: None), pr.time.sleep
     try:
-        how, ok, _ = hp.prompt("w2Y:pWM", "hello")
+        how, ok, detail = hp.prompt("w2Y:pWM", "hello")
     finally:
         pr.time.sleep = sleep
+    # (note-mt309-x) the detail is the method that worked; the refused agent prompt is kept apart
+    check("not an active named agent" not in detail and hp.last_failed.startswith("agent prompt: ")
+          and "not an active named agent" in hp.last_failed, "the fallback's log keeps only what worked")
     check(how == "pane send-text" and ok and [c[:2] for c in calls] == [("agent", "prompt"), ("pane", "send-text"),
                                                                          ("pane", "send-keys")]
           and calls[-1][-1] == "enter", "herdr refuses Muse's pane as an agent: send-text, then enter")

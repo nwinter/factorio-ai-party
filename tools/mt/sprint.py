@@ -496,7 +496,8 @@ def idle_prompts(op, state, panes=None, now=None):
         if not why:
             continue
         how, ok, detail = panes.prompt(pane, SPRINT_NUDGE)
-        row = dict(at=now, why=why, quiet_s=round(quiet), how=how, ok=ok, detail=detail[:120])
+        row = dict(at=now, why=why, quiet_s=round(quiet), how=how, ok=ok, detail=detail[:120],
+                   first_failed=(lambda v: v if isinstance(v, str) else None)(getattr(panes, 'last_failed', None)))   # (note-mt309-x) the attempt before the one that worked
         log.setdefault(r['arm'], []).append(row)
         with (op/'idle-prompts.jsonl').open('a') as f:
             f.write(json.dumps(dict(arm=r['arm'], **row)) + '\n')
