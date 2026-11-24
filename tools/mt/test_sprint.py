@@ -259,6 +259,30 @@ class CodexHome(unittest.TestCase):
             self.assertIn(f'(subpath "{home/".codex"}")', prof)      # the owner's Codex home stays denied
 
 
+    def test_scope_for_a_team_agy_home(self):
+        # (note-mt309-y) a team agy home: no keychain, the owner's agy folders closed after the allows, no browser
+        import importlib.util, os
+        spec = importlib.util.spec_from_file_location('agent_scope', Path(__file__).resolve().parents[1]/'agent-scope.py')
+        m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+        with tempfile.TemporaryDirectory() as t:
+            home = Path(t); team = home/'.pog-agy'/'green'
+            prof = m.profile(home/'tree', home, None, None, None, False, team)
+            self.assertIn(str(team.resolve()), prof)
+            gem = f'(deny file-read* file-write* (subpath "{home/".gemini"}"))'
+            self.assertIn(gem, prof); self.assertGreater(prof.index(gem), prof.index(str(team.resolve())))
+            self.assertIn('(global-name "com.apple.SecurityServer")', prof)
+            self.assertIn('(deny process-exec (literal "/usr/bin/open"))', prof)
+            plain = m.profile(home/'tree', home, None, None, None, True)
+            self.assertNotIn(gem, plain); self.assertNotIn('com.apple.SecurityServer', plain)
+        old = os.environ.get('POG_AGY_HOME')
+        try:
+            os.environ.pop('POG_AGY_HOME', None); self.assertIsNone(m.agy_home())
+            os.environ['POG_AGY_HOME'] = '/tmp/x'; self.assertEqual(m.agy_home(), Path('/tmp/x').resolve())
+        finally:
+            os.environ.pop('POG_AGY_HOME', None)
+            if old is not None:
+                os.environ['POG_AGY_HOME'] = old
+
 class TrustPrompt(unittest.TestCase):
     def test_enter_only_once_yes_is_highlighted(self):
         # (s1r1c) a "down" that lands late must not let Enter answer Claude Code's "No, exit"
@@ -435,6 +459,53 @@ class Stage2(unittest.TestCase):
         self.assertEqual({x['toward'] for x in T['green']['field']}, {'yellow', 'blue'})
         self.assertEqual(p['clear_ore'], ['iron-ore', 'copper-ore', 'crude-oil'])
 
+    def test_agy_neon_meter(self):
+        # (note-mt309-y) Neon's Gemini week from output tokens; other Gemini models stay uncalibrated
+        tok = dict(input=5_000_000, cache_read=4_000_000, cache_write=0, output=1_000_000)
+        m = sprint.meter('agy', '-', 'gemini-4-neon-medium', tok)
+        self.assertEqual(m['pct'], {'gemini_weekly': 6.76}); self.assertEqual(m['pct_range'], [5.75, 8.05])
+        self.assertIsNone(sprint.meter('agy', '-', 'gemini-4-hydrogen-medium', tok)['pct'])
+
+    def test_ct2_plans(self):
+        # (note-mt309-y) ct2: starts CT2_D apart, the corridor design unchanged, each corridor's cleared ground short
+        # of the shared sites; the shortage build changes one field per team, so each lacks an ore a neighbour holds
+        import math, stage2_save as S
+        plans = {}
+        for m in ('contact', 'ct2', 'ct2-shortage'):
+            S.MAP = m
+            try:
+                plans[m] = S.plan(); lay = json.loads(S.LAYOUTS[m].read_text())
+            finally:
+                S.MAP = 'stage2'
+            if m != 'contact':
+                self.assertEqual(lay['distance'], S.CT2_D)
+        base, short = plans['ct2']['teams'], plans['ct2-shortage']['teams']
+        lay = json.loads(S.LAYOUTS['ct2'].read_text())
+        sites = [(si['x'] + q['dx'], si['y'] + q['dy'], q.get('r', 3)) for si in lay['place_sites'] for q in si['patches']]
+        for n, t in base.items():
+            for b, d in t['distances'].items():
+                self.assertEqual((d['nest_gap'], d['field'] - d['nest']), (S.CONTACT_NEST_GAP, S.CONTACT_FIELD_PAST))
+                self.assertLessEqual(d['corridor_end'], d['field'] + 18 + 30)
+            for f in t['field']:      # 10+ tiles between a corridor field and any shared-site patch
+                self.assertGreater(min(math.dist(f['at'], (x, y)) - r for x, y, r in sites) - f['r'], 10)
+            for c in t['corridors']:
+                b = math.radians(c['bearing'] + 180)
+                self.assertLessEqual(-c['u2'], S.site_edge(t['spawn'], b, c['half']) - S.CONTACT_SITE_GAP)
+            self.assertNotIn('lacks', t)
+        for n, t in plans['contact']['teams'].items():   # ct1's map: the corridors as built
+            for c, f in zip(t['corridors'], t['field']):
+                self.assertEqual(-c['u2'], round(t['distances'][f['toward']]['field'] + f['r'] + 30))
+        ores = lambda t: {f['name'] for f in t['field']}
+        for n, t in short.items():
+            self.assertEqual(len(t['lacks']), 1); self.assertNotIn(t['lacks'][0], ores(t))
+            self.assertTrue(any(t['lacks'][0] in ores(short[o]) for o in {f['toward'] for f in t['field']}))
+            self.assertEqual([(f['r'], f['amount'], f['at']) for f in t['field']], [(f['r'], f['amount'], f['at']) for f in base[n]['field']])
+            self.assertEqual(sum(f['name'] != g['name'] for f, g in zip(t['field'], base[n]['field'])), 1)
+        self.assertEqual({n: t['lacks'] for n, t in short.items()}, {'green': ['copper-ore'], 'yellow': ['iron-ore'], 'blue': ['copper-ore']})
+        p = plans['ct2-shortage']
+        self.assertEqual(p['shortage_clear_r'], S.SHORTAGE_CLEAR_R); self.assertEqual(len(p['keep_ore']), len(sites) + 6)
+        self.assertNotIn('shortage_clear_r', plans['ct2'])
+
     def test_plan_is_the_same_at_every_spawn(self):
         import math, stage2_save as S
         p = S.plan()
@@ -490,7 +561,7 @@ class Stage2(unittest.TestCase):
             woke = []; real_wake, real_run = sprint.wake, sprint.subprocess.run
             class R: pass
             def fake(cmd, **kw):
-                self.assertEqual(cmd[2:5], ['--map', 'contact', 'measure']); r = R(); r.stdout = json.dumps(rows[fake.i]); fake.i += 1; return r
+                self.assertEqual(cmd[2:5], ['--map', state['save'], 'measure']); r = R(); r.stdout = json.dumps(rows[fake.i]); fake.i += 1; return r
             fake.i = 0
             sprint.wake, sprint.subprocess.run = woke.append, fake
             try:

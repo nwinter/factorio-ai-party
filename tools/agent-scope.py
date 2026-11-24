@@ -22,7 +22,13 @@ def codex_home(home=None):
     shared with the owner's other work), its config and the sessions of the current run only."""
     return Path(os.environ.get('POG_CODEX_HOME') or Path(home or Path.home())/'.pog-codex'/'home')
 
-def profile(root,home,proxy=None,native=None,codex=None,keychain=True):
+def agy_home():
+    """(note-mt309-y) A team's own agy home (POG_AGY_HOME): agy's HOME, app data and Gemini folders, its sign-in kept
+    there in a file; the scope then has no keychain."""
+    v=os.environ.get('POG_AGY_HOME')
+    return Path(v).resolve() if v else None
+
+def profile(root,home,proxy=None,native=None,codex=None,keychain=True,team_agy=None):
     quote=json.dumps
     protected=[home/'code',home/'Dropbox',home/'Dropbox (Personal)']
     clauses=['(version 1)','(allow default)','(deny process-info*)','(allow process-info* (target self))',
@@ -33,7 +39,7 @@ def profile(root,home,proxy=None,native=None,codex=None,keychain=True):
     installs=[root,home/'.local/bin',home/'.local/lib',home/'.nvm',home/'.grok/bin',home/'.grok/auth.json',
               home/'.gemini/config/projects',
               home/'.gemini/antigravity-cli',home/'.cache/antigravity',*([home/'Library/Keychains'] if keychain else []),
-              home/'Dropbox (Personal)/misc/env/agents']+([codex] if codex else [])
+              home/'Dropbox (Personal)/misc/env/agents']+([codex] if codex else [])+([team_agy] if team_agy else [])
     allowed=' '.join(f'(subpath {quote(str(p.resolve()))})' for p in installs)
     clauses.append(f'(deny file-read-data file-write* (require-all (subpath {quote(str(home))}) (require-not (require-any {allowed}))))')
     for path in protected:
@@ -93,6 +99,11 @@ def profile(root,home,proxy=None,native=None,codex=None,keychain=True):
         clauses.append(f'(deny file-read-data file-write* (subpath {quote(str(agy/part))}))')
     for part in ('cli.log','cli.log.tmp','log','crashes'):
         clauses.append(f'(deny file-read-data (subpath {quote(str(agy/part))}))')
+    if team_agy:
+        # (note-mt309-y) a team agy home: the owner's agy folders are closed (last match wins) and no browser is opened
+        for part in ('.gemini','.cache/antigravity'):
+            clauses.append(f'(deny file-read* file-write* (subpath {quote(str(home/part))}))')
+        clauses.append('(deny process-exec (literal "/usr/bin/open"))')
     clauses.extend(['(deny network-outbound)',
                     f'(allow network-outbound (remote unix-socket (subpath {quote(str(root))})))'])
     if native:clauses.append(f'(allow network-outbound (remote unix-socket (subpath {quote(str(native))})))')
@@ -141,10 +152,15 @@ def main():
     assert (root/'.launch-tree').is_file() and command,'expected a prepared project tree and command'
     name=Path(command[0]).name
     codex=codex_home() if '.codex' in name else None
+    agy=agy_home() if '.agy' in name else None
     env=native_environment(environment(os.environ),Path(command[0]).parent,Path.home(),muse='.muse' in name,codex=codex)
+    if agy:
+        (agy/'home').mkdir(exist_ok=True,mode=0o700)    # agy's ~/.gemini resolves inside the team home
+        env.update(HOME=str(agy/'home'),ANTIGRAVITY_APP_DATA_DIR=str(agy/'app'),ANTIGRAVITY_GEMINI_DIR=str(agy/'home/.gemini'),
+                   AGY_CLI_DISABLE_AUTO_UPDATE='1')
     policy=Path(command[0]).parent/'.scope.sb'
-    keychain=any(k in name for k in ('.agy','.muse'))   # their own logins need it (note-mt309-i)
-    policy.write_text(profile(root,Path.home(),proxy,Path(env['XDG_DATA_HOME']).parent,codex,keychain))
+    keychain=any(k in name for k in ('.agy','.muse')) and not agy   # their own logins need it (note-mt309-i)
+    policy.write_text(profile(root,Path.home(),proxy,Path(env['XDG_DATA_HOME']).parent,codex,keychain,agy))
     os.execve('/usr/bin/sandbox-exec',['sandbox-exec','-f',str(policy),*command],env)
 
 if __name__=='__main__':main()
