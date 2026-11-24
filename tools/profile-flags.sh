@@ -6,7 +6,8 @@
 # and no git status and recent commits (CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS, same as includeGitInstructions false).
 # Two parts because env stops reading -u options at the first assignment: env $claude_unset [ROUTE WORDS] $claude_vars.
 claude_unset="-u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_BASE_URL -u CLAUDE_CODE_USE_BEDROCK -u CLAUDE_CODE_USE_VERTEX -u CLAUDE_CODE_USE_FOUNDRY -u CLAUDE_CODE_SESSION_ID -u CLAUDECODE"
-claude_vars="ENABLE_CLAUDEAI_MCP_SERVERS=false CLAUDE_CODE_ENABLE_CFC=false CLAUDE_CODE_SILENT_TURN_REMINDER=0 CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS=1"
+# CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1: no telemetry, error reports or update checks; only the API and its OAuth.
+claude_vars="ENABLE_CLAUDEAI_MCP_SERVERS=false CLAUDE_CODE_ENABLE_CFC=false CLAUDE_CODE_SILENT_TURN_REMINDER=0 CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1"
 # --setting-sources project,local: the route's user settings.json (hooks such as peon-ping, plugins, effort) stays out;
 # login lives outside settings. --tools: only the tools the game uses (also shrinks the post-compaction floor);
 # POG_FULL_TOOLS=1 adds subagents, web search and fetch and the background-job tools (tools/full_tools.py allows them).

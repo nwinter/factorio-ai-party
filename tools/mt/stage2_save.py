@@ -7,6 +7,8 @@ spawn (task-mt309 Stage 2; layout in report-mt309 section 6b).
   stage2_save.py check                 read back each spawn: base output, power, nest, field, research
   stage2_save.py measure               the Stage 2 measures per force (nest left, second-field drills, losses)
   stage2_save.py --map contact ...      (note-mt309-t) the same on the three-team contact map (layout below)
+  stage2_save.py --map ct2 ...          (note-mt309-y) the contact map's design with the starts CT2_D apart
+  stage2_save.py --map ct2-shortage ... the same, with each team's corridor fields short of one ore (SHORTAGE)
 
 The contact map (note-mt309-t: Astra low, Opus high and Neon on one map where they can meet). mt_map.py's layout
 (three starts CONTACT_D apart, each team's own patches toward the middle, the shared sites at each pair's midpoint
@@ -37,7 +39,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT/'tools'), str(ROOT/'tools/stream'), str(ROOT/'tools/mt')]
-LAYOUTS = {'stage2': ROOT/'docs/reports/mt307/data/map/layout.json', 'contact': ROOT/'docs/reports/mt309/data/contact/layout.json'}
+LAYOUTS = {'stage2': ROOT/'docs/reports/mt307/data/map/layout.json', 'contact': ROOT/'docs/reports/mt309/data/contact/layout.json',
+           'ct2': ROOT/'docs/reports/mt309/data/ct2/layout.json', 'ct2-shortage': ROOT/'docs/reports/mt309/data/ct2/layout.json'}
+CONTACT_MAPS = ('contact', 'ct2', 'ct2-shortage')
 MAP = 'stage2'          # main --map
 TEAMS = ('green', 'yellow', 'blue')
 
@@ -67,6 +71,7 @@ CLEAR_ORE = ('iron-ore', 'copper-ore')   # removed within CLEAR_ENEMIES of each 
 # base, data/contact/base-footprint.json, the same at every spawn); its worms 9 tiles nearer (Stage 2's far spawns:
 # nearest building 112-115 from the nearest enemy). The field lies CONTACT_FIELD_PAST beyond the nest (Stage 2: 120).
 CONTACT_D = 900
+CT2_D = 750         # (note-mt309-y) ct2: the nearest spacing at which a corridor field stays 10+ tiles from a shared site
 CONTACT_NEST_GAP = 122
 CONTACT_FIELD_PAST = 121
 FOOTPRINT = ROOT/'docs/reports/mt309/data/contact/base-footprint.json'
@@ -74,6 +79,15 @@ CONTACT_FIELDS = {'next': ('iron-ore', 18, 1500000), 'prev': ('copper-ore', 16, 
 CONTACT_SPAWNERS = (('biter-spawner', 0, -4), ('spitter-spawner', 0, 4))      # along the bearing, to its side
 CONTACT_WORMS = (('small-worm-turret', -9, -6), ('medium-worm-turret', -9, 6))  # along < 0 faces the base
 CONTACT_CLEAR_ORE = (220, ('iron-ore', 'copper-ore', 'crude-oil'))  # the start's own patches (shared sites: 390+)
+# (note-mt309-y) a corridor's cleared ground ends this far short of the nearest shared-site patch on its line
+CONTACT_SITE_GAP = 4
+# (note-mt309-y) the shortage build: one corridor field per team changes ore and keeps its size and amount, so each
+# team's own fields lack one ore that a neighbour's fields hold. Green and blue have two iron fields and no copper
+# field; yellow has two copper fields and no iron field. (team, side): ore
+SHORTAGE = {'ct2-shortage': {('green', 'prev'): 'iron-ore', ('yellow', 'next'): 'copper-ore', ('blue', 'prev'): 'iron-ore'}}
+# and natural ore of the kind a team lacks goes within this many tiles of its spawn (shared sites, placed fields and
+# the base's own ore cells stay)
+SHORTAGE_CLEAR_R = 600
 
 
 def teams():
@@ -163,9 +177,22 @@ def at_gap(spawn, ang, gap):
     return (lo + hi) / 2
 
 
+def site_edge(spawn, ang, half):
+    """How far along bearing ang from spawn the nearest shared-site patch tile lies, among the patches within half
+    (plus their radius) of the line; inf if none."""
+    lay = json.loads(LAYOUTS[MAP].read_text()); best = math.inf
+    for site in lay.get('place_sites', []):
+        for q in site['patches']:
+            dx, dy = site['x'] + q['dx'] - spawn[0], site['y'] + q['dy'] - spawn[1]; r = q.get('r', 3)
+            u, v = dx*math.cos(ang) + dy*math.sin(ang), -dx*math.sin(ang) + dy*math.cos(ang)
+            if u > 0 and abs(v) <= half + r:
+                best = min(best, u - r)
+    return best
+
+
 def contact_plan():
     """(note-mt309-t) Each team's two corridors: toward the next team (iron) and the previous one (copper)."""
-    ts = teams(); order = [n for n in TEAMS if n in ts]; out = {}
+    ts = teams(); order = [n for n in TEAMS if n in ts]; out = {}; short = SHORTAGE.get(MAP, {})
     for i, name in enumerate(order):
         s = ts[name]['spawn']; nests, fields, spawners, worms, corridors, dist = [], [], [], [], [], {}
         for side, other in (('next', order[(i + 1) % len(order)]), ('prev', order[(i - 1) % len(order)])):
@@ -176,24 +203,36 @@ def contact_plan():
             spawners += [(n, *pt(na + du, dv)) for n, du, dv in CONTACT_SPAWNERS]
             worms += [(n, *pt(na + du, dv)) for n, du, dv in CONTACT_WORMS]
             ore, r, amount = CONTACT_FIELDS[side]
+            ore = short.get((name, side), ore)
             fields.append(dict(name=ore, r=r, amount=amount, at=pt(fa, 0), toward=other))
-            # LUA_CORRIDOR's frame: u along the bearing given, the corridor at negative u
-            corridors.append(dict(u1=-50, u2=-round(fa + r + 30), half=70, bearing=deg + 180, toward=other))
-            dist[other] = dict(bearing=round(deg, 1), nest=round(na), field=round(fa), ore=ore,
+            # LUA_CORRIDOR's frame: u along the bearing given, the corridor at negative u; it stops short of a shared site
+            end = min(fa + r + 30, site_edge(s, ang, 70) - CONTACT_SITE_GAP)
+            corridors.append(dict(u1=-50, u2=-round(end), half=70, bearing=deg + 180, toward=other))
+            dist[other] = dict(bearing=round(deg, 1), nest=round(na), field=round(fa), ore=ore, corridor_end=round(end),
                                nest_gap=round(building_gap(s, *nest)), field_gap=round(building_gap(s, *pt(fa, 0))))
         out[name] = dict(spawn=s, bearing=ts[name]['bearing'], nest=nests[0], nests=nests, spawners=spawners, worms=worms,
                          field=fields, corridors=corridors, corridor=corridors[0], distances=dist)
+        if short:
+            out[name]['lacks'] = sorted({v[0] for v in CONTACT_FIELDS.values()} - {f['name'] for f in fields})
     return out
+
+
+def keep_ore():
+    """The ore circles a shortage clear leaves: every shared-site patch and every placed corridor field."""
+    lay = json.loads(LAYOUTS[MAP].read_text())
+    out = [dict(at=(si['x'] + q['dx'], si['y'] + q['dy']), r=q.get('r', 3) + 2) for si in lay.get('place_sites', []) for q in si['patches']]
+    return out + [dict(at=f['at'], r=f['r'] + 2) for t in contact_plan().values() for f in t['field']]
 
 
 def plan():
     ents, ores = base_entities()
     out = {}
-    if MAP == 'contact':
+    if MAP in CONTACT_MAPS:
         return dict(teams=contact_plan(), base=dict(entities=ents, ores=ores, box=BASE_BOX, power=(POWER_X, POWER_Y), kit=KIT,
                                                     ore_per_tile=ORE_PER_TILE),
                     research=RESEARCH, evolution=EVOLUTION, clear_enemies=CLEAR_ENEMIES, nest_r=NEST_R,
-                    clear_ore=list(CONTACT_CLEAR_ORE[1]), clear_ore_r=CONTACT_CLEAR_ORE[0], map='contact')
+                    clear_ore=list(CONTACT_CLEAR_ORE[1]), clear_ore_r=CONTACT_CLEAR_ORE[0], map='contact', name=MAP,
+                    **(dict(shortage_clear_r=SHORTAGE_CLEAR_R, keep_ore=keep_ore()) if SHORTAGE.get(MAP) else {}))
     for name, t in teams().items():
         s, b = t['spawn'], t['bearing']
         field = [local(s, b, FIELD_U, dv) for *_, dv in FIELD]
@@ -243,6 +282,23 @@ for name,t in pairs(P.teams) do
   local o,ot=0,0
   for _,e in pairs(s.find_entities_filtered{position={t.spawn[1],t.spawn[2]},radius=P.clear_ore_r,name=P.clear_ore}) do o=o+e.amount; ot=ot+1; e.destroy() end
   out[name]={enemies_removed=n,ore_removed=o,ore_tiles_removed=ot}
+end
+rcon.print(helpers.table_to_json(out))
+'''
+
+LUA_SHORTAGE = r'''
+local P=helpers.json_to_table(%(spec)s); local s=game.surfaces.nauvis; local out={}
+local B=P.base.box
+for name,t in pairs(P.teams) do
+  local o,ot=0,0
+  for _,e in pairs(s.find_entities_filtered{position={t.spawn[1],t.spawn[2]},radius=P.shortage_clear_r,name=t.lacks}) do
+    local p=e.position; local keep=false
+    for _,u in pairs(P.teams) do local ox,oy=math.floor(u.spawn[1]),math.floor(u.spawn[2])
+      if p.x>=ox+B[1] and p.x<=ox+B[3] and p.y>=oy+B[2] and p.y<=oy+B[4] then keep=true end end
+    for _,k in ipairs(P.keep_ore) do if (p.x-k.at[1])^2+(p.y-k.at[2])^2<=k.r*k.r then keep=true; break end end
+    if not keep then o=o+e.amount; ot=ot+1; e.destroy() end
+  end
+  out[name]={lacks=t.lacks,ore_removed=o,ore_tiles_removed=ot}
 end
 rcon.print(helpers.table_to_json(out))
 '''
@@ -439,7 +495,7 @@ for name,t in pairs(P.teams) do
     local near=s.find_entities_filtered{position=nst,radius=200,force=name}; local gap=nil
     for _,e in ipairs(near) do local d=math.sqrt((e.position.x-nst[1])^2+(e.position.y-nst[2])^2); if not gap or d<gap then gap=d end end
     r.nest_spawners=r.nest_spawners+sp; r.nest_worms=r.nest_worms+wm; r.nests[#r.nests+1]={spawners=sp,worms=wm,nearest_building=gap and math.floor(gap+0.5)} end
-  r.field={}; for _,fl in ipairs(t.field) do r.field[fl.name]=s.count_entities_filtered{position=fl.at,radius=fl.r+1,name=fl.name} end
+  r.field={}; for _,fl in ipairs(t.field) do r.field[fl.name]=(r.field[fl.name] or 0)+s.count_entities_filtered{position=fl.at,radius=fl.r+1,name=fl.name} end
   local n=0; for _,tech in pairs(game.forces[name].technologies) do if tech.researched then n=n+1 end end; r.researched=n
   local fo=game.forces[name]; local cp=function(x,y) return fo.is_chunk_charted(s,{math.floor(x/32),math.floor(y/32)}) end
   local cn=true; for _,nst in ipairs(t.nests) do cn=cn and cp(nst[1],nst[2]) end
@@ -515,6 +571,8 @@ def build():
         else:
             res[name] = dict(corridor=run_lua(r, LUA_CORRIDOR, one), place=run_lua(r, LUA_PLACE, one))
         res[name].update(base=run_lua(r, LUA_BASE, one), power=run_lua(r, LUA_POWER, one), kit=run_lua(r, LUA_KIT, one))
+    if p.get('shortage_clear_r'):     # after every field is placed: natural ore of each team's missing kind near it
+        res['shortage'] = run_lua(r, LUA_SHORTAGE, p)
     print(json.dumps(res, indent=1))
     return res
 
@@ -541,7 +599,7 @@ def main(argv=None):
         build()
     elif a.cmd in ('check', 'measure'):
         r = rcon(); out = run_lua(r, LUA_CHECK if a.cmd == 'check' else LUA_MEASURE, plan())
-        if MAP == 'contact' and a.cmd == 'measure':
+        if MAP in CONTACT_MAPS and a.cmd == 'measure':
             # (note-mt309-t) the harness's first contacts (chart, shot) and losses by killer, from its own storage
             # (note-mt309-u) and Post raids (the market's spill records), shipments made, and a harness fault
             got = r.command('/silent-command __agent-harness__ local h=storage.agent_harness local m=h.mt or {} '

@@ -35,7 +35,10 @@ STAGE2_SAVE = ROOT/'docs/reports/mt309/data/stage2-ready.zip'
 STAGE2_SPAWN = dict(green='near', yellow='far', blue='far')   # nearest base building to its nest: 90, 115, 112 tiles
 # (note-mt309-t) the three-team contact map (stage2_save.py --map contact): every nest 122 tiles from its base
 CONTACT_SAVE = ROOT/'docs/reports/mt309/data/contact-ready.zip'
-SAVES = {'stage2': STAGE2_SAVE, 'contact': CONTACT_SAVE}
+# (note-mt309-y) ct2's two builds: starts 750 apart, and the same with each team's corridor fields short of one ore
+SAVES = {'stage2': STAGE2_SAVE, 'contact': CONTACT_SAVE, 'ct2': ROOT/'docs/reports/mt309/data/ct2-ready.zip',
+         'ct2-shortage': ROOT/'docs/reports/mt309/data/ct2-shortage-ready.zip'}
+CONTACT_SAVES = ('contact', 'ct2', 'ct2-shortage')     # stage2_save.py --map names the same maps
 CONTACT_MINUTES = 240
 FORBIDDEN_ROUTES = ('claude-b', 'codex-b', 'gsopenrouter')
 ROUTE_HOME = {'claude': '~/.claude-profiles/personal', 'claude-c': '~/.claude-profiles/account-c', 'codex': '~/.codex'}
@@ -617,7 +620,7 @@ def cmd_run(a):
     check_roster(roster)
     assert all(r['route'] not in FORBIDDEN_ROUTES for r in roster), 'account B route refused'
     assert sum(r['kind'] == 'agy' and 'gemini-4' in r['model'] for r in roster) <= 1, 'at most one Gemini 4 arm a run'
-    bound = CONTACT_MINUTES if a.save == 'contact' else 120
+    bound = CONTACT_MINUTES if a.save in CONTACT_SAVES else 120
     assert a.minutes <= bound, f'sprints are bounded to {bound} minutes (Stage 2: two hours; the contact test four; launch.py --max-minutes)'
     # Paused start: the world waits while the agents launch, and the sprint begins for all of them at once.
     route = rcon_route()
@@ -703,8 +706,8 @@ def stage2_measure(op, env, state=None):
     ends a sprint. (note-mt309-t) On the contact map the reading also holds the harness's first contacts (chart and
     shot, per ordered pair) and each team's losses by killer; each pair's first contact is woken once."""
     try:
-        cmap = (state or {}).get('save') == 'contact'
-        r = subprocess.run([sys.executable, str(ROOT/'tools/mt/stage2_save.py'), *(['--map', 'contact'] if cmap else []), 'measure'],
+        cmap = (state or {}).get('save') in CONTACT_SAVES
+        r = subprocess.run([sys.executable, str(ROOT/'tools/mt/stage2_save.py'), *(['--map', state['save']] if cmap else []), 'measure'],
                            env=env, capture_output=True, text=True, timeout=60)
         row = dict(json.loads(r.stdout), at=time.time())
         with (op/'stage2.jsonl').open('a') as f:
@@ -782,11 +785,11 @@ def stage2_summary(op, state, path=None):
         # (note-mt309-t) the contact map: each of the team's two nests, and the losses by killer at the end
         nests = [next((mins(r) for r, m in mine if (m.get('nests') or [[1]] * (k + 1))[k][0] == 0), None)
                  for k in range(len(last.get('nests') or []))]
-        if state.get('save') == 'contact':
+        if state.get('save') in CONTACT_SAVES:
             out.setdefault('_contacts', {k: round((v - state['start_tick']) / 3600, 1) for k, v in (rows[-1].get('first') or {}).items()}
                            if rows else {})
             out.setdefault('_losses', (rows[-1].get('losses') or {}) if rows else {})
-        out[arm] = dict(team=team, spawn=STAGE2_SPAWN.get(team) if state.get('save') != 'contact' else 'contact',
+        out[arm] = dict(team=team, spawn=STAGE2_SPAWN.get(team) if state.get('save') not in CONTACT_SAVES else state['save'],
                         first_attack_min=attacked, nest_cleared_min=cleared, nests_cleared_min=nests or None, second_field_min=mining,
                         field_drills_peak=max(drills, default=None), field_drill_min=round(drill_min, 1),
                         field_drills_end=drills[-1] if drills else None, spawners_left=last.get('spawners'),
@@ -862,7 +865,7 @@ def main(argv=None):
     q = sub.add_parser('burn'); q.add_argument('run')
     q = sub.add_parser('run'); q.add_argument('run'); q.add_argument('roster'); q.add_argument('minutes', type=int)
     q.add_argument('--execute', action='store_true')
-    q.add_argument('--save', choices=['r307', 'stage2', 'contact'], default='r307')
+    q.add_argument('--save', choices=['r307', 'stage2', *CONTACT_SAVES], default='r307')
     q.add_argument('--market', choices=['save', 'full'], default='save', help='full: mt_market profile full at the start')
     q.add_argument('--nudge-s', type=int, default=NUDGE_S, help='seconds after a turn ends before the idle prompt')
     q = sub.add_parser('resume'); q.add_argument('run')
