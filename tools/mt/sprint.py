@@ -230,6 +230,12 @@ def meter(kind, route, model, tok):
         pct = (unc + tok['output']) / 1e6 * CAL['codex']['weekly_pct_per_mtok']
         return dict(pct={'weekly': round(pct, 3)}, plan_usd=week_usd and round(pct / 100 * week_usd, 3),
                     plan_usd_if={str(u): round(pct / 100 * u / CAL['weeks_per_month'], 3) for u in plan.get('usd_month_if', [])})
+    fit = CAL.get('agy', {}).get('weekly_pct_per_m_output', {})
+    key = next((k for k in fit if kind == 'agy' and model.startswith(k)), None)
+    if key:      # (note-mt309-y) agy's Gemini week from output tokens (Neon's fit)
+        lo, hi = CAL['agy']['weekly_pct_per_m_output_range'][key]
+        return dict(pct={'gemini_weekly': round(tok['output'] / 1e6 * fit[key], 3)},
+                    pct_range=[round(tok['output'] / 1e6 * lo, 3), round(tok['output'] / 1e6 * hi, 3)])
     return dict(pct=None, note='no token calibration for this CLI yet: use the account window deltas (ai-usage history)')
 
 

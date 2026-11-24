@@ -23,6 +23,8 @@
     "weekly_pct_per_mtok": 1.65,
     "weekly_pct_per_mtok_range": [1.3, 2.6]
   },
+  "agy": {"how": "percent of agy's Gemini week per million output tokens, Gemini 4 Neon only (note-mt309-y; docs/reports/mt309/calibration/fit_agy.py: ct1, s1r1d, s2b, s2d, whole-percent readings); input and calls fit worse",
+          "weekly_pct_per_m_output": {"gemini-4-neon": 6.76}, "weekly_pct_per_m_output_range": {"gemini-4-neon": [5.75, 8.05]}},
   "per_seat_hour_priors": {
     "how": "measured percent of each window per agent-hour of a whole account, used where no token calibration exists",
     "agy_gemini_3.8_flash_high": {"gemini_weekly": 1.59, "gemini_5h": 6.2, "source": "r307 (2 agents, 12 h)"},

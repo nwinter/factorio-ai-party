@@ -259,6 +259,30 @@ class CodexHome(unittest.TestCase):
             self.assertIn(f'(subpath "{home/".codex"}")', prof)      # the owner's Codex home stays denied
 
 
+    def test_scope_for_a_team_agy_home(self):
+        # (note-mt309-y) a team agy home: no keychain, the owner's agy folders closed after the allows, no browser
+        import importlib.util, os
+        spec = importlib.util.spec_from_file_location('agent_scope', Path(__file__).resolve().parents[1]/'agent-scope.py')
+        m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+        with tempfile.TemporaryDirectory() as t:
+            home = Path(t); team = home/'.pog-agy'/'green'
+            prof = m.profile(home/'tree', home, None, None, None, False, team)
+            self.assertIn(str(team.resolve()), prof)
+            gem = f'(deny file-read* file-write* (subpath "{home/".gemini"}"))'
+            self.assertIn(gem, prof); self.assertGreater(prof.index(gem), prof.index(str(team.resolve())))
+            self.assertIn('(global-name "com.apple.SecurityServer")', prof)
+            self.assertIn('(deny process-exec (literal "/usr/bin/open"))', prof)
+            plain = m.profile(home/'tree', home, None, None, None, True)
+            self.assertNotIn(gem, plain); self.assertNotIn('com.apple.SecurityServer', plain)
+        old = os.environ.get('POG_AGY_HOME')
+        try:
+            os.environ.pop('POG_AGY_HOME', None); self.assertIsNone(m.agy_home())
+            os.environ['POG_AGY_HOME'] = '/tmp/x'; self.assertEqual(m.agy_home(), Path('/tmp/x').resolve())
+        finally:
+            os.environ.pop('POG_AGY_HOME', None)
+            if old is not None:
+                os.environ['POG_AGY_HOME'] = old
+
 class TrustPrompt(unittest.TestCase):
     def test_enter_only_once_yes_is_highlighted(self):
         # (s1r1c) a "down" that lands late must not let Enter answer Claude Code's "No, exit"
@@ -434,6 +458,13 @@ class Stage2(unittest.TestCase):
         self.assertEqual(sorted(ores), ['copper-ore'] * 3 + ['iron-ore'] * 3)
         self.assertEqual({x['toward'] for x in T['green']['field']}, {'yellow', 'blue'})
         self.assertEqual(p['clear_ore'], ['iron-ore', 'copper-ore', 'crude-oil'])
+
+    def test_agy_neon_meter(self):
+        # (note-mt309-y) Neon's Gemini week from output tokens; other Gemini models stay uncalibrated
+        tok = dict(input=5_000_000, cache_read=4_000_000, cache_write=0, output=1_000_000)
+        m = sprint.meter('agy', '-', 'gemini-4-neon-medium', tok)
+        self.assertEqual(m['pct'], {'gemini_weekly': 6.76}); self.assertEqual(m['pct_range'], [5.75, 8.05])
+        self.assertIsNone(sprint.meter('agy', '-', 'gemini-4-hydrogen-medium', tok)['pct'])
 
     def test_ct2_plans(self):
         # (note-mt309-y) ct2: starts CT2_D apart, the corridor design unchanged, each corridor's cleared ground short
