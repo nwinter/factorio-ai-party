@@ -443,4 +443,23 @@ class FullRunCodexClaude(unittest.TestCase):
         self.assertIn('api.anthropic.com',agents['opus']['allow']);self.assertIn('platform.claude.com',agents['opus']['allow'])
         self.assertNotEqual(agents['opus']['port'],agents['astra']['port'])
 
+class ClaudeClient(unittest.TestCase):
+    """(note-mt309-z2) a Claude arm has no .client-state.json: its client is the player Claude in its folder"""
+    def test_found_by_process_and_folder(self):
+        with tempfile.TemporaryDirectory() as d:
+            folder=Path(d)/'opus';folder.mkdir();a=dict(kind='claude',folder=d,name='opus')
+            ps=('11 /Users/owner/.local/bin/claude --dangerously-skip-permissions\n'
+                '12 /Users/owner/.local/bin/claude --model opus --permission-mode dontAsk --tools Bash\n')
+            def cmd(args,**k):
+                if args[0]=='ps':return ps
+                return 'p12\nfcwd\nn'+(str(folder) if args[3]=='12' else '/elsewhere')+'\n'
+            with patch.object(full_run,'command',side_effect=cmd):
+                self.assertEqual(full_run.claude_client(folder),12);self.assertTrue(full_run.live_client(a))
+            with patch.object(full_run,'command',side_effect=lambda args,**k:ps if args[0]=='ps' else 'n/elsewhere\n'):
+                self.assertFalse(full_run.live_client(a))
+            # an arm of another kind still needs its wrapper's state file
+            with patch.object(full_run,'command',side_effect=cmd):
+                self.assertFalse(full_run.live_client(dict(a,kind='codex')))
+
+
 if __name__=='__main__':unittest.main()
