@@ -28,7 +28,7 @@ def agy_home():
     v=os.environ.get('POG_AGY_HOME')
     return Path(v).resolve() if v else None
 
-def profile(root,home,proxy=None,native=None,codex=None,keychain=True,team_agy=None):
+def profile(root,home,proxy=None,native=None,codex=None,keychain=True,team_agy=None,agy_player=False):
     quote=json.dumps
     protected=[home/'code',home/'Dropbox',home/'Dropbox (Personal)']
     clauses=['(version 1)','(allow default)','(deny process-info*)','(allow process-info* (target self))',
@@ -85,15 +85,21 @@ def profile(root,home,proxy=None,native=None,codex=None,keychain=True,team_agy=N
     clauses.append(f'(deny file-read-data file-write* (require-all (subpath {quote(str(home/".grok"))}) (require-not (subpath {quote(str(home/".grok/bin"))})) (require-not (literal {quote(str(home/".grok/auth.json"))}))))')
     clauses.append(f'(deny file-write* (literal {quote(str(home/".grok/auth.json"))}))')
     agy=home/'.gemini/antigravity-cli'
-    for part in ('brain','conversations'):
-        parent=agy/part
-        clauses.append(f'(deny file-read-data (literal {quote(str(parent))}))')
-        for child in parent.iterdir() if parent.exists() else ():
-            clauses.append(f'(deny file-read-data file-write* (subpath {quote(str(child))}))')
     projects=home/'.gemini/config/projects'
-    clauses.append(f'(deny file-read-data (literal {quote(str(projects))}))')
-    for child in projects.iterdir() if projects.exists() else ():
-        clauses.append(f'(deny file-read-data file-write* (subpath {quote(str(child))}))')
+    for parent in (agy/'brain',agy/'conversations',projects):
+        clauses.append(f'(deny file-read-data (literal {quote(str(parent))}))')
+        if not agy_player:
+            # Every other player, and agy in a team home: the whole folder, whatever agy has written there
+            clauses.append(f'(deny file-read-data file-write* (subpath {quote(str(parent))}))')
+            continue
+        # (note-mt309-z6) agy on this home writes new UUID entries here: each existing entry is denied by the first
+        # 9 characters of its name, the UUID's first block and dash (a string prefix: about 11 bytes of the compiled
+        # profile each, where a full path took about 47; sandbox-exec refuses a data object over 65,535 bytes, about
+        # 6,100 entries this way).
+        names=sorted(c.name for c in parent.iterdir()) if parent.exists() else []
+        for i in range(0,len(names),200):
+            group=' '.join(f'(prefix {quote(str(parent/n[:9]))})' for n in names[i:i+200])
+            clauses.append(f'(deny file-read-data file-write* (require-any {group}))')
     for part in ('cache/last_conversations.json','conversation_summaries.db','conversation_summaries.db-wal',
                  'conversation_summaries.db-shm','jetbox_summaries_proto.pb','annotations','implicit','scratch','presence'):
         clauses.append(f'(deny file-read-data file-write* (subpath {quote(str(agy/part))}))')
@@ -160,7 +166,8 @@ def main():
                    AGY_CLI_DISABLE_AUTO_UPDATE='1')
     policy=Path(command[0]).parent/'.scope.sb'
     keychain=any(k in name for k in ('.agy','.muse')) and not agy   # their own logins need it (note-mt309-i)
-    policy.write_text(profile(root,Path.home(),proxy,Path(env['XDG_DATA_HOME']).parent,codex,keychain,agy))
+    policy.write_text(profile(root,Path.home(),proxy,Path(env['XDG_DATA_HOME']).parent,codex,keychain,agy,
+                              agy_player='.agy' in name and not agy))
     os.execve('/usr/bin/sandbox-exec',['sandbox-exec','-f',str(policy),*command],env)
 
 if __name__=='__main__':main()
