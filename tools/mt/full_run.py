@@ -91,8 +91,27 @@ def init(run,minutes,max_shifts=0,nudge_s=NUDGE_S):
     event(op,'registered',agents=list(agents),minutes=minutes,max_shifts=max_shifts)
     return state
 
+CLAUDE_BIN='/Users/owner/.local/bin/claude'
+
+def claude_client(folder):
+    """(ct2, note-mt309-z2) A Claude arm starts from DIR/.claude-run.sh in its pane (tools/launch-agent.sh) and writes
+    no .client-state.json: its client is the player Claude process (--permission-mode dontAsk) whose working folder
+    is the agent's folder. Its pid, or None."""
+    try:
+        rows=command(['ps','-axo','pid=,command=']).splitlines()
+    except subprocess.SubprocessError:return None
+    for line in rows:
+        pid,_,args=line.strip().partition(' ')
+        if not args.startswith(CLAUDE_BIN+' ') or '--permission-mode dontAsk' not in args:continue
+        try:
+            cwd=[l[1:] for l in command(['lsof','-a','-p',pid,'-d','cwd','-Fn']).splitlines() if l.startswith('n')]
+        except subprocess.SubprocessError:continue
+        if cwd and Path(cwd[0])==folder:return int(pid)
+    return None
+
 def live_client(a):
     folder=Path(a['folder'])/a['name'];row=read(folder/'.client-state.json',{})
+    if a.get('kind')=='claude' and not row:return claude_client(folder) is not None
     if row.get('phase')!='running':return False
     try:
         args=command(['ps','-p',row['pid'],'-o','command='])
@@ -101,7 +120,16 @@ def live_client(a):
 
 def stop_client(a):
     folder=Path(a['folder'])/a['name'];row=read(folder/'.client-state.json',{})
-    if live_client(a):
+    if a.get('kind')=='claude' and not row:
+        pid=claude_client(folder)
+        if pid:
+            os.kill(pid,signal.SIGTERM)
+            for _ in range(20):
+                if claude_client(folder) is None:break
+                time.sleep(.5)
+            if claude_client(folder) is not None:os.kill(pid,signal.SIGKILL);time.sleep(1)
+            if claude_client(folder) is not None:raise RuntimeError('native client did not stop; refusing duplicate')
+    elif live_client(a):
         # The wrapper owns its child's process group, including native shell tools.
         child=int(row['child']);parent=int(row['pid'])
         owned=command(['ps','-p',child,'-o','ppid=']).strip()==str(parent)
