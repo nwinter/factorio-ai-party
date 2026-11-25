@@ -37,8 +37,9 @@ STAGE2_SPAWN = dict(green='near', yellow='far', blue='far')   # nearest base bui
 CONTACT_SAVE = ROOT/'docs/reports/mt309/data/contact-ready.zip'
 # (note-mt309-y) ct2's two builds: starts 750 apart, and the same with each team's corridor fields short of one ore
 SAVES = {'stage2': STAGE2_SAVE, 'contact': CONTACT_SAVE, 'ct2': ROOT/'docs/reports/mt309/data/ct2-ready.zip',
-         'ct2-shortage': ROOT/'docs/reports/mt309/data/ct2-shortage-ready.zip'}
-CONTACT_SAVES = ('contact', 'ct2', 'ct2-shortage')     # stage2_save.py --map names the same maps
+         'ct2-shortage': ROOT/'docs/reports/mt309/data/ct2-shortage-ready.zip',
+         'ct3': ROOT/'docs/reports/mt309/data/ct3-ready.zip'}     # (note-mt309-z7) two teams, each with the other's ore
+CONTACT_SAVES = ('contact', 'ct2', 'ct2-shortage', 'ct3')     # stage2_save.py --map names the same maps
 CONTACT_MINUTES = 240
 FORBIDDEN_ROUTES = ('claude-b', 'codex-b', 'gsopenrouter')
 ROUTE_HOME = {'claude': '~/.claude-profiles/personal', 'claude-c': '~/.claude-profiles/account-c', 'codex': '~/.codex'}

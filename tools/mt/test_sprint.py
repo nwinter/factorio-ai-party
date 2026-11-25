@@ -459,6 +459,39 @@ class Stage2(unittest.TestCase):
         self.assertEqual({x['toward'] for x in T['green']['field']}, {'yellow', 'blue'})
         self.assertEqual(p['clear_ore'], ['iron-ore', 'copper-ore', 'crude-oil'])
 
+    def test_ct3_each_team_holds_the_only_supply_of_the_other_s_ore(self):
+        # (note-mt309-z7) two teams on ct2's map: corridors either side of the line between the starts, every field
+        # and base ore cell of the team's own ore, the other's lacking; the shared site has no iron or copper
+        import math, stage2_save as S
+        S.MAP = 'ct3'
+        try:
+            p = S.plan(); lay = json.loads(S.LAYOUTS['ct3'].read_text())
+            bases = {n: S.team_base(p, n) for n in p['teams']}
+        finally:
+            S.MAP = 'stage2'
+        T = p['teams']
+        self.assertEqual(sorted(T), ['blue', 'green'])
+        self.assertEqual(math.dist(T['green']['spawn'], T['blue']['spawn']), S.CT2_D)
+        self.assertEqual([q['name'] for s in lay['place_sites'] for q in s['patches']], ['coal', 'stone', 'crude-oil'])
+        for n, t in T.items():
+            own = S.CT3_ORE[n]; other = [o for o in S.CT3_ORE if o != n][0]
+            self.assertEqual(t['lacks'], [S.CT3_ORE[other]])
+            self.assertEqual({f['name'] for f in t['field']}, {own})
+            self.assertEqual({o[0] for o in bases[n]['ores']}, {own, 'coal'})
+            kit = dict(bases[n]['kit']); self.assertEqual(kit[S.PLATE[own]], 600); self.assertNotIn(S.PLATE[S.CT3_ORE[other]], kit)
+            o = T[other]['spawn']; bear = math.atan2(o[1] - t['spawn'][1], o[0] - t['spawn'][0])
+            offs = sorted(round((math.degrees(math.atan2(x[1] - t['spawn'][1], x[0] - t['spawn'][0]) - bear) + 180) % 360 - 180)
+                          for x in t['nests'])
+            self.assertEqual(offs, [-S.CT3_SPREAD, S.CT3_SPREAD])
+            for x in t['nests']:     # the straight route between the starts passes 70+ tiles from every nest
+                v = abs(-(x[0] - t['spawn'][0]) * math.sin(bear) + (x[1] - t['spawn'][1]) * math.cos(bear))
+                self.assertGreater(v, 70)
+            for d in t['distances'].values():
+                self.assertEqual(d['nest_gap'], S.CONTACT_NEST_GAP)
+        # the fields a team must keep are the placed ones, by team
+        self.assertEqual(sorted(k['what'] for k in p['ct3']['keep_ore']), ['blue field iron-ore'] * 2 + ['green field copper-ore'] * 2)
+        self.assertEqual(p['ct3']['no_autoplace'], ['copper-ore', 'iron-ore'])
+
     def test_agy_neon_meter(self):
         # (note-mt309-y) Neon's Gemini week from output tokens; other Gemini models stay uncalibrated
         tok = dict(input=5_000_000, cache_read=4_000_000, cache_write=0, output=1_000_000)
