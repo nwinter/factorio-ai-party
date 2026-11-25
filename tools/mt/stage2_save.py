@@ -636,6 +636,9 @@ rcon.print(helpers.table_to_json(out))
 # - handovers: cross-team links, {"giver>taker": {links, kinds, at}}: an inserter of one team that drops into, or
 #   takes from, another team's entity, and a belt of one team that feeds another's. ct3's steel went to green by a
 #   blue inserter onto a green belt; the market saw nothing, and a player cannot reach another force's entities.
+# - wires (note-mt309-z11): copper wires between two teams' poles, {"blue&green": {links, at, to}}, each wire once
+#   (from the team whose name sorts first). ct3's blue hand-built a pole beside green's and the game wired the two
+#   networks into one, though the forces were neither friends nor in cease-fire.
 LUA_CONTACTS = r'''
 local P=helpers.json_to_table(%(spec)s) local h=storage.agent_harness local m=h.mt or {} local mk=m.market or {}
 local sp=0 for k in pairs(mk.spills or {}) do if type(k)=="string" then sp=sp+1 end end
@@ -658,8 +661,19 @@ for name in pairs(P.teams) do
   for _,e in pairs(s.find_entities_filtered{type={"transport-belt","underground-belt","splitter"},force=name}) do
     for _,o in pairs(e.belt_neighbours.outputs) do if o.valid then add(name,o.force.name,"belt",e) end end end
 end
+local wires={}
+for name in pairs(P.teams) do
+  for _,e in pairs(s.find_entities_filtered{type="electric-pole",force=name}) do
+    local c=e.get_wire_connector(defines.wire_connector_id.pole_copper,false)
+    for _,x in pairs(c and c.connections or {}) do
+      local o=x.target.owner local on=o.force.name
+      if on~=name and P.teams[on] and name<on then
+        local k=name.."&"..on local w=wires[k]
+        if not w then w={links=0,at={math.floor(e.position.x),math.floor(e.position.y)},to={math.floor(o.position.x),math.floor(o.position.y)}} wires[k]=w end
+        w.links=w.links+1 end end end
+end
 rcon.print(helpers.table_to_json({first=m.first or {},losses=m.losses or {},post_spills=sp,transactions=tx,talk=talk,
-  handovers=hand,runtime_fault=h.runtime_fault and tostring(h.runtime_fault) or nil}))
+  handovers=hand,wires=wires,runtime_fault=h.runtime_fault and tostring(h.runtime_fault) or nil}))
 '''
 
 
@@ -669,6 +683,93 @@ def rcon():
     run_state.claim()
     pw = (Path.home()/'.config/pog/rcon-imac-mt.pw').read_text().strip()
     return Rcon(os.environ.get('IMAC_RCON_HOST') or 'imac.local', 27475, pw, timeout=600)
+
+
+# (note-mt309-z11) Map acceptance: every patch the created map placed on nauvis (placed.json beside the layout), counted
+# on a save, and each loss named by the build step whose area covers it. ct3 lost blue's start stone and green's start
+# coal to its turned corridor clears, and the acceptance of the day checked iron, copper and the fields only.
+# Removals by design: prep (the start's own iron/copper/oil within clear_ore_r, replaced by the prepared base), the
+# shortage clear (a team's missing ore) and ct3's iron/copper clear. Corridor, field, nest and base clears are not.
+LUA_PATCHES = r'''
+local P=helpers.json_to_table(%(spec)s) local s=game.surfaces.nauvis local out={}
+for i,q in ipairs(P.patches) do local n,a=0,0
+  for _,e in pairs(s.find_entities_filtered{position=q.at,radius=q.r+1,name=q.name}) do n=n+1 a=a+e.amount end
+  out[i]={tiles=n,amount=a} end
+rcon.print(helpers.table_to_json(out))
+'''
+WELL_R = 10       # an oil patch's wells: rings of 7 tiles round its spot (multiteam.lua)
+
+
+def placed_patches():
+    """The created map's nauvis patches at the starts and shared sites: site, name, at, r, tiles, amount."""
+    import mt_map
+    kinds = {'start': mt_map.PRIMARY, 'second': mt_map.SECOND, 'third': mt_map.THIRD}
+    out = []
+    for x in json.loads((LAYOUTS[MAP].parent/'placed.json').read_text()):
+        kind = x['site'].split()[0]
+        if kind not in kinds or not x.get('tiles'):
+            continue
+        spec = next(q for q in kinds[kind] if q['name'] == x['name'])
+        out.append(dict(site=x['site'], name=x['name'], at=[x['x'], x['y']], r=spec.get('r') or WELL_R, tiles=x['tiles'],
+                        amount=x['amount']))
+    return out
+
+
+def clear_steps(p):
+    """[(step, by_design, test(x, y, name))] in build order: every build step that destroys resources, and its area."""
+    steps = []
+    for n, t in p['teams'].items():
+        sx, sy = t['spawn']
+        steps.append((f'prep ({n}: its own {"/".join(p["clear_ore"])} within {p["clear_ore_r"]})', True,
+                      lambda x, y, name, sx=sx, sy=sy: name in p['clear_ore'] and math.hypot(x - sx, y - sy) <= p['clear_ore_r']))
+    for n, t in p['teams'].items():
+        sx, sy = t['spawn']
+        for k, c in enumerate(t.get('corridors') or [t['corridor']]):
+            b = math.radians(c['bearing']); cb, sb = math.cos(b), math.sin(b)
+            def inside(x, y, name, c=c, cb=cb, sb=sb, sx=sx, sy=sy):
+                u, v = (x - sx) * cb + (y - sy) * sb, -(x - sx) * sb + (y - sy) * cb
+                return c['u2'] <= u <= c['u1'] and abs(v) <= c['half']
+            steps.append((f'corridor clear ({n} corridor {k + 1}, bearing {c["bearing"]:g})', False, inside))
+        for k, f in enumerate(t['field']):
+            steps.append((f'field placement ({n} field {k + 1} at ({f["at"][0]:.0f}, {f["at"][1]:.0f}))', False,
+                          lambda x, y, name, f=f: math.hypot(x - f['at'][0], y - f['at'][1]) <= f['r'] + 6))
+        for k, nst in enumerate(t.get('nests') or [t['nest']]):
+            steps.append((f'nest placement ({n} nest {k + 1})', False,
+                          lambda x, y, name, nst=nst: math.hypot(x - nst[0], y - nst[1]) <= p['nest_r'] + 8))
+        B = p['base']['box']; ox, oy = math.floor(sx), math.floor(sy)
+        steps.append((f'base ({n}: the prepared base box)', False,
+                      lambda x, y, name, ox=ox, oy=oy, B=B: ox + B[0] <= x <= ox + B[2] and oy + B[1] <= y <= oy + B[3]))
+    if p.get('shortage_clear_r'):
+        for n, t in p['teams'].items():
+            sx, sy = t['spawn']
+            steps.append((f'shortage clear ({n}: {"/".join(t["lacks"])} within {p["shortage_clear_r"]})', True,
+                          lambda x, y, name, t=t, sx=sx, sy=sy: name in t['lacks'] and math.hypot(x - sx, y - sy) <= p['shortage_clear_r']
+                          and not any(math.hypot(x - k['at'][0], y - k['at'][1]) <= k['r'] for k in p['keep_ore'])))
+    if p.get('ct3'):
+        steps.append(('ct3 ore clear (natural iron and copper anywhere)', True,
+                      lambda x, y, name: name in p['ct3']['no_autoplace']
+                      and not any(math.hypot(x - k['at'][0], y - k['at'][1]) <= k['r'] for k in p['ct3']['keep_ore'])))
+    return steps
+
+
+def patch_verdicts(patches, counts, p):
+    """Each placed patch against its count on a save: kept, removed by design, or LOST/CUT naming the build steps whose
+    areas cover it (their order is the build's)."""
+    steps = clear_steps(p); out = []
+    for q, c in zip(patches, counts):
+        row = dict(q, now=c['tiles'], now_amount=c['amount'])
+        if c['tiles'] >= q['tiles']:
+            out.append(dict(row, status='kept')); continue
+        pts = [(q['at'][0] + dx, q['at'][1] + dy) for dx in range(-q['r'], q['r'] + 1, 2) for dy in range(-q['r'], q['r'] + 1, 2)
+               if dx * dx + dy * dy <= q['r'] * q['r']]
+        cover = [(name, design, sum(1 for x, y in pts if test(x, y, q['name']))) for name, design, test in steps]
+        cover = [(name, design, n) for name, design, n in cover if n]
+        designed = {(x, y) for x, y in pts if any(d and t(x, y, q['name']) for _, d, t in steps)}
+        if cover and len(designed) == len(pts):
+            out.append(dict(row, status='removed by design', by=[n for n, d, _ in cover if d])); continue
+        by = [f'{n} ({k} of {len(pts)} sample points)' for n, d, k in cover if not d] or ['no build step (natural, or a player)']
+        out.append(dict(row, status='LOST' if c['tiles'] == 0 else 'CUT', by=by))
+    return out
 
 
 def contacts_lua(p):
@@ -733,6 +834,8 @@ def main(argv=None):
     sub = ap.add_subparsers(dest='cmd', required=True)
     q = sub.add_parser('plan'); q.add_argument('--json', action='store_true')
     sub.add_parser('build'); sub.add_parser('check'); sub.add_parser('measure')
+    q = sub.add_parser('patches', help='(note-mt309-z11) every placed nauvis patch on the loaded save; exit 1 on a loss')
+    q.add_argument('--json', help='write the verdicts here')
     q = sub.add_parser('save'); q.add_argument('name')
     a = ap.parse_args(argv)
     global MAP
@@ -760,6 +863,17 @@ def main(argv=None):
             except ValueError:
                 out['contacts_error'] = got[:300]
         print(json.dumps(out, indent=1))
+    elif a.cmd == 'patches':
+        patches = placed_patches()
+        rows = patch_verdicts(patches, run_lua(rcon(), LUA_PATCHES, dict(patches=patches)), plan())
+        if a.json:
+            Path(a.json).write_text(json.dumps(rows, indent=1) + '\n')
+        for x in rows:
+            print(f"{x['site']:22s} {x['name']:11s} ({x['at'][0]:g}, {x['at'][1]:g}) {x['now']:5d} of {x['tiles']:5d} tiles  "
+                  f"{x['status']}" + (': ' + '; '.join(x['by']) if x.get('by') else ''))
+        bad = [x for x in rows if x['status'] in ('LOST', 'CUT')]
+        print(f"{len(bad)} patch(es) lost or cut" if bad else 'every placed patch is whole or removed by design')
+        sys.exit(1 if bad else 0)
     elif a.cmd == 'save':
         # chart requests need ticks: run 10 s of game time, then save paused (the sprint's paused start unpauses)
         assert a.name.replace('-', '').isalnum() and a.name != 'mt'

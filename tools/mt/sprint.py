@@ -775,6 +775,12 @@ def contact_wakes(run, row, state):
                 wake(f"{run}: HANDOVER between teams: {giver}'s goods can reach {taker} by {kinds} (first at "
                      f"{tuple(x.get('at') or ())}; game minute {at(now)}): a trade or shipment outside the market")
             links[key] = x['links']
+    joined = state.setdefault('wires_woken', [])      # (note-mt309-z11) a copper wire between two teams' poles
+    for key, w in sorted((row.get('wires') or {}).items()):
+        if key not in joined and w.get('links'):
+            joined.append(key); a_, b_ = key.split('&', 1)
+            wake(f"{run}: POWER between teams: a copper wire joins {a_}'s pole at {tuple(w.get('at') or ())} to {b_}'s at "
+                 f"{tuple(w.get('to') or ())} ({w['links']} wire(s); game minute {at(now)}): one network, each draws on both")
     fault = row.get('runtime_fault')
     if fault and fault != state.get('fault_woken'):
         wake(f"{run}: HARNESS ERROR runtime_fault: {fault[:300]} (game minute {at(now)})"); state['fault_woken'] = fault
@@ -829,6 +835,12 @@ def stage2_summary(op, state, path=None):
                     seen.setdefault(k, dict(first_min=round((r['tick'] - state['start_tick']) / 3600, 1), at=x.get('at')))
                     seen[k].update(links_last=x.get('links'), kinds_last=x.get('kinds'))
             out.setdefault('_handovers', seen)
+            wired = {}
+            for r in rows:
+                for k, w in (r.get('wires') or {}).items():
+                    wired.setdefault(k, dict(first_min=round((r['tick'] - state['start_tick']) / 3600, 1), at=w.get('at'), to=w.get('to')))
+                    wired[k]['links_last'] = w.get('links')
+            out.setdefault('_wires', wired)
         out[arm] = dict(team=team, spawn=STAGE2_SPAWN.get(team) if state.get('save') not in CONTACT_SAVES else state['save'],
                         first_attack_min=attacked, nest_cleared_min=cleared, nests_cleared_min=nests or None, second_field_min=mining,
                         field_drills_peak=max(drills, default=None), field_drill_min=round(drill_min, 1),
