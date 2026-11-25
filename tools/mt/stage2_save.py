@@ -629,6 +629,39 @@ end
 rcon.print(helpers.table_to_json(out))
 '''
 
+# (note-mt309-t/u) The harness's first contacts (chart, shot) and losses by killer, from its own storage; Post raids
+# (the market's spill records), market transactions, and a harness fault. (note-mt309-z10) ct3's deal went unseen:
+# - talk: diplomacy by sender, {"from>to": {n, first, text}}. The harness keeps one conversation per pair under the
+#   sorted key "blue>green", holding both teams' messages, so the key says nothing of who wrote.
+# - handovers: cross-team links, {"giver>taker": {links, kinds, at}}: an inserter of one team that drops into, or
+#   takes from, another team's entity, and a belt of one team that feeds another's. ct3's steel went to green by a
+#   blue inserter onto a green belt; the market saw nothing, and a player cannot reach another force's entities.
+LUA_CONTACTS = r'''
+local P=helpers.json_to_table(%(spec)s) local h=storage.agent_harness local m=h.mt or {} local mk=m.market or {}
+local sp=0 for k in pairs(mk.spills or {}) do if type(k)=="string" then sp=sp+1 end end
+local tx=0 for _,p in pairs(mk.pairs or {}) do tx=tx+#(p.transactions or {}) end
+local talk={}
+for _,c in pairs((m.pacts or {}).diplomacy or {}) do for _,g in ipairs(c.messages or {}) do
+  local k=tostring(g.from_team)..">"..tostring(g.to_team) local t=talk[k]
+  if not t or g.tick<t.first then t={n=t and t.n or 0,first=g.tick,text=string.sub(g.text or "",1,200)} talk[k]=t end
+  t.n=t.n+1 end end
+local hand={} local s=game.surfaces.nauvis
+local function add(giver,taker,kind,e)
+  if giver==taker or not P.teams[giver] or not P.teams[taker] then return end
+  local k=giver..">"..taker local x=hand[k]
+  if not x then x={links=0,kinds={},at={math.floor(e.position.x),math.floor(e.position.y)}} hand[k]=x end
+  x.links=x.links+1 x.kinds[kind]=(x.kinds[kind] or 0)+1 end
+for name in pairs(P.teams) do
+  for _,e in pairs(s.find_entities_filtered{type="inserter",force=name}) do
+    local d=e.drop_target if d and d.valid then add(name,d.force.name,"inserter",e) end
+    local u=e.pickup_target if u and u.valid then add(u.force.name,name,"inserter",e) end end
+  for _,e in pairs(s.find_entities_filtered{type={"transport-belt","underground-belt","splitter"},force=name}) do
+    for _,o in pairs(e.belt_neighbours.outputs) do if o.valid then add(name,o.force.name,"belt",e) end end end
+end
+rcon.print(helpers.table_to_json({first=m.first or {},losses=m.losses or {},post_spills=sp,transactions=tx,talk=talk,
+  handovers=hand,runtime_fault=h.runtime_fault and tostring(h.runtime_fault) or nil}))
+'''
+
 
 def rcon():
     from pog import Rcon
@@ -636,6 +669,12 @@ def rcon():
     run_state.claim()
     pw = (Path.home()/'.config/pog/rcon-imac-mt.pw').read_text().strip()
     return Rcon(os.environ.get('IMAC_RCON_HOST') or 'imac.local', 27475, pw, timeout=600)
+
+
+def contacts_lua(p):
+    """LUA_CONTACTS on one line, for the plan's teams."""
+    from harness import lua_string, one_line
+    return one_line(LUA_CONTACTS % {'spec': lua_string(json.dumps({'teams': {n: True for n in p['teams']}}))})
 
 
 def run_lua(r, lua, spec):
@@ -715,13 +754,7 @@ def main(argv=None):
                               freeplay=run_lua(r, LUA_CT3_FREEPLAY, p),
                               autoplace=run_lua(r, 'local m=game.surfaces.nauvis.map_gen_settings.autoplace_controls; local o={} for _,n in ipairs{"iron-ore","copper-ore"} do o[n]=m[n] and m[n].size end rcon.print(helpers.table_to_json(o))', p))
         if MAP in CONTACT_MAPS and a.cmd == 'measure':
-            # (note-mt309-t) the harness's first contacts (chart, shot) and losses by killer, from its own storage
-            # (note-mt309-u) and Post raids (the market's spill records), shipments made, and a harness fault
-            got = r.command('/silent-command __agent-harness__ local h=storage.agent_harness local m=h.mt or {} '
-                            'local mk=m.market or {} local sp=0 for k in pairs(mk.spills or {}) do if type(k)=="string" then sp=sp+1 end end '
-                            'local tx=0 for _,p in pairs(mk.pairs or {}) do tx=tx+#(p.transactions or {}) end '
-                            'rcon.print(helpers.table_to_json({first=m.first or {},losses=m.losses or {},post_spills=sp,'
-                            'transactions=tx,runtime_fault=h.runtime_fault and tostring(h.runtime_fault) or nil}))')
+            got = r.command('/silent-command __agent-harness__ ' + contacts_lua(p))
             try:
                 out.update(json.loads(got))
             except ValueError:

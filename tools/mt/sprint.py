@@ -732,7 +732,10 @@ def stage2_measure(op, env, state=None):
 def contact_wakes(run, row, state):
     """(note-mt309-t/u) Wake rows from one contact-map reading: each pair's first contact (chart) and first shot
     between teams, once each; losses to a rival team (the first, then at most every 10 minutes a pair while they
-    grow); a home Post raided (a new spill record); a harness fault (a new runtime_fault)."""
+    grow); a home Post raided (a new spill record); a harness fault (a new runtime_fault). (note-mt309-z10) Also each
+    team's first diplomacy message to each other team, by sender (ct3: green's ten were read as blue's); the first
+    market transaction; and each new cross-team handover link (ct3's steel went by a blue inserter onto a green belt,
+    which the market never saw)."""
     at = lambda tick: round((tick - state['start_tick']) / 3600, 1)
     seen = state.setdefault('contacts_woken', [])
     for key, tick in sorted((row.get('first') or {}).items(), key=lambda kv: kv[1]):
@@ -755,6 +758,23 @@ def contact_wakes(run, row, state):
     if (row.get('post_spills') or 0) > state.get('post_spills_woken', 0):
         wake(f"{run}: RAID: a Post was destroyed ({row['post_spills']} spill records; game minute {at(now)})")
         state['post_spills_woken'] = row['post_spills']
+    talked = state.setdefault('talk_woken', [])
+    for key, t in sorted((row.get('talk') or {}).items(), key=lambda kv: kv[1].get('first', 0)):
+        if key not in talked and t.get('n'):
+            talked.append(key); frm, to = key.split('>', 1)
+            wake(f"{run}: first message {frm} -> {to} at game minute {at(t['first'])}: \"{t.get('text', '')}\"")
+    if (row.get('transactions') or 0) and not state.get('transactions_woken'):
+        wake(f"{run}: TRADE: first market transaction ({row['transactions']} on record; game minute {at(now)})")
+        state['transactions_woken'] = row['transactions']
+    links = state.setdefault('handovers_woken', {})
+    for key, x in sorted((row.get('handovers') or {}).items()):
+        if x.get('links', 0) > links.get(key, 0):
+            giver, taker = key.split('>', 1)
+            if not links.get(key):
+                kinds = ', '.join(f'{n} {k}' for k, n in sorted((x.get('kinds') or {}).items()))
+                wake(f"{run}: HANDOVER between teams: {giver}'s goods can reach {taker} by {kinds} (first at "
+                     f"{tuple(x.get('at') or ())}; game minute {at(now)}): a trade or shipment outside the market")
+            links[key] = x['links']
     fault = row.get('runtime_fault')
     if fault and fault != state.get('fault_woken'):
         wake(f"{run}: HARNESS ERROR runtime_fault: {fault[:300]} (game minute {at(now)})"); state['fault_woken'] = fault
@@ -800,6 +820,15 @@ def stage2_summary(op, state, path=None):
             out.setdefault('_contacts', {k: round((v - state['start_tick']) / 3600, 1) for k, v in (rows[-1].get('first') or {}).items()}
                            if rows else {})
             out.setdefault('_losses', (rows[-1].get('losses') or {}) if rows else {})
+            # (note-mt309-z10) messages by sender, and each cross-team handover link with when it was first seen
+            out.setdefault('_talk', {k: dict(n=t.get('n'), first_min=round((t['first'] - state['start_tick']) / 3600, 1))
+                                     for k, t in ((rows[-1].get('talk') or {}) if rows else {}).items()})
+            seen = {}
+            for r in rows:
+                for k, x in (r.get('handovers') or {}).items():
+                    seen.setdefault(k, dict(first_min=round((r['tick'] - state['start_tick']) / 3600, 1), at=x.get('at')))
+                    seen[k].update(links_last=x.get('links'), kinds_last=x.get('kinds'))
+            out.setdefault('_handovers', seen)
         out[arm] = dict(team=team, spawn=STAGE2_SPAWN.get(team) if state.get('save') not in CONTACT_SAVES else state['save'],
                         first_attack_min=attacked, nest_cleared_min=cleared, nests_cleared_min=nests or None, second_field_min=mining,
                         field_drills_peak=max(drills, default=None), field_drill_min=round(drill_min, 1),

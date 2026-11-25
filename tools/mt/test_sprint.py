@@ -647,6 +647,43 @@ class Stage2(unittest.TestCase):
             (op/'autosave.log').write_text('save ZIP CRC failed\n')
             self.assertEqual(sprint.integrity_fault(op), 'autosave: save ZIP CRC failed')
 
+    def test_contact_wakes_messages_by_sender_trades_and_handovers(self):
+        # (note-mt309-z10) ct3: green's ten replies were read as blue's (the harness keys a conversation by the sorted
+        # pair), and a blue inserter moving steel onto a green belt raised no wake
+        state = dict(start_tick=0, roster=[dict(team='green'), dict(team='blue')])
+        woke = []; real = sprint.wake; sprint.wake = woke.append
+        try:
+            row = lambda tick, talk, hand, tx=0: dict(tick=tick, first={}, losses={}, post_spills=0, transactions=tx,
+                                                     talk=talk, handovers=hand)
+            b = dict(n=1, first=3600 * 83, text='Hi Kestrel')
+            sprint.contact_wakes('ct9', row(3600 * 84, {'blue>green': b}, {}), state)
+            sprint.contact_wakes('ct9', row(3600 * 85, {'blue>green': dict(b, n=2),
+                                                        'green>blue': dict(n=1, first=3600 * 84, text='Hi Volta')}, {}), state)
+            h = {'blue>green': dict(links=1, kinds={'inserter': 1}, at=[208, -3])}
+            sprint.contact_wakes('ct9', row(3600 * 209, {}, h), state)
+            sprint.contact_wakes('ct9', row(3600 * 211, {}, h, tx=2), state)        # the same link: no second row
+            sprint.contact_wakes('ct9', row(3600 * 213, {}, h, tx=3), state)        # the first transaction only
+        finally:
+            sprint.wake = real
+        self.assertEqual(woke, ['ct9: first message blue -> green at game minute 83.0: "Hi Kestrel"',
+                                'ct9: first message green -> blue at game minute 84.0: "Hi Volta"',
+                                "ct9: HANDOVER between teams: blue's goods can reach green by 1 inserter (first at "
+                                "(208, -3); game minute 209.0): a trade or shipment outside the market",
+                                'ct9: TRADE: first market transaction (2 on record; game minute 211.0)'])
+
+    def test_contact_reading_compiles_and_names_the_plan_s_teams(self):
+        import shutil, subprocess
+        sys.path.insert(0, str(Path(sprint.__file__).parent))
+        import stage2_save
+        lua = stage2_save.contacts_lua(dict(teams={'green': {}, 'blue': {}}))
+        self.assertNotIn('\n', lua); self.assertNotIn('--', lua)      # one line: a comment would swallow the rest
+        self.assertIn('"blue": true', lua); self.assertIn('"green": true', lua)
+        if not shutil.which('luac'):
+            self.skipTest('no luac')
+        with tempfile.TemporaryDirectory() as t:
+            (Path(t)/'c.lua').write_text(lua)
+            subprocess.run(['luac', '-p', str(Path(t)/'c.lua')], check=True)
+
     def test_market_full_at_the_start(self):
         class R: pass
         calls = []
