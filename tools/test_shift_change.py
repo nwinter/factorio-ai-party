@@ -352,10 +352,16 @@ def announcements():
         got = announced(tmp, 3)
         assert r.returncode == 0 and got == ["announce change-begin shake11 shake12", "announce change-stalled shake12",
                                              f"announce change-live shake12 --agents {len(NAMES)}"], got
-        # a quick start: no stall line after it (the watcher is stopped)
+        # a quick start: no stall line after it (the watcher is stopped). (mt309 cp13) "Quick" is measured, not
+        # assumed: at load 35 the same change took over 2 s, and a stall line at 2 s was right. The bound is twice
+        # this start plus 2 s, and the wait after it is longer than the bound.
         shutil.rmtree(os.path.join(runs, "shake12"))
-        r, _ = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", STREAMING="True", POG_SC_STALL_S="2")
-        time.sleep(3)
+        t0 = time.time()
+        run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", STREAMING="True", POG_SC_STALL_S="600")
+        stall = int(2 * (time.time() - t0)) + 2
+        shutil.rmtree(os.path.join(runs, "shake12"))
+        r, _ = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", STREAMING="True", POG_SC_STALL_S=str(stall))
+        time.sleep(stall + 1)
         assert announced(tmp, 3, wait=0) == ["announce change-begin shake11 shake12", f"announce change-live shake12 --agents {len(NAMES)}"]
         # refused checks: nothing said; POG_ANNOUNCE=0: nothing said
         r, _ = run(tmp, runs, bin_, state, "shake11", "shake13", "240", "--stream", STREAMING="True", QUOTA_WARN="1")
