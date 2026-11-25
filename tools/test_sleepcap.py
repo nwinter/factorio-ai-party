@@ -37,9 +37,26 @@ def timed(cmd, env=None, cap="1"):
     return time.time() - t, r
 
 
-def capped(cmd, env=None):
+# (note-mt309-z8) A limit counts the shell's or Python's own start: the same command with its wait set to 0, under
+# the same wrapper and variables. A login shell's profile can take seconds (bash -lc 2.4-2.7 s on chonk at load 27).
+QUICK = (("sleep 3", "sleep 0"), ("sleep 2m", "sleep 0"), ("sleep(3)", "sleep(0)"), ("'sleep', '3'", "'sleep', '0'"))
+
+
+def start_of(cmd, env=None):
+    """The slower of two runs of cmd with its wait set to 0: what the command takes besides the wait."""
+    quick = list(cmd)
+    for a, b in QUICK:
+        quick[-1] = quick[-1].replace(a, b)
+    assert quick != list(cmd), ("no wait to set to 0", cmd)
+    return max(timed(quick, env)[0] for _ in range(2))
+
+
+def capped(cmd, env=None, wait=1.0, base=None):
+    """The cap holds: cmd finishes within its own start (base, else start_of) plus the capped wait (1 s) and 1.5 s,
+    and prints the line once. Uncapped, its sleep of 3 s or more would add at least 3 s."""
+    base = start_of(cmd, env) if base is None else base
     took, r = timed(cmd, env)
-    return took < 2.5 and r.stderr.count(LINE) == 1, took, r
+    return took < base + wait + 1.5 and r.stderr.count(LINE) == 1, took, r
 
 
 def shells():
@@ -50,10 +67,11 @@ def shells():
                "python3 subprocess sleep": ["python3", "-c", "import subprocess; subprocess.run(['sleep', '3'])"]}
     for name, cmd in covered.items():
         ok, took, r = capped([RUN] + cmd)
-        assert ok, (name, round(took, 1), r.stderr)
+        assert ok, (name, round(took, 1), round(start_of([RUN] + cmd), 1), r.stderr)
     # A Python loop of long sleeps prints the line once.
-    took, r = timed([RUN, "python3", "-c", "import time\nfor _ in range(2): time.sleep(3)"])
-    assert took < 3.5 and r.stderr.count(LINE) == 1, (took, r.stderr)
+    loop = [RUN, "python3", "-c", "import time\nfor _ in range(2): time.sleep(3)"]
+    ok, took, r = capped(loop, wait=2.0)
+    assert ok, (took, r.stderr)
     # zsh login shells: /etc/zprofile's path_helper puts /bin first and zsh imports no functions.
     ok, took, _ = capped([RUN, "zsh", "-lc", "sleep 3"])
     print(f"shells: ok (bash -c, bash -lc, sh -c, zsh -c, python3; zsh -lc {'capped' if ok else 'NOT capped'})")
@@ -107,8 +125,9 @@ def claude():
         subprocess.run([RUN, hook], env=dict(os.environ, CLAUDE_ENV_FILE=envfile), check=True)
         assert open(envfile).read().startswith("export PATH=" + os.path.join(SC, "bin")), open(envfile).read()
         # As Claude Code runs a command: a login profile reordered PATH, then the env file is sourced.
-        took, r = timed([RUN, "zsh", "-lc", f"source {envfile}; command -v sleep; sleep 3"])
-        assert r.stdout.strip() == os.path.join(SC, "bin", "sleep") and took < 2.5, (r.stdout, took)
+        cmd = [RUN, "zsh", "-lc", f"source {envfile}; command -v sleep; sleep 3"]
+        ok, took, r = capped(cmd)
+        assert r.stdout.strip() == os.path.join(SC, "bin", "sleep") and ok, (r.stdout, took, r.stderr)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     src = open(os.path.join(ROOT, "tools", "launch-agent.sh")).read()
@@ -156,8 +175,12 @@ def grok_muse_agy():
         subprocess.run(["bash", "-c", script], check=True, cwd=ROOT)
         run = open(os.path.join(tmp, ".grok-run.sh")).read()
         assert f"'{RUN}' '{stub}'" in run, run
-        ok, took, r = capped([os.path.join(tmp, ".grok-run.sh")])
-        assert ok, (took, r.stderr)
+        # its start: the same script with the stand-in's wait set to 0
+        open(stub, "w").write("#!/bin/bash\nsleep 0\n")
+        base = max(timed([os.path.join(tmp, ".grok-run.sh")])[0] for _ in range(2))
+        open(stub, "w").write("#!/bin/bash\nsleep 3\n")
+        ok, took, r = capped([os.path.join(tmp, ".grok-run.sh")], base=base)
+        assert ok, (took, base, r.stderr)
         # agy: the loop's first turn runs agy under run; the loop's own quota sleep does not.
         loop = subprocess.run([os.path.join(ROOT, "tools", "launch-agent.sh"), "--agy-loop", tmp, "gemini", "0", "/dev/null"],
                               capture_output=True, text=True, check=True, env=dict(os.environ, POG_TEST="1"))
