@@ -37,8 +37,9 @@ STAGE2_SPAWN = dict(green='near', yellow='far', blue='far')   # nearest base bui
 CONTACT_SAVE = ROOT/'docs/reports/mt309/data/contact-ready.zip'
 # (note-mt309-y) ct2's two builds: starts 750 apart, and the same with each team's corridor fields short of one ore
 SAVES = {'stage2': STAGE2_SAVE, 'contact': CONTACT_SAVE, 'ct2': ROOT/'docs/reports/mt309/data/ct2-ready.zip',
-         'ct2-shortage': ROOT/'docs/reports/mt309/data/ct2-shortage-ready.zip'}
-CONTACT_SAVES = ('contact', 'ct2', 'ct2-shortage')     # stage2_save.py --map names the same maps
+         'ct2-shortage': ROOT/'docs/reports/mt309/data/ct2-shortage-ready.zip',
+         'ct3': ROOT/'docs/reports/mt309/data/ct3-ready.zip'}     # (note-mt309-z7) two teams, each with the other's ore
+CONTACT_SAVES = ('contact', 'ct2', 'ct2-shortage', 'ct3')     # stage2_save.py --map names the same maps
 CONTACT_MINUTES = 240
 FORBIDDEN_ROUTES = ('claude-b', 'codex-b', 'gsopenrouter')
 ROUTE_HOME = {'claude': '~/.claude-profiles/personal', 'claude-c': '~/.claude-profiles/account-c', 'codex': '~/.codex'}
@@ -467,6 +468,10 @@ def stop_run(run, env):
 # rule for panes whose status never reads idle (Muse): 10 minutes without a game request and no busy marker.
 NUDGE_S = 20      # seconds after a turn ends before the idle prompt (sprint run --nudge-s; note-mt309-p; 20 s the
                   # default from note-mt309-t, every arm: Astra's waits fell from 47.8 to 15.2 min of 90)
+# (note-mt309-z7) A sprint's idle arms get only idle_prompts' prompt: full_run's watch, which launch.py starts for
+# every run, prompts none (POG_PANE_PROMPT), and its game-tell nudge is off (POG_IDLE_NUDGE). In ct2 both prompted
+# Astra: 16 of the watch's 34 prompts came within 15 s of one of the sprint's 47.
+SPRINT_PROMPTS = dict(POG_IDLE_NUDGE='0', POG_PANE_PROMPT='0')
 SPRINT_NUDGE = ('Operator (automatic): check your own status, tells, board and notes.md. Keep building toward the '
                 'goal. If blocked, explain the blocker once and choose another useful task. Keep your current '
                 'identity and update your notes.')
@@ -632,7 +637,7 @@ def cmd_run(a):
     route = rcon_route()
     save, want = (BASELINE, BASELINE_SHA) if a.save == 'r307' else (SAVES[a.save], SAVES[a.save].with_suffix('.sha256').read_text().split()[0])
     env = dict(os.environ, POG_MT_FRESH='1', POG_MT_FRESH_SAVE=str(save), POG_SEED='30744', POG_GAME_TEST='0',
-               POG_IDLE_NUDGE='0', POG_MT_PAUSED_START='1', POG_STOP_WORLD='1',
+               **SPRINT_PROMPTS, POG_MT_PAUSED_START='1', POG_STOP_WORLD='1',
                POG_CLAIM_OWNER=os.environ.get('POG_CLAIM_OWNER', 'eng-mt309'))
     sha = subprocess.run(['shasum', '-a', '256', str(save)], capture_output=True, text=True).stdout.split()[0]
     assert sha == want, f'{save.name} changed: {sha}'

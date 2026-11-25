@@ -33,7 +33,7 @@ ENV_KEYS=('PATH','HOME','USER','LOGNAME','SHELL','TMPDIR','LANG','TZ','HERDR_WOR
           'POG_TEAM_LINE','POG_GOAL','POG_MAP_TEXT','POG_IDENTITY_BRIEF','POG_OPENING_BRIEF',
           'POG_WEB_BLOCK','POG_DENY_READ','POG_READ_SCOPE','POG_SHELL_NET','POG_FULL_TOOLS',
           'POG_ISOLATED','POG_IDLE_NUDGE','POG_PANE_WATCH','POG_WORLD_RUNNING','POG_CLAIM_OWNER',
-          'POG_OPERATOR_WAKE','POG_CONTINUOUS')
+          'POG_OPERATOR_WAKE','POG_CONTINUOUS','POG_PANE_PROMPT')
 NUDGE=('Operator (automatic): check your own status, tells, board and notes.md. '
        'Keep building toward the goal with your teammate. If blocked, explain the blocker once '
        'and choose another useful task. Keep your current identity and update your notes.')
@@ -348,6 +348,9 @@ def watch_agent(op,state,a,now,panes,hits,rooms):
     native_ready=status=='unknown' and native_idle(a,screen,now)
     # (note-mt309-x) the run's nudge_s after the turn ends (20 s by default), the same gap rule as sprints: 1.5x
     wait=a.get('nudge_s',state.get('nudge_s',NUDGE_S))
+    # (note-mt309-z7) POG_PANE_PROMPT=0: never here. A sprint prompts its idle arms itself (sprint.py idle_prompts); in
+    # ct2 both prompted Astra, 16 of this watch's 34 prompts within 15 s of one of the sprint's.
+    if os.environ.get('POG_PANE_PROMPT','1')!='1':return
     if (status in ('idle','done') or native_ready) and now-a.get('last_prompt',a['started'])>=wait*1.5:
         recent=folder/'journal.jsonl'
         if not recent.exists() or now-recent.stat().st_mtime>=wait:

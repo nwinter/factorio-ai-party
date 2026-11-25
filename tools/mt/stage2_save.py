@@ -9,6 +9,7 @@ spawn (task-mt309 Stage 2; layout in report-mt309 section 6b).
   stage2_save.py --map contact ...      (note-mt309-t) the same on the three-team contact map (layout below)
   stage2_save.py --map ct2 ...          (note-mt309-y) the contact map's design with the starts CT2_D apart
   stage2_save.py --map ct2-shortage ... the same, with each team's corridor fields short of one ore (SHORTAGE)
+  stage2_save.py --map ct3 ...          (note-mt309-z7) two teams on ct2's map: each holds the only iron or the only copper
 
 The contact map (note-mt309-t: Astra low, Opus high and Neon on one map where they can meet). mt_map.py's layout
 (three starts CONTACT_D apart, each team's own patches toward the middle, the shared sites at each pair's midpoint
@@ -40,8 +41,9 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT/'tools'), str(ROOT/'tools/stream'), str(ROOT/'tools/mt')]
 LAYOUTS = {'stage2': ROOT/'docs/reports/mt307/data/map/layout.json', 'contact': ROOT/'docs/reports/mt309/data/contact/layout.json',
-           'ct2': ROOT/'docs/reports/mt309/data/ct2/layout.json', 'ct2-shortage': ROOT/'docs/reports/mt309/data/ct2/layout.json'}
-CONTACT_MAPS = ('contact', 'ct2', 'ct2-shortage')
+           'ct2': ROOT/'docs/reports/mt309/data/ct2/layout.json', 'ct2-shortage': ROOT/'docs/reports/mt309/data/ct2/layout.json',
+           'ct3': ROOT/'docs/reports/mt309/data/ct3/layout.json'}
+CONTACT_MAPS = ('contact', 'ct2', 'ct2-shortage', 'ct3')
 MAP = 'stage2'          # main --map
 TEAMS = ('green', 'yellow', 'blue')
 
@@ -88,6 +90,13 @@ SHORTAGE = {'ct2-shortage': {('green', 'prev'): 'iron-ore', ('yellow', 'next'): 
 # and natural ore of the kind a team lacks goes within this many tiles of its spawn (shared sites, placed fields and
 # the base's own ore cells stay)
 SHORTAGE_CLEAR_R = 600
+# (note-mt309-z7) ct3: green and blue on ct2's map (docs/reports/mt309/contact/ct3_layout.py), each team's ore its
+# own and the other's missing. Each team's two corridors (half nest, field) lie CT3_SPREAD degrees either side of the
+# bearing to the other team, as a ct2 team's two neighbours did, so the straight route between the starts passes
+# about 80 tiles from every nest. Both fields, the base's ore cells and the kit's plates are the team's own ore.
+CT3_ORE = {'green': 'copper-ore', 'blue': 'iron-ore'}
+CT3_SPREAD = 30
+PLATE = {'iron-ore': 'iron-plate', 'copper-ore': 'copper-plate'}
 
 
 def teams():
@@ -195,8 +204,12 @@ def contact_plan():
     ts = teams(); order = [n for n in TEAMS if n in ts]; out = {}; short = SHORTAGE.get(MAP, {})
     for i, name in enumerate(order):
         s = ts[name]['spawn']; nests, fields, spawners, worms, corridors, dist = [], [], [], [], [], {}
+        two = len(order) == 2
         for side, other in (('next', order[(i + 1) % len(order)]), ('prev', order[(i - 1) % len(order)])):
-            o = ts[other]['spawn']; ang = math.atan2(o[1] - s[1], o[0] - s[0]); deg = math.degrees(ang)
+            o = ts[other]['spawn']; ang = math.atan2(o[1] - s[1], o[0] - s[0])
+            if two:     # (note-mt309-z7) one neighbour: the two corridors either side of its bearing
+                ang += math.radians(CT3_SPREAD if side == 'next' else -CT3_SPREAD)
+            deg = math.degrees(ang)
             pt = lambda a, v: (s[0] + a*math.cos(ang) - v*math.sin(ang), s[1] + a*math.sin(ang) + v*math.cos(ang))
             na = at_gap(s, ang, CONTACT_NEST_GAP); fa = na + CONTACT_FIELD_PAST
             nest = pt(na, 0); nests.append(nest)
@@ -204,21 +217,26 @@ def contact_plan():
             worms += [(n, *pt(na + du, dv)) for n, du, dv in CONTACT_WORMS]
             ore, r, amount = CONTACT_FIELDS[side]
             ore = short.get((name, side), ore)
+            if MAP == 'ct3':
+                ore = CT3_ORE[name]
             fields.append(dict(name=ore, r=r, amount=amount, at=pt(fa, 0), toward=other))
             # LUA_CORRIDOR's frame: u along the bearing given, the corridor at negative u; it stops short of a shared site
             end = min(fa + r + 30, site_edge(s, ang, 70) - CONTACT_SITE_GAP)
             corridors.append(dict(u1=-50, u2=-round(end), half=70, bearing=deg + 180, toward=other))
-            dist[other] = dict(bearing=round(deg, 1), nest=round(na), field=round(fa), ore=ore, corridor_end=round(end),
+            dist[other + (' ' + side if two else '')] = dict(bearing=round(deg, 1), nest=round(na), field=round(fa), ore=ore, corridor_end=round(end),
                                nest_gap=round(building_gap(s, *nest)), field_gap=round(building_gap(s, *pt(fa, 0))))
         out[name] = dict(spawn=s, bearing=ts[name]['bearing'], nest=nests[0], nests=nests, spawners=spawners, worms=worms,
                          field=fields, corridors=corridors, corridor=corridors[0], distances=dist)
-        if short:
+        if short or MAP == 'ct3':
             out[name]['lacks'] = sorted({v[0] for v in CONTACT_FIELDS.values()} - {f['name'] for f in fields})
     return out
 
 
 def keep_ore():
-    """The ore circles a shortage clear leaves: every shared-site patch and every placed corridor field."""
+    """The ore circles a shortage clear leaves: every shared-site patch and every placed corridor field (ct3: the
+    fields only, named by team and ore)."""
+    if MAP == 'ct3':
+        return [dict(at=f['at'], r=f['r'] + 2, what=f"{n} field {f['name']}") for n, t in contact_plan().items() for f in t['field']]
     lay = json.loads(LAYOUTS[MAP].read_text())
     out = [dict(at=(si['x'] + q['dx'], si['y'] + q['dy']), r=q.get('r', 3) + 2) for si in lay.get('place_sites', []) for q in si['patches']]
     return out + [dict(at=f['at'], r=f['r'] + 2) for t in contact_plan().values() for f in t['field']]
@@ -232,7 +250,8 @@ def plan():
                                                     ore_per_tile=ORE_PER_TILE),
                     research=RESEARCH, evolution=EVOLUTION, clear_enemies=CLEAR_ENEMIES, nest_r=NEST_R,
                     clear_ore=list(CONTACT_CLEAR_ORE[1]), clear_ore_r=CONTACT_CLEAR_ORE[0], map='contact', name=MAP,
-                    **(dict(shortage_clear_r=SHORTAGE_CLEAR_R, keep_ore=keep_ore()) if SHORTAGE.get(MAP) else {}))
+                    **(dict(shortage_clear_r=SHORTAGE_CLEAR_R, keep_ore=keep_ore()) if SHORTAGE.get(MAP) else {}),
+                    **(dict(ct3=dict(keep_ore=keep_ore(), no_autoplace=sorted(PLATE), plates=PLATE)) if MAP == 'ct3' else {}))
     for name, t in teams().items():
         s, b = t['spawn'], t['bearing']
         field = [local(s, b, FIELD_U, dv) for *_, dv in FIELD]
@@ -299,6 +318,78 @@ for name,t in pairs(P.teams) do
     if not keep then o=o+e.amount; ot=ot+1; e.destroy() end
   end
   out[name]={lacks=t.lacks,ore_removed=o,ore_tiles_removed=ot}
+end
+rcon.print(helpers.table_to_json(out))
+'''
+
+# (note-mt309-z7) ct3. AUTOPLACE: iron and copper off in nauvis's map-gen settings (chunks made later have none).
+# ORE: every iron and copper tile on nauvis by where it lies (a team's placed field or base box, else natural);
+# remove destroys the natural ones. ITEMS: either ore or plate held by anything (a team's entity holding the ore it
+# lacks, a wreck, a chest of no team, an item on the ground), plus the entities whose mining yields either; remove
+# takes them out (never from the enemy force). FREEPLAY: the freeplay scenario's items for a new or respawned
+# character, plates removed with remove.
+LUA_CT3_AUTOPLACE = r'''
+local P=helpers.json_to_table(%(spec)s); local s=game.surfaces.nauvis; local m=s.map_gen_settings; local out={before={},after={}}
+for _,n in ipairs(P.ct3.no_autoplace) do local c=m.autoplace_controls[n]; out.before[n]=c and {c.frequency,c.size,c.richness} or 'none'
+  if c then c.size=0 end end
+s.map_gen_settings=m; m=s.map_gen_settings
+for _,n in ipairs(P.ct3.no_autoplace) do local c=m.autoplace_controls[n]; out.after[n]=c and {c.frequency,c.size,c.richness} or 'none' end
+local n=0; for _ in s.get_chunks() do n=n+1 end; out.chunks=n
+rcon.print(helpers.table_to_json(out))
+'''
+
+LUA_CT3_ORE = r'''
+local P=helpers.json_to_table(%(spec)s); local s=game.surfaces.nauvis; local B=P.base.box; local out={kept={},removed={},removed_tiles=0,far=0}
+for _,e in pairs(s.find_entities_filtered{name=P.ct3.no_autoplace}) do
+  local p=e.position; local keep
+  for n,t in pairs(P.teams) do local ox,oy=math.floor(t.spawn[1]),math.floor(t.spawn[2])
+    if p.x>=ox+B[1] and p.x<=ox+B[3] and p.y>=oy+B[2] and p.y<=oy+B[4] then keep=n..' base '..e.name end end
+  for _,k in ipairs(P.ct3.keep_ore) do if (p.x-k.at[1])^2+(p.y-k.at[2])^2<=k.r*k.r then keep=k.what..' '..e.name; break end end
+  if keep then out.kept[keep]=(out.kept[keep] or 0)+e.amount else
+    out.removed[e.name]=(out.removed[e.name] or 0)+e.amount; out.removed_tiles=out.removed_tiles+1
+    local d=math.huge; for _,t in pairs(P.teams) do d=math.min(d,math.sqrt((p.x-t.spawn[1])^2+(p.y-t.spawn[2])^2)) end
+    if d>out.far then out.far=math.floor(d) end
+    if P.remove then e.destroy() end end
+end
+rcon.print(helpers.table_to_json(out))
+'''
+
+LUA_CT3_ITEMS = r'''
+local P=helpers.json_to_table(%(spec)s); local s=game.surfaces.nauvis; local out={teams={},other={},ground={},minable={}}
+local items={}; for o,pl in pairs(P.ct3.plates) do items[#items+1]=o; items[#items+1]=pl end
+local function take(e,names,into)
+  for i=1,e.get_max_inventory_index() do local inv=e.get_inventory(i)
+    if inv then for _,n in ipairs(names) do local c=inv.get_item_count(n)
+      if c>0 then into[n]=(into[n] or 0)+c; if P.remove then inv.remove{name=n,count=c} end end end end end
+  if e.type=='inserter' and e.held_stack.valid_for_read then local h=e.held_stack
+    for _,n in ipairs(names) do if h.name==n then into[n]=(into[n] or 0)+h.count; if P.remove then h.clear() end end end end
+end
+for n,t in pairs(P.teams) do local lacks={}
+  for _,o in ipairs(t.lacks) do lacks[#lacks+1]=o; lacks[#lacks+1]=P.ct3.plates[o] end
+  local got={}; for _,e in pairs(s.find_entities_filtered{force=n}) do take(e,lacks,got) end
+  out.teams[n]={lacks=lacks,held=got} end
+local teams={enemy=true}; for n in pairs(P.teams) do teams[n]=true end
+for _,e in pairs(s.find_entities_filtered{type={'container','logistic-container','character-corpse','car','cargo-wagon','character'}}) do
+  if not teams[e.force.name] then local got={}; take(e,items,got)
+    if next(got) then out.other[#out.other+1]={name=e.name,force=e.force.name,position={math.floor(e.position.x),math.floor(e.position.y)},held=got} end end end
+for _,e in pairs(s.find_entities_filtered{type='item-entity'}) do local st=e.stack
+  for _,n in ipairs(items) do if st.valid_for_read and st.name==n then out.ground[n]=(out.ground[n] or 0)+st.count; if P.remove then e.destroy() end; break end end end
+local yields={}
+for name,pr in pairs(prototypes.entity) do local m=pr.mineable_properties
+  if m and m.minable and m.products and pr.type~='resource' then for _,q in ipairs(m.products) do
+    for _,n in ipairs(items) do if q.name==n then yields[#yields+1]=name end end end end end
+for _,name in ipairs(yields) do out.minable[name]=s.count_entities_filtered{name=name} end
+rcon.print(helpers.table_to_json(out))
+'''
+
+LUA_CT3_FREEPLAY = r'''
+local P=helpers.json_to_table(%(spec)s); local out={freeplay=remote.interfaces.freeplay and true or false}
+if out.freeplay then
+  for _,k in ipairs{'created','respawn','ship','debris'} do local get=remote.interfaces.freeplay['get_'..k..'_items']
+    if get then local list=remote.call('freeplay','get_'..k..'_items'); out[k]=list
+      local hit=false; for o,pl in pairs(P.ct3.plates) do if list[o] or list[pl] then hit=true; list[o]=nil; list[pl]=nil end end
+      if hit and P.remove and remote.interfaces.freeplay['set_'..k..'_items'] then remote.call('freeplay','set_'..k..'_items',list); out[k..'_now']=remote.call('freeplay','get_'..k..'_items') end
+    end end
 end
 rcon.print(helpers.table_to_json(out))
 '''
@@ -556,11 +647,28 @@ def run_lua(r, lua, spec):
         raise SystemExit(f'lua failed: {out[:2000]}')
 
 
+def team_base(p, name):
+    """The base as built for a team: ct3's ore cells and kit plates are the team's own ore (note-mt309-z7)."""
+    if MAP != 'ct3':
+        return p['base']
+    own = CT3_ORE[name]; b = dict(p['base'])
+    b['ores'] = [(own if o[0] in PLATE else o[0], *o[1:]) for o in b['ores']]
+    kit = {}
+    for item, n in b['kit']:
+        item = PLATE[own] if item in PLATE.values() else item
+        kit[item] = kit.get(item, 0) + n
+    b['kit'] = list(kit.items())
+    return b
+
+
 def build():
     p = plan(); r = rcon(); res = {}
+    if p.get('ct3'):    # before the first chunk the build makes: no iron or copper in any chunk made from now on
+        res['autoplace'] = run_lua(r, LUA_CT3_AUTOPLACE, p)
+        res['freeplay'] = run_lua(r, LUA_CT3_FREEPLAY, dict(p, remove=True))
     res['prep'] = run_lua(r, LUA_PREP, p)
     for name, t in p['teams'].items():
-        one = dict(team=t, name=name, base=p['base'], research=p['research'], nest_r=p['nest_r'])
+        one = dict(team=t, name=name, base=team_base(p, name), research=p['research'], nest_r=p['nest_r'])
         if p['map'] == 'contact':      # each corridor: cleared, then its half nest and its field placed and charted
             res[name] = dict(corridor=[], place=[])
             for k, c in enumerate(t['corridors']):
@@ -573,6 +681,9 @@ def build():
         res[name].update(base=run_lua(r, LUA_BASE, one), power=run_lua(r, LUA_POWER, one), kit=run_lua(r, LUA_KIT, one))
     if p.get('shortage_clear_r'):     # after every field is placed: natural ore of each team's missing kind near it
         res['shortage'] = run_lua(r, LUA_SHORTAGE, p)
+    if p.get('ct3'):    # natural iron and copper on the whole surface, then the missing ore and plates anywhere
+        res['ct3_ore'] = run_lua(r, LUA_CT3_ORE, dict(p, remove=True))
+        res['ct3_items'] = run_lua(r, LUA_CT3_ITEMS, dict(p, remove=True))
     print(json.dumps(res, indent=1))
     return res
 
@@ -598,7 +709,11 @@ def main(argv=None):
     elif a.cmd == 'build':
         build()
     elif a.cmd in ('check', 'measure'):
-        r = rcon(); out = run_lua(r, LUA_CHECK if a.cmd == 'check' else LUA_MEASURE, plan())
+        r = rcon(); p = plan(); out = run_lua(r, LUA_CHECK if a.cmd == 'check' else LUA_MEASURE, p)
+        if p.get('ct3') and a.cmd == 'check':     # (note-mt309-z7) read only: where iron and copper lie, who holds what
+            out['ct3'] = dict(ore=run_lua(r, LUA_CT3_ORE, p), items=run_lua(r, LUA_CT3_ITEMS, p),
+                              freeplay=run_lua(r, LUA_CT3_FREEPLAY, p),
+                              autoplace=run_lua(r, 'local m=game.surfaces.nauvis.map_gen_settings.autoplace_controls; local o={} for _,n in ipairs{"iron-ore","copper-ore"} do o[n]=m[n] and m[n].size end rcon.print(helpers.table_to_json(o))', p))
         if MAP in CONTACT_MAPS and a.cmd == 'measure':
             # (note-mt309-t) the harness's first contacts (chart, shot) and losses by killer, from its own storage
             # (note-mt309-u) and Post raids (the market's spill records), shipments made, and a harness fault

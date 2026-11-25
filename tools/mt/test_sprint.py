@@ -398,6 +398,24 @@ class IdlePrompt(unittest.TestCase):
             # (note-mt309-t) 20 s is the default: a run made without --nudge-s nudges as state20 does
             self.assertEqual(sprint.NUDGE_S, 20)
 
+    def test_a_sprint_arm_is_prompted_by_the_sprint_only(self):
+        # (note-mt309-z7) ct2: full_run's watch prompted Astra too (16 of its 34 prompts within 15 s of one of the
+        # sprint's). The sprint's environment turns the watch's pane prompt and its game-tell nudge off.
+        import time, unittest.mock as um, full_run
+        self.assertEqual(sprint.SPRINT_PROMPTS, {'POG_IDLE_NUDGE': '0', 'POG_PANE_PROMPT': '0'})
+        self.assertIn('POG_PANE_PROMPT', full_run.ENV_KEYS)     # kept in full-env.json for a resumed watch
+        with tempfile.TemporaryDirectory() as t:
+            a = dict(name='astra', folder=t, kind='codex', pane='p', started=0, restarts=0)
+            def watched(env):
+                panes = um.Mock(); panes.read.return_value = '> '; panes.status.return_value = 'idle'
+                panes.prompt.return_value = ('agent prompt', True, '')
+                with um.patch.dict('os.environ', env), um.patch.object(full_run, 'live_client', return_value=True), \
+                     um.patch.object(full_run, 'event'), um.patch.object(full_run, 'alert'):
+                    full_run.watch_agent(Path(t), dict(agents={'astra': a}), dict(a), time.time(), panes, {}, {})
+                return panes.prompt.call_count
+            self.assertEqual(watched({}), 1)                       # a full run: the watch prompts an idle pane
+            self.assertEqual(watched(sprint.SPRINT_PROMPTS), 0)    # a sprint: never
+
     def test_codex_subagents_logged_and_in_the_burn(self):
         # (note-mt309-t) spawn_agent stays allowed: each sub-agent rollout is woken once and its tokens count
         with tempfile.TemporaryDirectory() as t:
@@ -458,6 +476,39 @@ class Stage2(unittest.TestCase):
         self.assertEqual(sorted(ores), ['copper-ore'] * 3 + ['iron-ore'] * 3)
         self.assertEqual({x['toward'] for x in T['green']['field']}, {'yellow', 'blue'})
         self.assertEqual(p['clear_ore'], ['iron-ore', 'copper-ore', 'crude-oil'])
+
+    def test_ct3_each_team_holds_the_only_supply_of_the_other_s_ore(self):
+        # (note-mt309-z7) two teams on ct2's map: corridors either side of the line between the starts, every field
+        # and base ore cell of the team's own ore, the other's lacking; the shared site has no iron or copper
+        import math, stage2_save as S
+        S.MAP = 'ct3'
+        try:
+            p = S.plan(); lay = json.loads(S.LAYOUTS['ct3'].read_text())
+            bases = {n: S.team_base(p, n) for n in p['teams']}
+        finally:
+            S.MAP = 'stage2'
+        T = p['teams']
+        self.assertEqual(sorted(T), ['blue', 'green'])
+        self.assertEqual(math.dist(T['green']['spawn'], T['blue']['spawn']), S.CT2_D)
+        self.assertEqual([q['name'] for s in lay['place_sites'] for q in s['patches']], ['coal', 'stone', 'crude-oil'])
+        for n, t in T.items():
+            own = S.CT3_ORE[n]; other = [o for o in S.CT3_ORE if o != n][0]
+            self.assertEqual(t['lacks'], [S.CT3_ORE[other]])
+            self.assertEqual({f['name'] for f in t['field']}, {own})
+            self.assertEqual({o[0] for o in bases[n]['ores']}, {own, 'coal'})
+            kit = dict(bases[n]['kit']); self.assertEqual(kit[S.PLATE[own]], 600); self.assertNotIn(S.PLATE[S.CT3_ORE[other]], kit)
+            o = T[other]['spawn']; bear = math.atan2(o[1] - t['spawn'][1], o[0] - t['spawn'][0])
+            offs = sorted(round((math.degrees(math.atan2(x[1] - t['spawn'][1], x[0] - t['spawn'][0]) - bear) + 180) % 360 - 180)
+                          for x in t['nests'])
+            self.assertEqual(offs, [-S.CT3_SPREAD, S.CT3_SPREAD])
+            for x in t['nests']:     # the straight route between the starts passes 70+ tiles from every nest
+                v = abs(-(x[0] - t['spawn'][0]) * math.sin(bear) + (x[1] - t['spawn'][1]) * math.cos(bear))
+                self.assertGreater(v, 70)
+            for d in t['distances'].values():
+                self.assertEqual(d['nest_gap'], S.CONTACT_NEST_GAP)
+        # the fields a team must keep are the placed ones, by team
+        self.assertEqual(sorted(k['what'] for k in p['ct3']['keep_ore']), ['blue field iron-ore'] * 2 + ['green field copper-ore'] * 2)
+        self.assertEqual(p['ct3']['no_autoplace'], ['copper-ore', 'iron-ore'])
 
     def test_agy_neon_meter(self):
         # (note-mt309-y) Neon's Gemini week from output tokens; other Gemini models stay uncalibrated
