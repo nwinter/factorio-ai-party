@@ -398,6 +398,24 @@ class IdlePrompt(unittest.TestCase):
             # (note-mt309-t) 20 s is the default: a run made without --nudge-s nudges as state20 does
             self.assertEqual(sprint.NUDGE_S, 20)
 
+    def test_a_sprint_arm_is_prompted_by_the_sprint_only(self):
+        # (note-mt309-z7) ct2: full_run's watch prompted Astra too (16 of its 34 prompts within 15 s of one of the
+        # sprint's). The sprint's environment turns the watch's pane prompt and its game-tell nudge off.
+        import time, unittest.mock as um, full_run
+        self.assertEqual(sprint.SPRINT_PROMPTS, {'POG_IDLE_NUDGE': '0', 'POG_PANE_PROMPT': '0'})
+        self.assertIn('POG_PANE_PROMPT', full_run.ENV_KEYS)     # kept in full-env.json for a resumed watch
+        with tempfile.TemporaryDirectory() as t:
+            a = dict(name='astra', folder=t, kind='codex', pane='p', started=0, restarts=0)
+            def watched(env):
+                panes = um.Mock(); panes.read.return_value = '> '; panes.status.return_value = 'idle'
+                panes.prompt.return_value = ('agent prompt', True, '')
+                with um.patch.dict('os.environ', env), um.patch.object(full_run, 'live_client', return_value=True), \
+                     um.patch.object(full_run, 'event'), um.patch.object(full_run, 'alert'):
+                    full_run.watch_agent(Path(t), dict(agents={'astra': a}), dict(a), time.time(), panes, {}, {})
+                return panes.prompt.call_count
+            self.assertEqual(watched({}), 1)                       # a full run: the watch prompts an idle pane
+            self.assertEqual(watched(sprint.SPRINT_PROMPTS), 0)    # a sprint: never
+
     def test_codex_subagents_logged_and_in_the_burn(self):
         # (note-mt309-t) spawn_agent stays allowed: each sub-agent rollout is woken once and its tokens count
         with tempfile.TemporaryDirectory() as t:
