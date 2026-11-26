@@ -663,13 +663,51 @@ class Stage2(unittest.TestCase):
             sprint.contact_wakes('ct9', row(3600 * 209, {}, h), state)
             sprint.contact_wakes('ct9', row(3600 * 211, {}, h, tx=2), state)        # the same link: no second row
             sprint.contact_wakes('ct9', row(3600 * 213, {}, h, tx=3), state)        # the first transaction only
+            # (note-mt309-z11) a copper wire between the two teams' poles: once per pair
+            w = dict(row(3600 * 215, {}, h, tx=3), wires={'blue&green': dict(links=1, at=[208, 2], to=[208, 5])})
+            sprint.contact_wakes('ct9', w, state)
+            w['wires']['blue&green']['links'] = 4
+            sprint.contact_wakes('ct9', w, state)
         finally:
             sprint.wake = real
         self.assertEqual(woke, ['ct9: first message blue -> green at game minute 83.0: "Hi Kestrel"',
                                 'ct9: first message green -> blue at game minute 84.0: "Hi Volta"',
                                 "ct9: HANDOVER between teams: blue's goods can reach green by 1 inserter (first at "
                                 "(208, -3); game minute 209.0): a trade or shipment outside the market",
-                                'ct9: TRADE: first market transaction (2 on record; game minute 211.0)'])
+                                'ct9: TRADE: first market transaction (2 on record; game minute 211.0)',
+                                "ct9: POWER between teams: a copper wire joins blue's pole at (208, 2) to green's at (208, 5) "
+                                "(1 wire(s); game minute 215.0): one network, each draws on both"])
+
+    def test_start_patches_named_by_the_step_that_removed_them(self):
+        # (note-mt309-z11) acceptance compares every placed start and shared-site patch with the ready save; the counts
+        # below are the ones read on imac2 (Wed): ct3 lost blue's start stone and green's start coal to its turned
+        # corridors, ct2 cut 27 tiles of green's coal, and the 6d contact map kept every coal and stone patch
+        sys.path.insert(0, str(Path(sprint.__file__).parent))
+        import stage2_save as S
+        old = S.MAP
+        try:
+            def verdicts(m, now):
+                S.MAP = m; q = S.placed_patches()
+                design = lambda x: x['site'].startswith('start') and x['name'] in ('iron-ore', 'copper-ore', 'crude-oil')
+                counts = [dict(tiles=now.get((x['site'], x['name']), 0 if design(x) or (m == 'ct3' and x['name'] in ('iron-ore', 'copper-ore')) else x['tiles']),
+                               amount=0) for x in q]
+                return {(v['site'], v['name']): v for v in S.patch_verdicts(q, counts, S.plan())}
+            v = verdicts('ct3', {('start green', 'coal'): 0, ('start blue', 'stone'): 0})
+            bad = {k: x['by'] for k, x in v.items() if x['status'] in ('LOST', 'CUT')}
+            self.assertEqual(set(bad), {('start green', 'coal'), ('start blue', 'stone')})
+            self.assertIn('corridor clear (green corridor 1, bearing 120)', bad[('start green', 'coal')][0])
+            self.assertIn('corridor clear (blue corridor 2, bearing 240)', bad[('start blue', 'stone')][0])
+            self.assertEqual(v[('start blue', 'iron-ore')]['status'], 'removed by design')
+            v = verdicts('ct2', {('start green', 'coal'): 572})
+            self.assertEqual([(k, x['status']) for k, x in v.items() if x['status'] in ('LOST', 'CUT')], [(('start green', 'coal'), 'CUT')])
+            self.assertIn('green corridor 2', v[('start green', 'coal')]['by'][0])
+            v = verdicts('contact', {})
+            self.assertFalse([k for k, x in v.items() if x['status'] in ('LOST', 'CUT')])
+            self.assertEqual(sum(1 for x in v.values() if x['status'] == 'removed by design'), 9)   # each start's iron, copper, oil
+            v = verdicts('contact', {('start yellow', 'stone'): 0})       # a loss no build step explains
+            self.assertEqual(v[('start yellow', 'stone')]['by'], ['no build step (natural, or a player)'])
+        finally:
+            S.MAP = old
 
     def test_contact_reading_compiles_and_names_the_plan_s_teams(self):
         import shutil, subprocess
@@ -680,9 +718,13 @@ class Stage2(unittest.TestCase):
         self.assertIn('"blue": true', lua); self.assertIn('"green": true', lua)
         if not shutil.which('luac'):
             self.skipTest('no luac')
+        from harness import lua_string, one_line
+        patches = one_line(stage2_save.LUA_PATCHES % {'spec': lua_string(json.dumps(dict(patches=[dict(name='stone', at=[1, 2], r=11)])))})
+        self.assertEqual(lua.count('wires=wires'), 1)
         with tempfile.TemporaryDirectory() as t:
-            (Path(t)/'c.lua').write_text(lua)
-            subprocess.run(['luac', '-p', str(Path(t)/'c.lua')], check=True)
+            for i, chunk in enumerate((lua, patches)):
+                (Path(t)/f'c{i}.lua').write_text(chunk)
+                subprocess.run(['luac', '-p', str(Path(t)/f'c{i}.lua')], check=True)
 
     def test_market_full_at_the_start(self):
         class R: pass
