@@ -13794,9 +13794,19 @@ local function trigger_text(t)
   local r=t.prototype.research_trigger
   if not r then return nil end
   local function name(v) return type(v)=='table' and (v.name or tostring(v)) or tostring(v) end
+  -- (mt309 note-mt309-z10) mine-entity names its targets in `entities`, a list of names ({'crude-oil'};
+  -- tungsten-carbide has seven): read on 2.1.24, where `entity` is nil and blue was told "mine nil".
+  local function names(list)
+    local out={}
+    for i,v in ipairs(list) do out[i]=name(v) end
+    return #out>0 and table.concat(out,' or ') or nil
+  end
   if r.type=='craft-item' then return string.format('craft %d %s',r.count or 1,name(r.item)) end
   if r.type=='craft-fluid' then return string.format('produce %g %s',r.amount or 0,name(r.fluid)) end
-  if r.type=='mine-entity' then return 'mine '..name(r.entity) end
+  if r.type=='mine-entity' then
+    local what=type(r.entities)=='table' and names(r.entities) or (r.entity~=nil and name(r.entity)) or 'the entity it names'
+    return 'mine '..what
+  end
   if r.type=='build-entity' then return 'build '..name(r.entity) end
   if r.type=='send-item-to-orbit' then return 'launch '..name(r.item)..' to orbit' end
   if r.type=='capture-spawner' then return 'capture '..(r.entity and name(r.entity) or 'a biter spawner') end

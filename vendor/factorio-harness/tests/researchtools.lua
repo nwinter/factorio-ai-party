@@ -244,4 +244,15 @@ fails(function() astra('where_is',{item='iron-plate',surface='vulcanus'}) end,'u
 astra('walk',{direction='east',ticks=100}); advance(1)
 fails(function() astra('where_is',{item='nope'}) end,'unknown item')
 eq(astra('status').active.kind,'walk')
+-- 5. what unlocks a trigger technology (mt309 note-mt309-z10): mine-entity names its targets in `entities`, a list of
+-- names (read on a private 2.1.24 copy: oil-processing {type='mine-entity', entities={'crude-oil'}}); ct3's blue was told
+-- "trigger_unlocked (mine nil)" when the field was read as `entity`
+tech('oil-processing',0,{}); techs['oil-processing'].prototype.research_trigger={type='mine-entity',entities={'crude-oil'}}
+tech('tungsten-carbide',0,{}); techs['tungsten-carbide'].prototype.research_trigger={type='mine-entity',entities={'big-volcanic-rock','huge-volcanic-rock'}}
+tech('space-science-pack',0,{}); techs['space-science-pack'].prototype.research_trigger={type='build-entity',entity={name='asteroid-collector'}}
+local q=grok('research',{research_queue={'oil-processing','tungsten-carbide','space-science-pack'}})
+assert(has(q.skipped,'oil-processing: trigger_unlocked (mine crude-oil)'),table.concat(q.skipped or {},' | '))
+assert(has(q.skipped,'tungsten-carbide: trigger_unlocked (mine big-volcanic-rock or huge-volcanic-rock)'),table.concat(q.skipped or {},' | '))
+assert(has(q.skipped,'space-science-pack: trigger_unlocked (build asteroid-collector)'),table.concat(q.skipped or {},' | '))
+for _,line in ipairs(q.skipped) do assert(not line:find('nil',1,true),line) end
 print('researchtools: ok')
